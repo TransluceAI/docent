@@ -14,13 +14,29 @@ if [ "$(git branch --show-current)" != "docent-share" ]; then
     exit 1
 fi
 
-# Sync
-git branch -D docent-share-compress || true
-git checkout --orphan docent-share-compress
-git add -A
-git commit -m "Sync" --no-verify
 # Add remote if it doesn't exist already
 if ! git remote | grep -q "^docent-remote$"; then
   git remote add docent-remote https://github.com/TransluceAI/docent.git
 fi
-git push --force docent-remote docent-share-compress:main
+
+# Fetch the latest changes from the remote
+git fetch docent-remote
+
+# Check if docent-share-compress branch exists
+if git branch | grep -q "docent-share-compress"; then
+    # Checkout to existing branch
+    git checkout docent-share-compress
+    # Make sure it's up to date with remote main
+    git reset --hard docent-remote/main
+else
+    # Create a new branch tracking the remote
+    git checkout -b docent-share-compress docent-remote/main
+fi
+
+# Apply changes from docent-share to docent-share-compress
+git checkout docent-share -- .
+git add -A
+git commit -m "Sync changes from docent-share $(date +%Y-%m-%d)" --no-verify || echo "No changes to commit"
+
+# Push the changes to remote
+git push docent-remote docent-share-compress:main
