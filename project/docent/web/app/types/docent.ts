@@ -163,12 +163,15 @@ type FilterLiteral =
   | 'complex'
   | 'residual'
   | 'datapoint_id'
-  | 'attribute';
+  | 'attribute'
+  | 'transcript_contains';
 
 /** Base interface for all frame filters */
 interface FrameFilter {
   id: string;
   type: FilterLiteral;
+  /** Substring for transcript_contains filter */
+  substring?: string;
 }
 
 /** A filter that checks if a datapoint's metadata matches a specified key-value pair */

@@ -28,6 +28,7 @@ import {
   Earth,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { v4 as uuid4 } from 'uuid';
 import { useFrameGrid } from '../contexts/FrameGridContext';
 import type { MetadataType, MetadataFilter } from '@/app/types/docent';
 import BinEditor from './BinEditor';
@@ -86,12 +87,31 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   );
   const [clusterFeedback, setClusterFeedback] = useState('');
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  // State for transcript substring filter
+  const [transcriptQuery, setTranscriptQuery] = useState('');
+
+  const applyTranscriptFilter = () => {
+    const substr = transcriptQuery.trim();
+    if (!substr) return;
+    fg.onAddFilter({
+      id: uuid4(),
+      type: 'transcript_contains',
+      substring: substr,
+    });
+    setTranscriptQuery('');
+  };
 
   // Get metadata filters from baseFilter
   const metadataFilters = fg.baseFilter
     ? (fg.baseFilter.filter(
         (filter) => filter.type === 'metadata'
       ) as MetadataFilter[])
+    : [];
+  // Get transcript substring filters from baseFilter
+  const transcriptFilters = fg.baseFilter
+    ? (fg.baseFilter.filter(
+        (filter) => filter.type === 'transcript_contains'
+      ) as { id: string; substring?: string }[])
     : [];
 
   // Find the active dimension state based on the current attribute query
@@ -299,6 +319,20 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
                   </button>
                 </div>
               ))}
+              {transcriptFilters.map((filter) => (
+                <div
+                  key={filter.id}
+                  className="inline-flex items-center gap-x-1 text-xs bg-indigo-50 text-indigo-800 border border-indigo-100 pl-1.5 pr-1 py-0.5 rounded-md"
+                >
+                  <span className="font-mono">{filter.substring}</span>
+                  <button
+                    onClick={() => fg.onRemoveFilter(filter.id)}
+                    className="ml-0.5 hover:bg-indigo-100 rounded-full p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
+                  >
+                    <CircleX size={12} />
+                  </button>
+                </div>
+              ))}
               {fg.baseFilter.length > 0 && (
                 <button
                   onClick={fg.onClearFilters}
@@ -445,6 +479,31 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
               </Button>
             </div>
           </div>
+        </div>
+      </div>
+      <div className="space-y-1 mt-4">
+        <div className="text-xs text-gray-600">Transcript contains</div>
+        <div className="flex space-x-2 items-center">
+          <Input
+            value={transcriptQuery}
+            onChange={(e) => setTranscriptQuery(e.target.value)}
+            placeholder="Enter substring..."
+            className="h-8 text-xs bg-white font-mono text-gray-600 flex-1"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyTranscriptFilter();
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-8 text-xs whitespace-nowrap"
+            disabled={!fg.frameGridId || !transcriptQuery.trim()}
+            onClick={applyTranscriptFilter}
+          >
+            Apply
+          </Button>
         </div>
       </div>
       <div className="border-t" />
