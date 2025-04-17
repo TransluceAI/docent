@@ -38,5 +38,11 @@ git checkout docent-share -- .
 git add -A
 git commit -m "Sync changes from docent-share $(date +%Y-%m-%d)" --no-verify || echo "No changes to commit"
 
-# Push the changes to remote
-git push docent-remote docent-share-compress:main
+# Create a timestamp branch name with milliseconds to avoid conflicts
+TIMESTAMP_BRANCH="sync-$(date +%Y%m%d-%H%M%S.%3N)"
+echo "Creating branch: $TIMESTAMP_BRANCH"
+
+# Push the changes to remote with the timestamped branch instead of main
+git push docent-remote docent-share-compress:$TIMESTAMP_BRANCH
+
+echo "Changes pushed to branch: $TIMESTAMP_BRANCH on remote repository"
