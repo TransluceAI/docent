@@ -1,0 +1,44 @@
+---
+version: 1
+formatters:
+  multiline:
+    class: logger.MultiLineFormatter
+    format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+handlers:
+  file:
+    class: logging.FileHandler
+    level: DEBUG
+    formatter: multiline
+    mode: w
+  stderr:
+    class: logging.StreamHandler
+    level: ERROR
+    formatter: multiline
+    stream: ext://sys.stderr
+  stdout:
+    class: logging.StreamHandler
+    level: INFO
+    # level: DEBUG  # this will output detailed logs, including from underlying libraries
+    formatter: multiline
+    stream: ext://sys.stdout
+    filters: [warnings_and_below]
+root:
+  level: DEBUG
+  handlers: [file]
+loggers:
+  openai:
+    level: DEBUG
+    handlers: [file]
+    propagate: false
+  httpx:
+    level: DEBUG
+    handlers: [file]
+    propagate: false
+  CRS:
+    level: DEBUG
+    handlers: [stderr, stdout]
+    propagate: true
+filters:
+  warnings_and_below:
+    "()": "logger.filter_maker"
+    level: WARNING

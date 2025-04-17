@@ -1,0 +1,27 @@
+[project]
+name = "frames"
+version = "0.0.1"
+description = "Frames"
+
+requires-python = "==3.12.*"
+dependencies = [
+    "llm_util",
+    "log_util",
+    "plotly>=6.0.0",
+    "torch",
+    "transformers>=4.48.0",
+    "matplotlib"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["frames"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+managed = false

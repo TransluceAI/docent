@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "env_util"
+version = "0.0.1"
+description = "Library for envvars"
+
+requires-python = "==3.12.*"
+dependencies = [
+    "python-dotenv>=1.0.1",
+    "log_util"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["env_util"]
+
+[tool.pyright]
+strict = ["env_util"]
+reportMissingTypeStubs = false
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+managed = false

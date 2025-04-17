@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lucepkg"
+version = "0.0.1"
+description = "CLI tool for managing Python environments and code synchronization in the Transluce monorepo"
+
+requires-python = "==3.12.*"
+dependencies = [
+    "luce_lib",
+    # Other packages
+    "rich>=13.6.0",
+    "typer>=0.15.1",
+    "tomlkit>=0.12.3",
+    "textual>=0.47.1",
+    "datasets>=2.18.0",
+    "anyio>=4.2.0",
+    "markdownify>=1.1.0",
+]
+
+[project.scripts]
+luce = "lucepkg.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lucepkg"]
+
+[tool.pyright]
+strict = ["lucepkg"]
+reportMissingTypeStubs = false
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+luce_lib = { path = "../luce_lib", editable = true }

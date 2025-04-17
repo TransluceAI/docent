@@ -1,0 +1,51 @@
+---
+exclude: >
+  ^(
+      crs_scratch/.*|
+      cp_root/.*
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+      # - id: no-commit-to-branch
+      #   args: ['--branch', 'main']
+
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [--strict, -c=.github/linters/.yamllint]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        args: ['--config', '.github/linters/.markdown-lint']
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.6
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: ["."]
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["."]
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.391
+    hooks:
+      - id: pyright
+        args: ["-p", "."]
+        language: "system"

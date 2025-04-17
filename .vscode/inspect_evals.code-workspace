@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "path": "../external/inspect_evals",
+      "name": "inspect_evals"
+    }
+  ],
+  "settings": {
+    "jupyter.allowUnauthorizedRemoteConnection": true,
+    "python.defaultInterpreterPath": "../../.venv/bin/python"
+  }
+}

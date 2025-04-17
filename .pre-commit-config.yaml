@@ -1,0 +1,63 @@
+exclude: "^external/"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        exclude: "website/public/.*|package-lock.json|poetry\\.lock|uv.lock"
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+      - id: requirements-txt-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: jupyter-clear-output
+        name: jupyter-clear-output
+        files: \.ipynb$
+        stages: [pre-commit]
+        language: system
+        entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (python)
+
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.3.1
+    hooks:
+      - id: autoflake
+        args:
+          - --remove-all-unused-imports
+          - --remove-unused-variables
+          - --in-place
+
+  # - repo: https://github.com/RobertCraigie/pyright-python
+  #   rev: v1.1.396
+  #   hooks:
+  #     - id: pyright
+  #       files: ^(project/docent/|lib/frames/).*\.py$
+
+  - repo: local
+    hooks:
+      - id: luce-uv-lock-all
+        name: luce-uv-lock-all
+        description: "Automatically run 'uv lock' on all project dependencies"
+        entry: ./lib/lucepkg/bin/luce uv lock-all
+        language: system
+        pass_filenames: false
+        minimum_pre_commit_version: "2.9.2"

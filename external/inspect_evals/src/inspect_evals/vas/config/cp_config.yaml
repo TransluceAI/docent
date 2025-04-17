@@ -1,0 +1,13 @@
+---
+# Each item listed under "cp_targets" is treated as a CP repository
+# to initialize in the target CP volume (e.g., ./cp_root)
+#
+# The "ref" element is optional. It indicates the git repository
+# branch, tag, or commit that should be checked out. If not
+# specified, it will default to checking out the "main" branch
+# of the specified repo from "url".
+
+cp_targets:
+  nginx-cp:
+    url: git@github.com:aixcc-public/challenge-004-nginx-cp.git
+    ref: v1.0.3

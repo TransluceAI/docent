@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Dan"
+  given-names: "Ristea"
+  affiliation: "The Alan Turing Institute, UCL"
+- family-names: "Vasilios"
+  given-names: "Mavroudis"
+  affiliation: "The Alan Turing Institute"
+- family-names: "Chris"
+  given-names: "Hicks"
+  affiliation: "The Alan Turing Institute"
+title: "LLM-benchmark"
+version: 1.0.0
+date-released: 2025-02-21
+url: "https://github.com/alan-turing-institute/HonestCyberEval"

@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "path": "../external/inspect_ai",
+      "name": "inspect_ai"
+    }
+  ],
+  "settings": {
+    "jupyter.allowUnauthorizedRemoteConnection": true,
+    "python.defaultInterpreterPath": "../../.venv/bin/python"
+  }
+}

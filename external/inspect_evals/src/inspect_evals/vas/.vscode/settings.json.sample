@@ -1,0 +1,19 @@
+{
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": false, // change to true for auto-formatting on save
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "never", // change to "explicit" to auto-sort imports
+      "source.unusedImports": "never" // change to "explicit" to auto-remove unused imports
+    }
+  },
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.include": ["${workspaceFolder}/src"],
+  "black-formatter.args": ["--config", "${workspaceFolder}/pyproject.toml"],
+  "black-formatter.cwd": "${workspaceFolder}",
+  "isort.args": [
+    "--settings-file",
+    "${workspaceFolder}/pyproject.toml"
+  ],
+  "isort.check": true
+}
