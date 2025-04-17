@@ -336,11 +336,7 @@ class TranscriptContainsFilter(FrameFilter):
         judgment_callback: JudgmentStreamingCallback | None = None,
         return_all: bool = False,
     ) -> list[list[Judgment]]:
-        """Applies a transcript substring filter to the data.
-
-        Matches if `substring` appears in `datapoint.text` exactly.
-        """
-        # compile regex pattern for case-insensitive matching
+        """Applies a case insensitive regex filter to the data."""
         pattern = re.compile(self.substring, flags=re.IGNORECASE)
         return [
             [
@@ -386,7 +382,7 @@ async def _cli_callback(proposals: list[list[str]]):
                 if 0 <= choice_idx < len(proposals):
                     return choice_idx
                 else:
-                    print(f"Please enter a valid number between 0 and {len(proposals)-1}")
+                    print(f"Please enter a valid number between 0 and {len(proposals) - 1}")
             except ValueError:
                 print("Please enter a valid number, 'feedback', 'retry', or 'stop'")
 
@@ -456,7 +452,10 @@ class FrameDimension(BaseModel):
         # Collect attributes to cluster
         # Use the new streaming callback so that attribute extraction updates are sent as soon as they're available.
         await _unlocked_compute_and_set_attributes_if_needed(
-            data, self.attribute, attribute_callback=attribute_callback, llm_api_keys=llm_api_keys
+            data,
+            self.attribute,
+            attribute_callback=attribute_callback,
+            llm_api_keys=llm_api_keys,
         )
         to_cluster = list(chain(*[d.attributes[self.attribute] for d in data]))
 
@@ -533,7 +532,9 @@ class FrameDimension(BaseModel):
         # Create a MetadataFilter for each unique value
         bins = [
             MetadataFilter(
-                id=f"{self.metadata_key}_{str(value).zfill(3)}", key=self.metadata_key, value=value
+                id=f"{self.metadata_key}_{str(value).zfill(3)}",
+                key=self.metadata_key,
+                value=value,
             )
             for value in unique_values
         ]
@@ -592,7 +593,13 @@ class Frame:
         if self._filter is None:
             # If no filter, create "match all" judgments
             self._judgments = [
-                [Judgment(matches=True, reason="No filter - matches everything", data_id=d.id)]
+                [
+                    Judgment(
+                        matches=True,
+                        reason="No filter - matches everything",
+                        data_id=d.id,
+                    )
+                ]
                 for d in self._data
             ]
             return
@@ -925,7 +932,9 @@ class FrameGrid(BaseModel):
             self._marginals[dim.id] = await dim.get_frames(await self._unlocked_get_base_data())
 
     async def _unlocked_populate_marginals(
-        self, dim_ids: list[str] | None, has_update: Callable[[], Awaitable[None]] | None = None
+        self,
+        dim_ids: list[str] | None,
+        has_update: Callable[[], Awaitable[None]] | None = None,
     ):
         assert self._marginals, "Call compute_marginal_views first"
 
@@ -1300,7 +1309,9 @@ class FrameGrid(BaseModel):
         self._unlocked_invalidate_dimension_marginals(dim_id)
 
 
-def _transpose_judgment_lists(lists_FNA: list[list[list[Judgment]]]) -> list[list[list[Judgment]]]:  # type: ignore
+def _transpose_judgment_lists(
+    lists_FNA: list[list[list[Judgment]]],
+) -> list[list[list[Judgment]]]:  # type: ignore
     """
     Turns lists_FNA into lists_NAF by transposing dimensions (0, 2).
 
