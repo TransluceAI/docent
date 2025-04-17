@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from itertools import chain, product
 from time import perf_counter
 from typing import Any, Awaitable, Callable, Literal, Sequence, cast
@@ -323,7 +324,7 @@ class AttributeFilter(FrameFilter):
 
 
 class TranscriptContainsFilter(FrameFilter):
-    """Filter frames by exact substring match on the full transcript text."""
+    """Filter frames by regex match on the full transcript text (case-insensitive)."""
 
     type: Literal["transcript_contains"] = "transcript_contains"
     substring: str
@@ -339,16 +340,18 @@ class TranscriptContainsFilter(FrameFilter):
 
         Matches if `substring` appears in `datapoint.text` exactly.
         """
+        # compile regex pattern for case-insensitive matching
+        pattern = re.compile(self.substring, flags=re.IGNORECASE)
         return [
             [
                 Judgment(
                     matches=b,
-                    reason=f"transcript contains '{self.substring}'",
+                    reason=f"transcript matches regex '{self.substring}' (case-insensitive)",
                     data_id=d.id,
                 )
             ]
             for d in data
-            if (b := (self.substring in d.text)) or return_all
+            if (b := bool(pattern.search(d.text))) or return_all
         ]
 
 

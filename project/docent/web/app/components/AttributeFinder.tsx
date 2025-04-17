@@ -1,6 +1,6 @@
+import type { MetadataFilter, MetadataType } from '@/app/types/docent';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -8,29 +8,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import {
+  AlertTriangle,
   CircleX,
+  Clock,
   CornerDownLeft,
+  Earth,
+  HelpCircle,
   Loader2,
   Pencil,
   RefreshCw,
   Sparkles,
-  Wand2,
-  Bookmark,
-  AlertTriangle,
-  XCircle,
-  HelpCircle,
-  XOctagon,
-  LucideIcon,
-  Clock,
-  ArrowUpRight,
-  Earth,
+  XOctagon
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { v4 as uuid4 } from 'uuid';
 import { useFrameGrid } from '../contexts/FrameGridContext';
-import type { MetadataType, MetadataFilter } from '@/app/types/docent';
 import BinEditor from './BinEditor';
 import ClusterProposalDialog from './ClusterProposalDialog';
 
@@ -487,7 +482,7 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
           <Input
             value={transcriptQuery}
             onChange={(e) => setTranscriptQuery(e.target.value)}
-            placeholder="Enter substring..."
+            placeholder="Enter regex..."
             className="h-8 text-xs bg-white font-mono text-gray-600 flex-1"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
