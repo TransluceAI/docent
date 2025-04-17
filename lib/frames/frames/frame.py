@@ -568,6 +568,11 @@ class Frame:
         # Hashtable index for metadata filters
         self._metadata_index: dict[Any, list[str]] | None = None
 
+    @property
+    def data(self) -> list[Datapoint]:
+        """Public accessor for the frame's data."""
+        return self._data
+
     async def _init_metadata_index(self):
         if self._filter and isinstance(self._filter, MetadataFilter):
             self._metadata_index = {}

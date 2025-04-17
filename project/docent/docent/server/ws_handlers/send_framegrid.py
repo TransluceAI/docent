@@ -1,9 +1,11 @@
+import re
 from time import perf_counter
 from typing import Any, Awaitable, Callable, cast
 
-from docent.server.ws_handlers.util import ConnectionManager, WSMessage
 from fastapi import WebSocket
 from frames.frame import Frame, FrameGrid
+
+from docent.server.ws_handlers.util import ConnectionManager, WSMessage
 
 
 async def _count_map_fn(frame: Frame, _: Any):
@@ -86,6 +88,54 @@ def _format_bin_combination(bin_combination: tuple[tuple[str, str], ...]) -> str
     return "|".join(",".join(pair) for pair in bin_combination)
 
 
+async def _regex_snippets_map_fn(frame: Frame, regex_query: str) -> dict[str, list[dict[str, Any]]]:
+    """Generate snippets for regex matches within frame data."""
+    if not regex_query:
+        return {}
+
+    pattern = re.compile(regex_query, re.IGNORECASE)
+    snippets_dict: dict[str, list[dict[str, Any]]] = {}
+
+    for datapoint in frame.data:
+        # Find all matches - no limit
+        matches = list(pattern.finditer(datapoint.text))
+        if matches:
+            snippets_dict[datapoint.id] = []
+            for match in matches:
+                start, end = match.span()
+
+                # Increase context window size significantly - show much more context
+                context_len = 500
+                context_before_start = max(0, start - context_len)
+                context_after_end = min(len(datapoint.text), end + context_len)
+
+                # Calculate match indices relative to the snippet start
+                relative_match_start = start - context_before_start
+                relative_match_end = end - context_before_start
+
+                snippet_text = datapoint.text[context_before_start:context_after_end]
+
+                # Add ellipsis if context is truncated
+                prefix = "... " if context_before_start > 0 else ""
+                suffix = " ..." if context_after_end < len(datapoint.text) else ""
+
+                # Adjust relative indices if prefix is added
+                if prefix:
+                    relative_match_start += len(prefix)
+                    relative_match_end += len(prefix)
+
+                final_snippet = prefix + snippet_text + suffix
+
+                snippet_obj = {
+                    "snippet": final_snippet,
+                    "match_start": relative_match_start,
+                    "match_end": relative_match_end,
+                }
+                snippets_dict[datapoint.id].append(snippet_obj)
+
+    return snippets_dict
+
+
 async def handle_marginalize(
     cm: ConnectionManager, websocket: WebSocket, fg: FrameGrid, msg: WSMessage
 ):
@@ -110,6 +160,15 @@ async def handle_marginalize(
         map_fn_impl = _locs_map_fn
     elif map_type == "intervention_descriptions":
         map_fn_impl = _intervention_descriptions_map_fn
+    elif map_type == "regex_snippets":
+        # Get the regex query from the payload
+        regex_query = msg.payload.get("regex_query", "")
+
+        # Create a closure to capture the regex query
+        async def _map_fn_with_regex(frame: Frame, _: Any) -> dict[str, list[dict[str, Any]]]:
+            return await _regex_snippets_map_fn(frame, regex_query)
+
+        map_fn_impl = _map_fn_with_regex
     else:
         raise ValueError("Invalid map_type")
 
@@ -123,20 +182,45 @@ async def handle_marginalize(
         return map_fn_impl(frame, fg)
 
     marginals, available_bins = await fg.marginalize(keep_dim_ids, map_fn=_map_fn)
-    await cm.send(
-        websocket,
-        WSMessage(
-            action="specific_marginals",
-            payload={
-                "request_type": request_type,
-                "bins": available_bins,
-                "marginals": {
-                    _format_bin_combination(bin_combination): count
-                    for bin_combination, count in marginals.items()
+
+    # Special handling for regex_snippets to preserve the full object structure
+    if map_type == "regex_snippets":
+        # For regex snippets, we want to flatten the results by datapoint ID
+        flat_snippets = {}
+        for bin_combination, snippets_dict in marginals.items():
+            # Add each datapoint's snippets to our flattened dictionary
+            for datapoint_id, snippets in snippets_dict.items():
+                # Simply overwrite any existing snippets for simplicity
+                # (removes potential duplicate snippets from different bins)
+                flat_snippets[datapoint_id] = snippets
+
+        await cm.send(
+            websocket,
+            WSMessage(
+                action="specific_marginals",
+                payload={
+                    "request_type": request_type,
+                    "bins": available_bins,
+                    "marginals": flat_snippets,  # Send the flattened snippets by datapoint ID
                 },
-            },
-        ),
-    )
+            ),
+        )
+    else:
+        # Regular handling for other map types
+        await cm.send(
+            websocket,
+            WSMessage(
+                action="specific_marginals",
+                payload={
+                    "request_type": request_type,
+                    "bins": available_bins,
+                    "marginals": {
+                        _format_bin_combination(bin_combination): count
+                        for bin_combination, count in marginals.items()
+                    },
+                },
+            ),
+        )
 
 
 async def send_dimensions(cm: ConnectionManager, websocket: WebSocket, fg: FrameGrid):

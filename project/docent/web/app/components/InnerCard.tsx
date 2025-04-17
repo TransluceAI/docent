@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { ChevronDown, ChevronRight, Network, Loader2 } from 'lucide-react';
 import { useFrameGrid } from '../contexts/FrameGridContext';
-import type { OrganizationMethod } from '../contexts/FrameGridContext';
+import type { OrganizationMethod, RegexSnippet } from '../contexts/FrameGridContext';
 import { useRouter } from 'next/navigation';
 import { TaskStats, AttributeWithCitation } from '@/app/types/docent';
 import { BASE_DOCENT_PATH } from '../constants';
@@ -139,6 +139,124 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+};
+
+// Helper component to render highlighted regex snippets
+const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({ snippetData }) => {
+  try {
+    // Defensive coding to handle missing or malformed data
+    if (!snippetData || typeof snippetData !== 'object') {
+      return <p className="text-xs text-red-600">Error: Invalid snippet data</p>;
+    }
+
+    const { snippet, match_start, match_end } = snippetData;
+
+    // Check if we have all required properties with valid types
+    if (typeof snippet !== 'string' ||
+        typeof match_start !== 'number' ||
+        typeof match_end !== 'number') {
+      return <p className="text-xs text-red-600">Error: Invalid snippet format</p>;
+    }
+
+    // Verify match positions are within bounds
+    if (match_start < 0 || match_end > snippet.length || match_start >= match_end) {
+      return <p className="text-xs">{snippet}</p>;
+    }
+
+    const before = snippet.substring(0, match_start);
+    const matched = snippet.substring(match_start, match_end);
+    const after = snippet.substring(match_end);
+
+    return (
+      <div className="bg-white p-3 rounded-md border border-blue-200 mb-3 max-w-full">
+        <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-words font-sans overflow-auto max-h-60">
+          {before}
+          <strong className="text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-1 rounded">
+            {matched}
+          </strong>
+          {after}
+        </pre>
+      </div>
+    );
+  } catch (error) {
+    return <p className="text-xs text-red-600">Error rendering snippet</p>;
+  }
+};
+
+// RegexSnippetsSection component to display regex matches
+const RegexSnippetsSection: React.FC<{
+  dataId: string;
+  onShowDatapoint?: (datapointId: string, blockId?: number) => void;
+}> = ({ dataId, onShowDatapoint }) => {
+  const { regexQuery, regexSnippets } = useFrameGrid();
+
+  if (!regexQuery || !regexSnippets) {
+    return null;
+  }
+
+  // Try to find matching snippets for this datapoint
+  const findMatchingSnippets = () => {
+    // Direct match (exact ID)
+    if (regexSnippets[dataId]) {
+      return regexSnippets[dataId];
+    }
+
+    // Normalize the ID by removing common prefixes/suffixes that might cause mismatches
+    const normalizeId = (id: string) => {
+      return id
+        .replace(/^task_/, '')
+        .replace(/_task_/, '_');
+    };
+
+    const normalizedDataId = normalizeId(dataId);
+
+    // Try exact match with normalized IDs
+    const normalizedMatch = Object.keys(regexSnippets).find(key =>
+      normalizeId(key) === normalizedDataId
+    );
+
+    if (normalizedMatch) {
+      return regexSnippets[normalizedMatch];
+    }
+
+    // Try to find partial match - the backend might use a slightly different ID format
+    // Look for any key that contains our ID or vice versa
+    const partialMatches = Object.keys(regexSnippets).filter(key =>
+      key.includes(dataId) || dataId.includes(key) ||
+      key.includes(normalizedDataId) || normalizedDataId.includes(normalizeId(key))
+    );
+
+    if (partialMatches.length > 0) {
+      // Use the first partial match
+      const matchedId = partialMatches[0];
+      return regexSnippets[matchedId];
+    }
+
+    return null;
+  };
+
+  const snippets = findMatchingSnippets();
+
+  if (!snippets || snippets.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 pt-2 border-t border-indigo-100">
+      <div className="flex items-center mb-2">
+        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+        <span className="text-sm font-medium text-indigo-700">
+          Matches for "{regexQuery}" ({snippets.length})
+        </span>
+      </div>
+
+      <div className="mt-2 space-y-2 max-w-full">
+        {snippets.map((snippetData, index) => (
+          <HighlightedSnippet key={index} snippetData={snippetData} />
+        ))}
       </div>
     </div>
   );
@@ -412,11 +530,11 @@ const InnerCard: React.FC<InnerCard> = ({
         )}
       </div>
       {isExpanded && (
-        <div className="flex flex-col gap-1 mt-1.5 ml-5 pl-0.5">
+        <div className="flex flex-col gap-2 mt-2 ml-5 pl-0.5">
           {transcripts.map(([dataId, _]) => (
             <div
               key={dataId}
-              className={`flex flex-col p-1 border rounded text-xs cursor-pointer transition-colors ${
+              className={`flex flex-col p-2 border rounded text-xs cursor-pointer transition-colors ${
                 selectedDiffTranscript !== null &&
                 selectedDiffTranscript !== dataId
                   ? 'bg-orange-50/50 hover:bg-orange-100/50'
@@ -527,6 +645,12 @@ const InnerCard: React.FC<InnerCard> = ({
                   )}
                 </div>
               )}
+
+              {/* Display regex snippets if available */}
+              <RegexSnippetsSection
+                dataId={dataId}
+                onShowDatapoint={onShowDatapoint}
+              />
 
               {/* Replace the inline attribute section with the new component */}
               <AttributeSection

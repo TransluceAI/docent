@@ -46,6 +46,13 @@ export type OrganizationMethod = 'experiment' | 'sample';
 // Eval IDs type
 export type EvalId = string;
 
+// Define the new type for Regex Snippets
+export interface RegexSnippet {
+  snippet: string;
+  match_start: number;
+  match_end: number;
+}
+
 interface FrameGridContextType {
   // WebSocket functionality
   socket: WebSocket | null;
@@ -266,6 +273,12 @@ interface FrameGridContextType {
   startNewEval: (evalId: EvalId) => void;
   curEvalId: EvalId | null;
   rewriteSearchQuery: (query: string) => Promise<string>;
+
+  // Regex Search
+  regexQuery: string;
+  setRegexQuery: React.Dispatch<React.SetStateAction<string>>;
+  regexSnippets: Record<string, RegexSnippet[]>;
+  setRegexSnippets: React.Dispatch<React.SetStateAction<Record<string, RegexSnippet[]>>>;
 }
 
 const FrameGridContext = createContext<FrameGridContextType | null>(null);
@@ -567,6 +580,14 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
   const [evalIds, setEvalIds] = useState<EvalId[]>([]);
   const [curEvalId, setCurEvalId] = useState<EvalId | null>(null);
 
+  // Regex Search State
+  const [regexQuery, setRegexQuery] = useState('');
+  const regexQueryRef = useRef(regexQuery); // Ref for accessing latest value in effect
+  useEffect(() => {
+    regexQueryRef.current = regexQuery;
+  }, [regexQuery]);
+  const [regexSnippets, setRegexSnippets] = useState<Record<string, RegexSnippet[]>>({});
+
   // WebSocket
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -648,10 +669,16 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
         const newFilters = prev ? [...prev, filter] : [filter];
         // Update backend with the new filters
         updateBackendFilter(newFilters);
+
+        // If it's a transcript_contains filter, update regexQuery
+        if (filter.type === 'transcript_contains') {
+          setRegexQuery((filter as any).substring);
+        }
+
         return newFilters;
       });
     },
-    [updateBackendFilter]
+    [updateBackendFilter, setRegexQuery]
   );
 
   const onRemoveFilter = useCallback(
@@ -666,6 +693,11 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
           setCurAttributeQuery(null);
         }
 
+        // If it's a transcript_contains filter, clear regexQuery
+        if (filterToRemove && (filterToRemove.type as any) === 'transcript_contains') {
+          setRegexQuery('');
+        }
+
         const newFilters = prev.filter((f) => f.id !== filterId);
         const result = newFilters.length > 0 ? newFilters : null;
 
@@ -674,7 +706,7 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
         return result;
       });
     },
-    [setCurAttributeQuery, updateBackendFilter]
+    [setCurAttributeQuery, updateBackendFilter, setRegexQuery]
   );
 
   // Remote requests
@@ -1222,12 +1254,33 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
         } else if (data.payload.request_type === 'exp_locs') {
           setExpBins(data.payload.bins);
           setRawExpIdMarginals(data.payload.marginals);
+          // If regex query is active, request snippets
+          if (regexQueryRef.current) {
+            sendMessage('marginalize', {
+              keep_dim_ids: ['sample_id', 'experiment_id'],
+              map_type: 'regex_snippets',
+              request_type: 'regex_snippets_data',
+              regex_query: regexQueryRef.current,
+            });
+          } else {
+            // If regex query is not active, clear any existing snippets
+            setRegexSnippets({});
+          }
         } else if (data.payload.request_type === 'per_sample_stats') {
           setPerSampleStats(data.payload.marginals);
         } else if (data.payload.request_type === 'per_experiment_stats') {
           setPerExperimentStats(data.payload.marginals);
         } else if (data.payload.request_type === 'intervention_descriptions') {
           setInterventionDescriptions(data.payload.marginals);
+        } else if (data.payload.request_type === 'regex_snippets_data') {
+          // Received regex snippets, which are now already flattened by datapoint ID
+          const snippetsData = data.payload.marginals;
+          // Count total snippets across all datapoints
+          let totalSnippetsCount = 0;
+          for (const dataId in snippetsData) {
+            totalSnippetsCount += snippetsData[dataId].length || 0;
+          }
+          setRegexSnippets(snippetsData);
         }
       } else if (data.action === 'ta_session_created') {
         setTaSessionId(data.payload.session_id);
@@ -1347,6 +1400,8 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
     setTranscriptDerivationTree,
     setNumAttributeUpdatesReceived,
     setIsRateLimited,
+    regexQueryRef,
+    setRegexSnippets,
   ]);
 
   // Define the handleClearAttribute function
@@ -1369,6 +1424,37 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
     ]
   );
+
+  // Effect to request/clear regex snippets when query changes
+  useEffect(() => {
+    if (socketReady) {
+      if (regexQuery) {
+        sendMessage('marginalize', {
+          keep_dim_ids: ['sample_id', 'experiment_id'],
+          map_type: 'regex_snippets',
+          request_type: 'regex_snippets_data',
+          regex_query: regexQuery,
+        });
+      } else {
+        // Clear snippets if query is empty
+        setRegexSnippets({});
+      }
+    }
+  }, [regexQuery, socketReady, sendMessage]);
+
+  // Update regexQuery when baseFilters changes
+  useEffect(() => {
+    if (baseFilters) {
+      // Look for transcript_contains filter
+      const regexFilter = baseFilters.find(f => f.type === 'transcript_contains');
+      if (regexFilter) {
+        setRegexQuery((regexFilter as any).substring);
+      }
+    } else {
+      // Clear regexQuery if no filters
+      setRegexQuery('');
+    }
+  }, [baseFilters]);
 
   return (
     <FrameGridContext.Provider
@@ -1488,6 +1574,12 @@ export function FrameGridProvider({ children }: { children: React.ReactNode }) {
         setIsRateLimited,
         isApiKeyModalOpen,
         setIsApiKeyModalOpen,
+
+        // Regex Search
+        regexQuery,
+        setRegexQuery,
+        regexSnippets,
+        setRegexSnippets,
       }}
     >
       {children}
