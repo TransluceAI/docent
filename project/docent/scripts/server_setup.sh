@@ -22,15 +22,24 @@ fi
 
 echo "Setting up with TRANSLUCE_HOME=$TRANSLUCE_HOME and HOME_DIR=$HOME_DIR"
 
-# Install luce into ~/.bashrc
-echo "export TRANSLUCE_HOME=$TRANSLUCE_HOME" >> $HOME_DIR/.bashrc
-echo "source \$TRANSLUCE_HOME/lib/lucepkg/scripts/activate_luce.sh" >> $HOME_DIR/.bashrc
-source $HOME_DIR/.bashrc
+# Determine which shell config file to use
+SHELL_CONFIG=""
+if [[ "$SHELL" == *"zsh"* ]]; then
+  SHELL_CONFIG="$HOME_DIR/.zshrc"
+else
+  SHELL_CONFIG="$HOME_DIR/.bashrc"
+fi
+echo "Using $SHELL_CONFIG"
+
+# Install luce into shell config
+echo "export TRANSLUCE_HOME=$TRANSLUCE_HOME" >> $SHELL_CONFIG
+echo "source \$TRANSLUCE_HOME/lib/lucepkg/scripts/activate_luce.sh" >> $SHELL_CONFIG
+source $SHELL_CONFIG
 
 # Install uv and node
 luce uv install || { echo "Failed to install uv"; return 1; }
 luce node install -v 22 || { echo "Failed to install node"; return 1; }
-source $HOME_DIR/.bashrc
+source $SHELL_CONFIG
 
 # Install Docent into luce
 luce install || { echo "Failed to install luce"; return 1; }

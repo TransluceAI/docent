@@ -7,7 +7,7 @@ name = "env_util"
 version = "0.0.1"
 description = "Library for envvars"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0.1",
     "log_util"

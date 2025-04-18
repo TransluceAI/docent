@@ -13,11 +13,11 @@ if command -v node &> /dev/null; then
     # Check if it's the requested version
     if [ -n "$1" ]; then
         current_version=$(node -v | cut -d 'v' -f 2)
-        if [ "$current_version" = "$1" ]; then
-            echo "Requested Node.js version $1 is already installed."
+        if [[ "$current_version" == "$1"* ]]; then
+            echo "Requested Node.js version $1 is already installed (current: $current_version)."
             exit 0
         else
-            echo "Installed version differs from requested version $1."
+            echo "Installed version ($current_version) differs from requested version $1."
             echo "Will proceed with installation of requested version."
         fi
     else

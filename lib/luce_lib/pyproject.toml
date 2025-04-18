@@ -7,7 +7,7 @@ name = "luce_lib"
 version = "0.0.1"
 description = "Library for managing the Transluce monorepo, configuration, and artifacts"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = [
     "tomlkit>=0.12.3",
     "boto3>=1.28.0",

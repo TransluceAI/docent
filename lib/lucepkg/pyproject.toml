@@ -7,7 +7,7 @@ name = "lucepkg"
 version = "0.0.1"
 description = "CLI tool for managing Python environments and code synchronization in the Transluce monorepo"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = [
     "luce_lib",
     # Other packages

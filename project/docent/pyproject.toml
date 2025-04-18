@@ -3,7 +3,7 @@ name = "docent"
 version = "0.0.1"
 description = "Docent"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = [
     "frames",
     "fastapi>=0.114.1",
