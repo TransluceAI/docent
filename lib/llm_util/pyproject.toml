@@ -7,7 +7,7 @@ name = "llm_util"
 version = "0.0.1"
 description = "Library for interacting with LLM APIs"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = [
     "openai>=1.68.0",
     "anthropic>=0.47.0",

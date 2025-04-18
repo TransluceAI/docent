@@ -3,7 +3,7 @@ name = "luce"
 version = "0.0.1"
 description = "The base environment for the Transluce Observability repository."
 
-requires-python = "==3.12.*,!=3.12.5"
+requires-python = ">=3.11"
 dependencies = [
     "luce_lib",
     "pre-commit>=3.8.0",

@@ -7,7 +7,7 @@ name = "log_util"
 version = "0.0.1"
 description = "Library for logging"
 
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 dependencies = []
 
 [tool.hatch.build.targets.wheel]
