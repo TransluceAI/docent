@@ -2,10 +2,9 @@ import re
 from time import perf_counter
 from typing import Any, Awaitable, Callable, cast
 
+from docent.server.ws_handlers.util import ConnectionManager, WSMessage
 from fastapi import WebSocket
 from frames.frame import Frame, FrameGrid
-
-from docent.server.ws_handlers.util import ConnectionManager, WSMessage
 
 
 async def _count_map_fn(frame: Frame, _: Any):

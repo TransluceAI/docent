@@ -488,8 +488,9 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
           </div>
         </div>
       </div>
-      <div className="space-y-1 mt-4">
-        <div className="text-xs text-gray-600">Transcript contains</div>
+      <div className="border-t" />
+      <div className="space-y-2">
+        <div className="text-sm font-semibold">Regex Search</div>
         <div className="flex space-x-2 items-center">
           <Input
             value={transcriptQuery}

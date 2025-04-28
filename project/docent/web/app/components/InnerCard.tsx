@@ -204,6 +204,7 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
 
 // Helper component to render highlighted regex snippets
 const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({ snippetData }) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
   try {
     // Defensive coding to handle missing or malformed data
     if (!snippetData || typeof snippetData !== 'object') {
@@ -229,14 +230,25 @@ const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({ snippetDa
     const after = snippet.substring(match_end);
 
     return (
-      <div className="bg-white p-3 rounded-md border border-blue-200 mb-3 max-w-full">
-        <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-words font-sans overflow-auto max-h-60">
-          {before}
-          <strong className="text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-1 rounded">
-            {matched}
-          </strong>
-          {after}
-        </pre>
+      <div
+        className="bg-indigo-50 p-2 rounded-md border border-transparent hover:border-indigo-200 mb-2 max-w-full cursor-pointer transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div
+          className={`overflow-y-auto ${isExpanded ? '' : 'max-h-20'}`}
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#a5b3e6 #e0e7ff',
+          }}
+        >
+          <span className="text-xs text-indigo-900 break-words whitespace-pre-wrap">
+            {before}
+            <span className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded">
+              {matched}
+            </span>
+            {after}
+          </span>
+        </div>
       </div>
     );
   } catch (error) {
@@ -306,8 +318,8 @@ const RegexSnippetsSection: React.FC<{
     <div className="mt-3 pt-2 border-t border-indigo-100">
       <div className="flex items-center mb-2">
         <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-        <span className="text-sm font-medium text-indigo-700">
-          Matches for "{regexQuery}" ({snippets.length})
+        <span className="text-xs font-medium text-indigo-700">
+          Regex matches for: {regexQuery}
         </span>
       </div>
 
