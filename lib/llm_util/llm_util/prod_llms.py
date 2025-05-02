@@ -6,14 +6,14 @@ not doing it now.
 - mengk
 """
 
-import asyncio
+import os
 import traceback
 from contextlib import nullcontext
 from functools import partial
-from typing import Any, Literal, Protocol, Sequence, TypedDict, cast
+from typing import Any, Literal, Protocol, Sequence, TypedDict
 
+import anyio
 from anthropic import AsyncAnthropic
-from env_util import ENV
 from llm_util import anthropic, openai
 from llm_util.anthropic import (
     get_anthropic_chat_completion_async,
@@ -38,7 +38,6 @@ from llm_util.types import (
 )
 from log_util import get_logger
 from openai import AsyncOpenAI
-from tqdm.asyncio import tqdm_asyncio
 
 logger = get_logger(__name__)
 
@@ -110,7 +109,7 @@ async def _parallelize_calls(
     top_logprobs: int | None,
     timeout: float,
     max_concurrency: int | None,
-    semaphore: asyncio.Semaphore | None,
+    semaphore: anyio.Semaphore | None,
     use_tqdm: bool,
     cache: LLMCache | None = None,
 ):
@@ -128,12 +127,16 @@ async def _parallelize_calls(
         timeout=timeout,
     )
     if max_concurrency is not None:
-        cm = asyncio.Semaphore(max_concurrency)
+        ctx = anyio.Semaphore(max_concurrency)
     else:
-        cm = nullcontext() if semaphore is None else semaphore
+        ctx = nullcontext() if semaphore is None else semaphore
 
-    async def limited_task(i: int, messages: list[ChatMessage]) -> LLMOutput:
-        async with cm:
+    responses: list[LLMOutput | None] = [None for _ in messages_list]
+
+    async def _limited_task(i: int, messages: list[ChatMessage]) -> LLMOutput:
+        nonlocal responses
+
+        async with ctx:
             try:
                 # Use streaming if streaming_callback is provided, otherwise use non-streaming
                 if streaming_callback is None:
@@ -148,10 +151,7 @@ async def _parallelize_calls(
                         messages=messages,
                     )
 
-                return result
-            except asyncio.CancelledError:
-                # Prevent cancellation from being swallowed
-                raise
+                responses[i] = result
             except Exception as e:
                 error_message = (
                     f"Call to {model_name} failed even with backoff: {e.__class__.__name__}."
@@ -172,22 +172,15 @@ async def _parallelize_calls(
                     await completion_callback(i, error_output)
                 return error_output
 
-    # Create tasks
-    tasks = [
-        asyncio.create_task(limited_task(i, messages)) for i, messages in enumerate(messages_list)
-    ]
-
-    try:
-        if use_tqdm:
-            responses = cast(
-                list[LLMOutput],
-                await tqdm_asyncio.gather(*tasks, desc="Processing messages"),  # type: ignore
-            )
-        else:
-            responses = await asyncio.gather(*tasks)
+    def _cache_responses():
+        nonlocal responses, cache
 
         if cache is not None:
-            indices = [i for i, response in enumerate(responses) if not response.did_error]
+            indices = [
+                i
+                for i, response in enumerate(responses)
+                if isinstance(response, LLMOutput) and not response.did_error
+            ]
             cache.set_batch(
                 [messages_list[i] for i in indices],
                 model_name,
@@ -199,43 +192,28 @@ async def _parallelize_calls(
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
             )
+            return len(indices)
+        else:
+            return 0
 
-        return responses
-    except asyncio.CancelledError:
-        # When cancellation is received, cancel all subtasks
-        n_cancelled = 0
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-                n_cancelled += 1
-
-        # Wait for all tasks to finish (they'll raise CancelledError)
-        # We use asyncio.gather with return_exceptions=True to avoid cancellation errors
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        if cache is not None:
-            indices = [
-                i
-                for i, result in enumerate(results)
-                if isinstance(result, LLMOutput) and not result.did_error
-            ]
-            for i in indices:
-                assert isinstance(results[i], LLMOutput)
-            cache.set_batch(
-                [messages_list[i] for i in indices],
-                model_name,
-                [cast(LLMOutput, results[i]) for i in indices],
-                tools=tools,
-                tool_choice=tool_choice,
-                reasoning_effort=reasoning_effort,
-                temperature=temperature,
-                logprobs=logprobs,
-                top_logprobs=top_logprobs,
-            )
-
+    # Get all results
+    try:
+        async with anyio.create_task_group() as tg:
+            for i, messages in enumerate(messages_list):
+                tg.start_soon(_limited_task, i, messages)
+    except anyio.get_cancelled_exc_class():
+        # Cache what we have so far if something got cancelled
+        num_cached = _cache_responses()
         logger.info(
-            f"Cancelled {n_cancelled} LLM API calls due to asyncio.CancelledError interrupt"
+            f"Cancelled {len(messages_list) - num_cached} unfinished LLM API calls; cached {num_cached} completed responses"
         )
         raise
+
+    # Cache results if available
+    if cache is not None:
+        _cache_responses()
+
+    return responses
 
 
 class LLMManager:
@@ -249,11 +227,11 @@ class LLMManager:
         llm_api_keys: LLMApiKeys | None = None,
     ):
         self.cache = LLMCache() if use_cache else None
-        self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.semaphore = anyio.Semaphore(max_concurrency)
 
         # Set API keys using ENV and function args
-        hot_anthropic_api_key = ENV.ANTHROPIC_API_KEY
-        hot_openai_api_key = ENV.OPENAI_API_KEY
+        hot_anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        hot_openai_api_key = os.getenv("OPENAI_API_KEY")
         if llm_api_keys:
             hot_anthropic_api_key = llm_api_keys["anthropic_key"] or hot_anthropic_api_key
             hot_openai_api_key = llm_api_keys["openai_key"] or hot_openai_api_key

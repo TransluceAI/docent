@@ -5,7 +5,6 @@ from typing import Any, Literal, cast
 import backoff
 import tiktoken
 from backoff.types import Details
-from env_util import ENV
 from llm_util.types import (
     AsyncSingleStreamingCallback,
     ChatMessage,
@@ -376,15 +375,13 @@ async def get_openai_chat_completion_async(
 
 
 def get_openai_client_sync() -> OpenAI:
-    if ENV.OPENAI_API_KEY is None:
-        raise Exception("Missing OpenAI API key; check your .env")
-    return OpenAI(api_key=ENV.OPENAI_API_KEY)
+    # Library already reads relevant environment variables
+    return OpenAI()
 
 
 def get_openai_client_async() -> AsyncOpenAI:
-    if ENV.OPENAI_API_KEY is None:
-        raise Exception("Missing OpenAI API key; check your .env")
-    return AsyncOpenAI(api_key=ENV.OPENAI_API_KEY)
+    # Library already reads relevant environment variables
+    return AsyncOpenAI()
 
 
 @backoff.on_exception(

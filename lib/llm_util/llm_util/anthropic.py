@@ -29,7 +29,6 @@ from anthropic.types import (
     ToolUseBlockParam,
 )
 from backoff.types import Details
-from env_util import ENV
 from llm_util.types import (
     AsyncSingleStreamingCallback,
     ChatMessage,
@@ -353,15 +352,13 @@ async def get_anthropic_chat_completion_async(
 
 
 def get_anthropic_client_sync() -> Anthropic:
-    if ENV.ANTHROPIC_API_KEY is None:
-        raise Exception("Missing Anthropic API key; check your .env")
-    return Anthropic(api_key=ENV.ANTHROPIC_API_KEY)
+    # Library already reads relevant environment variables
+    return Anthropic()
 
 
 def get_anthropic_client_async() -> AsyncAnthropic:
-    if ENV.ANTHROPIC_API_KEY is None:
-        raise Exception("Missing Anthropic API key; check your .env")
-    return AsyncAnthropic(api_key=ENV.ANTHROPIC_API_KEY)
+    # Library already reads relevant environment variables
+    return AsyncAnthropic()
 
 
 def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput:

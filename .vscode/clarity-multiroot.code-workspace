@@ -1,0 +1,79 @@
+{
+  "folders": [
+    {
+      "path": "../",
+      "name": "clarity"
+    },
+    {
+      "path": "../lib/activations",
+      "name": "lib/activations"
+    },
+    {
+      "path": "../lib/explanations",
+      "name": "lib/explanations"
+    },
+    {
+      "path": "../lib/investigator",
+      "name": "lib/investigator"
+    },
+    {
+      "path": "../lib/finetune_simulator",
+      "name": "lib/finetune_simulator"
+    },
+    {
+      "path": "../lib/lens",
+      "name": "lib/lens"
+    },
+    {
+      "path": "../lib/neurondb",
+      "name": "lib/neurondb"
+    },
+    {
+      "path": "../lib/util",
+      "name": "lib/util"
+    },
+    {
+      "path": "../project/elicit",
+      "name": "project/elicit"
+    },
+    {
+      "path": "../project/expgen",
+      "name": "project/expgen"
+    },
+    {
+      "path": "../project/monitor",
+      "name": "project/monitor"
+    },
+    {
+      "path": "../project/steering",
+      "name": "project/steering"
+    },
+    {
+      "path": "../project/user_modeling",
+      "name": "project/user_modeling"
+    },
+    {
+      "path": "../project/website",
+      "name": "project/website"
+    },
+    {
+      "path": "../external/verl",
+      "name": "external/verl"
+    },
+    {
+      "path": "../external/ursid",
+      "name": "external/ursid"
+    },
+    {
+      "path": "../external/ursid-inspect",
+      "name": "external/ursid-inspect"
+    },
+    {
+      "path": "../project/o3_investigations",
+      "name": "project/o3_investigations"
+    }
+  ],
+  "settings": {
+    "jupyter.allowUnauthorizedRemoteConnection": true,
+  },
+}

@@ -4,90 +4,98 @@ The Docent code preview is licensed under LGPL.
 
 # Docent Onboarding Notes
 
-- [Running Docent](#running-docent)
+- [Running the Docent server + UI](#running-the-docent-server--ui)
   - [Environment variables](#environment-variables)
-  - [Option 1: Docker](#option-1-docker)
+  - [Option 1: Docker (recommended)](#option-1-docker-recommended)
   - [Option 2: Manual](#option-2-manual)
-- [Docent Codebase Notes](#docent-codebase-notes)
-- [Ingesting your own logs](#ingesting-your-own-logs)
-  - [Parsing logs](#parsing-logs)
-  - [Interventions](#interventions)
+- [Installing the Docent Python SDK](#installing-the-docent-python-sdk)
+  - [Ingesting your own logs](#ingesting-your-own-logs)
+- [Customizing LLM calls](#customizing-llm-calls)
 
-## Running Docent
-
-*Estimated time, if nothing goes wrong: ~5 minutes*
+## Running the Docent server + UI
 
 ### Environment variables
 
-We store important environment variables in a `.env` file at the root of the project. A `.env.template` example is provided; you need to create a new `.env` file with your OpenAI/Anthropic keys, and you should also specify paths of your choice for caching LLM calls and Inspect experiment results
+We store important environment variables in a `.env` file at the root of the project. A `.env.template` example is provided; please copy it to `.env` and fill in the necessary values.
 
-### Option 1: Docker
+### Option 1: Docker (recommended)
 
-> [!NOTE]
-> Docker can make iteration times slower, so this may not be convenient for development.
-> Additionally, running interventions in the Docker container does not work well yet, as it requires spawning more Docker containers.
-
-First install Docker if it's not already on your system. Then run:
+First install Docker if it's not already on your system. Then run (with `sudo` if on Linux):
 
 ```bash
 ./project/docent/scripts/docker_build.sh -a 8889 -w 3001
 ./project/docent/scripts/docker_run.sh -a 8889 -w 3001
 ```
 
-If on Linux, you'll need to use `sudo`.
-
-The API will run on port 8889 and the frontend will run on port 3001. Build + cold start should take ~2 minutes.
+The API will run on port 8889, and the frontend will run on port 3001. Build + cold start should take a few minutes.
 
 ### Option 2: Manual
 
-We assume you're in a Linux environment with access to apt. In that case, you can run
+You must have Postgres and Redis both installed and running.
+- [[Official Postgres instructions](https://www.postgresql.org/download/)] On Debian Linux, that's `sudo apt install postgresql`. Make note of the username and password you use to install Postgres; record them in `.env`.
+  - To verify that Postgres is running, run `psql -U postgres`.
+- [[Official Redis instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/)] For Linux, specific instructions are [here](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/install-redis-on-linux/).
+  - To verify that Redis is running, run `redis-cli ping`.
+
+Next, run:
 
 ```bash
-source project/docent/scripts/server_setup.sh --transluce_home /path/to/docent_repo
+pip install -e lib/log_util lib/llm_util project/docent
 ```
 
-to set up dependencies. Afterwards you can run
+to install the relevant packages, then
+
 
 ```bash
-./project/docent/scripts/api.sh -p 8888
+docent server --port 8889 -w 4
 ```
 
-to start the server on port 8888.
-
-Then run
+to start the server on port 8889 with 4 workers and
 
 ```bash
-./project/docent/scripts/web.sh -p 3000 -h http://localhost:8888 # auto-reload mode
+docent web --build --port 3001
 ```
 
-or
+to build and serve the frontend on port 3001. You should be able to access the Docent UI at `http://localhost:3001`.
+
+## Installing the Docent Python SDK
+
+In order to load transcripts into Docent, you'll need to install the Docent Python SDK.
+
+Run this command if you haven't already (yes, it's the same as above), and you should be all set:
 
 ```bash
-./project/docent/scripts/build_and_serve.sh --skip_posthog -p 3000 -h http://localhost:8888 # production build
+pip install -e lib/log_util lib/llm_util project/docent
 ```
 
-to start the frontend on port 3000.
+You can now create a new session by running:
 
-## Ingesting your own logs
+```python
+from docent import DocentClient
+client = DocentClient(server_url="http://localhost:8889", web_url="http://localhost:3001")
 
-*Estimated time: ~15-30 minutes*
+# Create a new FrameGrid (an object you can stick transcripts into)
+fg_id = client.create_frame_grid()
+```
 
-### Parsing logs
+You should see a new FrameGrid in the Docent UI upon refresh.
 
-The main entrypoint for loading logs into Docent is in [`load.py`](project/docent/docent/loader/load.py).
-- Notice the different *environments*; you can easily modulate which evals get loaded based on the `ENV_TYPE` environment variable.
-- `EVALS_SPECS_DICT` maps, for each environment, `eval_id`s to functions that load transcripts for each eval.
-- The `EVALS` variable is a dictionary mapping `eval_ids` to lists of `Transcript` objects, based on `ENV_TYPE`.
+### Ingesting your own logs
 
+See [`examples/ingest.ipynb`](project/docent/examples/ingest.ipynb) for an example of how to ingest your own logs. Tl;dr, the SDK supports `add_datapoints`, which expects a list of `Datapoint` objects.
+```python
+from docent._frames.transcript import Transcript
+from docent._frames.types import Datapoint
 
-For a quick-and-dirty quickstart, **simply implement `load_custom()` in [`load_custom.py`](project/docent/docent/loader/load_custom.py)**. [As you can see](project/docent/docent/loader/load.py#L33), we've pre-added the custom loader to the `custom` environment. You can simply restart your API server with `ENV_TYPE=custom` set:
-- For Docker: Use `./project/docent/scripts/docker_build.sh -a 8889 -w 3001 -e custom`, kill the existing container, then re-run `docker_run.sh`
-- For manual: `ENV_TYPE=custom ./project/docent/scripts/api.sh -p 8888`
+transcripts = ...  # Load your transcripts here
+datapoints = [
+  Datapoint.from_transcript(transcript)
+  for transcript in transcripts
+]
+client.add_datapoints(fg_id, datapoints)
+```
 
-> [!NOTE]
-> If you're on a manual installation, you can run `python3 project/docent/docent/loader/load_custom.py` to check your loading function. We added an `if __name__ == "__main__"` block to make this easy.
-
-See [`transcript.py`](lib/frames/frames/transcript.py#L105) for the `Transcript` object definition. Note that `Transcript`s have [`metadata` with a particular schema](lib/frames/frames/transcript.py#L19). Most fields are pretty straightforward. Some clarifications:
+See [`transcript.py`](project/docent/docent/_frames/transcript.py#L105) for the `Transcript` object definition. Note that `Transcript`s have [`metadata` with a particular schema](project/docent/docent/_frames/transcript.py#L19). Most fields are pretty straightforward. Some clarifications:
 
 - We borrowed terminology from Inspect, in which each eval is called a **task**, each eval task is called a **sample**, and each stochastic run of an agent on a sample is an **epoch**. That's what `task_id`, `sample_id`, and `epoch_id` refer to, respectively.
 - An **experiment** is one invocation of the agent evaluation harness. That's what `experiment_id` refers to. For example, running Claude Sonnet 3.5 on an entire benchmark would be one experiment; running Sonnet 3.7 on the same benchmark would be another experiment; running one particular sample with a modified agent prompt would be a third experiment. Each eval might have multiple experiments.
@@ -97,36 +105,12 @@ See [`transcript.py`](lib/frames/frames/transcript.py#L105) for the `Transcript`
 - You can stick any additional task metadata in the `TranscriptMetadata.additional_metadata` field.
 
 You can see existing loaders for inspiration:
-- [For general Inspect logs](project/docent/docent/loader/load_inspect.py)
-- [For OpenHands SWE-Bench logs](project/docent/docent/loader/load_oh_swe_bench.py)
-- [For Tau-Bench logs](project/docent/docent/loader/load_tau_bench.py)
-
-### Interventions
-
-One of the unique features of Docent is the ability to intervene in the middle of agent transcripts and re-run experiments to answer counterfactuals
-
-To support intervening in the middle of agent transcripts, we have to modify the Inspect task setup to take in a `LuceTaskArgs` object as input. So far we've only done this for Cybench and Intercode; you can see an example of how this works in [`external/inspect_evals/src/inspect_evals/cybench/cybench.py`](external/inspect_evals/src/inspect_evals/cybench/cybench.py). If you want to intervene on other tasks, you'll need to modify the task setup in the corresponding `inspect_evals` subdirectory accordingly. Most tasks will also require installing Docker and Docker Compose on the server to build and start environment containers.
-
-If you'd like help supporting this for your own tasks, reach out over email/Slack!
-
-## Docent Codebase Notes
-
-Here's a quick guide to the codebase:
-
-- The Docent frontend lives in [`project/docent/web`](project/docent/web). It's a standard Typescript + Next.js project
-- The Docent server code lives in [`project/docent/docent`](project/docent/docent). It's a standard Python FastAPI server that uses WebSockets to manage client connections and operates on `Frame`s as the underlying data storage format
-- The `lib` folder has some helpful libraries. The most relevant ones are:
-  - [`lib/frames`](lib/frames) is a library that defines methods for interacting with Frame objects. Frame objects allow us to assign attributes to datapoints (the attributes can be structured data or the result of LLM judgements), filter a dataset by attributes, and compose filters to form complex queries (eg. "find all datapoints where the model made a mistake AND the model eventually solved the task"). The `clustering` subfolder uses LLM calls to cluster text attributes.
-  - [`lib/llm_util`](lib/llm_util) has some utilities for LLM API calls.
-- The `external` folder contains forks of external libraries:
-  - In particular, we use [`external/inspect_ai`](external/inspect_ai) as the backend for running agent evaluations. Inspect provides a standardized data format and a standardized way of sandboxing and evaluating models. The Docent backend integrates with Inspect via [`run_inspect_experiment.sh`](project/docent/docent/experiments/run_inspect_experiment.sh), allowing the Docent to spawn new Inspect tasks.
-  - [`external/inspect_evals`](external/inspect_evals) contains common benchmarks that already have Inspect integrations. If the task you're studying doesn't already have an Inspect implementation, you can add it here.
-- We use `uv` to manage Python dependencies. In addition, we've written `luce`, a helpful command-line utility which makes it easy to install projects and enter virtual environments
-
-This is an early preview of the codebase, so we apologize for any messiness! Let us know if you see obvious room for improvement.
+- [For general Inspect logs](project/docent/docent/_loader/load_inspect.py)
+- [For OpenHands SWE-Bench logs](project/docent/docent/_loader/load_oh_swe_bench.py)
+- [For Tau-Bench logs](project/docent/docent/_loader/load_tau_bench.py)
 
 ## Customizing LLM Calls
 
-Many users have requested a simpler way to manage LLM providers and API calls. This is now done in `lib/llm_util/llm_util/provider_preferences.py`. This file reads from an *LLM preferences config*, expected to be located in the project root and named `docent_llm_prefs.json`; for convenience, we've provided an example config (containing the settings we use in the deployed Docent) that you can start with. The `docent_llm_prefs.json` config controls which LLM providers and models are used for each Docent feature. In the `model_options` field you should specify a list of models you would like to use (along with the provider and the `reasoning_effort` parameter if applicable), in order of priority; by default the first model in the list will be used for each query, and the other models in the list exist for fallback reasons (eg. in case an API is unavailable).
+Many users have requested a simpler way to manage LLM providers and API calls. This is now done in [`provider_preferences.py`](lib/llm_util/llm_util/provider_preferences.py). This file reads from an *LLM preferences config*, expected to be located at [`docent_llm_prefs.json`](lib/llm_util/llm_util/docent_llm_prefs.json); for convenience, we've provided an example config (containing the settings we use in the deployed Docent) that you can start with. The `docent_llm_prefs.json` config controls which LLM providers and models are used for each Docent feature. In the `model_options` field you should specify a list of models you would like to use (along with the provider and the `reasoning_effort` parameter if applicable), in order of priority; by default the first model in the list will be used for each query, and the other models in the list exist for fallback reasons (eg. in case an API is unavailable).
 
-We have implemented providers for the OpenAI and Anthropic APIs; you can find the implementations in `lib/llm_util/llm_util/openai.py` and `lib/llm_util/llm_util/anthropic.py`. If you'd like to add a new LLM provider, you can do so by implementing the `SingleOutputGetter` and `SingleStreamingOutputGetter` protocols for the new provider (see our example implementations as a reference) and registering a new `ProviderConfig` in the `LLMManager`'s `self.providers` (located in `lib/llm_util/llm_util/prod_llms.py`).
+We have implemented providers for the OpenAI and Anthropic APIs; you can find the implementations in [`openai.py`](lib/llm_util/llm_util/openai.py) and [`anthropic.py`](lib/llm_util/llm_util/anthropic.py). If you'd like to add a new LLM provider, you can do so by implementing the `SingleOutputGetter` and `SingleStreamingOutputGetter` protocols for the new provider (see our example implementations as a reference) and registering a new `ProviderConfig` in the `LLMManager`'s `self.providers` (located in [`prod_llms.py`](lib/llm_util/llm_util/prod_llms.py)).

@@ -5,20 +5,18 @@ FROM python:3.12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Accept build arguments for port values
-ARG API_PORT=8888
+ARG SERVER_PORT=8888
 ARG WEB_PORT=3000
-ARG ENV_TYPE=prod
-ARG TRANSLUCE_HOME=/app
+ARG POSTGRES_USER=docent
+ARG POSTGRES_PASSWORD=docent
+ARG POSTGRES_DB=docent
 
 # Set them as environment variables
-ENV API_PORT=$API_PORT
+ENV SERVER_PORT=$SERVER_PORT
 ENV WEB_PORT=$WEB_PORT
-ENV ENV_TYPE=$ENV_TYPE
-ENV TRANSLUCE_HOME=$TRANSLUCE_HOME
-ENV EVAL_LOGS_DIR=$TRANSLUCE_HOME/../sample-transcripts/raw
 
 # Expose ports using environment variables
-EXPOSE $WEB_PORT $API_PORT
+EXPOSE $WEB_PORT $SERVER_PORT
 
 # Install Node.js and other dependencies
 RUN apt update && apt install -y \
@@ -27,37 +25,34 @@ RUN apt update && apt install -y \
     git \
     nodejs \
     npm \
-    docker.io \
+    postgresql \
     && rm -rf /var/lib/apt/lists/*
 
-#############################
-# Download sample eval logs #
-#############################
+# Install Redis
+RUN apt update && apt install -y lsb-release gpg && \
+    curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg && \
+    chmod 644 /usr/share/keyrings/redis-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list && \
+    apt update && \
+    apt install -y redis
 
-# Update EVAL_LOGS_DIR in .env file if it exists
-RUN if [ -f /app/.env ]; then \
-    sed -i "/^EVAL_LOGS_DIR=/d" /app/.env && \
-    echo "EVAL_LOGS_DIR=$EVAL_LOGS_DIR" >> /app/.env; \
-    fi
+# Configure PostgreSQL with custom user
+RUN service postgresql start && \
+    su - postgres -c "psql -c \"CREATE USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';\"" && \
+    su - postgres -c "psql -c \"ALTER USER $POSTGRES_USER WITH SUPERUSER;\"" && \
+    service postgresql stop
 
 ##########################
 # Clone and setup Docent #
 ##########################
 
-# Set working directory
-WORKDIR $TRANSLUCE_HOME
-
-# Copy the entire clarity directory into the container
-COPY . $TRANSLUCE_HOME
-
+# Set working directory and copy the project
+WORKDIR /app
+COPY . /app
 SHELL ["/bin/bash", "-c"]
 
-# Run the server setup script
-RUN chmod +x $TRANSLUCE_HOME/project/docent/scripts/server_setup.sh && $TRANSLUCE_HOME/project/docent/scripts/server_setup.sh -t $TRANSLUCE_HOME -h /root
-
-# Install Docker Compose
-RUN curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
-    && chmod +x /usr/local/bin/docker-compose
+# Install dependencies
+RUN pip install lib/log_util lib/llm_util project/docent
 
 #######
 # Run #
@@ -66,6 +61,8 @@ RUN curl -L "https://github.com/docker/compose/releases/latest/download/docker-c
 # Start both the backend and frontend using environment variables
 CMD bash -c "\
     if [ -f /root/.bashrc ]; then source /root/.bashrc; fi && \
-    ENV_TYPE=$ENV_TYPE $TRANSLUCE_HOME/project/docent/scripts/api.sh -p $API_PORT & \
-    $TRANSLUCE_HOME/project/docent/scripts/build_and_serve.sh --skip_posthog -p $WEB_PORT -h http://localhost:$API_PORT & \
+    service postgresql start && \
+    service redis-server start && \
+    docent server --port $SERVER_PORT --env .env --workers 4 & \
+    docent web --build --port $WEB_PORT --backend-url http://localhost:$SERVER_PORT & \
     tail -f /dev/null"

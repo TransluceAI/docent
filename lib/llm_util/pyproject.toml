@@ -13,7 +13,6 @@ dependencies = [
     "anthropic>=0.47.0",
     "backoff>=2.2.1",
     "tiktoken>=0.7.0",
-    "env_util",
 ]
 
 [tool.hatch.build.targets.wheel]

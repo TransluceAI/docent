@@ -1,21 +1,22 @@
 import hashlib
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
-from env_util import ENV
 from llm_util.types import ChatMessage, LLMOutput, ToolInfo
 
 
 class LLMCache:
     def __init__(self, db_path: str | None = None):
         if db_path is None:
-            if ENV.LLM_CACHE_PATH is None:
+            llm_cache_path = os.getenv("LLM_CACHE_PATH")
+            if llm_cache_path is None:
                 raise Exception("LLM_CACHE_PATH is not set in .env")
 
-            cache_dir = Path(ENV.LLM_CACHE_PATH)
+            cache_dir = Path(llm_cache_path)
             cache_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(cache_dir / "llm_cache.db")
 
