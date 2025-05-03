@@ -32,9 +32,10 @@ The API will run on port 8889, and the frontend will run on port 3001. Build + c
 ### Option 2: Manual
 
 You must have Postgres and Redis both installed and running.
+
 - [[Official Postgres instructions](https://www.postgresql.org/download/)] On Debian Linux, that's `sudo apt install postgresql`.
-  - By default, Postgres ships with a user `postgres`. Access the Postgres CLI with `sudo -u postgres psql`.
-  - Then run `CREATE USER $user WITH PASSWORD '$password';` to create a new user. Record the user and password in `.env`.
+  - By default, Postgres ships with the `postgres` user. Access the Postgres CLI with `sudo -u postgres psql`.
+  - Then run `CREATE USER $user WITH PASSWORD '$password';` to create a new user. Record the user and password in `.env`. Ensure that the user has permissions to create a database, using `ALTER USER $user WITH SUPERUSER;`.
 - [[Official Redis instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/)] For Linux, specific instructions are [here](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/install-redis-on-linux/).
   - To verify that Redis is running, run `redis-cli ping`.
 
@@ -45,7 +46,6 @@ pip install -e lib/log_util lib/llm_util project/docent
 ```
 
 to install the relevant packages, then
-
 
 ```bash
 docent server --port 8889 -w 4
@@ -84,6 +84,7 @@ You should see a new FrameGrid in the Docent UI upon refresh.
 ### Ingesting your own logs
 
 See [`examples/ingest.ipynb`](project/docent/examples/ingest.ipynb) for an example of how to ingest your own logs. Tl;dr, the SDK supports `add_datapoints`, which expects a list of `Datapoint` objects.
+
 ```python
 from docent._frames.transcript import Transcript
 from docent._frames.types import Datapoint
@@ -106,12 +107,13 @@ See [`transcript.py`](project/docent/docent/_frames/transcript.py#L105) for the 
 - You can stick any additional task metadata in the `TranscriptMetadata.additional_metadata` field.
 
 You can see existing loaders for inspiration:
+
 - [For general Inspect logs](project/docent/docent/_loader/load_inspect.py)
 - [For OpenHands SWE-Bench logs](project/docent/docent/_loader/load_oh_swe_bench.py)
 - [For Tau-Bench logs](project/docent/docent/_loader/load_tau_bench.py)
 
 ## Customizing LLM Calls
 
-Many users have requested a simpler way to manage LLM providers and API calls. This is now done in [`provider_preferences.py`](lib/llm_util/llm_util/provider_preferences.py). This file reads from an *LLM preferences config*, expected to be located at [`docent_llm_prefs.json`](lib/llm_util/llm_util/docent_llm_prefs.json); for convenience, we've provided an example config (containing the settings we use in the deployed Docent) that you can start with. The `docent_llm_prefs.json` config controls which LLM providers and models are used for each Docent feature. In the `model_options` field you should specify a list of models you would like to use (along with the provider and the `reasoning_effort` parameter if applicable), in order of priority; by default the first model in the list will be used for each query, and the other models in the list exist for fallback reasons (eg. in case an API is unavailable).
+Many users have requested a simpler way to manage LLM providers and API calls. This is now done in [`provider_preferences.py`](lib/llm_util/llm_util/provider_preferences.py). This file reads from an _LLM preferences config_, expected to be located at [`docent_llm_prefs.json`](lib/llm_util/llm_util/docent_llm_prefs.json); for convenience, we've provided an example config (containing the settings we use in the deployed Docent) that you can start with. The `docent_llm_prefs.json` config controls which LLM providers and models are used for each Docent feature. In the `model_options` field you should specify a list of models you would like to use (along with the provider and the `reasoning_effort` parameter if applicable), in order of priority; by default the first model in the list will be used for each query, and the other models in the list exist for fallback reasons (eg. in case an API is unavailable).
 
 We have implemented providers for the OpenAI and Anthropic APIs; you can find the implementations in [`openai.py`](lib/llm_util/llm_util/openai.py) and [`anthropic.py`](lib/llm_util/llm_util/anthropic.py). If you'd like to add a new LLM provider, you can do so by implementing the `SingleOutputGetter` and `SingleStreamingOutputGetter` protocols for the new provider (see our example implementations as a reference) and registering a new `ProviderConfig` in the `LLMManager`'s `self.providers` (located in [`prod_llms.py`](lib/llm_util/llm_util/prod_llms.py)).
