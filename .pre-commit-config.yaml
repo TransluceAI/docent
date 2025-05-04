@@ -52,12 +52,12 @@ repos:
   #     - id: pyright
   #       files: ^(project/docent/|lib/frames/).*\.py$
 
-  - repo: local
-    hooks:
-      - id: luce-uv-lock-all
-        name: luce-uv-lock-all
-        description: "Automatically run 'uv lock' on all project dependencies"
-        entry: ./lib/lucepkg/bin/luce uv lock-all
-        language: system
-        pass_filenames: false
-        minimum_pre_commit_version: "2.9.2"
+  # - repo: local
+  #   hooks:
+  #     - id: luce-uv-lock-all
+  #       name: luce-uv-lock-all
+  #       description: "Automatically run 'uv lock' on all project dependencies"
+  #       entry: ./lib/lucepkg/bin/luce uv lock-all
+  #       language: system
+  #       pass_filenames: false
+  #       minimum_pre_commit_version: "2.9.2"
