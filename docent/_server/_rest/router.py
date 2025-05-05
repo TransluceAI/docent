@@ -5,18 +5,25 @@ from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
 
 import anyio
-from docent._frames.clustering.cluster_generator import ClusterFeedback
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.inspection import inspect as sqla_inspect
+
 from docent._frames.db.service import DBService
 from docent._frames.filters import (
     ComplexFrameFilter,
     FrameDimension,
     FrameFilterTypes,
-    FramePredicate,
     PrimitiveFilter,
     parse_filter_dict,
 )
 from docent._frames.transcript import Citation, parse_citations_single_transcript
-from docent._frames.types import Datapoint
+from docent._frames.types import Datapoint, RegexSnippet
+from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
+from docent._llm_util.types import LLMOutput
+from docent._log_util.logger import get_logger
 from docent._server._assistant.chat import make_single_tasst_system_prompt
 from docent._server._assistant.feedback import generate_new_queries
 from docent._server._assistant.summarizer import (
@@ -35,36 +42,24 @@ from docent._server._rest.send_state import (
     publish_state,
 )
 from docent._server.util import sse_event_stream
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.types import LLMOutput
-from docent._log_util.logger import get_logger
-from pydantic import BaseModel
-from sqlalchemy.inspection import inspect as sqla_inspect
 
 logger = get_logger(__name__)
 
 
 rest_router = APIRouter()
-DB = None
+_db = None
 
 
 async def get_db():
-    global DB
-    if DB is None:
-        DB = await DBService.init()
-    return DB
+    global _db
+    if _db is None:
+        _db = await DBService.init()
+    return _db
 
 
 @rest_router.get("/ping")
 async def ping():
     return {"status": "ok", "message": "pong"}
-
-
-async def _check_fg_exists(db: DBService, fg_id: str):
-    if not await db.exists(fg_id):
-        raise HTTPException(status_code=404, detail=f"Frame grid with ID {fg_id} not found")
 
 
 @rest_router.get("/framegrids")
@@ -233,7 +228,7 @@ class GetRegexSnippetsRequest(BaseModel):
 
 
 @rest_router.post("/get_regex_snippets")
-async def get_regex_snippets(request: GetRegexSnippetsRequest):
+async def get_regex_snippets(request: GetRegexSnippetsRequest) -> dict[str, list[RegexSnippet]]:
     db = await get_db()
     fg_id, filter_id, datapoint_ids = request.fg_id, request.filter_id, request.datapoint_ids
 
@@ -242,7 +237,7 @@ async def get_regex_snippets(request: GetRegexSnippetsRequest):
         raise ValueError(f"Filter {filter_id} is not found")
 
     # Collect all patterns from the filter
-    patterns = []
+    patterns: list[str] = []
     if filter.type == "primitive" and filter.op == "~*":
         patterns.append(str(filter.value))
     elif filter.type == "complex":
@@ -261,10 +256,10 @@ async def get_regex_snippets(request: GetRegexSnippetsRequest):
         return {}
 
     datapoints = await db.get_datapoints_by_ids(fg_id, datapoint_ids)
-    return dict(
-        (d.id, [item for p in patterns for item in PrimitiveFilter.get_regex_snippets(d.text, p)])
+    return {
+        d.id: [item for p in patterns for item in PrimitiveFilter.get_regex_snippets(d.text, p)]
         for d in datapoints
-    )
+    }
 
 
 @rest_router.get("/state")
@@ -393,7 +388,9 @@ async def listen_compute_attributes(job_id: str):
 
     # Create AnyIO queue that we can write intermediate results to
     # At the max size of the queue, the producer will block
-    send_stream, recv_stream = anyio.create_memory_object_stream(max_buffer_size=100_000)
+    send_stream, recv_stream = anyio.create_memory_object_stream[StreamedAttribute](
+        max_buffer_size=100_000
+    )
 
     # Track intermediate progress
     progress_lock = anyio.Lock()
@@ -511,14 +508,16 @@ async def listen_cluster_dimension(job_id: str):
         raise ValueError(f"Dimension {dim_id} not found")
 
     if feedback:
-        assert dim.bins is not None
-        bin_predicates = [c.predicate for c in dim.bins if isinstance(c, FramePredicate)]
-        new_feedback = ClusterFeedback(
-            clusters=bin_predicates,
-            feedback=feedback,
-        )
-    else:
-        new_feedback = None
+        raise NotImplementedError("Feedback not implemented")
+    # if feedback:
+    #     assert dim.bins is not None
+    #     bin_predicates = [c.predicate for c in dim.bins if isinstance(c, FramePredicate)]
+    #     new_feedback = ClusterFeedback(
+    #         clusters=bin_predicates,
+    #         feedback=feedback,
+    #     )
+    # else:
+    #     new_feedback = None
 
     async def event_stream():
         async with db.advisory_lock(fg_id, action_id="mutation"):
@@ -530,7 +529,6 @@ async def listen_cluster_dimension(job_id: str):
                 # TODO(mengk): assert that all datapoints have the associated attribute
                 # This should be guaranteed by the frontend, but just make sure.
 
-                # Create clusters with websocket interaction asynchronously
                 await db.cluster_attributes(
                     fg_id,
                     dim_id,
@@ -556,10 +554,10 @@ async def listen_cluster_dimension(job_id: str):
                         )  # Force recompute
                         is_done = True
 
-                    # Get state in the background
+                    # Compute state in the background
                     tg.start_soon(_run)
 
-                    # While polling marginals and sending them to the client
+                    # At the same time, poll to send state
                     while not is_done:
                         await publish_marginals(db, fg_id, dim_ids=[dim_id], ensure_fresh=False)
                         await anyio.sleep(1)
@@ -600,7 +598,9 @@ async def get_actions_summary(fg_id: str, datapoint_id: str):
     prev_hash: str | None = None
 
     # AnyIO queue that we can write intermediate results to
-    send_stream, recv_stream = anyio.create_memory_object_stream(max_buffer_size=100_000)
+    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+        max_buffer_size=100_000
+    )
     lock = anyio.Lock()  # Only one payload can be sent at a time
 
     def _get_payload():
@@ -685,7 +685,9 @@ async def get_solution_summary(fg_id: str, datapoint_id: str):
     transcript = datapoint.obj
 
     # AnyIO queue that we can write intermediate results to
-    send_stream, recv_stream = anyio.create_memory_object_stream(max_buffer_size=100_000)
+    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+        max_buffer_size=100_000
+    )
 
     async def _solution_callback(summary: str, parts: list[str]):
         await send_stream.send(
@@ -773,7 +775,9 @@ async def get_ta_message(session_id: str, message: str):
     continuation_text = ""
 
     # AnyIO queue that we can write intermediate results to
-    send_stream, recv_stream = anyio.create_memory_object_stream(max_buffer_size=100_000)
+    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+        max_buffer_size=100_000
+    )
 
     def _get_complete_message_list():
         nonlocal continuation_text
@@ -807,12 +811,11 @@ async def get_ta_message(session_id: str, message: str):
         # Get LLM response
         await get_llm_completions_async(
             [cast(list[dict[str, Any]], prompt_msgs)],
-            model_category="reasoning_smart",
+            PROVIDER_PREFERENCES.handle_ta_message,
             max_new_tokens=8192,
             timeout=180.0,
             streaming_callback=_llm_callback,
             use_cache=True,
-            # llm_api_keys=api_keys,
         )
 
         # After generation completes, update the session with the new messages

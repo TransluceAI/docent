@@ -1,6 +1,6 @@
 import modal
 import torch
-from transformers import ModernBertForSequenceClassification
+from transformers.models.modernbert import ModernBertForSequenceClassification
 
 # Create Modal stub and configure image
 app = modal.App("cluster-assigner")
@@ -15,7 +15,7 @@ image = modal.Image.debian_slim().pip_install(
 model_volume = modal.Volume.from_name("cluster-assigner-031825")
 
 
-@app.cls(
+@app.cls(  # type: ignore
     image=image,
     gpu="A10G",
     volumes={"/model": model_volume},
@@ -24,16 +24,16 @@ model_volume = modal.Volume.from_name("cluster-assigner-031825")
     allow_concurrent_inputs=10,
 )
 class ModalClusterAssigner:
-    @modal.enter()
+    @modal.enter()  # type: ignore
     def __enter__(self):
         self.device = "cuda"
-        self.model = ModernBertForSequenceClassification.from_pretrained("/model/checkpoint-231")
-        self.model.to(torch.bfloat16).to(self.device)
+        self.model = ModernBertForSequenceClassification.from_pretrained("/model/checkpoint-231")  # type: ignore
+        self.model.to(torch.bfloat16).to(self.device)  # type: ignore
         self.model.eval()
 
-    @modal.method()
-    def assign(self, encoded_inputs) -> list[tuple[bool, str] | None]:
-        encoded_inputs.to(self.device)
+    @modal.method()  # type: ignore
+    def assign(self, encoded_inputs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        encoded_inputs.to(self.device)  # type: ignore
         with torch.no_grad():
             outputs = self.model(**encoded_inputs)
             logits = outputs.logits

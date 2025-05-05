@@ -4,6 +4,7 @@ from typing import TypedDict, cast
 
 import numpy as np
 import tiktoken
+
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
 from docent._llm_util.types import LLMApiKeys
@@ -134,12 +135,11 @@ async def propose_clusters(
     # Make a single batch call to get_llm_completions_async
     outputs = await get_llm_completions_async(
         prompts,
+        PROVIDER_PREFERENCES.propose_clusters,
         max_new_tokens=4096,
         temperature=1.0,
         timeout=120.0,
         use_cache=True,
-        llm_api_keys=llm_api_keys,
-        **PROVIDER_PREFERENCES.propose_clusters.create_shallow_dict(),
     )
 
     # Parse all results

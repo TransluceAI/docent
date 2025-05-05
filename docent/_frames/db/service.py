@@ -20,6 +20,15 @@ from typing import (
 from uuid import uuid4
 
 import anyio
+from sqlalchemy import URL, delete, exists, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
 from docent._frames.attributes import AttributeStreamingCallback, extract_attributes
 from docent._frames.clustering.cluster_generator import propose_clusters
 from docent._frames.db.schemas.base import SQLABase
@@ -42,14 +51,6 @@ from docent._frames.filters import (
 from docent._frames.transcript import TranscriptMetadata
 from docent._frames.types import Attribute, Datapoint, Judgment
 from docent._log_util import get_logger
-from sqlalchemy import URL, delete, exists, select, text, update
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
 
 logger = get_logger(__name__)
 
@@ -118,7 +119,7 @@ class DBService:
     def __init__(
         self,
         engine: AsyncEngine,
-        Session: async_sessionmaker,
+        Session: async_sessionmaker[AsyncSession],
     ):
         self.engine = engine
         self.Session = Session
@@ -507,7 +508,7 @@ class DBService:
 
             # For filters that exist in both sets, check if they've changed in content
             if filters_to_check := existing_filter_ids.intersection(new_filter_ids):
-                changed_filter_ids = set(
+                changed_filter_ids: set[str] = set(
                     filter_id
                     for filter_id in filters_to_check
                     if existing_filters[filter_id] != new_filters[filter_id]
@@ -832,9 +833,11 @@ class DBService:
                 SQLAAttribute.frame_grid_id == fg_id,
                 SQLAAttribute.attribute == attribute,
             )
-            where_clause = base_filter.to_sqla_where_clause(SQLAAttribute) if base_filter else None
+            where_clause = base_filter.to_sqla_where_clause(SQLADatapoint) if base_filter else None
             if where_clause is not None:
-                query = query.where(where_clause)
+                query = query.join(
+                    SQLADatapoint, SQLADatapoint.id == SQLAAttribute.datapoint_id
+                ).where(where_clause)
 
             result = await session.execute(query)
             return [a.to_attribute() for a in result.scalars().all()]
@@ -894,7 +897,7 @@ class DBService:
         )
 
         # Save attributes to the database
-        to_upload = []
+        to_upload: list[SQLAAttribute] = []
         for i, attrs in enumerate(extracted):
             if attrs is None:
                 continue
@@ -924,7 +927,7 @@ class DBService:
             session.add_all(to_upload)
             logger.info(f"Pushed {len(to_upload)} attributes")
 
-    async def get_datapoints_without_judgments(
+    async def _get_datapoints_without_judgments(
         self, fg_id: str, filter_id: str, base_filter: FrameFilterTypes | None = None
     ) -> list[Datapoint]:
         async with self.session() as session:
@@ -944,10 +947,11 @@ class DBService:
             )
 
             # If base_filter is provided, filter to those
-            if base_filter:
+            where_clause = base_filter.to_sqla_where_clause(SQLADatapoint) if base_filter else None
+            if where_clause is not None:
                 query = query.join(
                     SQLAJudgment, SQLAJudgment.datapoint_id == SQLADatapoint.id
-                ).where(SQLAJudgment.filter_id == base_filter.id, SQLAJudgment.matches)
+                ).where(where_clause)
 
             result = await session.execute(query)
             datapoints = result.scalars().all()
@@ -990,10 +994,9 @@ class DBService:
                 SQLADatapoint.frame_grid_id == fg_id
             )
             # If base_filter is provided, only consider datapoints that match it
-            if base_filter:
-                datapoints_subquery = datapoints_subquery.join(
-                    SQLAJudgment, SQLAJudgment.datapoint_id == SQLADatapoint.id
-                ).where(SQLAJudgment.filter_id == base_filter.id, SQLAJudgment.matches)
+            where_clause = base_filter.to_sqla_where_clause(SQLADatapoint) if base_filter else None
+            if where_clause is not None:
+                datapoints_subquery = datapoints_subquery.where(where_clause)
 
             # Main query to find filters with missing judgments
             query = (
@@ -1079,7 +1082,7 @@ class DBService:
             judgments = [Judgment(data_id=id, matches=True) for id in datapoint_ids]
         else:
             # Which datapoints do not have judgments for this filter? Early exit if all fresh
-            datapoints = await self.get_datapoints_without_judgments(fg_id, filter_id, base_filter)
+            datapoints = await self._get_datapoints_without_judgments(fg_id, filter_id, base_filter)
             if not datapoints:
                 return
 
@@ -1165,7 +1168,7 @@ class DBService:
             logger.info(f"Pushed {len(filters)} filters")
 
         # Add judgments for each match
-        sqla_judgments = []
+        sqla_judgments: list[SQLAJudgment] = []
         for value, datapoint_ids in value_to_datapoint_ids.items():
             matching_judgments = [
                 SQLAJudgment.from_judgment(

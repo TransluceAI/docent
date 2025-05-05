@@ -96,12 +96,11 @@ async def extract_attributes(
             ]
             for prompt in prompts
         ],
+        PROVIDER_PREFERENCES.extract_attributes,
         max_new_tokens=4096,
         timeout=180.0,
         use_cache=True,
         completion_callback=llm_callback,
-        llm_api_keys=llm_api_keys,
-        **PROVIDER_PREFERENCES.extract_attributes.create_shallow_dict(),
     )
 
     ans: list[list[str] | None] = []

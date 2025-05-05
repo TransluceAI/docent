@@ -68,12 +68,11 @@ Return your response in the following format:
                 },
             ]
         ],
-        **PROVIDER_PREFERENCES.summarize_intended_solution.create_shallow_dict(),
+        PROVIDER_PREFERENCES.summarize_intended_solution,
         max_new_tokens=8192,
         timeout=180.0,
         streaming_callback=llm_callback,
         use_cache=True,
-        llm_api_keys=api_keys,
     )
 
     return _parse_solution_summary(output[0].first_text or "N/A")
@@ -125,7 +124,6 @@ async def summarize_agent_actions(
     transcript: Transcript,
     streaming_callback: SummarizeLowLevelActionsStreamingCallback | None = None,
     completion_callback: SummarizeLowLevelActionsStreamingCallback | None = None,
-    api_keys: LLMApiKeys | None = None,
 ) -> list[LowLevelAction]:
     prompt = f"""
 Transcript:
@@ -158,13 +156,12 @@ Follow these guidelines: {SINGLE_BLOCK_CITE_INSTRUCTION}. The citation should be
                 },
             ]
         ],
-        **PROVIDER_PREFERENCES.summarize_agent_actions.create_shallow_dict(),
+        PROVIDER_PREFERENCES.summarize_agent_actions,
         max_new_tokens=8192,
         timeout=180.0,
         streaming_callback=llm_streaming_callback,
         completion_callback=llm_completion_callback,
         use_cache=True,
-        llm_api_keys=api_keys,
     )
 
     text = output[0].first_text
@@ -225,7 +222,6 @@ async def group_actions_into_high_level_steps(
     action_summaries: list[LowLevelAction],
     transcript: Transcript,
     streaming_callback: SummarizeHighLevelActionsStreamingCallback | None = None,
-    api_keys: LLMApiKeys | None = None,
 ) -> list[HighLevelAction]:
     """
     Groups action unit summaries into high-level steps.
@@ -286,12 +282,11 @@ comma-separated list of action unit indices
                 },
             ]
         ],
-        **PROVIDER_PREFERENCES.group_actions_into_high_level_steps.create_shallow_dict(),
+        PROVIDER_PREFERENCES.group_actions_into_high_level_steps,
         max_new_tokens=8192,
         timeout=180.0,
         streaming_callback=llm_streaming_callback,
         use_cache=True,
-        llm_api_keys=api_keys,
     )
 
     text = output[0].first_text
@@ -428,13 +423,12 @@ The format for each observation should be:
                 },
             ]
         ],
-        **PROVIDER_PREFERENCES.interesting_agent_observations.create_shallow_dict(),
+        PROVIDER_PREFERENCES.interesting_agent_observations,
         max_new_tokens=8192,
         timeout=180.0,
         streaming_callback=llm_streaming_callback,
         completion_callback=llm_completion_callback,
         use_cache=True,
-        llm_api_keys=api_keys,
     )
 
     text = output[0].first_text

@@ -15,7 +15,11 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["get-started/introduction", "get-started/quickstart"]
+            "pages": [
+              "get-started/introduction",
+              "get-started/quickstart",
+              "get-started/development"
+            ]
           },
           {
             "group": "Tutorials",

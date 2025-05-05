@@ -3,8 +3,9 @@ import re
 from typing import Any, Literal, TypedDict
 
 from IPython.display import HTML, display  # type: ignore
-from docent._llm_util.types import ChatMessage, ChatMessageAssistant, ChatMessageContentReasoning
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
+
+from docent._llm_util.types import ChatMessage, ChatMessageAssistant, ChatMessageContentReasoning
 
 TRANSCRIPT_BLOCK_TEMPLATE = """
 <{index_label} | role: {role}>
@@ -126,7 +127,7 @@ class Transcript(BaseModel):
     @field_validator("metadata", mode="after")
     def validate_metadata_fields(cls, metadata: TranscriptMetadata):
         """Validates that the default METADATA_FIELDS_TO_DUMP exist on TranscriptMetadata."""
-        valid_fields = set(metadata.model_fields.keys())
+        valid_fields = set(metadata.model_dump().keys())
         invalid_fields = [field for field in METADATA_FIELDS_TO_DUMP if field not in valid_fields]
 
         if invalid_fields:

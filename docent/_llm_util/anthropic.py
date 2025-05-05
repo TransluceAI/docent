@@ -29,6 +29,7 @@ from anthropic.types import (
     ToolUseBlockParam,
 )
 from backoff.types import Details
+
 from docent._llm_util.types import (
     AsyncSingleStreamingCallback,
     ChatMessage,
@@ -50,7 +51,7 @@ logger = get_logger(__name__)
 
 
 def _print_backoff_message(e: Details):
-    logger.warn(
+    logger.warning(
         f"Anthropic backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
     )
 

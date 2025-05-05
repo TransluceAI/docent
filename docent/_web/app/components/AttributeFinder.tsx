@@ -124,13 +124,14 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   );
   const [clusterFeedback, setClusterFeedback] = useState('');
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
-  // State for transcript substring filter
-  const [transcriptQuery, setTranscriptQuery] = useState('');
 
   // Find the active dimension state based on the current attribute query
+  const attributeQueryDimId = useSelector(
+    (state: RootState) => state.attributeFinder.attributeQueryDimId
+  );
   const activeDim =
     curAttributeQuery && dimensions
-      ? dimensions.find((dim) => dim.attribute === curAttributeQuery)
+      ? dimensions.find((dim) => dim.id === attributeQueryDimId)
       : null;
 
   // Metadata filter manipulation

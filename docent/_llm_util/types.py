@@ -13,9 +13,10 @@ from inspect_ai.tool import ToolCall as InspectToolCall
 from inspect_ai.tool import ToolCallError as InspectToolCallError
 from inspect_ai.tool import ToolDef as InspectToolDef
 from inspect_ai.tool import ToolInfo as InspectToolInfo
-from docent._log_util import get_logger
 from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from pydantic import BaseModel
+
+from docent._log_util import get_logger
 
 ChatMessage: TypeAlias = InspectChatMessage
 ChatMessageUser: TypeAlias = InspectChatMessageUser
@@ -38,7 +39,7 @@ class LLMApiKeys(TypedDict):
     anthropic_key: str | None
 
 
-class ModelCallParams(BaseModel):
+class ModelOption(BaseModel):
     provider: str
     model_name: str
     reasoning_effort: Literal["low", "medium", "high"] | None = None
@@ -173,7 +174,9 @@ def finalize_llm_output_partial(partial: LLMOutputPartial) -> LLMOutput:
         )
     for c in output.completions:
         if c.finish_reason == "length":
-            logger.warn("Completion truncated due to length; consider increasing max_new_tokens.")
+            logger.warning(
+                "Completion truncated due to length; consider increasing max_new_tokens."
+            )
 
     return output
 

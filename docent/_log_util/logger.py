@@ -1,7 +1,7 @@
 import logging
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, MutableMapping, Optional, Tuple
 
 
 @dataclass
@@ -83,12 +83,14 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-class LoggerAdapter(logging.LoggerAdapter):
+class LoggerAdapter(logging.LoggerAdapter[logging.Logger]):
     """
     Logger adapter that allows highlighting specific log messages.
     """
 
-    def process(self, msg: Any, kwargs: Dict[str, Any]) -> Tuple[Any, Dict[str, Any]]:
+    def process(
+        self, msg: Any, kwargs: MutableMapping[str, Any]
+    ) -> Tuple[Any, MutableMapping[str, Any]]:
         # Pass highlight flag through to the record
         return msg, kwargs
 

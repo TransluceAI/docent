@@ -1,4 +1,5 @@
-"""Defaults are defined at the bottom of the file."""
+"""Defaults are defined at the bottom of the file.
+TODO(mengk) do not load these defaults at import time? makes things very slow"""
 
 import os
 import re
@@ -6,18 +7,17 @@ from abc import abstractmethod
 from typing import Literal, cast
 
 import torch
+from tqdm.auto import tqdm
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.models.modernbert import ModernBertForSequenceClassification
+from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+
 from docent._frames.types import AssignmentStreamingCallback
 from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
+from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES, ModelOption
 from docent._llm_util.types import LLMApiKeys, LLMOutput
 from docent._log_util import get_logger
-from tqdm.auto import tqdm
-from transformers import (
-    AutoTokenizer,
-    ModernBertForSequenceClassification,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
-)
 
 logger = get_logger(__name__)
 
@@ -74,18 +74,15 @@ class ClusterAssignerFromLLM(ClusterAssigner):
     def __init__(
         self,
         system_prompt: str | None,
-        model_name: str,
+        model_options: list[ModelOption],
         max_new_tokens: int = 512,
         temperature: float = 0.25,
     ) -> None:
         super().__init__()
         self.system_prompt = system_prompt
-        self.model_name = model_name
+        self.model_options = model_options
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
-        assert (
-            model_name in PROVIDER_PREFERENCES.cluster_assignment
-        ), f"Model name {model_name} not found in PROVIDER_PREFERENCES.cluster_assignment"
 
     @classmethod
     def from_o3_mini(cls):
@@ -93,7 +90,7 @@ class ClusterAssignerFromLLM(ClusterAssigner):
             system_prompt=None,
             max_new_tokens=8192,
             temperature=1,
-            model_name="o3-mini",
+            model_options=PROVIDER_PREFERENCES.cluster_assign_o3_mini,
         )
 
     @classmethod
@@ -102,7 +99,7 @@ class ClusterAssignerFromLLM(ClusterAssigner):
             system_prompt=None,
             max_new_tokens=4096,
             temperature=1.0,
-            model_name="sonnet-37-thinking",
+            model_options=PROVIDER_PREFERENCES.cluster_assign_sonnet_37_thinking,
         )
 
     async def assign(
@@ -151,13 +148,12 @@ class ClusterAssignerFromLLM(ClusterAssigner):
 
         outputs = await get_llm_completions_async(
             queries,
-            **PROVIDER_PREFERENCES.cluster_assignment[self.model_name].create_shallow_dict(),
+            model_options=self.model_options,
             max_new_tokens=self.max_new_tokens,
             temperature=self.temperature,
             timeout=30,
             completion_callback=llm_callback,
             use_cache=True,
-            llm_api_keys=llm_api_keys,
         )
         return [_parse_llm_output(output) for output in outputs]
 
@@ -189,7 +185,7 @@ class FinetunedModernBertClusterAssigner(ClusterAssigner):
     @property
     def tokenizer(self):
         if self._tokenizer is None:
-            self._tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-large")  # type: ignore
+            self._tokenizer = cast(PreTrainedTokenizer | PreTrainedTokenizerFast, AutoTokenizer.from_pretrained("answerdotai/ModernBERT-large"))  # type: ignore
         return self._tokenizer
 
     @property
@@ -265,11 +261,11 @@ class FinetunedModernBertClusterAssigner(ClusterAssigner):
                 cls = modal.Cls.from_name("cluster-assigner", "ModalClusterAssigner")
                 obj = cls()
                 try:
-                    batch_predictions, batch_probs = obj.assign.remote(encoded_inputs)
-                except modal.exception.AuthError:
-                    logger.warning(
-                        f"Modal credentials not configured, falling back to other models"
+                    batch_predictions, batch_probs = cast(
+                        tuple[torch.Tensor, torch.Tensor], obj.assign.remote(encoded_inputs)  # type: ignore
                     )
+                except modal.exception.AuthError:
+                    logger.warning("Modal credentials not configured, falling back")
                     return [
                         None,
                     ] * len(items)
@@ -351,7 +347,7 @@ class HybridClusterAssigner(ClusterAssigner):
         # If we have any low confidence results, process them with backup
         if reassign_indices:
             logger.info(
-                f"Falling back to {self.backup.model_name} LLM for {len(reassign_indices)}/{len(items)} items marked YES by BERT"
+                f"Falling back to {'/'.join([o.model_name for o in self.backup.model_options])} LLM for {len(reassign_indices)}/{len(items)} items marked YES by BERT"
             )
 
             # Compute assignments
@@ -388,7 +384,7 @@ ASSIGNERS: dict[str, ClusterAssigner] = {
     **BASE_ASSIGNERS,
     "hybrid": HybridClusterAssigner(
         finetuned_path="/home/ubuntu/artifacts/vincent/checkpoints/cluster_assignment_032225",
-        backup_model=PROVIDER_PREFERENCES.assignment_model,
+        backup_model="o3-mini",
         device_id="MODAL",
     ),
 }

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Literal, Sequence, Type, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Sequence, Type, cast
 from uuid import uuid4
 
+from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
+from sqlalchemy import Boolean, ColumnElement, Double, Integer, String, and_, or_
+
 from docent._frames.clustering.cluster_assigner import ASSIGNERS, DEFAULT_ASSIGNER, AssignerType
-from docent._frames.db.schemas.base import SQLABase
 from docent._frames.types import Datapoint, Judgment, JudgmentStreamingCallback, RegexSnippet
 from docent._llm_util.types import LLMApiKeys
 from docent._log_util import get_logger
-from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
-from sqlalchemy import Boolean, ColumnElement, Double, Integer, String, and_, or_
+
+if TYPE_CHECKING:
+    from docent._frames.db.schemas.tables import SQLADatapoint
 
 PG_TYPES = {
     "str": String,
@@ -38,7 +41,9 @@ class FrameFilter(BaseModel):
 
     supports_sql: bool = False
 
-    def to_sqla_where_clause(self, SQLADatapoint: Type[SQLABase]) -> ColumnElement[bool] | None:
+    def to_sqla_where_clause(
+        self, SQLADatapoint: Type[SQLADatapoint]
+    ) -> ColumnElement[bool] | None:
         return None
 
     async def apply(
@@ -64,7 +69,7 @@ class FrameFilter(BaseModel):
 class DatapointIdFilter(FrameFilter):
     """A filter that checks if a datapoint's ID matches a specified ID."""
 
-    type: Literal["datapoint_id"] = "datapoint_id"
+    type: Literal["datapoint_id"] = "datapoint_id"  # type: ignore
     value: str
 
     async def apply(
@@ -89,7 +94,7 @@ class DatapointIdFilter(FrameFilter):
 class PrimitiveFilter(FrameFilter):
     """A filter that checks if a datapoint's metadata matches a specified key-value pair."""
 
-    type: Literal["primitive"] = "primitive"
+    type: Literal["primitive"] = "primitive"  # type: ignore
 
     key_path: tuple[str, ...]
     value: bool | int | float | str
@@ -140,7 +145,7 @@ class PrimitiveFilter(FrameFilter):
             raise ValueError(f"Value must be a string, bool, int, or float. Got {type(ans)}: {ans}")
         return ans
 
-    def to_sqla_where_clause(self, SQLADatapoint: Type[SQLABase]) -> ColumnElement[bool]:
+    def to_sqla_where_clause(self, SQLADatapoint: Type[SQLADatapoint]) -> ColumnElement[bool]:
         mode = "text" if self.key_path[0] == "text" else "metadata"
 
         # Extract value from JSONB
@@ -161,10 +166,8 @@ class PrimitiveFilter(FrameFilter):
                 sqla_value = sqla_value.as_boolean()
             elif isinstance(self.value, int):
                 sqla_value = sqla_value.as_integer()
-            elif isinstance(self.value, float):
-                sqla_value = sqla_value.as_float()
             else:
-                raise ValueError(f"Unsupported value type: {type(self.value)}")
+                sqla_value = sqla_value.as_float()
 
         if self.op == "==":
             return sqla_value == self.value
@@ -235,7 +238,7 @@ class PrimitiveFilter(FrameFilter):
         ]
 
     @staticmethod
-    def get_regex_snippets(text: str, pattern: str, window_size: int = 50):
+    def get_regex_snippets(text: str, pattern: str, window_size: int = 50) -> list[RegexSnippet]:
         # Find all matches
         try:
             matches = list(re.compile(pattern, re.IGNORECASE | re.DOTALL).finditer(text))
@@ -245,7 +248,7 @@ class PrimitiveFilter(FrameFilter):
             if not matches:
                 return []
 
-            snippets = []
+            snippets: list[RegexSnippet] = []
             for match in matches:
                 start, end = match.span()
 
@@ -269,7 +272,7 @@ class PrimitiveFilter(FrameFilter):
 
 
 class FramePredicate(FrameFilter):
-    type: Literal["predicate"] = "predicate"
+    type: Literal["predicate"] = "predicate"  # type: ignore
 
     predicate: str
     attribute: str
@@ -351,7 +354,7 @@ class FramePredicate(FrameFilter):
 
 
 class ComplexFrameFilter(FrameFilter):
-    type: Literal["complex"] = "complex"
+    type: Literal["complex"] = "complex"  # type: ignore
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     filters: Sequence[FrameFilterTypes]
@@ -369,17 +372,17 @@ class ComplexFrameFilter(FrameFilter):
         return self
 
     @field_validator("filters")
-    def validate_filters(cls, v):
+    def validate_filters(cls, v: list[FrameFilterTypes]):
         if not v:
             raise ValueError("ComplexFrameFilter must have at least one filter")
         return v
 
-    def to_sqla_where_clause(self, SQLADatapoint: Type[SQLABase]):
+    def to_sqla_where_clause(self, SQLADatapoint: Type[SQLADatapoint]):
         if not self.supports_sql:
             return None
 
         # Recursively get where clauses from all child filters
-        where_clauses = []
+        where_clauses: list[ColumnElement[bool]] = []
         for filter in self.filters:
             clause = filter.to_sqla_where_clause(SQLADatapoint)
             assert (
@@ -431,42 +434,6 @@ class ComplexFrameFilter(FrameFilter):
             return_all,
             [d.id for d in data] if return_all else None,
         )
-
-
-async def _cli_callback(proposals: list[list[str]]):
-    print("\nProposed clusters:")
-    if len(proposals) == 0:
-        return None
-
-    for idx, proposal in enumerate(proposals, 0):
-        print(f"\nProposal {idx}:")
-        print("\n".join([f"- {cluster}" for cluster in proposal]))
-
-    while True:
-        choice = (
-            input(
-                "\nSelect a proposal number (0-4), enter 'feedback' to provide custom grouping, or 'retry' for new proposals: "
-            )
-            .strip()
-            .lower()
-        )
-
-        if choice == "feedback":
-            feedback = input("\nPlease provide your feedback on how the items should be grouped: ")
-            return feedback
-        elif choice == "retry":
-            return None
-        elif choice == "stop":
-            raise Exception("Stopping")
-        else:
-            try:
-                choice_idx = int(choice)
-                if 0 <= choice_idx < len(proposals):
-                    return choice_idx
-                else:
-                    print(f"Please enter a valid number between 0 and {len(proposals) - 1}")
-            except ValueError:
-                print("Please enter a valid number, 'feedback', 'retry', or 'stop'")
 
 
 class FrameDimension(BaseModel):

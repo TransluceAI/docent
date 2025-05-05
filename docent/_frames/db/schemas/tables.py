@@ -3,18 +3,19 @@ FIXME(mengk): add indices to commonly-filtered columns
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
-from docent._frames.db.schemas.base import SQLABase
-from docent._frames.filters import FrameDimension, FrameFilterTypes, parse_filter_dict
-from docent._frames.transcript import Transcript
-from docent._frames.types import Attribute, Datapoint, Judgment
 from pydantic_core import to_jsonable_python
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.schema import UniqueConstraint
+
+from docent._frames.db.schemas.base import SQLABase
+from docent._frames.filters import FrameDimension, FrameFilterTypes, parse_filter_dict
+from docent._frames.transcript import Transcript
+from docent._frames.types import Attribute, Datapoint, Judgment
 
 # Table names
 TABLE_FRAME_GRID = "frame_grids"
@@ -89,7 +90,7 @@ class SQLAFrameGrid(SQLABase):
     sample_dim_id = mapped_column(String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"))
     experiment_dim_id = mapped_column(String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"))
 
-    created_at = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
 
 class SQLAFrameDimension(SQLABase):
@@ -129,7 +130,7 @@ class SQLAFrameDimension(SQLABase):
         )
 
         # Add filters if they exist
-        filters = []
+        filters: list[SQLAFilter] = []
         if dimension.bins:
             for filter_obj in dimension.bins:
                 filters.append(SQLAFilter.from_filter(filter_obj, fg_id, dimension.id))

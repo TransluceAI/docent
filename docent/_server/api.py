@@ -1,18 +1,19 @@
 import time
-from typing import Callable
+from typing import Awaitable, Callable
 
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from docent._log_util import get_logger
 from docent._server._broker.router import broker_router
 from docent._server._rest.router import rest_router
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from docent._log_util import get_logger
-from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = get_logger(__name__)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: Callable):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]):
         # Log request details
         start_time = time.perf_counter()
         logger.highlight(f"Started {request.method} {request.url.path}")
@@ -66,4 +67,4 @@ async def root():
 @asgi_app.get("/eval_ids")
 async def get_eval_ids():
     # TODO(mengk): remove this deprecated endpoint
-    return []
+    return list[str]()

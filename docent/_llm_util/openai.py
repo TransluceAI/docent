@@ -5,23 +5,6 @@ from typing import Any, Literal, cast
 import backoff
 import tiktoken
 from backoff.types import Details
-from docent._llm_util.types import (
-    AsyncSingleStreamingCallback,
-    ChatMessage,
-    ChatMessageContent,
-    CompletionTooLongException,
-    FinishReasonType,
-    LLMCompletion,
-    LLMCompletionPartial,
-    LLMOutput,
-    LLMOutputPartial,
-    RateLimitException,
-    ToolCall,
-    ToolCallPartial,
-    ToolInfo,
-    finalize_llm_output_partial,
-)
-from docent._log_util import get_logger
 from openai import AsyncOpenAI, AuthenticationError, BadRequestError, OpenAI, RateLimitError
 from openai._types import NOT_GIVEN
 from openai.types.chat import (
@@ -42,13 +25,31 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 from openai.types.shared_params.function_definition import FunctionDefinition
 
+from docent._llm_util.types import (
+    AsyncSingleStreamingCallback,
+    ChatMessage,
+    ChatMessageContent,
+    CompletionTooLongException,
+    FinishReasonType,
+    LLMCompletion,
+    LLMCompletionPartial,
+    LLMOutput,
+    LLMOutputPartial,
+    RateLimitException,
+    ToolCall,
+    ToolCallPartial,
+    ToolInfo,
+    finalize_llm_output_partial,
+)
+from docent._log_util import get_logger
+
 logger = get_logger(__name__)
 DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
 MAX_EMBEDDING_TOKENS = 8000
 
 
 def _print_backoff_message(e: Details):
-    logger.warn(
+    logger.warning(
         f"OpenAI backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
     )
 
@@ -364,7 +365,7 @@ async def get_openai_chat_completion_async(
                 )
             for c in output.completions:
                 if c.finish_reason == "length":
-                    logger.warn(
+                    logger.warning(
                         "Completion truncated due to length; consider increasing max_new_tokens."
                     )
 
@@ -535,7 +536,7 @@ def parse_openai_completion(response: ChatCompletion | None, model: str) -> LLMO
                 ),
                 top_logprobs=(
                     [pos.top_logprobs for pos in choice.logprobs.content]
-                    if choice.logprobs is not None
+                    if choice.logprobs and choice.logprobs.content is not None
                     else None
                 ),
             )

@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     # Dev
     "pre-commit>=4.2.0",
+    "pyright>=1.1.0",
     # Eval harness (we use their chat types)
     "inspect-ai>=0.3.93",
     # Web server
@@ -58,3 +59,10 @@ target-version = ['py310']
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.pyright]
+include = [
+    "docent"
+]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false

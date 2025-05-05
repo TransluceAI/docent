@@ -12,7 +12,7 @@ async def evaluate_new_queries(
 ) -> str:
     items = (good_results + bad_results) * len(new_queries)
     num_results = len(good_results) + len(bad_results)
-    clusters = []
+    clusters: list[str] = []
     for n in new_queries:
         clusters.extend(
             [
@@ -21,11 +21,11 @@ async def evaluate_new_queries(
             * num_results
         )
     results = await assigner.assign(items, clusters)
-    scores = []
+    scores: list[list[bool]] = []
     max_score = 0.0
     max_score_index = -1
     for i, n in enumerate(new_queries):
-        score = []
+        score: list[bool] = []
         relevant_results = results[num_results * i : num_results * (i + 1)]
         for j, r in enumerate(relevant_results):
             if r is None:
@@ -105,7 +105,7 @@ async def generate_new_queries(
             ]
             for prompt in prompts
         ],
-        **PROVIDER_PREFERENCES.generate_new_queries.create_shallow_dict(),
+        PROVIDER_PREFERENCES.generate_new_queries,
         max_new_tokens=4096,
         timeout=180.0,
         use_cache=False,

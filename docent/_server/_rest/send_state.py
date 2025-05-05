@@ -2,23 +2,24 @@ from time import perf_counter
 from typing import Any, Awaitable, Callable, cast
 
 import anyio
+
 from docent._frames.db.service import DBService, MarginalizationResult
 from docent._frames.transcript import TranscriptMetadata
-from docent._server._broker.redis_client import publish_to_broker
 from docent._log_util import get_logger
+from docent._server._broker.redis_client import publish_to_broker
 
 logger = get_logger(__name__)
 
 
-async def _ids_map_fn(ids: list[str], _):
+async def _ids_map_fn(ids: list[str], _: Any):
     return ids
 
 
-async def _intervention_descriptions_map_fn(_, metadata: list[TranscriptMetadata]):
+async def _intervention_descriptions_map_fn(_: Any, metadata: list[TranscriptMetadata]):
     return list(set(m.intervention_description for m in metadata if m.intervention_description))
 
 
-async def _stats_map_fn(_, metadata: list[TranscriptMetadata]):
+async def _stats_map_fn(_: Any, metadata: list[TranscriptMetadata]):
     """Calculate mean score with 95% confidence interval for each score key.
 
     Returns:
@@ -83,8 +84,10 @@ async def publish_dims(db: DBService, fg_id: str):
 async def publish_marginals(
     db: DBService, fg_id: str, dim_ids: list[str] | None = None, ensure_fresh: bool = True
 ):
-    async def _publish_dim_callback(_):
+    async def _publish_dim_callback(_: Any):
         await publish_dims(db, fg_id)
+
+    print("publishing marginals for", dim_ids, ensure_fresh)
 
     marginals = await db.get_marginals(
         fg_id,
@@ -92,6 +95,7 @@ async def publish_marginals(
         ensure_fresh=ensure_fresh,
         publish_dim_callback=_publish_dim_callback,
     )
+    print("done!")
     await publish_to_broker(
         fg_id,
         {
@@ -253,7 +257,7 @@ async def publish_state(
     for coro_func, coro_name, args in coroutines:
         if profile:
             start_time = perf_counter()
-            await coro_func(*args)
+            await coro_func(*args)  # type: ignore
             logger.info(f"{coro_name} took {perf_counter() - start_time:.4f} seconds")
         else:
-            await coro_func(*args)
+            await coro_func(*args)  # type: ignore
