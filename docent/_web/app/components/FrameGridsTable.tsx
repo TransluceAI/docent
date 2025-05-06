@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table';
 import {
   CalendarIcon,
+  ClipboardCopyIcon,
   ExternalLinkIcon,
   FilterIcon,
   Layers,
@@ -24,9 +25,10 @@ import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 
 interface FrameGridsTableProps {
-  frameGrids: FrameGrid[];
+  frameGrids?: FrameGrid[];
   isLoading: boolean;
 }
 
@@ -36,9 +38,35 @@ export function FrameGridsTable({
 }: FrameGridsTableProps) {
   const router = useRouter();
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
 
   const handleOpenFrameGrid = (gridId: string) => {
     router.push(`${BASE_DOCENT_PATH}/${gridId}`);
+  };
+
+  const handleCopyId = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    navigator.clipboard
+      .writeText(id)
+      .then(() => {
+        setCopyingId(id);
+        toast({
+          title: 'FrameGrid ID Copied',
+          description: `Copied ${id} to clipboard`,
+        });
+
+        // Reset the copying state after a short delay
+        setTimeout(() => {
+          setCopyingId(null);
+        }, 1000);
+      })
+      .catch((err) => {
+        console.error('Failed to copy: ', err);
+        toast({
+          variant: 'destructive',
+          description: 'Failed to copy ID',
+        });
+      });
   };
 
   const formatDate = (dateString: string) => {
@@ -50,7 +78,7 @@ export function FrameGridsTable({
     });
   };
 
-  if (isLoading) {
+  if (isLoading || !frameGrids) {
     return (
       <div className="flex-1 flex items-center justify-center h-full min-h-[200px]">
         <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
@@ -58,7 +86,7 @@ export function FrameGridsTable({
     );
   }
 
-  if (!frameGrids || frameGrids.length === 0) {
+  if (frameGrids.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 px-3 text-center">
         <div className="bg-gray-50 p-3 rounded-full mb-3">
@@ -112,6 +140,24 @@ export function FrameGridsTable({
                 <span className="font-mono text-gray-600 text-xs">
                   {grid.id.split('-')[0]}
                 </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 ml-1"
+                  onClick={(e) => handleCopyId(e, grid.id)}
+                  title="Copy full ID"
+                >
+                  <ClipboardCopyIcon
+                    className={cn(
+                      'h-3 w-3',
+                      copyingId === grid.id
+                        ? 'text-green-500'
+                        : hoveredRowId === grid.id
+                          ? 'text-blue-500'
+                          : 'text-gray-400'
+                    )}
+                  />
+                </Button>
               </div>
             </TableCell>
             <TableCell className="py-2">

@@ -64,7 +64,7 @@ const DocentDashboard = () => {
 
         {/* Table area */}
         <FrameGridsTable
-          frameGrids={frameGrids || []}
+          frameGrids={frameGrids}
           isLoading={isLoadingFrameGrids}
         />
       </div>

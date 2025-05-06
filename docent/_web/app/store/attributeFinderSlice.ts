@@ -40,6 +40,13 @@ export interface AttributeFinderState {
   activeAttributeTaskId?: string;
   // Feedback
   voteState?: Record<string, Record<string, 'up' | 'down'>>; // datapoint_id -> attribute -> vote
+  // Attribute searches with completion status
+  attributeSearches?: Array<{
+    dim_id: string;
+    attribute: string;
+    num_judgments_computed: number;
+    num_total: number;
+  }>;
 }
 
 const initialState: AttributeFinderState = {};
@@ -98,9 +105,6 @@ export const requestAttributes = createAsyncThunk(
       dispatch(setCurAttributeQuery(attribute));
       dispatch(setLoadingAttributesForId(attribute));
       dispatch(setLoadingProgress([0, 0]));
-
-      // Add the query to search history
-      dispatch(addToSearchHistory(attribute));
 
       // Add a dimension corresponding to the attribute and store the ID
       const dimId = await dispatch(addAttributeDimension(attribute)).unwrap();
@@ -246,15 +250,7 @@ export const requestClusters = createAsyncThunk(
 export const clearAttributeQuery = createAsyncThunk(
   'experimentViewer/clearAttributeQuery',
   async (_, { dispatch, getState }) => {
-    const state = getState() as { attributeFinder: AttributeFinderState };
-    const { attributeQueryDimId } = state.attributeFinder;
-
-    // Delete the dimension corresponding to the attribute query
-    if (attributeQueryDimId) {
-      dispatch(deleteDimension(attributeQueryDimId));
-    }
     dispatch(setAttributeQueryDimId(undefined));
-
     dispatch(setCurAttributeQuery(undefined));
     dispatch(cancelCurrentAttributeRequest());
     dispatch(clearAttributeMap());
@@ -532,30 +528,6 @@ export const attributeFinderSlice = createSlice({
     clearAttributeMap: (state) => {
       state.attributeMap = undefined;
     },
-    addToSearchHistory: (state, action: PayloadAction<string>) => {
-      const query = action.payload;
-
-      if (!state.searchHistory) {
-        state.searchHistory = [];
-      }
-
-      // Remove if already exists
-      state.searchHistory = state.searchHistory.filter(
-        (item) => item !== query
-      );
-      // Add to beginning
-      state.searchHistory.unshift(query);
-    },
-    clearSearchHistory: (state) => {
-      state.searchHistory = [];
-    },
-    deleteSearchHistoryItem: (state, action: PayloadAction<number>) => {
-      if (state.searchHistory) {
-        state.searchHistory = state.searchHistory.filter(
-          (_, index) => index !== action.payload
-        );
-      }
-    },
     voteOnAttribute: (
       state,
       action: PayloadAction<{
@@ -605,6 +577,19 @@ export const attributeFinderSlice = createSlice({
     ) => {
       state.loadingProgress = action.payload;
     },
+    setAttributeSearches: (
+      state,
+      action: PayloadAction<
+        Array<{
+          dim_id: string;
+          attribute: string;
+          num_judgments_computed: number;
+          num_total: number;
+        }>
+      >
+    ) => {
+      state.attributeSearches = action.payload;
+    },
     resetAttributeFinderSlice: () => initialState,
   },
 });
@@ -616,14 +601,12 @@ export const {
   setLoadingAttributesForId,
   setActiveAttributeTaskId,
   clearAttributeMap,
-  addToSearchHistory,
-  clearSearchHistory,
-  deleteSearchHistoryItem,
   voteOnAttribute,
   clearVoteState,
   setAttributeQueryTextboxValue,
   setAttributeQueryDimId,
   setLoadingProgress,
+  setAttributeSearches,
   resetAttributeFinderSlice,
 } = attributeFinderSlice.actions;
 

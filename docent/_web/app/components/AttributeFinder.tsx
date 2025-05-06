@@ -19,6 +19,7 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
+  Share2,
   Sparkles,
   XOctagon,
 } from 'lucide-react';
@@ -29,12 +30,13 @@ import {
   addBaseFilter,
   clearAttributeQuery,
   clearBaseFilters,
-  deleteSearchHistoryItem,
   removeBaseFilter,
   requestAttributes,
   requestClusters,
   cancelCurrentClusterRequest,
   setAttributeQueryTextboxValue,
+  setCurAttributeQuery,
+  setAttributeQueryDimId,
 } from '../store/attributeFinderSlice';
 import { useAppDispatch } from '../store/hooks';
 import { useSelector } from 'react-redux';
@@ -108,7 +110,9 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   const searchHistory = useSelector(
     (state: RootState) => state.attributeFinder.searchHistory
   );
-
+  const attributeSearches = useSelector(
+    (state: RootState) => state.attributeFinder.attributeSearches
+  );
   const attributeQueryTextboxValue = useSelector(
     (state: RootState) => state.attributeFinder.attributeQueryTextboxValue
   );
@@ -251,16 +255,6 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   };
 
   const [isPresetHovered, setIsPresetHovered] = useState(false);
-
-  // Add useEffect to handle rewrittenQuery
-  // useEffect(() => {
-  //   if (rewrittenQuery) {
-  //     setNewAttribute(rewrittenQuery);
-  //     if (activeDimState) {
-  //       fg.handleClearAttribute(activeDimState.dim.id);
-  //     }
-  //   }
-  // }, [rewrittenQuery]);
 
   const handleSelectPreset = (query: string) => {
     dispatch(setAttributeQueryTextboxValue(query));
@@ -514,7 +508,10 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
                 loadingProgress && (
                   <div className="mt-2 mb-2 space-y-1">
                     <div className="flex justify-between text-xs text-gray-600">
-                      <span>Processing datapoints</span>
+                      <span className="flex items-center">
+                        Processing datapoints
+                        <Loader2 className="h-3 w-3 ml-1.5 animate-spin text-gray-500" />
+                      </span>
                       <span>
                         {loadingProgress[0]} / {loadingProgress[1]}
                       </span>
@@ -659,26 +656,6 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
                     }}
                   />
                   <div className="flex items-center justify-end p-2">
-                    {/* <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="gap-1 h-8 text-xs mr-2"
-                      onClick={handleAutoEnhance}
-                      disabled={!newAttribute.trim() || isEnhancingQuery}
-                    >
-                      {isEnhancingQuery ? (
-                        <>
-                          <Loader2 className="size-3 animate-spin" />
-                          Enhancing...
-                        </>
-                      ) : (
-                        <>
-                          Auto-enhance prompt
-                          <Wand2 className="size-3" />
-                        </>
-                      )}
-                    </Button> */}
                     <Button
                       type="button"
                       size="sm"
@@ -693,40 +670,99 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
                 </fieldset>
               </div>
 
-              {/* Search History Section - Always visible when there are items */}
-              {searchHistory && searchHistory.length > 0 && (
-                <div className="max-h-[5rem] overflow-y-auto pr-1">
+              {/* Search History Section - Updated with consistent colors */}
+              {attributeSearches && attributeSearches.length > 0 && (
+                <div className="max-h-[20rem] overflow-y-auto pr-1">
                   <div className="flex justify-between items-center mb-1">
                     <div className="text-xs font-medium text-gray-500">
-                      Recent Searches
+                      Saved Searches
                     </div>
                   </div>
-                  {searchHistory.map((query, index) => (
-                    <div
-                      key={index}
-                      className="group flex items-center gap-1.5 p-1 rounded-md hover:bg-gray-100 cursor-pointer text-xs"
-                      onClick={() =>
-                        dispatch(setAttributeQueryTextboxValue(query))
-                      }
-                    >
-                      <Clock className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                  {attributeSearches.map((search, index) => {
+                    const completionPercentage =
+                      search.num_total > 0
+                        ? Math.min(
+                            (search.num_judgments_computed / search.num_total) *
+                              100,
+                            100
+                          )
+                        : 0;
+                    const isComplete = completionPercentage === 100;
+                    // Extract first 8 characters of UUID for display
+                    const shortDimId = search.dim_id.split('-')[0];
+
+                    return (
                       <div
-                        className="font-mono text-gray-700 truncate flex-1"
-                        title={query}
+                        key={index}
+                        className="group mb-1 border border-gray-100 rounded hover:border-indigo-300 hover:bg-indigo-50 transition-all"
                       >
-                        {query}
+                        <div className="flex items-center py-1.5 px-2 text-xs bg-white">
+                          <code
+                            className="px-1 bg-gray-50 border border-gray-100 rounded text-[10px] text-gray-500 mr-2 flex-shrink-0"
+                            title={search.dim_id}
+                          >
+                            {shortDimId}
+                          </code>
+                          <div
+                            className="font-mono text-gray-800 truncate flex-1 cursor-pointer"
+                            title={search.attribute}
+                            onClick={() => {
+                              dispatch(
+                                setAttributeQueryTextboxValue(search.attribute)
+                              );
+                            }}
+                          >
+                            {search.attribute}
+                          </div>
+                          <div className="flex items-center ml-2 space-x-1.5 flex-shrink-0">
+                            <div className="flex items-center gap-1.5">
+                              <div
+                                className="relative w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0"
+                                title={`${search.num_judgments_computed} of ${search.num_total} processed`}
+                              >
+                                <div
+                                  className={`absolute top-0 left-0 h-full ${isComplete ? 'bg-indigo-500' : 'bg-blue-500'}`}
+                                  style={{ width: `${completionPercentage}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                                {Math.round(completionPercentage)}% computed
+                              </span>
+                            </div>
+                            <button
+                              className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // No action for now
+                              }}
+                              title="Share this search"
+                            >
+                              <Share2 className="h-3 w-3" />
+                            </button>
+                            <button
+                              className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await dispatch(deleteDimension(search.dim_id))
+                                  .unwrap()
+                                  .then(() => {
+                                    toast({
+                                      title: 'Deleted saved search',
+                                      description:
+                                        'Your saved search has been deleted successfully',
+                                      variant: 'default',
+                                    });
+                                  });
+                              }}
+                              title="Delete this saved search"
+                            >
+                              <XOctagon className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <button
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-200 rounded"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          dispatch(deleteSearchHistoryItem(index));
-                        }}
-                      >
-                        <XOctagon className="h-3 w-3 text-red-500" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>

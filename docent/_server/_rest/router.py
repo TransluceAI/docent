@@ -36,10 +36,10 @@ from docent._server._assistant.summarizer import (
     summarize_intended_solution,
 )
 from docent._server._rest.send_state import (
-    publish_datapoints_updated,
+    publish_attribute_searches,
     publish_dims,
+    publish_homepage_state,
     publish_marginals,
-    publish_state,
 )
 from docent._server.util import sse_event_stream
 
@@ -74,7 +74,7 @@ async def get_framegrids():
 
 
 class CreateFrameGridRequest(BaseModel):
-    eval_id: str | None = None
+    fg_id: str | None = None
     name: str | None = None
     description: str | None = None
 
@@ -82,17 +82,8 @@ class CreateFrameGridRequest(BaseModel):
 @rest_router.post("/create")
 async def create(request: CreateFrameGridRequest = CreateFrameGridRequest()):
     db = await get_db()
-
-    # Starting from an existing eval
-    fg_id, sample_dim_id, experiment_dim_id = None, None, None
-    if request.eval_id:
-        raise NotImplementedError(
-            "This functionality is deprecated. Load using the client SDK instead."
-        )
-    else:
-        fg_id = await db.create(name=request.name, description=request.description)
-
-    return {"fg_id": fg_id, "sample_dim_id": sample_dim_id, "experiment_dim_id": experiment_dim_id}
+    fg_id = await db.create(fg_id=request.fg_id, name=request.name, description=request.description)
+    return {"fg_id": fg_id}
 
 
 class JoinFrameGridRequest(BaseModel):
@@ -170,8 +161,7 @@ async def post_datapoints(request: PostDatapointsRequest):
 
     async with db.advisory_lock(request.fg_id, action_id="mutation"):
         num_added = await db.add_datapoints(request.fg_id, request.datapoints)
-        await publish_state(db, request.fg_id)
-        await publish_datapoints_updated(request.fg_id, None)
+        await publish_homepage_state(db, request.fg_id)
         return {"num_added": num_added}
 
 
@@ -196,8 +186,8 @@ async def post_dimension(request: PostDimensionRequest):
     if request.is_experiment_dim:
         await db.set_experiment_dim(request.fg_id, request.dim.id)
 
-    await publish_dims(db, request.fg_id)
-    # await publish_all_marginals(db, request.fg_id, ensure_fresh=True)
+    await publish_dims(db, request.fg_id, dim_ids=[request.dim.id])
+    await publish_attribute_searches(db, request.fg_id)
 
     return request.dim.id
 
@@ -215,8 +205,8 @@ async def post_base_filter(request: PostBaseFilterRequest):
         # Parse and set filter
         await db.set_base_filter(request.fg_id, request.filter)
 
-        # Publish updated state while recomputing marginals
-        await publish_state(db, request.fg_id)
+        # Publish updated homepage state
+        await publish_homepage_state(db, request.fg_id)
 
         return request.filter.id if request.filter else None
 
@@ -265,13 +255,18 @@ async def get_regex_snippets(request: GetRegexSnippetsRequest) -> dict[str, list
 @rest_router.get("/state")
 async def get_state(fg_id: str):
     db = await get_db()
-    await publish_state(db, fg_id)
+    await publish_homepage_state(db, fg_id)
 
 
-@rest_router.get("/dimensions")
-async def get_dimensions(fg_id: str):
+class GetDimensionsRequest(BaseModel):
+    fg_id: str
+    dim_ids: list[str] | None = None
+
+
+@rest_router.post("/get_dimensions")
+async def get_dimensions(request: GetDimensionsRequest):
     db = await get_db()
-    return await db.get_dims(fg_id)
+    return await db.get_dims(request.fg_id, request.dim_ids)
 
 
 @rest_router.delete("/dimension")
@@ -280,7 +275,8 @@ async def delete_dimension(fg_id: str, dim_id: str):
 
     async with db.advisory_lock(fg_id, action_id="mutation"):
         await db.delete_dimension(fg_id, dim_id)
-        await publish_dims(db, fg_id)
+        await publish_dims(db, fg_id, dim_ids=[dim_id])
+        await publish_attribute_searches(db, fg_id)
 
 
 @rest_router.delete("/filter")
@@ -289,7 +285,7 @@ async def delete_filter(fg_id: str, dim_id: str, filter_id: str):
 
     async with db.advisory_lock(fg_id, action_id="mutation"):
         await db.delete_filter(fg_id, filter_id)
-        await publish_dims(db, fg_id)
+        await publish_dims(db, fg_id, dim_ids=[dim_id])
         await publish_marginals(db, fg_id, dim_ids=[dim_id], ensure_fresh=True)
 
 
@@ -321,7 +317,7 @@ async def post_filter(request: PostFilterRequest):
             # Publish the initial marginals (without recompute) which should be empty for the new filter
             # Otherwise the frontend will show the old filter's marginals
             await publish_marginals(db, fg_id, dim_ids=[request.dim_id], ensure_fresh=False)
-            await publish_dims(db, fg_id)
+            await publish_dims(db, fg_id, dim_ids=[request.dim_id])
             await publish_marginals(db, fg_id, dim_ids=[request.dim_id], ensure_fresh=True)
 
         return new_filter.id
@@ -394,7 +390,7 @@ async def listen_compute_attributes(job_id: str):
 
     # Track intermediate progress
     progress_lock = anyio.Lock()
-    num_done, num_total = 0, len(await db.get_base_data(fg_id))
+    num_done, num_total = 0, await db.count_base_data(fg_id)
 
     async def _ws_attribute_streaming_callback(
         datapoint_id: str, attribute: str, attributes: list[str] | None
@@ -441,9 +437,6 @@ async def listen_compute_attributes(job_id: str):
 
             # Compute attributes
             await db.compute_attributes(fg_id, attribute, _ws_attribute_streaming_callback)
-
-            # Final refresh of state
-            await publish_state(db, fg_id)
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
@@ -524,7 +517,7 @@ async def listen_cluster_dimension(job_id: str):
             try:
                 # Send new dim state indicating that clusters are being loaded
                 await db.set_dim_loading_state(fg_id, dim_id, loading_clusters=True)
-                await publish_dims(db, fg_id)
+                await publish_dims(db, fg_id, dim_ids=[dim_id])
 
                 # TODO(mengk): assert that all datapoints have the associated attribute
                 # This should be guaranteed by the frontend, but just make sure.
@@ -541,7 +534,7 @@ async def listen_cluster_dimension(job_id: str):
                 await db.set_dim_loading_state(
                     fg_id, dim_id, loading_clusters=False, loading_marginals=True
                 )
-                await publish_dims(db, fg_id)
+                await publish_dims(db, fg_id, dim_ids=[dim_id])
 
                 # Compute marginals while sending them to the client
                 async with anyio.create_task_group() as tg:
@@ -577,7 +570,7 @@ async def listen_cluster_dimension(job_id: str):
                     await db.set_dim_loading_state(
                         fg_id, dim_id, loading_clusters=False, loading_marginals=False
                     )
-                    await publish_dims(db, fg_id)
+                    await publish_dims(db, fg_id, dim_ids=[dim_id])
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

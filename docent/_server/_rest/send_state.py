@@ -1,4 +1,3 @@
-from time import perf_counter
 from typing import Any, Awaitable, Callable, cast
 
 import anyio
@@ -71,12 +70,12 @@ def _format_bin_combination(bin_combination: tuple[tuple[str, str], ...]) -> str
     return "|".join(",".join(pair) for pair in bin_combination)
 
 
-async def publish_dims(db: DBService, fg_id: str):
+async def publish_dims(db: DBService, fg_id: str, dim_ids: list[str] | None = None):
     await publish_to_broker(
         fg_id,
         {
             "action": "dimensions",
-            "payload": await db.get_dims(fg_id),
+            "payload": await db.get_dims(fg_id, dim_ids),
         },
     )
 
@@ -126,13 +125,19 @@ async def publish_datapoints_updated(fg_id: str, datapoint_ids: list[str] | None
     )
 
 
-async def publish_homepage_marginals(db: DBService, fg_id: str):
-    sample_dim_id = await db.get_sample_dim_id(fg_id)
-    experiment_dim_id = await db.get_experiment_dim_id(fg_id)
+async def publish_attribute_searches(db: DBService, fg_id: str):
+    await publish_to_broker(
+        fg_id,
+        {
+            "action": "attribute_searches",
+            "payload": await db.get_attribute_searches_with_judgment_counts(fg_id),
+        },
+    )
 
-    if sample_dim_id is None or experiment_dim_id is None:
-        raise ValueError("Sample or experiment dimension not found")
 
+async def publish_homepage_marginals(
+    db: DBService, fg_id: str, sample_dim_id: str, experiment_dim_id: str
+):
     # Gather base data, as this is needed for map functions
     metadata_with_ids = await db.get_metadata_with_ids(fg_id, base_data_only=True)
     metadata_dict = {id: md for id, md in metadata_with_ids}
@@ -239,25 +244,14 @@ async def publish_homepage_marginals(db: DBService, fg_id: str):
         )
 
 
-async def publish_state(
-    db: DBService,
-    fg_id: str,
-    profile: bool = False,
-):
-    # Define coroutines and their names
-    coroutines = [
-        (publish_base_filter, "publish_base_filter", [db, fg_id]),
-        # Don't need to push all marginals, I think
-        # (publish_all_marginals, "publish_all_marginals", [db, fg_id, True]),
-        (publish_dims, "publish_dims", [db, fg_id]),
-        (publish_homepage_marginals, "publish_homepage_marginals", [db, fg_id]),
-        # (publish_datapoints_updated, "publish_datapoints_updated", [fg_id, None]),
-    ]
+async def publish_homepage_state(db: DBService, fg_id: str):
+    # Only publish the dims that changed
+    sample_dim_id = await db.get_sample_dim_id(fg_id)
+    experiment_dim_id = await db.get_experiment_dim_id(fg_id)
+    if sample_dim_id is None or experiment_dim_id is None:
+        raise ValueError("Sample or experiment dimension not found")
 
-    for coro_func, coro_name, args in coroutines:
-        if profile:
-            start_time = perf_counter()
-            await coro_func(*args)  # type: ignore
-            logger.info(f"{coro_name} took {perf_counter() - start_time:.4f} seconds")
-        else:
-            await coro_func(*args)  # type: ignore
+    await publish_base_filter(db, fg_id)
+    await publish_dims(db, fg_id, dim_ids=[sample_dim_id, experiment_dim_id])
+    await publish_homepage_marginals(db, fg_id, sample_dim_id, experiment_dim_id)
+    await publish_attribute_searches(db, fg_id)

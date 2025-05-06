@@ -31,9 +31,9 @@ def _sanitize_pg_text(text: str) -> str:
     """
     Wow this took almost an hour to debug.
     Postgres rejects strings with \\x00 and \\u0000, but it turns out that
-    JSONifying data converts them to the literal characters \\, x, 0, 0.
+    JSONifying data converts them to the literal characters \\, \\, x, 0, 0.
     """
-    return text.translate({0: None}).replace("\\x00", "").replace("\\u0000", "")
+    return text.translate({0: None}).replace("\\\\x00", "").replace("\\\\u0000", "")
 
 
 class SQLADatapoint(SQLABase):

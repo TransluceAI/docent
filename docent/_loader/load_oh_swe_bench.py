@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from tqdm.auto import tqdm
+
 from docent._frames.transcript import Transcript, TranscriptMetadata
 from docent._llm_util.types import (
     ChatMessage,
@@ -10,11 +12,10 @@ from docent._llm_util.types import (
     ToolCall,
 )
 from docent._log_util import get_logger
-from tqdm.auto import tqdm
 
 logger = get_logger(__name__)
 
-LOG_DIR_PREFIX = "/home/ubuntu/artifacts/mengk/inspect_logs"
+LOG_DIR_PREFIX = "/Users/mengk/Code/luce-artifacts/mengk/inspect_logs"
 OH_SWE_BENCH_LOGS: dict[str, str] = {
     "oh-sweb": f"{LOG_DIR_PREFIX}/oh-sweb",
 }

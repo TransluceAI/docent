@@ -7,7 +7,7 @@ from docent._log_util import get_logger
 logger = get_logger(__name__)
 
 
-LOG_DIR_PREFIX = "/home/ubuntu/artifacts/mengk/inspect_logs"
+LOG_DIR_PREFIX = "/Users/mengk/Code/luce-artifacts/mengk/inspect_logs"
 TAU_BENCH_LOGS: dict[str, str] = {
     "tb_airline": f"{LOG_DIR_PREFIX}/sonnet-35-new-airline.json",
 }

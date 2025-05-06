@@ -1,12 +1,13 @@
 from typing import Any
 
-from docent._frames.transcript import Transcript, TranscriptMetadata
 from inspect_ai.log import read_eval_log
+
+from docent._frames.transcript import Transcript, TranscriptMetadata
 from docent._log_util import get_logger
 
 logger = get_logger(__name__)
 
-LOG_DIR_PREFIX = "/home/ubuntu/artifacts/mengk/inspect_logs"
+LOG_DIR_PREFIX = "/Users/mengk/Code/luce-artifacts/mengk/inspect_logs"
 
 PICOCTF_LOGS_4o: dict[str, str | tuple[str, dict[str, Any]]] = {
     "improved_scaffold": f"{LOG_DIR_PREFIX}/intercode-4o-improved-scaffold.eval",

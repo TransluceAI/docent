@@ -22,6 +22,7 @@ import { setExperimentDimId, setSampleDimId } from './frameSlice';
 import { setFrameGridId } from './frameSlice';
 import {
   handleAttributesUpdate,
+  setAttributeSearches,
   setLoadingAttributesForId,
 } from './attributeFinderSlice';
 import {
@@ -97,6 +98,9 @@ export const createWebSocketMiddleware = (): Middleware => {
           break;
         case 'datapoints_updated':
           dispatch(handleDatapointsUpdated());
+          break;
+        case 'attribute_searches':
+          dispatch(setAttributeSearches(data.payload));
           break;
         case 'summarize_transcript_update':
           if (data.payload.type === 'solution') {

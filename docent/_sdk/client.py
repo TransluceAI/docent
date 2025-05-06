@@ -1,6 +1,7 @@
 from typing import Any
 
 import requests
+
 from docent._frames.filters import FrameDimension, FrameFilterTypes
 from docent._frames.types import Datapoint
 from docent._log_util.logger import get_logger
@@ -20,10 +21,18 @@ class DocentClient:
             self._session.headers.update({"Authorization": f"Bearer {self._api_key}"})
 
     def create_framegrid(
-        self, fg_id: str | None = None, add_default_dimensions: bool = True
+        self,
+        fg_id: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        add_default_dimensions: bool = True,
     ) -> str:
         url = f"{self._server_url}/rest/create"
-        payload = {"fg_id": fg_id} if fg_id else {}
+        payload = {
+            "fg_id": fg_id,
+            "name": name,
+            "description": description,
+        }
 
         response = self._session.post(url, json=payload)
         response.raise_for_status()

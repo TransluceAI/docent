@@ -20,7 +20,7 @@ from typing import (
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import URL, delete, exists, select, text, update
+from sqlalchemy import URL, delete, distinct, exists, func, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -306,7 +306,7 @@ class DBService:
         await self._delete_filters(fg_id, filter_ids)
 
         # Then delete all dimensions
-        dim_ids = await self._get_dim_ids(fg_id, include_bins=False)
+        dim_ids = await self._get_dim_ids(fg_id)
         await self._delete_dimensions(fg_id, dim_ids)
 
         # Delete all attributes
@@ -418,6 +418,58 @@ class DBService:
                 select(SQLAFrameGrid.experiment_dim_id).where(SQLAFrameGrid.id == fg_id)
             )
             return result.scalar_one_or_none()
+
+    ######################
+    # Search persistence #
+    ######################
+
+    async def get_attribute_searches_with_judgment_counts(
+        self, fg_id: str, base_data_only: bool = True
+    ):
+        base_filter = await self.get_base_filter(fg_id) if base_data_only else None
+
+        async with self.session() as session:
+            query = select(SQLAFrameDimension.id, SQLAFrameDimension.attribute).where(
+                SQLAFrameDimension.frame_grid_id == fg_id, SQLAFrameDimension.attribute.is_not(None)
+            )
+            result = await session.execute(query)
+            dim_ids_and_attributes = result.all()
+
+        # Consolidate set of attributes
+        for _, attribute in dim_ids_and_attributes:
+            assert attribute is not None, "We filtered out null attributes, this should not happen"
+        attributes = list(set(cast(str, attribute) for _, attribute in dim_ids_and_attributes))
+
+        # Get counts for each attribute
+        async with self.session() as session:
+            query = (
+                select(SQLAAttribute.attribute, func.count(distinct(SQLAAttribute.datapoint_id)))
+                .where(
+                    SQLAAttribute.frame_grid_id == fg_id, SQLAAttribute.attribute.in_(attributes)
+                )
+                .group_by(SQLAAttribute.attribute)
+            )
+            # Filter to attributes for datapoints that match the base filter
+            where_clause = base_filter.to_sqla_where_clause(SQLADatapoint) if base_filter else None
+            if where_clause is not None:
+                query = query.join(
+                    SQLADatapoint, SQLADatapoint.id == SQLAAttribute.datapoint_id
+                ).where(where_clause)
+            print(query.compile(compile_kwargs={"literal_binds": True}))
+            result = await session.execute(query)
+        counts = {attr: count for attr, count in result.all()}
+
+        # Return dims with counts
+        num_total = await self.count_base_data(fg_id)
+        return [
+            {
+                "dim_id": dim_id,
+                "attribute": attribute,
+                "num_judgments_computed": counts.get(attribute, 0),
+                "num_total": num_total,
+            }
+            for dim_id, attribute in dim_ids_and_attributes
+        ]
 
     ##########################
     # Dimensions and filters #
@@ -542,12 +594,12 @@ class DBService:
         result = await self._get_dims(fg_id, [dim_id], include_bins)
         return result[0] if result else None
 
-    async def get_dims(self, fg_id: str, include_bins: bool = True) -> list[FrameDimension]:
-        return await self._get_dims(fg_id, include_bins=include_bins)
-
-    async def _get_dim_ids(
+    async def get_dims(
         self, fg_id: str, dim_ids: list[str] | None = None, include_bins: bool = True
-    ) -> list[str]:
+    ) -> list[FrameDimension]:
+        return await self._get_dims(fg_id, dim_ids, include_bins)
+
+    async def _get_dim_ids(self, fg_id: str) -> list[str]:
         """
         Get all dimension IDs for a given FrameGrid ID.
         """
@@ -769,6 +821,22 @@ class DBService:
             result = await session.execute(query)
             raw = result.scalars().all()
             return [dp.to_datapoint() for dp in raw]
+
+    async def count_base_data(self, fg_id: str) -> int:
+        base_filter = await self.get_base_filter(fg_id)
+        where_clause = base_filter.to_sqla_where_clause(SQLADatapoint) if base_filter else None
+
+        async with self.session() as session:
+            query = (
+                select(func.count())
+                .select_from(SQLADatapoint)
+                .where(SQLADatapoint.frame_grid_id == fg_id)
+            )
+            if where_clause is not None:
+                query = query.where(where_clause)
+
+            result = await session.execute(query)
+            return result.scalar_one()
 
     async def get_metadata_with_ids(self, fg_id: str, base_data_only: bool = True):
         base_filter = await self.get_base_filter(fg_id) if base_data_only else None
