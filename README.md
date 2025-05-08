@@ -20,35 +20,42 @@ We store important environment variables in a `.env` file at the root of the pro
 
 ### Option 1: Docker (recommended)
 
-First install Docker if it's not already on your system. Then run (with `sudo` if on Linux):
+First install [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) if they're not already on your system. Then run:
 
 ```bash
-./scripts/docker_build.sh -a 8889 -w 3001
-./scripts/docker_run.sh -a 8889 -w 3001
+DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
 ```
 
-The API will run on port 8889, and the frontend will run on port 3001. Build + cold start should take a few minutes.
+If on Linux, you might have to use `sudo`:
+```bash
+sudo DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
+```
+Note that `sudo` strips environment variables, so you have to set them *inside* the command.
 
-### Option 2: Manual
+The API will run on port 8889, and the frontend will run on port 3001. Cold build + start should take a few minutes. Restarting after the initial build will be much faster, even with code changes.
 
-You must have Postgres and Redis both installed and running.
+### Option 2: Local
 
-- [[Official Postgres instructions](https://www.postgresql.org/download/)] On Debian Linux, that's `sudo apt install postgresql`.
-  - By default, Postgres ships with the `postgres` user. Access the Postgres CLI with `sudo -u postgres psql`. Then run `CREATE USER $user WITH PASSWORD '$password';` to create a new user. Ensure that the user has permissions to create a database, using `ALTER USER $user WITH SUPERUSER;`.
-  - Record the user and password in `.env`.
-- [[Official Redis instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/)] For Linux, specific instructions are [here](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/install-redis-on-linux/).
-  - To verify that Redis is running, run `redis-cli ping`.
+To run the server and website locally, you'll first need to install Postgres and Redis. If you don't have them already, you can install them using Docker (again using `sudo` if on Linux):
+```bash
+docker compose -f docker-compose-db.yml up --build
+```
 
-Next, run:
+after which Postgres and Redis will be available at `DOCENT_PG_PORT` and `DOCENT_REDIS_PORT`, respectively, as set in `.env`.
+
+If you'd like to set up your own databases, please visit the official docs for [Postgres](https://www.postgresql.org/download/) and [Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/).
+
+Once your databases are up, run:
 
 ```bash
-pip install -e .
+uv sync           # if on uv
+pip install -e .  # if on pip
 ```
 
 to install the relevant packages, then
 
 ```bash
-docent server --port 8889 -w 4
+docent server --port 8889 --workers 4
 ```
 
 to start the server on port 8889 with 4 workers and
@@ -59,6 +66,12 @@ docent web --build --port 3001
 
 to build and serve the frontend on port 3001. You should be able to access the Docent UI at `http://localhost:3001`.
 
+### Option 2: Manual
+
+You must have Postgres and Redis both installed and running.
+
+
+
 ## Installing the Docent Python SDK
 
 In order to load transcripts into Docent, you'll need to install the Docent Python SDK.
@@ -66,7 +79,8 @@ In order to load transcripts into Docent, you'll need to install the Docent Pyth
 Run this command if you haven't already (yes, it's the same as above), and you should be all set:
 
 ```bash
-pip install -e .
+uv sync           # if on uv
+pip install -e .  # if on pip
 ```
 
 You can now create a new session by running:
@@ -76,7 +90,7 @@ from docent import DocentClient
 client = DocentClient(server_url="http://localhost:8889", web_url="http://localhost:3001")
 
 # Create a new FrameGrid (an object you can stick transcripts into)
-fg_id = client.create_frame_grid()
+fg_id = client.create_framegrid()
 ```
 
 You should see a new FrameGrid in the Docent UI upon refresh.

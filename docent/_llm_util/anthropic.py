@@ -2,13 +2,7 @@ import asyncio
 from typing import Any, Literal, cast
 
 import backoff
-from anthropic import (
-    Anthropic,
-    AsyncAnthropic,
-    AuthenticationError,
-    BadRequestError,
-    RateLimitError,
-)
+from anthropic import AsyncAnthropic, AuthenticationError, BadRequestError, RateLimitError
 from anthropic._types import NOT_GIVEN
 from anthropic.types import (
     Message,
@@ -30,6 +24,7 @@ from anthropic.types import (
 )
 from backoff.types import Details
 
+from docent._env_util import ENV
 from docent._llm_util.types import (
     AsyncSingleStreamingCallback,
     ChatMessage,
@@ -352,13 +347,11 @@ async def get_anthropic_chat_completion_async(
         raise RateLimitException(e) from e
 
 
-def get_anthropic_client_sync() -> Anthropic:
-    # Library already reads relevant environment variables
-    return Anthropic()
-
-
 def get_anthropic_client_async() -> AsyncAnthropic:
-    # Library already reads relevant environment variables
+    # Ensure environment variables are loaded.
+    # Technically you don't have to run this, but just makes clear where the envvars are used
+    _ = ENV
+
     return AsyncAnthropic()
 
 

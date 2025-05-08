@@ -1,0 +1,20 @@
+FROM python:3.12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install Node.js, npm, and git
+RUN apt-get update && \
+    apt-get install -y nodejs npm git && \
+    rm -rf /var/lib/apt/lists/*
+# Install uv - it's way faster than pip
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy the cli and web code
+COPY cli/ cli/
+COPY docent/_web docent/_web
+
+# Install the cli only, so that the webapp can be run
+RUN uv pip install --system -e cli/

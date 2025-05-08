@@ -330,6 +330,9 @@ const InnerCard: React.FC<InnerCard> = ({
   const curAttributeQuery = useSelector(
     (state: RootState) => state.attributeFinder.curAttributeQuery
   );
+  const loadingAttributesForId = useSelector(
+    (state: RootState) => state.attributeFinder.loadingAttributesForId
+  );
   const evalId = useSelector((state: RootState) => state.frame.evalId);
   const transcriptMetadata = useSelector(
     (state: RootState) => state.frame.transcriptMetadata
@@ -358,7 +361,12 @@ const InnerCard: React.FC<InnerCard> = ({
   );
 
   useEffect(() => {
-    if (isExpanded && baseFilter && datapointIds.length > 0) {
+    if (
+      isExpanded &&
+      baseFilter &&
+      datapointIds.length > 0 &&
+      !loadingAttributesForId
+    ) {
       const fetchSnippets = async () => {
         try {
           const result = await dispatch(
@@ -374,7 +382,7 @@ const InnerCard: React.FC<InnerCard> = ({
       };
       fetchSnippets();
     }
-  }, [isExpanded, baseFilter, datapointIds, dispatch]);
+  }, [isExpanded, baseFilter, datapointIds, dispatch, loadingAttributesForId]);
 
   // Get all score keys from both current and previous stats
   const allScoreKeys = useMemo(() => {
@@ -405,10 +413,10 @@ const InnerCard: React.FC<InnerCard> = ({
   };
 
   useEffect(() => {
-    if (isExpanded && datapointIds.length > 0) {
+    if (isExpanded && datapointIds.length > 0 && !loadingAttributesForId) {
       dispatch(getTranscriptMetadata(datapointIds));
     }
-  }, [isExpanded, baseFilter, datapointIds, dispatch]); // Re-request when base filter changes too
+  }, [isExpanded, baseFilter, datapointIds, dispatch, loadingAttributesForId]); // Re-request when base filter changes too
 
   // const handleDiffClick = (dataId: string) => {
   //   if (selectedDiffTranscript === null) {

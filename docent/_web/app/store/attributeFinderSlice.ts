@@ -77,8 +77,6 @@ export const requestRegexSnippetsIfExist = createAsyncThunk(
         filter_id: filterId,
         datapoint_ids: datapointIds,
       });
-      console.log('response', response.data);
-      // dispatch(setRegexSnippets(response.data));
 
       return response.data;
     } catch (error) {

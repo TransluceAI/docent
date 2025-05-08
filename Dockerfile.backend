@@ -1,0 +1,21 @@
+FROM python:3.12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install git (needed if pip install pulls git repositories)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install uv - it's way faster than pip
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# First install dependencies
+COPY pyproject.toml .
+RUN uv pip install --system .
+
+# Copy the application code
+COPY . .
+
+# Install the project in editable mode.
+RUN uv pip install --system -e .

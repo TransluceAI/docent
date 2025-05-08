@@ -47,15 +47,6 @@ export const createWebSocketMiddleware = (): Middleware => {
       // Handle different types of messages from the server
       const dispatch = store.dispatch as AppDispatch;
       switch (data.action) {
-        case 'session_joined':
-          dispatch(setFrameGridId(data.payload.id));
-          dispatch(setSampleDimId(data.payload.sample_dim_id));
-          dispatch(setExperimentDimId(data.payload.experiment_dim_id));
-
-          dispatch(getState(data.payload.id));
-          dispatch(getTranscriptMetadataFields());
-
-          break;
         case 'dimensions':
           dispatch(setDimensions(data.payload));
           break;

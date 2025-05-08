@@ -353,7 +353,7 @@ export default function ExperimentViewer({
     alreadyExpanded.current = false;
     dispatch(clearExpandedOuter());
     dispatch(clearExpandedInner());
-  }, [samples, experiments, dispatch]);
+  }, [sampleIds, experimentIds, dispatch]);
 
   /**
    * Scrolling

@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: docent_redis
+    ports:
+      - "${DOCENT_REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    container_name: docent_postgres
+    environment:
+      POSTGRES_USER: ${DOCENT_PG_USER:-docent_user}
+      POSTGRES_PASSWORD: ${DOCENT_PG_PASSWORD:-docent_password}
+      POSTGRES_DB: ${DOCENT_PG_DATABASE:-docent_db}
+    ports:
+      - "${DOCENT_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:

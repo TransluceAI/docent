@@ -88,7 +88,7 @@ PICOCTF_LOGS_4o: dict[str, str | tuple[str, dict[str, Any]]] = {
 }
 PICOCTF_LOGS_36: dict[str, str | tuple[str, dict[str, Any]]] = {
     "intercode_sonnet": f"{LOG_DIR_PREFIX}/2025-03-17T01-22-21+00-00_luce-intercode-ctf_96JiiMbkhiX9ELHCgCxj3v.eval",
-    # "intercode_sonnet_new": f"{LOG_DIR_PREFIX}/sonnet-36-pico.eval",
+    "intercode_sonnet_new": f"{LOG_DIR_PREFIX}/sonnet-36-pico.eval",
 }
 AGENTHARM_LOGS: dict[str, str | tuple[str, dict[str, Any]]] = {
     "agentharm_sonnet35": f"{LOG_DIR_PREFIX}/2025-03-17T01-22-50+00-00_agentharm_ZBeMFNAyBaXovmmrXUmyDD.eval",

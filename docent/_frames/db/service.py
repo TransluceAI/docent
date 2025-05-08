@@ -1,7 +1,6 @@
 import asyncio
 import functools
 import hashlib
-import os
 from contextlib import asynccontextmanager
 from itertools import product
 from time import perf_counter
@@ -20,15 +19,7 @@ from typing import (
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import URL, delete, distinct, exists, func, select, text, update
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-
+from docent._env_util import ENV
 from docent._frames.attributes import AttributeStreamingCallback, extract_attributes
 from docent._frames.clustering.cluster_generator import propose_clusters
 from docent._frames.db.schemas.base import SQLABase
@@ -51,6 +42,14 @@ from docent._frames.filters import (
 from docent._frames.transcript import TranscriptMetadata
 from docent._frames.types import Attribute, Datapoint, Judgment
 from docent._log_util import get_logger
+from sqlalchemy import URL, delete, distinct, exists, func, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 logger = get_logger(__name__)
 
@@ -137,11 +136,11 @@ class DBService:
                 return cls._instance
 
             pg_host, pg_port, pg_user, pg_password, pg_database = (
-                os.getenv("DOCENT_PG_HOST"),
-                os.getenv("DOCENT_PG_PORT"),
-                os.getenv("DOCENT_PG_USER"),
-                os.getenv("DOCENT_PG_PASSWORD"),
-                os.getenv("DOCENT_PG_DATABASE"),
+                ENV.get("DOCENT_PG_HOST"),
+                ENV.get("DOCENT_PG_PORT"),
+                ENV.get("DOCENT_PG_USER"),
+                ENV.get("DOCENT_PG_PASSWORD"),
+                ENV.get("DOCENT_PG_DATABASE"),
             )
 
             # Check each database connection parameter individually
@@ -1287,7 +1286,6 @@ class DBService:
             extra_instructions_list=[guidance],
             feedback_list=[],
             k=n_clusters,
-            # llm_api_keys=llm_api_keys,
         )
         predicates = proposals[0]
 

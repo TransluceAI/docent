@@ -25,6 +25,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 from openai.types.shared_params.function_definition import FunctionDefinition
 
+from docent._env_util import ENV
 from docent._llm_util.types import (
     AsyncSingleStreamingCallback,
     ChatMessage,
@@ -375,13 +376,11 @@ async def get_openai_chat_completion_async(
         raise RateLimitException(e) from e
 
 
-def get_openai_client_sync() -> OpenAI:
-    # Library already reads relevant environment variables
-    return OpenAI()
-
-
 def get_openai_client_async() -> AsyncOpenAI:
-    # Library already reads relevant environment variables
+    # Ensure environment variables are loaded.
+    # Technically you don't have to run this, but just makes clear where the envvars are used
+    _ = ENV
+
     return AsyncOpenAI()
 
 
