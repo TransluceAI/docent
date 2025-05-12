@@ -56,7 +56,31 @@ def web(
         subprocess.run(["npm", "run", "build"], env=env, check=True)
         subprocess.run(["npm", "run", "start", "--", "--port", str(port)], env=env, check=True)
     else:
-        subprocess.run(["npm", "run", "dev", "--", "--port", str(port)], env=env, check=True)
+        # Use Popen instead of run for the dev server to enable hot reloading
+        process = subprocess.Popen(
+            ["npm", "run", "dev", "--", "--port", str(port)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        try:
+            # Stream the output
+            while True:
+                output = process.stdout.readline()
+                if output == "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())
+
+            # Check for any errors
+            if process.returncode != 0:
+                error = process.stderr.read()
+                raise subprocess.CalledProcessError(process.returncode, process.args, error)
+        except KeyboardInterrupt:
+            process.terminate()
+            process.wait()
 
 
 if __name__ == "__main__":

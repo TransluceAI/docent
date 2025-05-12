@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._frames.db.service import DBService
+from docent._frames.db.schemas.tables import SQLADatapoint
 from docent._frames.filters import (
     ComplexFrameFilter,
     FrameDimension,
@@ -18,7 +19,11 @@ from docent._frames.filters import (
     PrimitiveFilter,
     parse_filter_dict,
 )
-from docent._frames.transcript import Citation, parse_citations_single_transcript
+from docent._frames.transcript import (
+    Citation,
+    parse_citations_multi_transcript,
+    parse_citations_single_transcript,
+)
 from docent._frames.types import Datapoint, RegexSnippet
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
@@ -42,6 +47,8 @@ from docent._server._rest.send_state import (
     publish_marginals,
 )
 from docent._server.util import sse_event_stream
+from sqlalchemy.sql import select
+
 
 logger = get_logger(__name__)
 
@@ -343,6 +350,11 @@ async def get_datapoint_metadata(request: DatapointMetadataRequest):
 
 class AttributeWithCitation(TypedDict):
     attribute: str
+    citations: list[Citation]
+
+
+class EvidenceWithCitation(TypedDict):
+    evidence: str
     citations: list[Citation]
 
 
@@ -816,6 +828,151 @@ async def get_ta_message(session_id: str, message: str):
 
         # Close the stream
         await recv_stream.aclose()
+
+    return StreamingResponse(
+        sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
+    )
+
+
+class ComputeDiffRequest(BaseModel):
+    fg_id: str
+    experiment_id_1: str
+    experiment_id_2: str
+
+
+class StreamedDiffs(TypedDict):
+    data_id_1: str | None
+    data_id_2: str | None
+    claim: list[str] | None
+    evidence: list[EvidenceWithCitation] | None
+    reverse_evidence: list[EvidenceWithCitation] | None
+    num_pairs_done: int
+    num_pairs_total: int
+
+
+@rest_router.post("/start_compute_diffs")
+async def start_compute_diffs(request: ComputeDiffRequest):
+    db = await get_db()
+    job_id = await db.add_job(
+        {
+            "type": "compute_diffs",
+            "fg_id": request.fg_id,
+            "experiment_id_1": request.experiment_id_1,
+            "experiment_id_2": request.experiment_id_2,
+        }
+    )
+    return job_id
+
+
+@rest_router.get("/listen_compute_diffs")
+async def listen_compute_diffs(job_id: str):
+    db = await get_db()
+
+    # Retrieve job arguments
+    job = await db.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job {job_id} not found")
+    fg_id, experiment_id_1, experiment_id_2 = (
+        job["fg_id"],
+        job["experiment_id_1"],
+        job["experiment_id_2"],
+    )
+
+    # Create AnyIO queue that we can write intermediate results to
+    send_stream, recv_stream = anyio.create_memory_object_stream(max_buffer_size=100_000)
+
+    # Track intermediate progress
+    progress_lock = anyio.Lock()
+    num_done, num_total = 0, 0  # Will be set after getting datapoints
+
+    async def _ws_diff_streaming_callback(
+        data_id_1: str,
+        data_id_2: str,
+        claim: list[str],
+        evidence: list[str],
+        reverse_evidence: list[str],
+    ) -> None:
+        nonlocal num_done
+
+        async with progress_lock:
+            num_done += 1
+            payload: StreamedDiffs = {
+                "data_id_1": data_id_1,
+                "data_id_2": data_id_2,
+                "claim": claim,
+                "evidence": [
+                    EvidenceWithCitation(evidence=e, citations=parse_citations_multi_transcript(e))
+                    for e in evidence
+                ],
+                "reverse_evidence": [
+                    EvidenceWithCitation(evidence=e, citations=parse_citations_multi_transcript(e))
+                    for e in reverse_evidence
+                ],
+                "num_pairs_done": num_done,
+                "num_pairs_total": num_total,
+            }
+
+        # Send to event_stream so it can be sent back to the client
+        await send_stream.send(payload)
+
+        if num_done == num_total:
+            # Terminate the stream so the event_stream stops waiting
+            await send_stream.aclose()
+
+    async def _execute():
+        async with db.advisory_lock(fg_id, action_id="mutation"):
+            # Get total number of pairs to compute
+            async with db.session() as session:
+                sqla_datapoints = (
+                    (
+                        await session.execute(
+                            select(SQLADatapoint).where(SQLADatapoint.frame_grid_id == fg_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            datapoints = [dp.to_datapoint() for dp in sqla_datapoints]
+
+            # group by sample_id, task_id, epoch_id
+            datapoints_by_sample_task_epoch: dict[tuple[str, str, int], list[Datapoint]] = {}
+            for dp in datapoints:
+                key = (dp.metadata.sample_id, dp.metadata.task_id, dp.metadata.epoch_id)
+                if key not in datapoints_by_sample_task_epoch:
+                    datapoints_by_sample_task_epoch[key] = []
+                datapoints_by_sample_task_epoch[key].append(dp)
+
+            # Count total pairs to compute
+            nonlocal num_total
+            for datapoint_lists in datapoints_by_sample_task_epoch.values():
+                first_pair_candidates = [
+                    dp for dp in datapoint_lists if dp.metadata.experiment_id == experiment_id_1
+                ]
+                second_pair_candidates = [
+                    dp for dp in datapoint_lists if dp.metadata.experiment_id == experiment_id_2
+                ]
+                if len(first_pair_candidates) > 0 and len(second_pair_candidates) > 0:
+                    num_total += 1
+
+            # Send initial 0% state message
+            init_data = StreamedDiffs(
+                data_id_1=None,
+                data_id_2=None,
+                claim=None,
+                evidence=None,
+                reverse_evidence=None,
+                num_pairs_done=0,
+                num_pairs_total=num_total,
+            )
+            await send_stream.send(init_data)
+
+            # Compute diffs
+            await db.compute_diffs(
+                fg_id, experiment_id_1, experiment_id_2, _ws_diff_streaming_callback
+            )
+
+            # Final refresh of state
+            await publish_homepage_state(db, fg_id)
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"

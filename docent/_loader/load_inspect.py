@@ -110,6 +110,7 @@ SWE_BENCH_LOGS: dict[str, str | tuple[str, dict[str, Any]]] = {
     # "swebench-sonnet37-old": f"/home/ubuntu/artifacts/vincent/swe_bench_logs/2025-04-09T21-09-59+00-00_swe-bench_8AcW4AHxbhgtoqEbe5FQcT.eval",
     # "swebench-sonnet37-new": f"/home/ubuntu/artifacts/vincent/swe_bench_logs/2025-04-10T21-39-15+00-00_swe-bench_TZrCQjagGBxzuSrXnE3fqj.eval",
     "swebench-sonnet37-tools": "/home/ubuntu/clarity/logs/2025-04-15T00-09-38+00-00_swe-bench_NzHKupvJR28drNXGB63DEM.eval",
+    "swebench-sonnet35-tools": "/home/ubuntu/clarity/logs/2025-04-30T18-23-26+00-00_swe-bench_Rf7FaysKx5VeLMgSdRpju9.eval",
 }
 
 

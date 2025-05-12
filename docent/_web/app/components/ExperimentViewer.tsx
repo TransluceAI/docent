@@ -77,6 +77,9 @@ export default function ExperimentViewer({
   const attributeMap = useAppSelector(
     (state) => state.attributeFinder.attributeMap
   );
+  const diffMap = useAppSelector(
+    (state) => state.attributeFinder.diffMap
+  );
   const voteState = useAppSelector((state) => state.attributeFinder.voteState);
 
   // UI state
@@ -142,19 +145,35 @@ export default function ExperimentViewer({
   );
 
   /**
-   * Deal with filtering by the attribute query
+   * Deal with filtering by the attribute query and diff results
    */
 
   const idMarginals = useMemo(() => {
-    if (!rawIdMarginals || !curAttributeQuery) return rawIdMarginals;
+    if (!rawIdMarginals) return rawIdMarginals;
+    if (!curAttributeQuery && !diffMap) return rawIdMarginals;
 
-    // Filter the keys and their datapoints based on attribute query
+    // Filter the keys and their datapoints based on attribute query or diff results
     const filtered = Object.entries(rawIdMarginals).reduce(
       (result, [key, datapointsList]) => {
-        // Filter datapoints to ones that have the attributes
+        // Filter datapoints to ones that have the attributes and/or diff results
         const filteredDatapoints = datapointsList.filter((datapointId) => {
-          const attrs = attributeMap?.[datapointId]?.[curAttributeQuery];
-          return attrs && attrs.length > 0;
+          // Check for attributes if there's an active attribute query
+
+          if (curAttributeQuery) {
+            const attrs = attributeMap?.[datapointId]?.[curAttributeQuery];
+            return attrs && attrs.length > 0;
+          }
+
+          // Check for diff results if there's an active diff query
+          let hasDiffResults = true;
+          if (diffMap) {
+            hasDiffResults = Object.keys(diffMap).some((key) => {
+              const [id1, id2] = key.split('|||');
+              return id1 === datapointId; // || id2 === datapointId;
+            });
+          }
+
+          return hasDiffResults;
         });
 
         // Only include keys that have at least one datapoint after filtering
@@ -168,16 +187,17 @@ export default function ExperimentViewer({
     );
 
     return filtered;
-  }, [rawIdMarginals, curAttributeQuery, attributeMap]);
+  }, [rawIdMarginals, curAttributeQuery, attributeMap, diffMap]);
 
   const statMarginals = useMemo(() => {
-    if (!rawStatMarginals || !curAttributeQuery) return rawStatMarginals;
+    if (!rawStatMarginals) return rawStatMarginals;
+    if (!curAttributeQuery && !diffMap) return rawStatMarginals;
     return Object.fromEntries(
       Object.entries(rawStatMarginals).filter(([key, _]) => {
         return idMarginals && key in idMarginals;
       })
     );
-  }, [rawStatMarginals, curAttributeQuery, idMarginals]);
+  }, [rawStatMarginals, curAttributeQuery, idMarginals, diffMap]);
 
   // For each experiment, get the samples that have non-null stats
   const samplesByExperiment = useMemo(() => {

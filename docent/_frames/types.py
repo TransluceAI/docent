@@ -52,6 +52,19 @@ class Attribute(BaseModel):
     value: str | None = None
 
 
+class DiffAttribute(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    data_id_1: str
+    data_id_2: str
+    attribute: str = (
+        ""  # unused for now. but will probably support diffing along some known axis later
+    )
+    attribute_idx: int | None = None
+    claim: str | None = None
+    evidence: str | None = None
+    reverse_evidence: str | None = None
+
+
 class AssignmentStreamingCallback(Protocol):
     async def __call__(
         self,

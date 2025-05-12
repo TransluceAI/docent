@@ -9,6 +9,7 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Coroutine,
     ParamSpec,
     Sequence,
     TypedDict,
@@ -26,6 +27,7 @@ from docent._frames.db.schemas.base import SQLABase
 from docent._frames.db.schemas.tables import (
     SQLAAttribute,
     SQLADatapoint,
+    SQLADiffAttribute,
     SQLAFilter,
     SQLAFrameDimension,
     SQLAFrameGrid,
@@ -50,6 +52,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from docent._frames.diff import compute_diff_and_evidence
 
 logger = get_logger(__name__)
 
@@ -908,6 +911,141 @@ class DBService:
 
             result = await session.execute(query)
             return [a.to_attribute() for a in result.scalars().all()]
+
+    async def compute_diffs(
+        self,
+        fg_id: str,
+        experiment_id_1: str,
+        experiment_id_2: str,
+        diff_callback: (
+            Callable[[str, str, list[str], list[str], list[str]], Coroutine[Any, Any, None]] | None
+        ) = None,
+    ):
+        # TODO(vincent): intersect with a filter, maybe allow user to pass in attribute as well
+        # get pairs of datapoints from fg_id where (sample_id, task_id, epoch_id) match
+        # and the datapoints have the corresponding experiment_id's
+
+        async with self.session() as session:
+            sqla_datapoints = (
+                (
+                    await session.execute(
+                        select(SQLADatapoint).where(SQLADatapoint.frame_grid_id == fg_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        datapoints = [dp.to_datapoint() for dp in sqla_datapoints]
+
+        # group by sample_id, task_id, epoch_id
+        datapoints_by_sample_task_epoch: dict[tuple[str, str, int], list[Datapoint]] = {}
+        for dp in datapoints:
+            key = (dp.metadata.sample_id, dp.metadata.task_id, dp.metadata.epoch_id)
+            if key not in datapoints_by_sample_task_epoch:
+                datapoints_by_sample_task_epoch[key] = []
+            datapoints_by_sample_task_epoch[key].append(dp)
+
+        # Get existing diff results from database
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLADiffAttribute).where(
+                    SQLADiffAttribute.frame_grid_id == fg_id,
+                )
+            )
+            existing_diffs = result.scalars().all()
+            existing_diff_pairs = {
+                (diff.data_id_1, diff.data_id_2): diff for diff in existing_diffs
+            }
+
+        # First stream existing diffs
+        if diff_callback is not None:
+            for (data_id_1, data_id_2), _ in existing_diff_pairs.items():
+                # Group diffs by data_id pairs
+                diffs_by_pair: dict[tuple[str, str], tuple[list[str], list[str], list[str]]] = {}
+                for d in existing_diffs:
+                    if d.data_id_1 == data_id_1 and d.data_id_2 == data_id_2:
+                        pair = (d.data_id_1, d.data_id_2)
+                        if pair not in diffs_by_pair:
+                            diffs_by_pair[pair] = ([], [], [])
+                        if d.claim:
+                            diffs_by_pair[pair][0].append(d.claim)
+                            diffs_by_pair[pair][1].append(d.evidence)
+                            diffs_by_pair[pair][2].append(d.reverse_evidence)
+
+                # Stream each pair's diffs
+                for (d1, d2), (claims, evidences, reverse_evidences) in diffs_by_pair.items():
+                    await diff_callback(d1, d2, claims, evidences, reverse_evidences)
+
+        tasks: list[Coroutine[Any, Any, tuple[tuple[str, str, str], ...]]] = []
+        pairs_to_compute: list[tuple[str, str]] = []
+
+        for datapoint_lists in datapoints_by_sample_task_epoch.values():
+            first_pair_candidates = [
+                dp for dp in datapoint_lists if dp.metadata.experiment_id == experiment_id_1
+            ]
+            second_pair_candidates = [
+                dp for dp in datapoint_lists if dp.metadata.experiment_id == experiment_id_2
+            ]
+
+            if len(first_pair_candidates) > 0 and len(second_pair_candidates) > 0:
+                first_dp = first_pair_candidates[0]
+                second_dp = second_pair_candidates[0]
+
+                # Check if we already have results for this pair
+                if (first_dp.id, second_dp.id) not in existing_diff_pairs:
+                    tasks.append(compute_diff_and_evidence(first_dp.obj, second_dp.obj))
+                    pairs_to_compute.append((first_dp.id, second_dp.id))
+
+        logger.info(f"Computing diffs for {len(tasks)} new pairs")
+
+        # Compute diffs for pairs that don't have results yet
+        results = await asyncio.gather(*tasks)
+
+        # Store results in database
+        to_upload: list[SQLADiffAttribute] = []
+        for (data_id_1, data_id_2), diff_results in zip(pairs_to_compute, results):
+            if len(diff_results) == 0:
+                to_upload.append(
+                    SQLADiffAttribute.from_diff_attribute(
+                        data_id_1=data_id_1,
+                        data_id_2=data_id_2,
+                        attribute="",  # unused for now
+                        attribute_idx=None,
+                        claim="",
+                        evidence="",
+                        reverse_evidence="",
+                        fg_id=fg_id,
+                    )
+                )
+                if diff_callback is not None:
+                    await diff_callback(data_id_1, data_id_2, [], [], [])
+                continue
+            diffs: list[str] = []
+            evidences: list[str] = []
+            reverse_evidences: list[str] = []
+            for i, (claim, evidence, reverse_evidence) in enumerate(diff_results):
+                to_upload.append(
+                    SQLADiffAttribute.from_diff_attribute(
+                        data_id_1=data_id_1,
+                        data_id_2=data_id_2,
+                        attribute="",  # unused for now
+                        attribute_idx=i,
+                        claim=claim,
+                        evidence=evidence,
+                        reverse_evidence=reverse_evidence,
+                        fg_id=fg_id,
+                    )
+                )
+                diffs.append(claim)
+                evidences.append(evidence)
+                reverse_evidences.append(reverse_evidence)
+            if diff_callback is not None:
+                await diff_callback(data_id_1, data_id_2, diffs, evidences, reverse_evidences)
+
+        if to_upload:
+            async with self.session() as session:
+                session.add_all(to_upload)
+                logger.info(f"Pushed {len(to_upload)} diff attributes")
 
     async def compute_attributes(
         self,

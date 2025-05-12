@@ -62,3 +62,18 @@ export interface RegexSnippet {
   match_start: number;
   match_end: number;
 }
+
+export interface EvidenceWithCitation {
+  evidence: string;
+  citations: Citation[];
+}
+
+export interface StreamedDiffs {
+  data_id_1: string | null;
+  data_id_2: string | null;
+  claim: string[] | null;
+  evidence: EvidenceWithCitation[] | null;
+  reverse_evidence: EvidenceWithCitation[] | null;
+  num_pairs_done: number;
+  num_pairs_total: number;
+}

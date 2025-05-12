@@ -36,6 +36,7 @@ import {
   cancelCurrentClusterRequest,
   setAttributeQueryTextboxValue,
   setCurAttributeQuery,
+  requestDiffs,
   setAttributeQueryDimId,
 } from '../store/attributeFinderSlice';
 import { useAppDispatch } from '../store/hooks';
@@ -128,6 +129,10 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   );
   const [clusterFeedback, setClusterFeedback] = useState('');
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  const [experimentId1, setExperimentId1] = useState('');
+  const [experimentId2, setExperimentId2] = useState('');
+  const [loadingDiffs, setLoadingDiffs] = useState(false);
+  const [diffsAttribute, setDiffsAttribute] = useState<string | null>(null);
 
   // Find the active dimension state based on the current attribute query
   const attributeQueryDimId = useSelector(
@@ -269,6 +274,43 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
   const handlePresetLeave = () => {
     setIsPresetHovered(false);
     setPlaceholderText(DEFAULT_PLACEHOLDER_TEXT);
+  };
+
+  const handleRequestDiffs = () => {
+    if (!experimentId1 || !experimentId2) {
+      toast({
+        title: 'Missing experiment IDs',
+        description: 'Please enter both experiment IDs',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setLoadingDiffs(true);
+    dispatch(
+      requestDiffs({
+        experimentId1,
+        experimentId2,
+      })
+    ).then(() => {
+      setLoadingDiffs(false);
+      // Set the diffs attribute to enable clustering
+      setDiffsAttribute('diffs');
+    });
+  };
+
+  const handleCancelDiffs = () => {
+    setLoadingDiffs(false);
+    setDiffsAttribute(null);
+    setExperimentId1('');
+    setExperimentId2('');
+  };
+
+  const handleClusterDiffs = () => {
+    if (!diffsAttribute) return;
+    dispatch(
+      requestClusters({ dimensionId: diffsAttribute, feedback: '' })
+    );
   };
 
   return (
@@ -464,6 +506,93 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
               </Button>
             </div>
           </div>
+        </div>
+      </div>
+      <div className="border-t" />
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-semibold">Compare Experiments</div>
+          <div className="text-xs">
+            Compare results between two different experiment runs.
+          </div>
+        </div>
+
+        <div className="border rounded-md bg-gray-50 p-2 space-y-2">
+          {!loadingDiffs && !diffsAttribute ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-600">Experiment 1</div>
+                  <Input
+                    value={experimentId1}
+                    onChange={(e) => setExperimentId1(e.target.value)}
+                    placeholder="e.g. experiment-1"
+                    className="h-8 text-xs bg-white font-mono text-gray-600"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-600">Experiment 2</div>
+                  <Input
+                    value={experimentId2}
+                    onChange={(e) => setExperimentId2(e.target.value)}
+                    placeholder="e.g. experiment-2"
+                    className="h-8 text-xs bg-white font-mono text-gray-600"
+                  />
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="text-xs w-full"
+                onClick={handleRequestDiffs}
+                disabled={!experimentId1 || !experimentId2}
+              >
+                Compare Experiments
+              </Button>
+            </>
+          ) : loadingDiffs ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-600">Loading diffs...</div>
+                <button
+                onClick={handleCancelDiffs}
+                className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3 mr" />
+                Clear
+              </button>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-600">Comparison between experiments
+                  <span className="font-mono whitespace-pre-wrap text-indigo-800">&nbsp;{experimentId1}&nbsp;</span>and
+                  <span className="font-mono whitespace-pre-wrap text-indigo-800">&nbsp;{experimentId2}&nbsp;</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCancelDiffs}
+                    className="text-xs"
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="text-xs"
+                    onClick={handleClusterDiffs}
+                  >
+                    <Sparkles className="h-3 w-3 mr-2" />
+                    Cluster Results
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="border-t" />
