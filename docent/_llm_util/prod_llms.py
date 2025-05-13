@@ -356,13 +356,13 @@ class LLMManager:
                 num_error = sum(1 for result in results if result is None)
                 if num_error > 0:
                     logger.warning(f"{model_name}: {num_error} failed calls")
-                    self._rotate_model_option()
+                    if not self._rotate_model_option():
+                        break  # Stop looping
                 # Otherwise, we're done and can break
                 else:
                     break
             except PleaseRotate:
                 if not self._rotate_model_option():
-                    logger.error("All model options are exhausted")
                     break  # Stop looping
 
         # If any results are None, set them to an error result
@@ -384,6 +384,7 @@ class LLMManager:
     def _rotate_model_option(self) -> ModelOption | None:
         self.current_model_option_index += 1
         if self.current_model_option_index >= len(self.model_options):
+            logger.error("All model options are exhausted")
             return None
 
         new_model_option = self.model_options[self.current_model_option_index]
