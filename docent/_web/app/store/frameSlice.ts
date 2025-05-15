@@ -362,6 +362,57 @@ export const deleteFilter = createAsyncThunk(
   }
 );
 
+export const updateFrameGrid = createAsyncThunk(
+  'frame/updateFrameGrid',
+  async (
+    { fg_id, name, description }: { fg_id: string; name?: string; description?: string },
+    { dispatch }
+  ) => {
+    try {
+      await apiRestClient.put('/framegrid', {
+        fg_id,
+        name,
+        description,
+      });
+      return { fg_id };
+    } catch (error) {
+      dispatch(
+        setToastNotification({
+          title: 'Error updating frame grid',
+          description: 'Failed to update frame grid',
+          variant: 'destructive',
+        })
+      );
+      throw error;
+    }
+  }
+);
+
+export const deleteFrameGrid = createAsyncThunk(
+  'frame/deleteFrameGrid',
+  async (fg_id: string, { dispatch }) => {
+    try {
+      await apiRestClient.delete(`/framegrid?fg_id=${fg_id}`);
+      dispatch(
+        setToastNotification({
+          title: 'Frame grid deleted',
+          description: 'The frame grid has been successfully deleted',
+        })
+      );
+      return { fg_id };
+    } catch (error) {
+      dispatch(
+        setToastNotification({
+          title: 'Error deleting frame grid',
+          description: 'Failed to delete frame grid',
+          variant: 'destructive',
+        })
+      );
+      throw error;
+    }
+  }
+);
+
 export const editFilter = createAsyncThunk(
   'frame/editFilter',
   async (

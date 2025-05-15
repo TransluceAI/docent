@@ -5,11 +5,6 @@ from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
 
 import anyio
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy.inspection import inspect as sqla_inspect
-
 from docent._frames.attributes import AttributeStreamingEvent
 from docent._frames.db.service import DBService
 from docent._frames.filters import (
@@ -36,13 +31,19 @@ from docent._server._assistant.summarizer import (
     summarize_agent_actions,
     summarize_intended_solution,
 )
+from docent._server._broker.redis_client import publish_to_broker
 from docent._server._rest.send_state import (
     publish_attribute_searches,
     publish_dims,
+    publish_framegrids,
     publish_homepage_state,
     publish_marginals,
 )
 from docent._server.util import sse_event_stream
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.inspection import inspect as sqla_inspect
 
 logger = get_logger(__name__)
 
@@ -67,8 +68,8 @@ async def ping():
 async def get_framegrids():
     db = await get_db()
     sqla_fgs = await db.get_fgs()
-
     return [
+        # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
         for obj in sqla_fgs
     ]
@@ -84,7 +85,43 @@ class CreateFrameGridRequest(BaseModel):
 async def create(request: CreateFrameGridRequest = CreateFrameGridRequest()):
     db = await get_db()
     fg_id = await db.create(fg_id=request.fg_id, name=request.name, description=request.description)
+    # Publish updated framegrids list to all clients
+    await publish_framegrids(db)
     return {"fg_id": fg_id}
+
+
+class UpdateFrameGridRequest(BaseModel):
+    fg_id: str
+    name: str | None = None
+    description: str | None = None
+
+
+@rest_router.put("/framegrid")
+async def update_framegrid(request: UpdateFrameGridRequest):
+    db = await get_db()
+    await db.update_framegrid(request.fg_id, name=request.name, description=request.description)
+    # Publish homepage state for this specific framegrid
+    await publish_homepage_state(db, request.fg_id)
+    # Also publish updated framegrids list to all clients
+    await publish_framegrids(db)
+    return {"fg_id": request.fg_id}
+
+
+@rest_router.delete("/framegrid")
+async def delete_framegrid(fg_id: str):
+    db = await get_db()
+    await db.delete_framegrid(fg_id)
+    # Notify about the specific deleted framegrid
+    await publish_to_broker(
+        None,  # Broadcast to all connections
+        {
+            "action": "framegrid_deleted",
+            "payload": {"fg_id": fg_id},
+        },
+    )
+    # Also publish the updated list of framegrids
+    await publish_framegrids(db)
+    return {"status": "success", "fg_id": fg_id}
 
 
 class JoinFrameGridRequest(BaseModel):

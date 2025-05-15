@@ -1,11 +1,11 @@
 from typing import Any, Awaitable, Callable, cast
 
 import anyio
-
 from docent._frames.db.service import DBService, MarginalizationResult
 from docent._frames.transcript import TranscriptMetadata
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import publish_to_broker
+from sqlalchemy.inspection import inspect as sqla_inspect
 
 logger = get_logger(__name__)
 
@@ -242,6 +242,24 @@ async def publish_homepage_marginals(
                 },
             },
         )
+
+
+async def publish_framegrids(db: DBService):
+    """Publish updated framegrids to all connected clients."""
+    sqla_fgs = await db.get_fgs()
+    framegrids = [
+        # Get all columns from the SQLAlchemy object
+        {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
+        for obj in sqla_fgs
+    ]
+
+    await publish_to_broker(
+        None,  # Broadcast to the general channel
+        {
+            "action": "framegrids_updated",
+            "payload": framegrids,
+        },
+    )
 
 
 async def publish_homepage_state(db: DBService, fg_id: str):

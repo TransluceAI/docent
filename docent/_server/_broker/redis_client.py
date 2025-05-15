@@ -13,12 +13,12 @@ if REDIS_HOST is None or REDIS_PORT is None:
 REDIS = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)  # type: ignore
 
 
-async def publish_to_broker(framegrid_id: str, data: dict[str, Any]):
+async def publish_to_broker(framegrid_id: str | None, data: dict[str, Any]):
     """Publish a message to the broker for a specific framegrid.
 
     Args:
         framegrid_id: The ID of the framegrid to publish to
         data: The data to publish (will be converted to JSON)
     """
-    channel = f"framegrid:{framegrid_id}"
+    channel = f"framegrid:{framegrid_id}" if framegrid_id is not None else "general:general"
     await REDIS.publish(channel, json.dumps(jsonable_encoder(data)))  # type: ignore

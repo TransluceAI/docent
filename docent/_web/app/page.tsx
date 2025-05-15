@@ -6,6 +6,7 @@ import {
   fetchFrameGrids,
   resetFrameSlice,
   setEvalId,
+  updateFrameGrid,
 } from './store/frameSlice';
 import { FrameGridsTable } from './components/FrameGridsTable';
 import { Button } from '@/components/ui/button';
@@ -13,9 +14,26 @@ import { Separator } from '@/components/ui/separator';
 import { Loader2, PlusIcon } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { resetExperimentViewerSlice } from './store/experimentViewerSlice';
-import { resetAttributeFinderSlice } from './store/attributeFinderSlice';
+import {
+  cancelCurrentAttributeRequest,
+  cancelCurrentClusterRequest,
+  resetAttributeFinderSlice,
+} from './store/attributeFinderSlice';
 import { resetTranscriptSlice } from './store/transcriptSlice';
 import socketService from './services/socketService';
+import { apiRestClient } from './services/apiService';
+import { toast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 const DocentDashboard = () => {
   const evalId = useAppSelector((state) => state.frame.evalId);
@@ -24,6 +42,12 @@ const DocentDashboard = () => {
     (state) => state.frame.isLoadingFrameGrids
   );
   const dispatch = useAppDispatch();
+
+  // New framegrid dialog state
+  const [isNewGridDialogOpen, setIsNewGridDialogOpen] = useState(false);
+  const [newGridName, setNewGridName] = useState('');
+  const [newGridDescription, setNewGridDescription] = useState('');
+  const [isCreatingGrid, setIsCreatingGrid] = useState(false);
 
   useEffect(() => {
     // Fetch data when component mounts
@@ -35,7 +59,39 @@ const DocentDashboard = () => {
     dispatch(resetExperimentViewerSlice());
     dispatch(resetAttributeFinderSlice());
     dispatch(resetTranscriptSlice());
+    dispatch(cancelCurrentAttributeRequest());
+    dispatch(cancelCurrentClusterRequest());
+    // TODO(mengk): call thunks to cancel the transcript requests too
   }, [dispatch, evalId]);
+
+  const handleCreateFrameGrid = async () => {
+    setIsCreatingGrid(true);
+    try {
+      const response = await apiRestClient.post('/create', {
+        name: newGridName,
+        description: newGridDescription,
+      });
+
+      // Close dialog and reset form
+      setIsNewGridDialogOpen(false);
+      setNewGridName('');
+      setNewGridDescription('');
+
+      toast({
+        title: 'Frame Grid Created',
+        description: 'New frame grid has been created successfully',
+      });
+    } catch (error) {
+      console.error('Failed to create frame grid:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create new frame grid',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreatingGrid(false);
+    }
+  };
 
   return (
     <ScrollArea className="h-screen">
@@ -51,7 +107,11 @@ const DocentDashboard = () => {
                 Create a new FrameGrid for each benchmark or set of experiments.
               </div>
             </div>
-            <Button className="flex items-center gap-1" size="sm">
+            <Button
+              className="flex items-center gap-1"
+              size="sm"
+              onClick={() => setIsNewGridDialogOpen(true)}
+            >
               <PlusIcon className="h-3.5 w-3.5" />
               Create New Frame Grid
             </Button>
@@ -66,6 +126,58 @@ const DocentDashboard = () => {
           isLoading={isLoadingFrameGrids}
         />
       </div>
+
+      {/* Create New Frame Grid Dialog */}
+      <Dialog open={isNewGridDialogOpen} onOpenChange={setIsNewGridDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Frame Grid</DialogTitle>
+            <DialogDescription>
+              Create a new frame grid for your benchmark or experiment set.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="new-name">Name</Label>
+              <Input
+                id="new-name"
+                value={newGridName}
+                onChange={(e) => setNewGridName(e.target.value)}
+                placeholder="Enter a name for this frame grid"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="new-description">Description</Label>
+              <Textarea
+                id="new-description"
+                value={newGridDescription}
+                onChange={(e) => setNewGridDescription(e.target.value)}
+                placeholder="Enter a description for this frame grid"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsNewGridDialogOpen(false)}
+              disabled={isCreatingGrid}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFrameGrid} disabled={isCreatingGrid}>
+              {isCreatingGrid ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ScrollArea>
   );
 };

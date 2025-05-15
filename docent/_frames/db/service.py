@@ -19,15 +19,6 @@ from typing import (
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import URL, delete, distinct, exists, func, select, text, update
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-
 from docent._env_util import ENV
 from docent._frames.attributes import (
     AttributeStreamingCallback,
@@ -55,8 +46,26 @@ from docent._frames.filters import (
 from docent._frames.transcript import TranscriptMetadata
 from docent._frames.types import Attribute, Datapoint, Judgment
 from docent._log_util import get_logger
+from sqlalchemy import URL, delete, distinct, exists, func, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 logger = get_logger(__name__)
+
+
+class _NotGiven:
+    """Sentinel class to represent a value that was not given."""
+
+    def __repr__(self):
+        return "NOT_GIVEN"
+
+
+NOT_GIVEN = _NotGiven()
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -290,6 +299,33 @@ class DBService:
             session.add(SQLAFrameGrid(id=fg_id, name=name, description=description))
         logger.info(f"Created FrameGrid with ID: {fg_id}")
         return fg_id
+
+    async def update_framegrid(
+        self,
+        fg_id: str,
+        name: str | None | _NotGiven = NOT_GIVEN,
+        description: str | None | _NotGiven = NOT_GIVEN,
+    ):
+        """
+        Update the name and/or description of a FrameGrid.
+        Fields set to `None` will be nulled in the database.
+        Fields not provided (i.e., left as NOT_GIVEN) will be unchanged.
+        """
+        values_to_update = {}
+        if name is not NOT_GIVEN:
+            values_to_update["name"] = name
+        if description is not NOT_GIVEN:
+            values_to_update["description"] = description
+
+        if not values_to_update:
+            logger.info(f"No values provided to update FrameGrid {fg_id}")
+            return
+
+        async with self.session() as session:
+            await session.execute(
+                update(SQLAFrameGrid).where(SQLAFrameGrid.id == fg_id).values(**values_to_update)
+            )
+        logger.info(f"Updated FrameGrid {fg_id} with values: {values_to_update}")
 
     async def exists(self, fg_id: str) -> bool:
         async with self.session() as session:

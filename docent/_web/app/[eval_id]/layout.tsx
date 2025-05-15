@@ -13,7 +13,11 @@ import {
 import ResponsiveCheck from '../components/ResponsiveCheck';
 import { requestAttributes } from '../store/attributeFinderSlice';
 
-function DocentLayoutContent({ children }: { children: React.ReactNode }) {
+export default function DocentLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const dispatch = useAppDispatch();
   const params = useParams();
   const evalId = params.eval_id as string;
@@ -69,6 +73,7 @@ function DocentLayoutContent({ children }: { children: React.ReactNode }) {
     searchParamsCheckedRef.current = true;
   }, [searchParams, router, dispatch]);
 
+  // If the URL comes with an attributeDimId, we need to request the attributes
   const alreadyRequestedInitAttribute = useRef(false);
   useEffect(() => {
     if (
@@ -77,7 +82,6 @@ function DocentLayoutContent({ children }: { children: React.ReactNode }) {
       initAttributeDimId &&
       dimensionsMap
     ) {
-      console.log('Getting attribute dim ID:', initAttributeDimId);
       dispatch(
         requestAttributes({
           attribute: undefined,
@@ -96,12 +100,4 @@ function DocentLayoutContent({ children }: { children: React.ReactNode }) {
       <ResponsiveCheck>{children}</ResponsiveCheck>
     </div>
   );
-}
-
-export default function DocentLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return <DocentLayoutContent>{children}</DocentLayoutContent>;
 }

@@ -19,7 +19,7 @@ import { setDimensions } from './frameSlice';
 import { getTranscriptMetadataFields } from './frameSlice';
 import { getState } from './frameSlice';
 import { setExperimentDimId, setSampleDimId } from './frameSlice';
-import { setFrameGridId } from './frameSlice';
+import { setFrameGridId, setFrameGrids } from './frameSlice';
 import {
   handleAttributesUpdate,
   setAttributeSearches,
@@ -47,6 +47,13 @@ export const createWebSocketMiddleware = (): Middleware => {
       // Handle different types of messages from the server
       const dispatch = store.dispatch as AppDispatch;
       switch (data.action) {
+        case 'framegrids_updated':
+          dispatch(setFrameGrids(data.payload));
+          break;
+        case 'framegrid_deleted':
+          // If the current framegrid is deleted, we could potentially redirect to the home page
+          // This would be handled by a different part of the app
+          break;
         case 'dimensions':
           dispatch(setDimensions(data.payload));
           break;

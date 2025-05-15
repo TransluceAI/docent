@@ -1,9 +1,8 @@
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import REDIS
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = get_logger(__name__)
 
@@ -12,10 +11,21 @@ broker_router = APIRouter()
 
 
 @broker_router.websocket("/{framegrid_id}")
-async def websocket_endpoint(websocket: WebSocket, framegrid_id: str):
+async def fg_websocket_endpoint(websocket: WebSocket, framegrid_id: str):
+    """Used to listen for framegrid-specific events"""
+    await websocket_loop(websocket, f"framegrid:{framegrid_id}")
+
+
+@broker_router.websocket("/")
+async def general_websocket_endpoint(websocket: WebSocket):
+    """Used to listen for general events"""
+    await websocket_loop(websocket, "general:general")
+
+
+async def websocket_loop(websocket: WebSocket, channel: str):
     await websocket.accept()
     pubsub = REDIS.pubsub()  # type: ignore
-    await pubsub.psubscribe(f"framegrid:{framegrid_id}")
+    await pubsub.psubscribe(channel)
 
     try:
         while True:
@@ -30,4 +40,4 @@ async def websocket_endpoint(websocket: WebSocket, framegrid_id: str):
         # Clean up Redis subscription when client disconnects
         await pubsub.unsubscribe()  # type: ignore
         await pubsub.close()
-        logger.info(f"Cleaned up Redis connection for {framegrid_id}")
+        logger.info(f"Cleaned up Redis connection for {channel}")

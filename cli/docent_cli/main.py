@@ -68,7 +68,7 @@ def web(
         try:
             # Stream the output
             while True:
-                output = process.stdout.readline()
+                output = process.stdout.readline() if process.stdout else None
                 if output == "" and process.poll() is not None:
                     break
                 if output:
@@ -76,7 +76,7 @@ def web(
 
             # Check for any errors
             if process.returncode != 0:
-                error = process.stderr.read()
+                error = process.stderr.read() if process.stderr else None
                 raise subprocess.CalledProcessError(process.returncode, process.args, error)
         except KeyboardInterrupt:
             process.terminate()
