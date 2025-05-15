@@ -120,7 +120,7 @@ def extract_claims_and_evidence(llm_output: str) -> tuple[list[str], list[str]]:
     return claims, evidences
 
 
-def swap_agent_indices_and_citaitons(evidence: str) -> str:
+def swap_agent_indices_and_citations(evidence: str) -> str:
     evidence = (
         evidence.replace("Agent 1", "Agent 3")
         .replace("Agent 2", "Agent 1")
@@ -158,7 +158,7 @@ def extract_reverse_evidence(llm_output: str) -> list[str]:
                 current_evidence = current_evidence.removeprefix(
                     "There is evidence for this claim. "
                 )
-            current_evidence = swap_agent_indices_and_citaitons(current_evidence)
+            current_evidence = swap_agent_indices_and_citations(current_evidence)
             evidences[i] = current_evidence
     return evidences
 
