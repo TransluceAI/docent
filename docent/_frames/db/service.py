@@ -774,7 +774,7 @@ class DBService:
             )
             logger.info(f"Deleted {result.rowcount} dimensions")
 
-        # If this is the only dimension with this attribute, then clear attributes
+        # If no more dimensions use this attribute, then clear them from the database
         for attribute in attributes_to_check:
             # Check if any other dimensions use this attribute
             async with self.session() as session:
@@ -1189,7 +1189,7 @@ class DBService:
         if filter is None:
             raise ValueError(f"Filter ID {filter_id} not found")
 
-        logger.info(f"Computing filter: {filter}")
+        logger.info(f"Computing filter: {filter.name or filter.id}")
 
         if filter.supports_sql:
             # Get the SQLA where clause for the filter

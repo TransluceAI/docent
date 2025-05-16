@@ -7,7 +7,11 @@ from uuid import uuid4
 from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
 from sqlalchemy import Boolean, ColumnElement, Double, Integer, String, and_, or_
 
-from docent._frames.clustering.cluster_assigner import ASSIGNERS, DEFAULT_ASSIGNER, AssignerType
+from docent._frames.clustering.cluster_assigner import (
+    DEFAULT_ASSIGNER,
+    AssignerType,
+    assign_with_backend,
+)
 from docent._frames.types import Datapoint, Judgment, JudgmentStreamingCallback, RegexSnippet
 from docent._llm_util.types import LLMApiKeys
 from docent._log_util import get_logger
@@ -339,11 +343,11 @@ class FramePredicate(FrameFilter):
             if judgment_callback is not None:
                 await judgment_callback(i, j, judgment)
 
-        await ASSIGNERS[self.backend].assign(
-            to_check_flat,
-            [self.predicate for _ in to_check_flat],
+        await assign_with_backend(
+            backend=self.backend,
+            items=to_check_flat,
+            clusters=[self.predicate for _ in to_check_flat],
             assignment_callback=_assignment_callback,
-            llm_api_keys=self.llm_api_keys,
         )
 
         for i, sublist in enumerate(judgments_NA):

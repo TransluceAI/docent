@@ -1,10 +1,6 @@
-from docent._frames.clustering.cluster_assigner import ASSIGNERS, ClusterAssignerFromLLM
+from docent._frames.clustering.cluster_assigner import assign_with_backend
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
-
-assigner = ASSIGNERS["sonnet-37-thinking"]
-assert isinstance(assigner, ClusterAssignerFromLLM)
-assigner.temperature = 1.0
 
 
 async def evaluate_new_queries(
@@ -20,7 +16,11 @@ async def evaluate_new_queries(
             ]
             * num_results
         )
-    results = await assigner.assign(items, clusters)
+    results = await assign_with_backend(
+        backend="sonnet-37-thinking",
+        items=items,
+        clusters=clusters,
+    )
     scores: list[list[bool]] = []
     max_score = 0.0
     max_score_index = -1

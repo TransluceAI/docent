@@ -2,7 +2,6 @@ import random
 
 from docent._frames.clustering.cluster_assigner import ClusterAssigner, HybridClusterAssigner
 from docent._frames.clustering.cluster_generator import propose_clusters
-from docent._llm_util.types import LLMApiKeys
 from docent._log_util import get_logger
 
 logger = get_logger(__name__)
@@ -12,7 +11,6 @@ async def run_attributes_through_clusters(
     attribs: list[str],
     cluster_centroids: list[str],
     assigner: ClusterAssigner,
-    llm_api_keys: LLMApiKeys | None = None,
 ) -> list[tuple[bool, str] | None]:
     logger.info(f"Running {len(attribs)} attributes through {len(cluster_centroids)} clusters")
     full_items: list[str] = []
@@ -21,7 +19,7 @@ async def run_attributes_through_clusters(
         full_items.extend(attribs)
     for centroid in cluster_centroids:
         full_centroids.extend([centroid] * len(attribs))
-    new_results = await assigner.assign(full_items, full_centroids, llm_api_keys=llm_api_keys)
+    new_results = await assigner.assign(full_items, full_centroids)
     return new_results
 
 
@@ -180,7 +178,6 @@ async def cluster_from_initial_proposal(
     attribute: str,
     cluster_centroids: list[str],
     assigner: ClusterAssigner,
-    llm_api_keys: LLMApiKeys | None = None,
     num_rounds: int = 1,
 ) -> list[str]:
     if len(attribs) == 0:
@@ -196,7 +193,7 @@ async def cluster_from_initial_proposal(
     else:
         attribs_subset = attribs
     initial_results = await run_attributes_through_clusters(
-        attribs_subset, cluster_centroids, assigner, llm_api_keys=llm_api_keys
+        attribs_subset, cluster_centroids, assigner
     )
     indices_per_centroid, centroid_indices = prune_clusters_of_high_overlap(
         initial_results, cluster_centroids, exclusive_threshold=0.4
@@ -215,7 +212,7 @@ async def cluster_from_initial_proposal(
 
     if large:
         initial_results = await run_attributes_through_clusters(
-            attribs, running_centroids, assigner, llm_api_keys=llm_api_keys
+            attribs, running_centroids, assigner
         )
         indices_per_centroid = process_assignment_results(
             initial_results, running_centroids, list(range(len(running_centroids)))
@@ -237,7 +234,6 @@ async def cluster_from_initial_proposal(
             ],
             feedback_list=None,
             k=1,
-            llm_api_keys=llm_api_keys,
         )
         new_centroids = proposed_centroids[0]
         assert new_centroids is not None
@@ -248,7 +244,7 @@ async def cluster_from_initial_proposal(
         else:
             new_residuals_subset = new_residuals
         new_results = await run_attributes_through_clusters(
-            new_residuals_subset, new_centroids, assigner, llm_api_keys=llm_api_keys
+            new_residuals_subset, new_centroids, assigner
         )
         new_indices_per_centroid, new_centroid_indices = prune_small_clusters(
             new_results,
@@ -268,7 +264,7 @@ async def cluster_from_initial_proposal(
             running_new_centroids.append(new_centroids[i])
         if large:
             new_results = await run_attributes_through_clusters(
-                new_residuals, running_new_centroids, assigner, llm_api_keys=llm_api_keys
+                new_residuals, running_new_centroids, assigner
             )
             new_indices_per_centroid = process_assignment_results(
                 new_results, running_new_centroids, list(range(len(running_new_centroids)))

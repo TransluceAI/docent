@@ -613,7 +613,7 @@ async def listen_cluster_dimension(job_id: str):
                         nonlocal is_done
                         await publish_marginals(
                             db, fg_id, dim_ids=[dim_id], ensure_fresh=True
-                        )  # Force recompute
+                        )  # `ensure_fresh=True` will force computation of the filters
                         is_done = True
 
                     # Compute state in the background

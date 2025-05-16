@@ -87,15 +87,12 @@ async def publish_marginals(
     async def _publish_dim_callback(_: Any):
         await publish_dims(db, fg_id)
 
-    print("publishing marginals for", dim_ids, ensure_fresh)
-
     marginals = await db.get_marginals(
         fg_id,
         keep_dim_ids=dim_ids,
         ensure_fresh=ensure_fresh,
         publish_dim_callback=_publish_dim_callback,
     )
-    print("done!")
     await publish_to_broker(
         fg_id,
         {
