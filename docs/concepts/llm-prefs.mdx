@@ -1,9 +1,0 @@
----
-title: LLM provider preferences
----
-
-🚜WIP🚜
-
-Many users have requested a simpler way to manage LLM providers and API calls. This is now done in [`provider_preferences.py`](docent/_llm_util/provider_preferences.py). This file reads from an _LLM preferences config_, expected to be located at [`docent_llm_prefs.json`](docent/_llm_util/docent_llm_prefs.json); for convenience, we've provided an example config (containing the settings we use in the deployed Docent) that you can start with. The `docent_llm_prefs.json` config controls which LLM providers and models are used for each Docent feature. In the `model_options` field you should specify a list of models you would like to use (along with the provider and the `reasoning_effort` parameter if applicable), in order of priority; by default the first model in the list will be used for each query, and the other models in the list exist for fallback reasons (eg. in case an API is unavailable).
-
-We have implemented providers for the OpenAI and Anthropic APIs; you can find the implementations in [`openai.py`](docent/_llm_util/openai.py) and [`anthropic.py`](docent/_llm_util/anthropic.py). If you'd like to add a new LLM provider, you can do so by implementing the `SingleOutputGetter` and `SingleStreamingOutputGetter` protocols for the new provider (see our example implementations as a reference) and registering a new `ProviderConfig` in the `LLMManager`'s `self.providers` (located in [`prod_llms.py`](docent/_llm_util/prod_llms.py)).

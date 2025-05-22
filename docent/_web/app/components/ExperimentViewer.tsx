@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import React, {
   useMemo,
   useState,
@@ -5,55 +6,39 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
-import { Card } from '@/components/ui/card';
-import {
-  ChevronDown,
-  ChevronRight,
-  Network,
-  HelpCircle,
-  Loader2,
-} from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import InnerCard from './InnerCard';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { cn } from '@/lib/utils';
+
 import { AttributeFeedback } from '@/app/types/experimentViewerTypes';
 import { Button } from '@/components/ui/button';
-import { BASE_DOCENT_PATH } from '../constants';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
-import {
-  addExpandedInner,
-  addExpandedOuter,
-  clearExpandedInner,
-  clearExpandedOuter,
-  removeExpandedInner,
-  removeExpandedOuter,
-  setExperimentViewerScrollPosition,
-  setOrganizationMethod,
-} from '../store/experimentViewerSlice';
-import { OrganizationMethod } from '../types/experimentViewerTypes';
+import { Card } from '@/components/ui/card';
+import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+
 import {
   clearAttributeQuery,
   clearVoteState,
-  requestAttributes,
   setAttributeQueryTextboxValue,
   submitAttributeFeedback,
 } from '../store/attributeFinderSlice';
+import {
+  addExpandedInner,
+  addExpandedOuter,
+  removeExpandedInner,
+  removeExpandedOuter,
+  setExperimentViewerScrollPosition,
+} from '../store/experimentViewerSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { PrimitiveFilter } from '../types/frameTypes';
+
+import DimensionSelector from './DimensionSelector';
+import InnerCard from './InnerCard';
 
 interface ExperimentViewerProps {
-  onShowDatapoint?: (datapointId: string, blockId?: number) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
 }
 
 export default function ExperimentViewer({
-  onShowDatapoint,
+  onShowAgentRun,
 }: ExperimentViewerProps) {
   const dispatch = useAppDispatch();
 
@@ -61,20 +46,25 @@ export default function ExperimentViewer({
    * Get state
    */
 
-  const evalId = useAppSelector((state) => state.frame.evalId);
-  const sampleDimId = useAppSelector((state) => state.frame.sampleDimId);
-  const experimentDimId = useAppSelector(
-    (state) => state.frame.experimentDimId
+  const { innerDimId, outerDimId, dimensionsMap } = useAppSelector(
+    (state) => state.frame
   );
 
-  // Attributes
-  const loadingAttributesForId = useAppSelector(
-    (state) => state.attributeFinder.loadingAttributesForId
-  );
-  const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
-  const attributeQueryDimId = useAppSelector(
-    (state) => state.attributeFinder.attributeQueryDimId
-  );
+  const {
+    loadingAttributesForId,
+    attributeQueryDimId,
+    attributeMap,
+    voteState,
+  } = useAppSelector((state) => state.attributeFinder);
+
+  const {
+    expandedOuter,
+    expandedInner,
+    experimentViewerScrollPosition,
+    dimIdsToFilterIds,
+    filtersMap,
+  } = useAppSelector((state) => state.experimentViewer);
+
   const curAttributeQuery = useMemo(
     () =>
       attributeQueryDimId
@@ -83,77 +73,66 @@ export default function ExperimentViewer({
     [attributeQueryDimId, dimensionsMap]
   );
 
-  const attributeMap = useAppSelector(
-    (state) => state.attributeFinder.attributeMap
-  );
-  const voteState = useAppSelector((state) => state.attributeFinder.voteState);
+  // Assemble maps of the inner and outer filters
+  const outerFilters = useMemo(() => {
+    if (!outerDimId || !filtersMap) return undefined;
+    return dimIdsToFilterIds?.[outerDimId]?.reduce(
+      (acc, filter_id) => {
+        acc[filter_id] = filtersMap[filter_id];
+        return acc;
+      },
+      {} as Record<string, PrimitiveFilter>
+    );
+  }, [outerDimId, filtersMap, dimIdsToFilterIds]);
+  const innerFilters = useMemo(() => {
+    if (!innerDimId || !filtersMap) return undefined;
+    return dimIdsToFilterIds?.[innerDimId]?.reduce(
+      (acc, filter_id) => {
+        acc[filter_id] = filtersMap[filter_id];
+        return acc;
+      },
+      {} as Record<string, PrimitiveFilter>
+    );
+  }, [innerDimId, filtersMap, dimIdsToFilterIds]);
 
-  // UI state
-  const expandedOuter = useAppSelector(
-    (state) => state.experimentViewer.expandedOuter
-  );
-  const expandedInner = useAppSelector(
-    (state) => state.experimentViewer.expandedInner
-  );
-  const organizationMethod = useAppSelector(
-    (state) => state.experimentViewer.organizationMethod
-  );
-  const experimentViewerScrollPosition = useAppSelector(
-    (state) => state.experimentViewer.experimentViewerScrollPosition
-  );
+  const outerFilterIds = useMemo(() => {
+    if (!outerFilters) return [];
+    return Object.keys(outerFilters);
+  }, [outerFilters]);
 
-  const experiments = useAppSelector(
-    (state) => state.experimentViewer.experimentFilters
-  );
-  const experimentIds = useMemo(() => {
-    if (!experiments) return [];
-    return Object.keys(experiments);
-  }, [experiments]);
-  const samples = useAppSelector(
-    (state) => state.experimentViewer.sampleFilters
-  );
-  const sampleIds = useMemo(() => {
-    if (!samples) return [];
-    return Object.keys(samples);
-  }, [samples]);
+  const innerFilterIds = useMemo(() => {
+    if (!innerFilters) return [];
+    return Object.keys(innerFilters);
+  }, [innerFilters]);
 
   // Marginals
-  const rawStatMarginals = useAppSelector(
-    (state) => state.experimentViewer.statMarginals
-  );
-  const rawIdMarginals = useAppSelector(
-    (state) => state.experimentViewer.idMarginals
-  );
-  const sampleStatMarginals = useAppSelector(
-    (state) => state.experimentViewer.sampleStatMarginals
-  );
-  const experimentStatMarginals = useAppSelector(
-    (state) => state.experimentViewer.experimentStatMarginals
-  );
-  const interventionDescriptionMarginals = useAppSelector(
-    (state) => state.experimentViewer.interventionDescriptionMarginals
-  );
+  const {
+    statMarginals: rawStatMarginals,
+    idMarginals: rawIdMarginals,
+    outerStatMarginals,
+  } = useAppSelector((state) => state.experimentViewer);
 
   // Create a function to get the marginal key - safe to use even if data is null
   const getMarginalKey = useCallback(
-    (sampleId: string | null, experimentId: string | null) => {
-      if (sampleId !== null && experimentId !== null) {
-        return `${sampleDimId},${sampleId}|${experimentDimId},${experimentId}`;
-      } else if (sampleId !== null) {
-        return `${sampleDimId},${sampleId}`;
-      } else if (experimentId !== null) {
-        return `${experimentDimId},${experimentId}`;
+    (innerId: string | null, outerId: string | null) => {
+      if (innerId !== null && outerId !== null) {
+        return `${innerDimId},${innerId}|${outerDimId},${outerId}`;
+      } else if (innerId !== null) {
+        return `${innerDimId},${innerId}`;
+      } else if (outerId !== null) {
+        return `${outerDimId},${outerId}`;
       } else {
         return '';
       }
     },
-    [sampleDimId, experimentDimId]
+    [innerDimId, outerDimId]
   );
 
   /**
    * Deal with filtering by the attribute query
    */
 
+  // Filter to IDs to ones that have the attribute query
   const idMarginals = useMemo(() => {
     if (!rawIdMarginals || !curAttributeQuery) return rawIdMarginals;
 
@@ -161,16 +140,16 @@ export default function ExperimentViewer({
     const filtered = Object.entries(rawIdMarginals).reduce(
       (result, [key, datapointsList]) => {
         // Filter datapoints to ones that have the attributes
-        const filteredDatapoints = datapointsList.filter((datapointId) => {
-          const attrs = attributeMap?.[datapointId]?.[curAttributeQuery].filter(
+        const filteredAgentRuns = datapointsList.filter((agentRunId) => {
+          const attrs = attributeMap?.[agentRunId]?.[curAttributeQuery].filter(
             (attr) => attr.value !== null
           );
           return attrs && attrs.length > 0;
         });
 
         // Only include keys that have at least one datapoint after filtering
-        if (filteredDatapoints.length > 0) {
-          result[key] = filteredDatapoints;
+        if (filteredAgentRuns.length > 0) {
+          result[key] = filteredAgentRuns;
         }
 
         return result;
@@ -181,6 +160,7 @@ export default function ExperimentViewer({
     return filtered;
   }, [rawIdMarginals, curAttributeQuery, attributeMap]);
 
+  // Only keep stat marginals that have datapoints, after filtering by attribute query
   const statMarginals = useMemo(() => {
     if (!rawStatMarginals || !curAttributeQuery) return rawStatMarginals;
     return Object.fromEntries(
@@ -190,49 +170,61 @@ export default function ExperimentViewer({
     );
   }, [rawStatMarginals, curAttributeQuery, idMarginals]);
 
-  // For each experiment, get the samples that have non-null stats
-  const experimentToSamples = useMemo(() => {
+  // For each outer filter, get the inner filters that have non-null stats
+  const [outerIdsToInnerIds, filteredInnerIds] = useMemo(() => {
     const validMap = new Map<string, string[]>();
-    if (!statMarginals || !experimentIds || !sampleIds) return validMap;
+    const validInnerSet = new Set<string>();
+    if (!statMarginals) return [validMap, validInnerSet];
 
-    experimentIds.forEach((expId) => {
-      const validSamples = sampleIds.filter((sampleId) => {
-        const stats = statMarginals[getMarginalKey(sampleId, expId)];
-        return (
+    outerFilterIds.forEach((outerId) => {
+      const validSamples = innerFilterIds.filter((innerId) => {
+        const stats = statMarginals[getMarginalKey(innerId, outerId)];
+        const isValid =
           stats &&
           Object.keys(stats).length > 0 &&
-          Object.values(stats)[0]?.n > 0
-        );
+          Object.values(stats)[0]?.n > 0;
+        return isValid;
       });
       if (validSamples.length > 0) {
-        validMap.set(expId, validSamples);
+        validMap.set(outerId, validSamples);
       }
     });
 
-    return validMap;
-  }, [experimentIds, sampleIds, statMarginals, getMarginalKey]);
+    innerFilterIds.forEach((innerId) => {
+      const stats = statMarginals[getMarginalKey(innerId, null)];
+      const isValid =
+        stats &&
+        Object.keys(stats).length > 0 &&
+        Object.values(stats)[0]?.n > 0;
 
-  // For each sample, get the experiments that have non-null stats
-  const sampleToExperiments = useMemo(() => {
-    const validMap = new Map<string, string[]>();
-    if (!statMarginals || !experimentIds || !sampleIds) return validMap;
-
-    sampleIds.forEach((sampleId) => {
-      const validExperiments = experimentIds.filter((expId) => {
-        const stats = statMarginals[getMarginalKey(sampleId, expId)];
-        return (
-          stats &&
-          Object.keys(stats).length > 0 &&
-          Object.values(stats)[0]?.n > 0
-        );
-      });
-      if (validExperiments.length > 0) {
-        validMap.set(sampleId, validExperiments);
+      if (isValid) {
+        validInnerSet.add(innerId);
       }
     });
 
-    return validMap;
-  }, [experimentIds, sampleIds, statMarginals, getMarginalKey]);
+    return [validMap, validInnerSet];
+  }, [outerFilterIds, innerFilterIds, statMarginals, getMarginalKey]);
+
+  // Determine whether there is an outer or inner dimension
+  const hasOuterDimension = useMemo(() => {
+    return outerIdsToInnerIds && outerIdsToInnerIds.size > 0;
+  }, [outerIdsToInnerIds]);
+  const hasInnerDimension = useMemo(() => {
+    return filteredInnerIds && filteredInnerIds.size > 0;
+  }, [filteredInnerIds]);
+
+  // Determine what to display as the outer and inner dim names
+  const [outerDimName, innerDimName] = useMemo(() => {
+    return [
+      outerDimId && dimensionsMap?.[outerDimId]?.name,
+      innerDimId && dimensionsMap?.[innerDimId]?.name,
+    ];
+  }, [outerDimId, innerDimId, dimensionsMap]);
+
+  const [outerLabel, innerLabel]: [string, string] = useMemo(() => {
+    return [outerDimName || 'outer', innerDimName || 'inner'];
+  }, [outerDimName, innerDimName]);
+  const getOuterKey = (outerId: string) => getMarginalKey(null, outerId);
 
   /**
    * Handle feedback
@@ -240,7 +232,7 @@ export default function ExperimentViewer({
 
   const attributeFeedback = useMemo(() => {
     if (!voteState) return [];
-    return Object.entries(voteState).flatMap(([datapoint_id, attributes]) =>
+    return Object.entries(voteState).flatMap(([agent_run_id, attributes]) =>
       Object.entries(attributes).map(
         ([attribute, vote]) =>
           ({
@@ -295,36 +287,12 @@ export default function ExperimentViewer({
    */
 
   // Get first item so we can expand it
-  const getFirstItem = useCallback(
-    (mode: OrganizationMethod) => {
-      const items =
-        mode === 'experiment'
-          ? experimentToSamples.keys()
-          : sampleToExperiments.keys();
-      // Get first item from the iterator if it exists
-      const firstItem = items?.next();
-      return firstItem && !firstItem.done ? firstItem.value : null;
-    },
-    [sampleToExperiments, experimentToSamples]
-  );
-
-  // Handle organization mode change
-  const handleOrganizationModeChange = useCallback(
-    (value: OrganizationMethod) => {
-      dispatch(setOrganizationMethod(value));
-
-      // Clear expansion states
-      dispatch(clearExpandedOuter());
-      dispatch(clearExpandedInner());
-
-      // Auto-expand the first item
-      const firstItem = getFirstItem(value);
-      if (firstItem) {
-        dispatch(addExpandedOuter(firstItem));
-      }
-    },
-    [getFirstItem, dispatch]
-  );
+  const getFirstItemId = useCallback(() => {
+    const items = outerIdsToInnerIds.keys();
+    // Get first item from the iterator if it exists
+    const firstItem = items?.next();
+    return firstItem && !firstItem.done ? firstItem.value : null;
+  }, [outerIdsToInnerIds]);
 
   const toggleOuter = (outerId: string) => {
     // First determine whether to add or remove; prevents double-toggling in StrictMode
@@ -356,8 +324,7 @@ export default function ExperimentViewer({
   useEffect(() => {
     if (alreadyExpanded.current) return;
 
-    const firstItem = getFirstItem(organizationMethod);
-    console.log('firstItem', firstItem);
+    const firstItem = getFirstItemId();
     if (
       firstItem &&
       (expandedOuter === undefined || Object.keys(expandedOuter).length === 0)
@@ -365,23 +332,25 @@ export default function ExperimentViewer({
       dispatch(addExpandedOuter(firstItem));
       alreadyExpanded.current = true;
     }
-  }, [getFirstItem, organizationMethod, dispatch, expandedOuter]);
-
-  // // When the samples or experiments change, we need to clear the expansion states
-  // // But only if the component has mounted already
-  // useEffect(() => {
-  //   console.log('clearing');
-  //   alreadyExpanded.current = false; // Reset this as well, so the above useEffect can re-expand if needed after a refresh.
-  //   dispatch(clearExpandedOuter());
-  //   dispatch(clearExpandedInner());
-  // }, [samples, experiments, dispatch]);
+  }, [getFirstItemId, dispatch, expandedOuter]);
 
   /**
    * Scrolling
    */
 
-  // Create a ref for the container that tracks and sets scroll position
   const scrolledOnceRef = useRef(false);
+  const [scrollPosition, setScrollPosition] = useState<number | undefined>(
+    undefined
+  );
+  const debouncedScrollPosition = useDebounce(scrollPosition, 100);
+
+  // Use debouncing to prevent too many updates
+  useEffect(() => {
+    if (debouncedScrollPosition) {
+      dispatch(setExperimentViewerScrollPosition(debouncedScrollPosition));
+    }
+  }, [debouncedScrollPosition, dispatch]);
+
   const containerRef = useCallback(
     (node: HTMLDivElement) => {
       if (!node) return;
@@ -393,18 +362,17 @@ export default function ExperimentViewer({
       }
 
       // Save scroll position when user scrolls
-      const handleScroll = () =>
-        dispatch(setExperimentViewerScrollPosition(node.scrollTop));
+      const handleScroll = () => setScrollPosition(node.scrollTop);
       node.addEventListener('scroll', handleScroll);
       return () => {
         node.removeEventListener('scroll', handleScroll);
       };
     },
-    [dispatch, experimentViewerScrollPosition]
+    [experimentViewerScrollPosition]
   );
 
   /**
-   * Construct options that determine the order in which data is displayed
+   * Styling
    */
 
   const getColorForAccuracy = (accuracy: number) => {
@@ -412,112 +380,36 @@ export default function ExperimentViewer({
     if (accuracy > 0.0) return 'bg-yellow-100 text-yellow-800';
     return 'bg-red-100 text-red-800';
   };
-
   const formatAccuracy = (value: number) => `${value.toFixed(2)}`;
-
-  // Common card styles for both organization methods
-  const getCardStyles = (isExpanded: boolean) =>
-    `p-2 rounded-md shadow-none transition-all duration-200 ${
-      isExpanded ? 'border-blue-200' : 'border-gray-200'
-    }`;
-
-  // Get the appropriate data based on organization method
-  const {
-    outerFilters,
-    innerFilters,
-    outerFilterIds,
-    outerAverages,
-    innerMap,
-    outerLabel,
-    innerLabel,
-    outerPrefix,
-    getOuterKey,
-  } = useMemo(() => {
-    if (organizationMethod === 'experiment') {
-      return {
-        outerFilters: experiments,
-        innerFilters: samples,
-        outerFilterIds: experimentIds.filter(
-          (expId) => (experimentToSamples.get(expId)?.length ?? 0) > 0
-        ),
-        outerAverages: !curAttributeQuery ? experimentStatMarginals : undefined, // Only show stats if not filtering
-        getOuterKey: (outerId: string) => getMarginalKey(null, outerId),
-        innerMap: experimentToSamples,
-        outerLabel: 'Experiment',
-        innerLabel: 'task',
-        outerPrefix: '',
-      };
-    } else {
-      return {
-        outerFilters: samples,
-        innerFilters: experiments,
-        outerFilterIds: sampleIds.filter(
-          (sampleId) => (sampleToExperiments.get(sampleId)?.length ?? 0) > 0
-        ),
-        outerAverages: !curAttributeQuery ? sampleStatMarginals : undefined, // Only show stats if not filtering
-        innerMap: sampleToExperiments,
-        getOuterKey: (outerId: string) => getMarginalKey(outerId, null),
-        outerLabel: 'Task',
-        innerLabel: 'experiment',
-        outerPrefix: '',
-      };
-    }
-  }, [
-    organizationMethod,
-    experiments,
-    samples,
-    experimentIds,
-    sampleIds,
-    curAttributeQuery,
-    experimentStatMarginals,
-    sampleStatMarginals,
-    getMarginalKey,
-    experimentToSamples,
-    sampleToExperiments,
-  ]);
 
   // If data isn't available, show a loading spinner
   if (!statMarginals || !idMarginals) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center space-y-2 h-full">
-        <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
-      </div>
+      <Card className="h-full flex-1 p-3">
+        <div className="flex-1 flex flex-col items-center justify-center space-y-2 h-full">
+          <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
+        </div>
+      </Card>
     );
   }
 
   return (
-    <div className="flex flex-col h-full space-y-2">
+    <Card className="flex-1 p-3 flex flex-col space-y-2 min-w-0 overflow-auto">
       {/* Header with organization dropdown */}
       <div className="flex justify-between items-center">
         <div>
           <div className="text-sm font-semibold">
-            Experiment Viewer
+            Agent Run Viewer
             <span className="text-xxs text-gray-500 font-light ml-2">
-              {experimentIds.length} experiment
-              {experimentIds.length === 1 ? '' : 's'}
+              {outerFilterIds.length} {outerLabel}
+              {outerFilterIds.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="text-xs">Compare agent performance across runs.</div>
         </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="text-xs text-gray-500">Organize by:</span>
-          <Select
-            value={organizationMethod}
-            onValueChange={handleOrganizationModeChange}
-          >
-            <SelectTrigger className="h-6 w-24 text-xs border-gray-200 bg-transparent hover:bg-gray-50 px-2 font-normal">
-              <SelectValue placeholder="Organization" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="experiment" className="text-xs">
-                Experiment
-              </SelectItem>
-              <SelectItem value="sample" className="text-xs">
-                Task
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+
+        {/* Place dimension selector in the header */}
+        <DimensionSelector />
       </div>
 
       {/* Hint for refining search queries */}
@@ -550,13 +442,21 @@ export default function ExperimentViewer({
       )}
 
       {/* Content area */}
-      <ScrollArea className="text-sm" containerRef={containerRef}>
-        <div className="space-y-2">
-          {outerFilterIds?.map((outerId, index) => (
+      <div
+        className="space-y-2 overflow-auto custom-scrollbar"
+        ref={containerRef}
+      >
+        {/* If there is an outer grouping, do that */}
+        {hasOuterDimension &&
+          Array.from(outerIdsToInnerIds.keys()).map((outerId, index) => (
             <Card
               key={index}
               className={cn(
-                getCardStyles(expandedOuter?.[outerId] ?? false),
+                `p-2 rounded-md shadow-none transition-all duration-200 ${
+                  (expandedOuter?.[outerId] ?? false)
+                    ? 'border-blue-200'
+                    : 'border-gray-200'
+                }`,
                 'space-y-2'
               )}
             >
@@ -573,118 +473,81 @@ export default function ExperimentViewer({
                   <div className="flex items-center">
                     <div>
                       <p className="text-sm font-semibold text-gray-800">
-                        {outerLabel}{' '}
-                        <span className="font-mono">
-                          {outerPrefix}
-                          {outerFilters?.[outerId]?.name || outerId}
-                        </span>
+                        <span className="font-mono">{outerLabel}</span>
+                        {' ' + outerFilters?.[outerId]?.name || outerId}
                         <span className="text-xxs text-gray-500 font-light ml-2">
-                          {innerMap.get(outerId)?.length || 0} {innerLabel}
-                          {innerMap.get(outerId)?.length === 1 ? '' : 's'}
+                          {outerIdsToInnerIds.get(outerId)?.length || 0}{' '}
+                          {innerLabel}
+                          {outerIdsToInnerIds.get(outerId)?.length === 1
+                            ? ''
+                            : 's'}
                         </span>
                       </p>
-                      {organizationMethod === 'experiment' &&
-                        interventionDescriptionMarginals &&
-                        interventionDescriptionMarginals[
-                          getOuterKey(outerId)
-                        ] &&
-                        interventionDescriptionMarginals[getOuterKey(outerId)]
-                          .length > 0 && (
-                          <p className="text-xs italic text-gray-600 mt-0.5">
-                            {
-                              interventionDescriptionMarginals[
-                                getOuterKey(outerId)
-                              ][0]
-                            }
-                          </p>
-                        )}
                     </div>
-                    {/* {organizationMethod === 'sample' &&
-                      (experimentsBySample.get(outerId)?.length ?? 0) > 1 && (
-                        <button
-                          className="ml-2 text-gray-400 hover:text-blue-500 flex items-center text-[10px] transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(
-                              `${BASE_DOCENT_PATH}/${evalId}/forest/${outerId}`
-                            );
-                          }}
-                          title="View experiment tree"
-                        >
-                          <Network className="h-3 w-3" />
-                        </button>
-                      )} */}
                   </div>
                 </div>
-                {outerAverages && outerAverages[getOuterKey(outerId)] && (
-                  <div className="flex flex-row flex-wrap gap-2 font-mono">
-                    {Object.entries(
-                      outerAverages[getOuterKey(outerId)] || {}
-                    ).map(([scoreKey, stats], idx, arr) => {
-                      const isLoading =
-                        !stats || stats.mean === null || stats.ci === null;
-                      return (
-                        <React.Fragment key={scoreKey}>
-                          <div className="inline-flex items-center gap-1">
-                            <>
-                              <span className="text-[10px] text-gray-400 font-normal">
-                                {scoreKey}:
+                {outerStatMarginals &&
+                  outerStatMarginals[getOuterKey(outerId)] &&
+                  !curAttributeQuery && (
+                    <div className="flex flex-row flex-wrap gap-2 font-mono">
+                      {Object.entries(
+                        outerStatMarginals[getOuterKey(outerId)] || {}
+                      ).map(([scoreKey, stats], idx, arr) => {
+                        const isLoading =
+                          !stats || stats.mean === null || stats.ci === null;
+                        return (
+                          <React.Fragment key={scoreKey}>
+                            <div className="inline-flex items-center gap-1">
+                              <>
+                                <span className="text-[10px] text-gray-400 font-normal">
+                                  {scoreKey}:
+                                </span>
+                                <div
+                                  className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${
+                                    isLoading
+                                      ? 'bg-gray-100 text-gray-600'
+                                      : getColorForAccuracy(stats.mean!)
+                                  }`}
+                                >
+                                  {isLoading ? (
+                                    '--'
+                                  ) : (
+                                    <>{formatAccuracy(stats.mean!)}</>
+                                  )}
+                                </div>
+                              </>
+                            </div>
+                            {idx === arr.length - 1 && (
+                              <span className="text-gray-500 text-[11px]">
+                                n={stats.n}
                               </span>
-                              <div
-                                className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${
-                                  isLoading
-                                    ? 'bg-gray-100 text-gray-600'
-                                    : getColorForAccuracy(stats.mean!)
-                                }`}
-                              >
-                                {isLoading ? (
-                                  '--'
-                                ) : (
-                                  <>{formatAccuracy(stats.mean!)}</>
-                                )}
-                              </div>
-                            </>
-                          </div>
-                          {idx === arr.length - 1 && (
-                            <span className="text-gray-500 text-[11px]">
-                              n={stats.n}
-                            </span>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                )}
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  )}
               </div>
 
               {expandedOuter?.[outerId] && (
                 <div className="space-y-1.5 mt-2 pl-5">
-                  {innerMap.get(outerId)?.map((innerId) => {
-                    const sampleId =
-                      organizationMethod === 'experiment' ? innerId : outerId;
-                    const expId =
-                      organizationMethod === 'experiment' ? outerId : innerId;
-
+                  {outerIdsToInnerIds.get(outerId)?.map((innerId) => {
                     return (
                       <InnerCard
                         key={innerId}
                         innerId={innerId}
+                        innerLabel={innerLabel}
                         innerName={innerFilters?.[innerId]?.name || innerId}
-                        organizationMethod={organizationMethod}
-                        stats={statMarginals[getMarginalKey(sampleId, expId)]}
-                        datapointIds={
-                          idMarginals?.[getMarginalKey(sampleId, expId)] || []
+                        stats={statMarginals[getMarginalKey(innerId, outerId)]}
+                        agentRunIds={
+                          idMarginals?.[getMarginalKey(innerId, outerId)] || []
                         }
-                        onShowDatapoint={onShowDatapoint}
+                        onShowAgentRun={onShowAgentRun}
                         isExpanded={
                           expandedInner?.[outerId]?.[innerId] ?? false
                         }
                         onToggle={() => toggleInner(outerId, innerId)}
-                        experimentCount={
-                          organizationMethod === 'experiment'
-                            ? (sampleToExperiments.get(innerId)?.length ?? 0)
-                            : undefined
-                        }
+                        innerCount={outerIdsToInnerIds.get(outerId)?.length}
                       />
                     );
                   })}
@@ -692,20 +555,38 @@ export default function ExperimentViewer({
               )}
             </Card>
           ))}
-          {outerFilterIds?.length === 0 && (
-            <div className="text-xs text-gray-500">
-              {loadingAttributesForId ? (
-                <div className="flex items-center space-x-2">
-                  <span>Loading results...</span>
-                  <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
-                </div>
-              ) : (
-                'No results found'
-              )}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
+
+        {/* No outer grouping, but has an inner grouping */}
+        {!hasOuterDimension &&
+          hasInnerDimension &&
+          innerFilterIds?.map((innerId, index) => (
+            <InnerCard
+              key={innerId}
+              innerId={innerId}
+              innerLabel={innerLabel}
+              innerName={innerFilters?.[innerId]?.name || innerId}
+              stats={statMarginals[getMarginalKey(innerId, null)]}
+              agentRunIds={idMarginals?.[getMarginalKey(innerId, null)] || []}
+              onShowAgentRun={onShowAgentRun}
+              isExpanded={expandedInner?.['DEFAULT_OUTER']?.[innerId] ?? false}
+              onToggle={() => toggleInner('DEFAULT_OUTER', innerId)}
+              innerCount={innerFilterIds.length}
+            />
+          ))}
+
+        {!hasOuterDimension && !hasInnerDimension && (
+          <div className="text-xs text-gray-500 min-h-[24px]">
+            {loadingAttributesForId ? (
+              <div className="flex items-center space-x-2">
+                <span>Loading results...</span>
+                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
+              </div>
+            ) : (
+              'No results found'
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

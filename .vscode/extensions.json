@@ -1,10 +1,11 @@
 {
-    "recommendations": [
-        "ms-python.black-formatter",
-        "charliermarsh.ruff",
-        "ms-python.vscode-pylance",
-        "tamasfe.even-better-toml",
-        "ms-toolsai.jupyter",
-        "esbenp.prettier-vscode"
-    ]
+  "recommendations": [
+    "ms-python.black-formatter",
+    "charliermarsh.ruff",
+    "ms-python.vscode-pylance",
+    "tamasfe.even-better-toml",
+    "ms-toolsai.jupyter",
+    "esbenp.prettier-vscode",
+    "cweijan.vscode-database-client2"
+  ]
 }

@@ -16,6 +16,11 @@
     "[typescript]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode",
       "editor.formatOnSave": true
-    }
+    },
+    "[markdown]": {
+      "editor.formatOnSave": false
+    },
+    "eslint.enable": false,
+    "eslint.validate": ["typescript", "typescriptreact"]
   }
 }

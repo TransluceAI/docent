@@ -1,10 +1,11 @@
 import { Citation } from './experimentViewerTypes';
 
-export interface Datapoint {
+export interface AgentRun {
   id: string;
-  text: string;
-  attributes: Record<string, string[]>;
-  obj: Transcript;
+  name?: string | null;
+  description?: string | null;
+  transcripts: Record<string, Transcript>;
+  metadata: BaseAgentRunMetadata;
 }
 
 export interface Content {
@@ -14,13 +15,10 @@ export interface Content {
   signature?: string | null;
   redacted?: boolean;
   refusal?: string | null;
-  // Could add image specific fields if needed
 }
 
-/** A chat message in a transcript */
 interface BaseChatMessage {
   content: string | Content[];
-  source?: 'input' | 'generate';
 }
 
 interface SystemMessage extends BaseChatMessage {
@@ -74,54 +72,45 @@ export type ChatMessage =
   | AssistantMessage
   | ToolMessage;
 
-export interface Transcript {
-  id: string;
-  sample_id: string;
-  epoch_id: number;
-  messages: ChatMessage[];
-  metadata: TranscriptMetadata;
+export type MetadataPrimitive = string | number | boolean;
+
+export interface BaseMetadata {
+  [key: string]:
+    | MetadataPrimitive
+    | MetadataPrimitive[]
+    | { [key: string]: MetadataPrimitive | MetadataPrimitive[] }
+    | undefined;
 }
 
-interface TranscriptMetadata {
-  // Identification of the task
-  task_id: string;
+export interface BaseAgentRunMetadata extends BaseMetadata {
+  run_id?: string;
+  scores: { [key: string]: number | boolean };
+  default_score_key?: string;
+}
 
-  // Identification of this particular run
-  sample_id: string | number;
-  epoch_id: number;
+export function getMetadataValue<T>(
+  metadata: BaseMetadata,
+  key: string,
+  defaultValue: T | null = null
+): T | null {
+  return key in metadata ? (metadata[key] as T) : defaultValue;
+}
 
-  // Experiment
-  experiment_id: string;
-  intervention_description: string | null;
-  intervention_index: number | null;
-  intervention_timestamp: string | null;
-
-  // Parameters for the run
-  model: string;
-  task_args: Record<string, any>;
-  epochs: number | null;
-
-  // Runtime
-  is_loading_messages: boolean;
-
-  // Outcome
-  scores: Record<string, number | boolean>;
-  default_score_key: string | null;
-  scoring_metadata: Record<string, any> | null;
-
-  // Inspect metadata
-  inspect_metadata: Record<string, any> | null;
-  inspect_score_data: Record<string, any> | null;
+export interface Transcript {
+  id: string;
+  name?: string | null;
+  messages: ChatMessage[];
+  metadata: BaseMetadata;
 }
 
 export interface SolutionSummary {
-  datapoint_id: string;
+  agent_run_id: string;
   summary: string;
   parts: string[];
 }
 
 export interface ActionsSummary {
-  datapoint_id: string;
+  agent_run_id: string;
   low_level: LowLevelAction[];
   high_level: HighLevelAction[];
   observations: ObservationType[];

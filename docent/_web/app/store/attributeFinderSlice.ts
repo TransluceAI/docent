@@ -1,30 +1,26 @@
-import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import {
-  AttributeFeedback,
-  RegexSnippet,
-  StreamedAttribute,
-} from '../types/experimentViewerTypes';
-import socketService from '../services/socketService';
+  createSlice,
+  type PayloadAction,
+  createAsyncThunk,
+} from '@reduxjs/toolkit';
+import { v4 as uuid4 } from 'uuid';
+
+import { apiRestClient } from '../services/apiService';
 import sseService from '../services/sseService';
 import {
+  AttributeFeedback,
+  StreamedAttribute,
+} from '../types/experimentViewerTypes';
+import {
   AttributeWithCitations,
-  ComplexFrameFilter,
-  FrameDimension,
+  ComplexFilter,
   FrameFilter,
 } from '../types/frameTypes';
-import {
-  clearRegexSnippets,
-  ExperimentViewerState,
-} from './experimentViewerSlice';
+
+import { clearRegexSnippets } from './experimentViewerSlice';
+import { addAttributeDimension, getDimensions } from './frameSlice';
 import { RootState } from './store';
-import {
-  addAttributeDimension,
-  deleteDimension,
-  getDimensions,
-} from './frameSlice';
-import { apiRestClient } from '../services/apiService';
 import { setToastNotification } from './toastSlice';
-import { v4 as uuid4 } from 'uuid';
 
 // Map to store cancel functions for active SSE connections
 const cancelFunctionsMap: Record<string, () => void> = {};
@@ -42,7 +38,7 @@ export interface AttributeFinderState {
   loadingAttributesForId?: string;
   activeAttributeTaskId?: string;
   // Feedback
-  voteState?: Record<string, Record<string, 'up' | 'down'>>; // datapoint_id -> attribute -> vote
+  voteState?: Record<string, Record<string, 'up' | 'down'>>; // agent_run_id -> attribute -> vote
   // Attribute searches with completion status
   attributeSearches?: Array<{
     dim_id: string;
@@ -57,7 +53,7 @@ const initialState: AttributeFinderState = {};
 export const requestRegexSnippetsIfExist = createAsyncThunk(
   'experimentViewer/requestRegexSnippetsIfExist',
   async (
-    { filterId, datapointIds }: { filterId: string; datapointIds: string[] },
+    { filterId, agentRunIds }: { filterId: string; agentRunIds: string[] },
     { dispatch, getState }
   ) => {
     try {
@@ -71,7 +67,7 @@ export const requestRegexSnippetsIfExist = createAsyncThunk(
       const response = await apiRestClient.post('/get_regex_snippets', {
         fg_id: frameGridId,
         filter_id: filterId,
-        datapoint_ids: datapointIds,
+        agent_run_ids: agentRunIds,
       });
 
       return response.data;
@@ -318,7 +314,7 @@ export const cancelCurrentAttributeRequest = createAsyncThunk(
 
 export const updateBaseFilter = createAsyncThunk(
   'experimentViewer/updateBaseFilter',
-  async (filter: ComplexFrameFilter | undefined, { dispatch, getState }) => {
+  async (filter: ComplexFilter | undefined, { dispatch, getState }) => {
     const state = getState() as { frame: { frameGridId?: string } };
     const frameGridId = state.frame.frameGridId;
 
@@ -361,7 +357,7 @@ export const addBaseFilter = createAsyncThunk(
     const state = getState() as RootState;
 
     // Clone the current filter
-    let newBaseFilter: ComplexFrameFilter = state.frame.baseFilter
+    const newBaseFilter: ComplexFilter = state.frame.baseFilter
       ? {
           ...state.frame.baseFilter,
           filters: [...state.frame.baseFilter.filters],
@@ -383,7 +379,7 @@ export const removeBaseFilter = createAsyncThunk(
     }
 
     // Clone the current filter
-    let newBaseFilter: ComplexFrameFilter | undefined = {
+    let newBaseFilter: ComplexFilter | undefined = {
       ...state.frame.baseFilter,
       filters: [...state.frame.baseFilter.filters],
     };
@@ -499,25 +495,25 @@ export const attributeFinderSlice = createSlice({
       state,
       action: PayloadAction<StreamedAttribute>
     ) => {
-      const { data_dict, num_datapoints_done, num_datapoints_total } =
+      const { data_dict, num_agent_runs_done, num_agent_runs_total } =
         action.payload;
 
       // Update the progress counters
-      state.loadingProgress = [num_datapoints_done, num_datapoints_total];
+      state.loadingProgress = [num_agent_runs_done, num_agent_runs_total];
 
       // Update the attribute map
       if (!state.attributeMap) {
         state.attributeMap = {};
       }
-      for (const datapoint_id in data_dict) {
-        for (const attribute in data_dict[datapoint_id]) {
-          if (!state.attributeMap[datapoint_id]) {
-            state.attributeMap[datapoint_id] = {};
+      for (const agent_run_id in data_dict) {
+        for (const attribute in data_dict[agent_run_id]) {
+          if (!state.attributeMap[agent_run_id]) {
+            state.attributeMap[agent_run_id] = {};
           }
 
-          // Replace the old values at (datapoint_id, attribute)
-          state.attributeMap[datapoint_id][attribute] =
-            data_dict[datapoint_id][attribute];
+          // Replace the old values at (agent_run_id, attribute)
+          state.attributeMap[agent_run_id][attribute] =
+            data_dict[agent_run_id][attribute];
         }
       }
     },
@@ -540,29 +536,29 @@ export const attributeFinderSlice = createSlice({
     voteOnAttribute: (
       state,
       action: PayloadAction<{
-        datapoint_id: string;
+        agent_run_id: string;
         attribute: string;
         vote: 'up' | 'down';
       }>
     ) => {
-      const { datapoint_id, attribute, vote } = action.payload;
+      const { agent_run_id, attribute, vote } = action.payload;
       if (!state.voteState) {
         state.voteState = {};
       }
 
       // Initialize nested objects if they don't exist
-      state.voteState[datapoint_id] = state.voteState[datapoint_id] || {};
+      state.voteState[agent_run_id] = state.voteState[agent_run_id] || {};
 
       // Toggle behavior: remove vote if it's the same as current vote
-      if (state.voteState[datapoint_id][attribute] === vote) {
-        delete state.voteState[datapoint_id][attribute];
+      if (state.voteState[agent_run_id][attribute] === vote) {
+        delete state.voteState[agent_run_id][attribute];
         // Clean up empty objects
-        if (Object.keys(state.voteState[datapoint_id]).length === 0) {
-          delete state.voteState[datapoint_id];
+        if (Object.keys(state.voteState[agent_run_id]).length === 0) {
+          delete state.voteState[agent_run_id];
         }
       } else {
         // Set the new vote
-        state.voteState[datapoint_id][attribute] = vote;
+        state.voteState[agent_run_id][attribute] = vote;
       }
     },
     clearVoteState: (state) => {

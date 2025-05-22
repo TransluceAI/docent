@@ -2,6 +2,7 @@
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { Provider } from 'react-redux';
+
 import store from './store/store';
 
 if (typeof window !== 'undefined') {

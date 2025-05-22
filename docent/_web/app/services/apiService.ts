@@ -1,5 +1,7 @@
 import axios from 'axios';
+
 import { BASE_URL } from '@/app/constants';
+
 import socketService from './socketService';
 
 // Utility function used by the request interceptor. It guarantees the

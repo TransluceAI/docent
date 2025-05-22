@@ -10,7 +10,7 @@ dependencies = [
     "pyright>=1.1.0",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.26.0",
-    # Eval harness (we use their chat types)
+    # Eval harness (for easy ingestion of inspect logs)
     "inspect-ai>=0.3.93",
     # Web server
     "fastapi>=0.114.1",
@@ -38,6 +38,9 @@ dependencies = [
     "backoff>=2.2.1",
     "tiktoken>=0.7.0",
     # Docs
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.14",
+    "mkdocstrings-python>=1.16.10",
     # Uncategorized
 ]
 

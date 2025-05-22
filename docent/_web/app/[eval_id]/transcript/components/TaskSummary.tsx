@@ -1,16 +1,16 @@
 'use client';
+import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Loader2 } from 'lucide-react';
+
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
-  clearSolutionSummary,
   getSolutionSummary,
 } from '@/app/store/transcriptSlice';
 
 const TaskSummary: React.FC = () => {
   const dispatch = useAppDispatch();
-  const datapoint = useAppSelector((state) => state.transcript.curDatapoint);
+  const agentRun = useAppSelector((state) => state.transcript.curAgentRun);
   const solutionSummary = useAppSelector(
     (state) => state.transcript.solutionSummary
   );
@@ -20,26 +20,22 @@ const TaskSummary: React.FC = () => {
 
   // Request summary
   useEffect(() => {
-    if (!datapoint) {
+    if (!agentRun) {
       return;
     }
 
-    // If the datapoint is still loading, clear the summaries; there should be no summaries for those
-    if (datapoint.obj.metadata.is_loading_messages) {
-      dispatch(clearSolutionSummary());
-    }
     // Request summary if we don't already have it loaded, and we're not loading it yet
     if (
-      loadingSolutionSummaryForTranscriptId !== datapoint.id &&
-      solutionSummary?.datapoint_id != datapoint.id
+      loadingSolutionSummaryForTranscriptId !== agentRun.id &&
+      solutionSummary?.agent_run_id != agentRun.id
     ) {
-      dispatch(getSolutionSummary(datapoint.id));
+      dispatch(getSolutionSummary(agentRun.id));
     }
   }, [
-    datapoint,
+    agentRun,
     loadingSolutionSummaryForTranscriptId,
     dispatch,
-    solutionSummary?.datapoint_id,
+    solutionSummary?.agent_run_id,
   ]);
 
   // Loading indicator component for reuse
@@ -52,7 +48,7 @@ const TaskSummary: React.FC = () => {
   );
 
   // If we have no datapoint at all, don't show anything
-  if (!datapoint) {
+  if (!agentRun) {
     return null;
   }
 
@@ -75,7 +71,7 @@ const TaskSummary: React.FC = () => {
       <div className="space-y-2">
         <h4 className="text-sm font-semibold mb-2 flex items-center">
           Intended Solution from the Benchmark (Summarized by an LLM)
-          {loadingSolutionSummaryForTranscriptId === datapoint?.id && (
+          {loadingSolutionSummaryForTranscriptId === agentRun?.id && (
             <Loader2 className="ml-2 h-4 w-4 animate-spin text-gray-500" />
           )}
         </h4>

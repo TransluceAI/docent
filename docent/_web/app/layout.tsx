@@ -1,13 +1,16 @@
-import { Inter, Open_Sans, JetBrains_Mono } from 'next/font/google';
+import { Open_Sans, JetBrains_Mono } from 'next/font/google';
+
 import './globals.css';
-import { CSPostHogProvider, ReduxProvider } from './providers';
+import ReduxToastHandler from '@/components/ReduxToastHandler';
+import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 
-import { Metadata } from 'next';
-import { Toaster } from '@/components/ui/toaster';
 import WebsocketProvider from './contexts/WebsocketContext';
+import { CSPostHogProvider, ReduxProvider } from './providers';
+
+import { Metadata } from 'next';
 import { TooltipProvider } from '@radix-ui/react-tooltip';
-import ReduxToastHandler from '@/components/ReduxToastHandler';
+
 
 const openSans = Open_Sans({
   subsets: ['latin'],

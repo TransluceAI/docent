@@ -4,8 +4,8 @@ from typing import Any, Generator, Set
 import pytest
 import pytest_asyncio
 
+from docent._db_service.service import DBService
 from docent._env_util import ENV
-from docent._frames.db.service import DBService
 from docent._frames.filters import FrameDimension, PrimitiveFilter
 from docent._frames.transcript import Transcript, TranscriptMetadata
 from docent._frames.types import Datapoint

@@ -1,9 +1,13 @@
-from typing import Any
+from typing import Any, Literal
 
 from inspect_ai.log import read_eval_log
+from pydantic import Field
 
-from docent._frames.transcript import Transcript, TranscriptMetadata
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat import parse_chat_message
+from docent.data_models.metadata import BaseAgentRunMetadata
+from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
 
@@ -113,13 +117,63 @@ SWE_BENCH_LOGS: dict[str, str | tuple[str, dict[str, Any]]] = {
 }
 
 
+class InspectAgentRunMetadata(BaseAgentRunMetadata):
+    task_id: str = Field(
+        description="The ID of the 'benchmark' or 'set of evals' that the transcript belongs to"
+    )
+
+    # Identification of this particular run
+    sample_id: str = Field(
+        description="The specific task inside of the `task_id` benchmark that the transcript was run on"
+    )
+    original_sample_id_type: Literal["str", "int"] = Field(
+        description="This is a hack required for compatibility with Inspect; they allow both string and int sample_ids, but this is annoying for a number of reasons. This field tracks the original type of the `sample_id` field."
+    )
+    epoch_id: int = Field(
+        description="Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run."
+    )
+
+    # Experiment
+    experiment_id: str = Field(
+        description="Each 'experiment' is a run of a subset of samples under some configuration. This is the ID of the experiment that the transcript belongs to."
+    )
+    intervention_description: str | None = Field(
+        description="Experiments may involve interventions on the chat message history (e.g., to change what the model did or provide hints). This is a natural language description of the intervention that was applied, if any."
+    )
+    intervention_index: int | None = Field(
+        description="The integer index in the list of chat messages that the intervention, if any, was applied to"
+    )
+    intervention_timestamp: str | None = Field(
+        description="The timestamp of the intervention, if any"
+    )
+
+    # Parameters for the run
+    model: str = Field(description="The model that was used to generate the transcript")
+    task_args: dict[str, Any] = Field(
+        description="[Inspect-specific] Inspect TaskArgs used to generate the transcript"
+    )
+    is_loading_messages: bool = Field(
+        description="Whether the transcript is un-finalized and still loading messages"
+    )
+
+    # Outcome
+    scoring_metadata: dict[str, Any] | None = Field(
+        description="Additional metadata about the scoring process"
+    )
+
+    # Inspect metadata
+    additional_metadata: dict[str, Any] | None = Field(
+        description="Additional metadata about the transcript"
+    )
+
+
 def load_inspect_experiment(
     experiment_id: str,
     fpath: str,
     only_epoch_1: bool = False,
     only_epoch_1_5: bool = False,
     _custom_metadata: dict[str, Any] | None = None,
-) -> list[Transcript]:
+) -> list[AgentRun]:
     """Loads transcripts from Inspect AI evaluation logs.
 
     Args:
@@ -131,7 +185,7 @@ def load_inspect_experiment(
             intervention details.
 
     Returns:
-        A list of Transcript objects.
+        An AgentRun object containing the transcripts.
     """
     logger.info("Loading %s from %s", experiment_id, fpath)
 
@@ -139,7 +193,7 @@ def load_inspect_experiment(
     if logs.samples is None:
         return []
 
-    transcripts: list[Transcript] = []
+    agent_runs: list[AgentRun] = []
 
     for s in logs.samples:
         # Extract sample_id from the sample ID
@@ -178,7 +232,7 @@ def load_inspect_experiment(
             scores["correct"] = s.scores["model_graded"].value == "C"
             default_score_key = "correct"
         # Set metadata
-        metadata = TranscriptMetadata(
+        metadata = InspectAgentRunMetadata(
             task_id=logs.eval.task,
             sample_id=str(sample_id),
             original_sample_id_type="str" if isinstance(sample_id, str) else "int",
@@ -197,18 +251,22 @@ def load_inspect_experiment(
         )
 
         # Create transcript
-        transcript = Transcript(
-            messages=s.messages,
-            metadata=metadata,
+        agent_runs.append(
+            AgentRun(
+                transcripts={
+                    "default": Transcript(
+                        messages=[parse_chat_message(m.model_dump()) for m in s.messages]
+                    )
+                },
+                metadata=metadata,
+            )
         )
 
-        transcripts.append(transcript)
-
-    return transcripts
+    return agent_runs
 
 
-def load_inspect_eval(logs: dict[str, str | tuple[str, dict[str, Any]]]) -> list[Transcript]:
-    result: list[Transcript] = []
+def load_inspect_eval(logs: dict[str, str | tuple[str, dict[str, Any]]]) -> list[AgentRun]:
+    result: list[AgentRun] = []
 
     for experiments_id, extra_metadata in logs.items():
         # Parse arguments in the dict
@@ -218,40 +276,39 @@ def load_inspect_eval(logs: dict[str, str | tuple[str, dict[str, Any]]]) -> list
             fpath = extra_metadata
             intervention_metadata = None
 
-        result.extend(
-            load_inspect_experiment(
-                experiments_id,
-                fpath,
-                _custom_metadata=intervention_metadata,
-            )
+        agent_runs = load_inspect_experiment(
+            experiments_id,
+            fpath,
+            _custom_metadata=intervention_metadata,
         )
+        result.extend(agent_runs)
 
     return result
 
 
-def load_picoctf_4o() -> list[Transcript]:
+def load_picoctf_4o() -> list[AgentRun]:
     return load_inspect_eval(PICOCTF_LOGS_4o)
 
 
-def load_picoctf_36() -> list[Transcript]:
+def load_picoctf_36() -> list[AgentRun]:
     return load_inspect_eval(PICOCTF_LOGS_36)
 
 
-def load_agentharm() -> list[Transcript]:
+def load_agentharm() -> list[AgentRun]:
     return load_inspect_eval(AGENTHARM_LOGS)
 
 
-def load_cybench() -> list[Transcript]:
+def load_cybench() -> list[AgentRun]:
     return load_inspect_eval(CYBENCH_LOGS)
 
 
-def load_k8s() -> list[Transcript]:
+def load_k8s() -> list[AgentRun]:
     return load_inspect_eval(K8S_LOGS)
 
 
-def load_swebench() -> list[Transcript]:
+def load_swebench() -> list[AgentRun]:
     return load_inspect_eval(SWE_BENCH_LOGS)
 
 
-def load_frontier_math() -> list[Transcript]:
+def load_frontier_math() -> list[AgentRun]:
     return load_inspect_eval(FRONTIER_MATH_LOGS)

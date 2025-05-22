@@ -1,29 +1,31 @@
-import { ChevronRight, Home, Layers } from 'lucide-react';
+import { ChevronRight, Layers } from 'lucide-react';
+import Link from 'next/link';
 import {
   useRouter,
   useParams,
   useSearchParams,
   usePathname,
 } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { BASE_DOCENT_PATH } from '@/app/constants';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { RootState } from '../store/store';
+
+import { BASE_DOCENT_PATH } from '@/app/constants';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useEffect, useState } from 'react';
+
 import {
   addConnectionStatusListener,
   removeConnectionStatusListener,
 } from '../services/socketService';
+import { RootState } from '../store/store';
 
 interface BreadcrumbsProps {}
 
-const Breadcrumbs: React.FC<BreadcrumbsProps> = ({}) => {
+const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -33,7 +35,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({}) => {
   const evalId = useSelector((state: RootState) => state.frame.evalId);
 
   // Get the current page information
-  const datapointId = params?.datapoint_id as string | undefined;
+  const agentRunId = params?.agent_run_id as string | undefined;
   const sampleId = params?.sample_id as string | undefined;
   const isDiffPage = pathname?.includes('/diff');
   const isForestPage = pathname?.includes('/forest');
@@ -78,22 +80,22 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({}) => {
         {/* Breadcrumbs */}
         <div className="flex gap-x-1 items-center">
           {/* Home link */}
-          {evalId && (datapointId || sampleId || isDiffPage || isForestPage) ? (
+          {evalId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
             <Link
               href={`${BASE_DOCENT_PATH}/${evalId}`}
               className="text-blue-600 hover:underline"
             >
-              All transcripts
+              All agent runs
             </Link>
           ) : (
-            <span className="text-gray-700">All transcripts</span>
+            <span className="text-gray-700">All agent runs</span>
           )}
 
           {/* Transcript page */}
-          {datapointId && (
+          {agentRunId && (
             <>
               <ChevronRight size={18} />
-              <span className="text-gray-700">Transcript {datapointId}</span>
+              <span className="text-gray-700">Agent run {agentRunId}</span>
             </>
           )}
 

@@ -1,35 +1,32 @@
-import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import {
+  createSlice,
+  type PayloadAction,
+  createAsyncThunk,
+} from '@reduxjs/toolkit';
+
+import { apiRestClient } from '../services/apiService';
 import {
   MarginalizationResult,
-  OrganizationMethod,
   RegexSnippet,
-  StreamedAttribute,
   TaskStats,
   TranscriptDiffViewport,
-  TranscriptMetadataField,
 } from '../types/experimentViewerTypes';
-import {
-  FrameDimension,
-  FrameFilter,
-  PrimitiveFilter,
-} from '../types/frameTypes';
+import { PrimitiveFilter } from '../types/frameTypes';
+
 import { RootState } from './store';
+import { setToastNotification } from './toastSlice';
 
 export interface ExperimentViewerState {
   // Global marginalization results
   statMarginals?: Record<string, TaskStats>;
   idMarginals?: Record<string, string[]>;
-  sampleStatMarginals?: Record<string, TaskStats>;
-  experimentStatMarginals?: Record<string, TaskStats>;
-  interventionDescriptionMarginals?: Record<string, string[]>;
-  // Global filters
-  sampleFilters?: Record<string, PrimitiveFilter>;
-  experimentFilters?: Record<string, PrimitiveFilter>;
+  outerStatMarginals?: Record<string, TaskStats>;
+  dimIdsToFilterIds?: Record<string, string[]>;
+  filtersMap?: Record<string, PrimitiveFilter>;
   // UI state of the viewer
   expandedOuter?: Record<string, boolean>; // Object replacement for Set
   expandedInner?: Record<string, Record<string, boolean>>;
   experimentViewerScrollPosition?: number;
-  organizationMethod: OrganizationMethod;
   // Diffing state
   selectedDiffTranscript?: string;
   selectedDiffSampleId?: string;
@@ -38,52 +35,113 @@ export interface ExperimentViewerState {
   regexSnippets?: Record<string, RegexSnippet[]>;
 }
 
-const initialState: ExperimentViewerState = {
-  organizationMethod: 'experiment',
-};
+const initialState: ExperimentViewerState = {};
 
 // Create a thunk that accesses both slices
 export const setStatMarginalsAndFilters = createAsyncThunk(
   'experimentViewer/setStatMarginalsAndFilters',
+  async (marginalizationResult: MarginalizationResult, { dispatch }) => {
+    dispatch(setStatMarginals(marginalizationResult));
+    dispatch(setDimIdsToFilterIds(marginalizationResult.dim_ids_to_filter_ids));
+    dispatch(
+      setFiltersMap(
+        marginalizationResult.filters_dict as Record<string, PrimitiveFilter>
+      )
+    );
+  }
+);
+
+// Thunk to set inner and outer dimension IDs
+export const setIODims = createAsyncThunk(
+  'experimentViewer/setIODims',
   async (
-    marginalizationResult: MarginalizationResult,
+    {
+      innerDimId,
+      outerDimId,
+    }: {
+      innerDimId?: string;
+      outerDimId?: string;
+    },
     { dispatch, getState }
   ) => {
-    // First set the stat marginals
-    dispatch(setStatMarginals(marginalizationResult));
-
-    // Get the frame state to access sampleDimId and experimentDimId
     const state = getState() as RootState;
-    const { sampleDimId, experimentDimId } = state.frame;
+    const frameGridId = state.frame.frameGridId;
 
-    // Keep track of the filters and experiments in a dict
-    if (sampleDimId) {
-      const sampleFilters = marginalizationResult.dim_ids_to_filter_ids[
-        sampleDimId
-      ].reduce(
-        (acc, filter_id) => {
-          acc[filter_id] = marginalizationResult.filters_dict[
-            filter_id
-          ] as PrimitiveFilter;
-          return acc;
-        },
-        {} as Record<string, PrimitiveFilter>
+    if (!frameGridId) {
+      dispatch(
+        setToastNotification({
+          title: 'Configuration error',
+          description: 'No frame grid ID available',
+          variant: 'destructive',
+        })
       );
-      dispatch(setSampleFilters(sampleFilters));
+      throw new Error('No frame grid ID available');
     }
-    if (experimentDimId) {
-      const experimentFilters = marginalizationResult.dim_ids_to_filter_ids[
-        experimentDimId
-      ].reduce(
-        (acc, filter_id) => {
-          acc[filter_id] = marginalizationResult.filters_dict[
-            filter_id
-          ] as PrimitiveFilter;
-          return acc;
-        },
-        {} as Record<string, PrimitiveFilter>
+
+    try {
+      await apiRestClient.post('/io_dims', {
+        fg_id: frameGridId,
+        inner_dim_id: innerDimId,
+        outer_dim_id: outerDimId,
+      });
+
+      return { innerDimId, outerDimId };
+    } catch (error) {
+      dispatch(
+        setToastNotification({
+          title: 'Error setting dimensions',
+          description: 'Failed to set inner/outer dimensions',
+          variant: 'destructive',
+        })
       );
-      dispatch(setExperimentFilters(experimentFilters));
+      throw error;
+    }
+  }
+);
+
+export const setIODimByMetadataKey = createAsyncThunk(
+  'experimentViewer/setIODimByMetadataKey',
+  async (
+    {
+      metadataKey,
+      type,
+    }: {
+      metadataKey: string;
+      type: 'inner' | 'outer';
+    },
+    { dispatch, getState }
+  ) => {
+    const state = getState() as RootState;
+    const frameGridId = state.frame.frameGridId;
+
+    if (!frameGridId) {
+      dispatch(
+        setToastNotification({
+          title: 'Configuration error',
+          description: 'No frame grid ID available',
+          variant: 'destructive',
+        })
+      );
+      throw new Error('No frame grid ID available');
+    }
+
+    try {
+      await apiRestClient.post('/io_dims_with_metadata_key', {
+        fg_id: frameGridId,
+        metadata_key: metadataKey,
+        type: type,
+      });
+      // No specific data needs to be returned, success implies backend will publish updates
+      return { metadataKey, type };
+    } catch (error) {
+      dispatch(
+        setToastNotification({
+          title: 'Error setting dimension by metadata key',
+          description: `Failed to set ${type} dimension using metadata key ${metadataKey}`,
+          variant: 'destructive',
+        })
+      );
+      throw error;
     }
   }
 );
@@ -95,38 +153,26 @@ export const experimentViewerSlice = createSlice({
     setStatMarginals: (state, action: PayloadAction<MarginalizationResult>) => {
       state.statMarginals = action.payload.marginals;
     },
-    setSampleStatMarginals: (
+    setOuterStatMarginals: (
       state,
       action: PayloadAction<MarginalizationResult>
     ) => {
-      state.sampleStatMarginals = action.payload.marginals;
-    },
-    setExperimentStatMarginals: (
-      state,
-      action: PayloadAction<MarginalizationResult>
-    ) => {
-      state.experimentStatMarginals = action.payload.marginals;
+      state.outerStatMarginals = action.payload.marginals;
     },
     setIdMarginals: (state, action: PayloadAction<MarginalizationResult>) => {
       state.idMarginals = action.payload.marginals;
     },
-    setInterventionDescriptionMarginals: (
+    setDimIdsToFilterIds: (
       state,
-      action: PayloadAction<MarginalizationResult>
+      action: PayloadAction<Record<string, string[]>>
     ) => {
-      state.interventionDescriptionMarginals = action.payload.marginals;
+      state.dimIdsToFilterIds = action.payload;
     },
-    setSampleFilters: (
+    setFiltersMap: (
       state,
       action: PayloadAction<Record<string, PrimitiveFilter>>
     ) => {
-      state.sampleFilters = action.payload;
-    },
-    setExperimentFilters: (
-      state,
-      action: PayloadAction<Record<string, PrimitiveFilter>>
-    ) => {
-      state.experimentFilters = action.payload;
+      state.filtersMap = action.payload;
     },
     clearExpandedOuter: (state) => {
       state.expandedOuter = {};
@@ -173,12 +219,6 @@ export const experimentViewerSlice = createSlice({
     ) => {
       state.experimentViewerScrollPosition = action.payload;
     },
-    setOrganizationMethod: (
-      state,
-      action: PayloadAction<OrganizationMethod>
-    ) => {
-      state.organizationMethod = action.payload;
-    },
     setSelectedDiffTranscript: (state, action: PayloadAction<string>) => {
       state.selectedDiffTranscript = action.payload;
     },
@@ -210,11 +250,7 @@ export const experimentViewerSlice = createSlice({
 export const {
   setStatMarginals,
   setIdMarginals,
-  setSampleStatMarginals,
-  setExperimentStatMarginals,
-  setInterventionDescriptionMarginals,
-  setSampleFilters,
-  setExperimentFilters,
+  setOuterStatMarginals,
   clearExpandedOuter,
   clearExpandedInner,
   addExpandedOuter,
@@ -222,13 +258,14 @@ export const {
   addExpandedInner,
   removeExpandedInner,
   setExperimentViewerScrollPosition,
-  setOrganizationMethod,
   setSelectedDiffTranscript,
   setSelectedDiffSampleId,
   setTranscriptDiffViewport,
   updateRegexSnippets,
   clearRegexSnippets,
   resetExperimentViewerSlice,
+  setDimIdsToFilterIds,
+  setFiltersMap,
 } = experimentViewerSlice.actions;
 
 export default experimentViewerSlice.reducer;

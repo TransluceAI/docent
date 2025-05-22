@@ -1,8 +1,12 @@
 import json
+from typing import Any
 
-from docent._frames.transcript import Transcript, TranscriptMetadata
-from docent._llm_util.types import ChatMessage, ToolCall, parse_chat_message
+from pydantic import Field
+
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun, BaseAgentRunMetadata
+from docent.data_models.chat import ChatMessage, ToolCall, parse_chat_message
+from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
 
@@ -13,7 +17,19 @@ TAU_BENCH_LOGS: dict[str, str] = {
 }
 
 
-def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[Transcript]:
+class TauBenchMetadata(BaseAgentRunMetadata):
+    benchmark_id: str = Field(
+        description="The benchmark that the task belongs to", default="tau_bench"
+    )
+    task_id: str = Field(description="The task within the benchmark that the agent is solving")
+    model: str = Field(description="The LLM used by the agent")
+    additional_metadata: dict[str, Any] = Field(description="Additional metadata about the task")
+    scoring_metadata: dict[str, Any] | None = Field(
+        description="Additional metadata about the scoring process"
+    )
+
+
+def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[AgentRun]:
     """Loads TauBench transcripts from the specified file path.
 
     Args:
@@ -21,14 +37,14 @@ def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[Transcript
         fpath: The path to the JSON file containing the transcript data.
 
     Returns:
-        A list of Transcript objects representing the conversations.
+        A list of AgentRun objects representing the conversations.
     """
     logger.info("Loading %s from %s", experiment_id, fpath)
 
     with open(fpath, "r") as f:
         data = json.load(f)
 
-    transcripts: list[Transcript] = []
+    agent_runs: list[AgentRun] = []
     for sample_idx, sample in enumerate(data):
         # Extract the conversation from the trajectory
         traj = sample["traj"]
@@ -80,37 +96,40 @@ def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[Transcript
         default_score_key = "reward"
 
         # Build metadata
-        metadata = TranscriptMetadata(
-            task_id=task_id,
-            sample_id=str(sample_id),
-            original_sample_id_type="str" if isinstance(sample_id, str) else "int",
-            epoch_id=1,  # Default to epoch 1 TODO(kevin): this is a hack.
-            experiment_id=experiment_id,
-            intervention_description=None,
-            intervention_timestamp=None,
-            intervention_index=None,
+        metadata = TauBenchMetadata(
+            benchmark_id=task_id,
+            task_id=str(sample_id),
             model="sonnet-35-new",  # Default model name TODO(kevin): this is a hack.
-            task_args={},
-            is_loading_messages=False,
             scores=scores,
             default_score_key=default_score_key,
             additional_metadata=info,
             scoring_metadata=info["reward_info"],
         )
 
-        # Create the transcript
+        # Create the transcript and wrap in AgentRun
         transcript = Transcript(
             messages=messages,
             metadata=metadata,
         )
 
-        transcripts.append(transcript)
+        agent_run = AgentRun(
+            transcripts={"default": transcript},
+            metadata=metadata,
+        )
 
-    return transcripts
+        agent_runs.append(agent_run)
+
+    return agent_runs
 
 
-def load_tau_bench() -> list[Transcript]:
-    result: list[Transcript] = []
+def load_tau_bench() -> list[AgentRun]:
+    """Loads all TauBench transcripts.
+
+    Returns:
+        A list of AgentRun objects representing the conversations.
+    """
+    result: list[AgentRun] = []
     for experiment_id, fpath in TAU_BENCH_LOGS.items():
-        result.extend(load_tau_bench_experiment(experiment_id, fpath))
+        agent_runs = load_tau_bench_experiment(experiment_id, fpath)
+        result.extend(agent_runs)
     return result

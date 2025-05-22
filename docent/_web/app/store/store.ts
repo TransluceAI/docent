@@ -1,12 +1,13 @@
 // store.ts
 
-import { configureStore, isRejectedWithValue } from '@reduxjs/toolkit';
-import experimentViewerReducer from './experimentViewerSlice';
+import { configureStore } from '@reduxjs/toolkit';
+
 import attributeFinderReducer from './attributeFinderSlice';
+import experimentViewerReducer from './experimentViewerSlice';
 import frameReducer from './frameSlice';
+import toastReducer from './toastSlice';
 import transcriptReducer from './transcriptSlice';
 import createWebSocketMiddleware from './webSocketMiddleware';
-import toastReducer from './toastSlice';
 
 // Create a custom error logger middleware
 const errorLogger = (store: any) => (next: any) => (action: any) => {

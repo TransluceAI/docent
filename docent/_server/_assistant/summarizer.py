@@ -1,15 +1,11 @@
 import re
 from typing import Literal, Protocol, TypedDict
 
-from docent._frames.transcript import (
-    SINGLE_BLOCK_CITE_INSTRUCTION,
-    Citation,
-    Transcript,
-    parse_citations_single_transcript,
-)
+from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
-from docent._llm_util.types import LLMApiKeys, LLMOutput
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent.data_models.citation import Citation, parse_citations_single_transcript
+from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION, Transcript
 
 USER_BACKGROUND = "a general (not domain-specific) CS background"
 
@@ -34,7 +30,6 @@ def _get_intended_solution_llm_callback(
 async def summarize_intended_solution(
     transcript: Transcript,
     streaming_callback: SummarizeIntendedSolutionStreamingCallback | None = None,
-    api_keys: LLMApiKeys | None = None,
 ):
     prompt = f"""
 Transcript:
@@ -381,7 +376,6 @@ async def interesting_agent_observations(
     transcript: Transcript,
     streaming_callback: SummarizeAgentObservationsStreamingCallback | None = None,
     completion_callback: SummarizeAgentObservationsStreamingCallback | None = None,
-    api_keys: LLMApiKeys | None = None,
 ) -> list[ObservationType]:
     prompt = f"""
 Transcript:

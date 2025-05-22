@@ -1,28 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAppDispatch, useAppSelector } from './store/hooks';
-import {
-  fetchFrameGrids,
-  resetFrameSlice,
-  setEvalId,
-  updateFrameGrid,
-} from './store/frameSlice';
-import { FrameGridsTable } from './components/FrameGridsTable';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Loader2, PlusIcon } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { resetExperimentViewerSlice } from './store/experimentViewerSlice';
-import {
-  cancelCurrentAttributeRequest,
-  cancelCurrentClusterRequest,
-  resetAttributeFinderSlice,
-} from './store/attributeFinderSlice';
-import { resetTranscriptSlice } from './store/transcriptSlice';
-import socketService from './services/socketService';
-import { apiRestClient } from './services/apiService';
-import { toast } from '@/hooks/use-toast';
+import { useEffect, useState } from 'react';
+
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -33,7 +14,26 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/hooks/use-toast';
+
+import { FrameGridsTable } from './components/FrameGridsTable';
+import { apiRestClient } from './services/apiService';
+import socketService from './services/socketService';
+import {
+  cancelCurrentAttributeRequest,
+  cancelCurrentClusterRequest,
+  resetAttributeFinderSlice,
+} from './store/attributeFinderSlice';
+import { resetExperimentViewerSlice } from './store/experimentViewerSlice';
+import {
+  fetchFrameGrids,
+  resetFrameSlice,
+} from './store/frameSlice';
+import { useAppDispatch, useAppSelector } from './store/hooks';
+import { resetTranscriptSlice } from './store/transcriptSlice';
 
 const DocentDashboard = () => {
   const evalId = useAppSelector((state) => state.frame.evalId);

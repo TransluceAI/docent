@@ -1,7 +1,7 @@
 from typing import Any
 
-from docent._frames.transcript import Transcript
 from docent._loader.load_inspect import load_inspect_eval
+from docent.data_models.agent_run import AgentRun
 
 LOG_DIR_PREFIX = "/home/ubuntu/artifacts/vincent/epoch"
 
@@ -40,9 +40,19 @@ SWE_BENCH_LOGS: dict[str, str | tuple[str, dict[str, Any]]] = {
 }
 
 
-def load_epoch_aime() -> list[Transcript]:
+def load_epoch_aime() -> list[AgentRun]:
+    """Loads AIME benchmark transcripts.
+
+    Returns:
+        A list of AgentRun objects.
+    """
     return load_inspect_eval(MOCK_AIME_LOGS)
 
 
-def load_epoch_swebench() -> list[Transcript]:
+def load_epoch_swebench() -> list[AgentRun]:
+    """Loads SWE-Bench transcripts.
+
+    Returns:
+        A list of AgentRun objects.
+    """
     return load_inspect_eval(SWE_BENCH_LOGS)

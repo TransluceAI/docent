@@ -1,6 +1,7 @@
 import tiktoken
-from docent._frames.filters import Datapoint
-from docent._frames.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
+
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
 
 MAX_TOKENS = 50_000
 GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used
@@ -26,6 +27,6 @@ You must adhere exactly to the following: {SINGLE_BLOCK_CITE_INSTRUCTION}
 """.strip()
 
 
-def make_single_tasst_system_prompt(datapoint: Datapoint) -> str:
-    truncated_transcript = truncate_to_token_limit(datapoint.obj.to_str(), MAX_TOKENS)
+def make_single_tasst_system_prompt(agent_run: AgentRun) -> str:
+    truncated_transcript = truncate_to_token_limit(agent_run.text, MAX_TOKENS)
     return SINGLE_TEMPLATE.format(transcript=truncated_transcript)

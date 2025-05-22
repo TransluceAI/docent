@@ -1,13 +1,3 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import {
-  Datapoint,
-  LowLevelAction,
-  HighLevelAction,
-  ActionsSummary,
-  ObservationCategory,
-  ObservationType,
-} from '@/app/types/transcriptTypes';
-import { Citation } from '@/app/types/experimentViewerTypes';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -18,21 +8,31 @@ import {
   SmilePlus,
   X,
 } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+
+import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
+import {
+  getActionsSummary,
+} from '@/app/store/transcriptSlice';
+import { Citation } from '@/app/types/experimentViewerTypes';
+import {
+  AgentRun,
+  LowLevelAction,
+  HighLevelAction,
+  ActionsSummary,
+  ObservationCategory,
+  ObservationType,
+} from '@/app/types/transcriptTypes';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import {
-  clearActionsSummary,
-  getActionsSummary,
-} from '@/app/store/transcriptSlice';
 
 interface AgentSummaryProps {
-  onCitationClick?: (datapointId: string, blockId?: number) => void;
+  onCitationClick?: (agentRunId: string, blockId?: number) => void;
   initialActionIndex?: number;
 }
 
@@ -163,7 +163,7 @@ const ActionItem = ({
   lowLevelActions = [],
   observations = [],
   onCitationClick,
-  datapoint,
+  agentRun,
   expandedActions,
   setExpandedActions,
   setActionRef,
@@ -172,8 +172,8 @@ const ActionItem = ({
   isHighLevel?: boolean;
   lowLevelActions?: LowLevelAction[];
   observations?: ObservationType[];
-  onCitationClick?: (datapointId: string, blockId?: number) => void;
-  datapoint?: Datapoint | null;
+  onCitationClick?: (agentRunId: string, blockId?: number) => void;
+  agentRun?: AgentRun | null;
   expandedActions?: Set<number>;
   setExpandedActions?: (callback: (prev: Set<number>) => Set<number>) => void;
   setActionRef?: (id: string, element: HTMLDivElement) => void;
@@ -210,18 +210,18 @@ const ActionItem = ({
       if (
         highLevelAction.first_block_idx !== null &&
         onCitationClick &&
-        datapoint?.id
+        agentRun?.id
       ) {
-        onCitationClick(datapoint.id, highLevelAction.first_block_idx);
+        onCitationClick(agentRun.id, highLevelAction.first_block_idx);
       }
     } else if (
       citations &&
       citations.length > 0 &&
       onCitationClick &&
-      datapoint?.id &&
+      agentRun?.id &&
       citations[0].block_idx !== undefined
     ) {
-      onCitationClick(datapoint.id, citations[0].block_idx);
+      onCitationClick(agentRun.id, citations[0].block_idx);
     }
   };
 
@@ -262,10 +262,10 @@ const ActionItem = ({
             e.stopPropagation(); // Prevent the card click from triggering
             if (
               onCitationClick &&
-              datapoint?.id &&
+              agentRun?.id &&
               citation.block_idx !== undefined
             ) {
-              onCitationClick(datapoint.id, citation.block_idx);
+              onCitationClick(agentRun.id, citation.block_idx);
             }
           }}
         >
@@ -449,7 +449,7 @@ const ActionItem = ({
               action={lowLevelAction}
               isHighLevel={false}
               onCitationClick={onCitationClick}
-              datapoint={datapoint}
+              agentRun={agentRun}
               observations={observations}
               expandedActions={expandedActions}
               setExpandedActions={setExpandedActions}
@@ -476,7 +476,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
 }) => {
   const dispatch = useAppDispatch();
 
-  const datapoint = useAppSelector((state) => state.transcript.curDatapoint);
+  const agentRun = useAppSelector((state) => state.transcript.curAgentRun);
   const actionsSummary = useAppSelector(
     (state) => state.transcript.actionsSummary
   );
@@ -542,25 +542,21 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
 
   // Request summary
   useEffect(() => {
-    if (!datapoint) {
+    if (!agentRun) {
       return;
     }
 
-    // If the datapoint is still loading, clear the summaries; there should be no summaries for those
-    if (datapoint.obj.metadata.is_loading_messages) {
-      dispatch(clearActionsSummary());
-    }
     // Request summary if we don't already have it loaded, and we're not loading it yet
     if (
-      loadingActionsSummaryForTranscriptId !== datapoint.id &&
-      actionsSummary?.datapoint_id != datapoint.id
+      loadingActionsSummaryForTranscriptId !== agentRun.id &&
+      actionsSummary?.agent_run_id != agentRun.id
     ) {
-      dispatch(getActionsSummary(datapoint.id));
+      dispatch(getActionsSummary(agentRun.id));
     }
   }, [
-    datapoint,
+    agentRun,
     loadingActionsSummaryForTranscriptId,
-    actionsSummary?.datapoint_id,
+    actionsSummary?.agent_run_id,
     dispatch,
   ]);
 
@@ -580,8 +576,8 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
     </div>
   );
 
-  // If we have no datapoint at all, don't show anything
-  if (!datapoint) {
+  // If we have no agentRun at all, don't show anything
+  if (!agentRun) {
     return null;
   }
 
@@ -617,7 +613,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
         <div className="space-y-2">
           <h4 className="text-sm font-semibold mb-2 flex items-center">
             Actions Taken by the Agent
-            {loadingActionsSummaryForTranscriptId === datapoint?.id && (
+            {loadingActionsSummaryForTranscriptId === agentRun?.id && (
               <Loader2 className="ml-2 h-4 w-4 animate-spin text-gray-500" />
             )}
           </h4>
@@ -645,7 +641,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                     isHighLevel={true}
                     lowLevelActions={actionsSummary.low_level}
                     onCitationClick={onCitationClick}
-                    datapoint={datapoint}
+                    agentRun={agentRun}
                     observations={actionsSummary.observations}
                     expandedActions={expandedActions}
                     setExpandedActions={setExpandedActions}
@@ -670,7 +666,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                       action={lowLevelAction}
                       isHighLevel={false}
                       onCitationClick={onCitationClick}
-                      datapoint={datapoint}
+                      agentRun={agentRun}
                       observations={actionsSummary.observations}
                       expandedActions={expandedActions}
                       setExpandedActions={setExpandedActions}
@@ -691,7 +687,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                         action={lowLevelAction}
                         isHighLevel={false}
                         onCitationClick={onCitationClick}
-                        datapoint={datapoint}
+                        agentRun={agentRun}
                         observations={actionsSummary.observations}
                         expandedActions={expandedActions}
                         setExpandedActions={setExpandedActions}

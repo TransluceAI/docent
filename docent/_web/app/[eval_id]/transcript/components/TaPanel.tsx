@@ -1,30 +1,30 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
-import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
-import { CornerDownLeft, RefreshCcw, Loader2 } from 'lucide-react';
+import { CornerDownLeft, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   createTaSession,
   resetTaSession,
   sendTaMessage,
 } from '@/app/store/transcriptSlice';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+
 
 interface TaPanelProps {
-  onShowDatapoint?: (datapointId: string, blockId: number) => void;
+  onShowAgentRun?: (agentRunId: string, blockId: number) => void;
 }
 
-export default function TaPanel({ onShowDatapoint }: TaPanelProps) {
+export default function TaPanel({ onShowAgentRun }: TaPanelProps) {
   const dispatch = useAppDispatch();
 
-  const curDatapoint = useAppSelector((state) => state.transcript.curDatapoint);
-  const taDatapointId = useAppSelector(
-    (state) => state.transcript.taDatapointId
-  );
+  const curAgentRun = useAppSelector((state) => state.transcript.curAgentRun);
+  const taAgentRunId = useAppSelector((state) => state.transcript.taAgentRunId);
   const taSessionId = useAppSelector((state) => state.transcript.taSessionId);
   const taMessages = useAppSelector((state) => state.transcript.taMessages);
   const loadingTaResponse = useAppSelector(
@@ -61,16 +61,16 @@ export default function TaPanel({ onShowDatapoint }: TaPanelProps) {
 
   // Initialize the TA session when datapoint changes
   useEffect(() => {
-    if (curDatapoint?.id) {
-      const currentDatapointId = curDatapoint.id;
+    if (curAgentRun?.id) {
+      const currentAgentRunId = curAgentRun.id;
 
       // Check if the datapoint has changed from the one we're chatting about
-      if (taDatapointId !== currentDatapointId) {
+      if (taAgentRunId !== currentAgentRunId) {
         // Clear the messages when datapoint changes
         dispatch(resetTaSession());
 
         // Create a new TA session with the current datapoint
-        const success = dispatch(createTaSession(currentDatapointId));
+        const success = dispatch(createTaSession(currentAgentRunId));
         if (!success) {
           toast({
             title: 'Error',
@@ -80,7 +80,7 @@ export default function TaPanel({ onShowDatapoint }: TaPanelProps) {
         }
       }
     }
-  }, [curDatapoint?.id, taDatapointId, dispatch]);
+  }, [curAgentRun?.id, taAgentRunId, dispatch]);
 
   return (
     <div className="flex flex-col h-full space-y-2">
@@ -133,13 +133,13 @@ export default function TaPanel({ onShowDatapoint }: TaPanelProps) {
                         <button
                           key={`citation-${i}`}
                           onClick={() => {
-                            onShowDatapoint?.(
-                              curDatapoint?.id ?? '',
+                            onShowAgentRun?.(
+                              curAgentRun?.id ?? '',
                               citation.block_idx
                             );
                           }}
                           className="text-blue-600 hover:text-blue-800 hover:underline font-semibold px-0.5"
-                          title={`Show block ${citation.block_idx} from datapoint ${curDatapoint?.id}`}
+                          title={`Show block ${citation.block_idx} from datapoint ${curAgentRun?.id}`}
                         >
                           {message.content.slice(
                             citation.start_idx,

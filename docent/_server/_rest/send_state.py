@@ -3,10 +3,10 @@ from typing import Any, Awaitable, Callable, cast
 import anyio
 from sqlalchemy.inspection import inspect as sqla_inspect
 
-from docent._frames.db.service import DBService, MarginalizationResult
-from docent._frames.transcript import TranscriptMetadata
+from docent._db_service.service import DBService, MarginalizationResult
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import publish_to_broker
+from docent.data_models.metadata import BaseAgentRunMetadata
 
 logger = get_logger(__name__)
 
@@ -15,11 +15,7 @@ async def _ids_map_fn(ids: list[str], _: Any):
     return ids
 
 
-async def _intervention_descriptions_map_fn(_: Any, metadata: list[TranscriptMetadata]):
-    return list(set(m.intervention_description for m in metadata if m.intervention_description))
-
-
-async def _stats_map_fn(_: Any, metadata: list[TranscriptMetadata]):
+async def _stats_map_fn(_: Any, metadata: list[BaseAgentRunMetadata]):
     """Calculate mean score with 95% confidence interval for each score key.
 
     Returns:
@@ -35,7 +31,7 @@ async def _stats_map_fn(_: Any, metadata: list[TranscriptMetadata]):
     for m in metadata:
         for score_key, score_value in m.scores.items():
             cur_list = all_outcomes.setdefault(score_key, [])
-            cur_list.append(float(score_value) if not m.is_loading_messages else None)
+            cur_list.append(float(score_value))
 
     # Calculate statistics for each score key
     results: dict[str, dict[str, float | None]] = {}
@@ -123,6 +119,25 @@ async def publish_datapoints_updated(fg_id: str, datapoint_ids: list[str] | None
     )
 
 
+async def publish_io_dims(db: DBService, fg_id: str):
+    io_dims = await db.get_io_dims(fg_id)
+    assert (
+        io_dims is not None
+    ), f"FrameGrid {fg_id} has no outer or inner dimension specified; this should never happen"
+    inner_dim_id, outer_dim_id = io_dims
+
+    await publish_to_broker(
+        fg_id,
+        {
+            "action": "io_dims_updated",
+            "payload": {
+                "inner_dim_id": inner_dim_id,
+                "outer_dim_id": outer_dim_id,
+            },
+        },
+    )
+
+
 async def publish_attribute_searches(db: DBService, fg_id: str):
     await publish_to_broker(
         fg_id,
@@ -134,53 +149,51 @@ async def publish_attribute_searches(db: DBService, fg_id: str):
 
 
 async def publish_homepage_marginals(
-    db: DBService, fg_id: str, sample_dim_id: str, experiment_dim_id: str
+    db: DBService, fg_id: str, inner_dim_id: str | None, outer_dim_id: str | None
 ):
     # Gather base data, as this is needed for map functions
     metadata_with_ids = await db.get_metadata_with_ids(fg_id, base_data_only=True)
     metadata_dict = {id: md for id, md in metadata_with_ids}
 
     # Get all required marginals once
-    marginals = await db.get_marginals(fg_id, keep_dim_ids=[sample_dim_id, experiment_dim_id])
+    keep_dim_ids = [dim_id for dim_id in [inner_dim_id, outer_dim_id] if dim_id is not None]
+    marginals = await db.get_marginals(fg_id, keep_dim_ids=keep_dim_ids)
     # Marginalize using cached marginals; prevents multile duplicate requests
-    sample_exp_marginals = await db.marginalize(
+    comb_marginals = await db.marginalize(
         fg_id,
-        keep_dim_ids=[sample_dim_id, experiment_dim_id],
+        keep_dim_ids=keep_dim_ids,
         return_dims_and_filters=True,
         _marginals=marginals,
     )
-    sample_marginals = await db.marginalize(
-        fg_id,
-        keep_dim_ids=[sample_dim_id],
-        _marginals=marginals,
-    )
-    experiment_marginals = await db.marginalize(
-        fg_id,
-        keep_dim_ids=[experiment_dim_id],
-        _marginals=marginals,
+    outer_marginals = (
+        await db.marginalize(
+            fg_id,
+            keep_dim_ids=[outer_dim_id],
+            _marginals=marginals,
+        )
+        if outer_dim_id
+        else None
     )
 
     async def _apply_fn(
         marginal: MarginalizationResult,
-        map_fn: Callable[[list[str], list[TranscriptMetadata]], Awaitable[Any]],
+        map_fn: Callable[[list[str], list[BaseAgentRunMetadata]], Awaitable[Any]],
     ):
         to_send = dict(marginal)
         to_send["marginals"] = {
             _format_bin_combination(bin_combination): await map_fn(
-                [j.datapoint_id for j in judgments],
-                [metadata_dict[j.datapoint_id] for j in judgments],
+                [j.agent_run_id for j in judgments],
+                [metadata_dict[j.agent_run_id] for j in judgments],
             )
             for bin_combination, judgments in marginal["marginals"].items()
         }
         return to_send
 
     # Apply map functions to get processed marginals
-    sample_exp_stat_marginals = await _apply_fn(sample_exp_marginals, _stats_map_fn)
-    sample_exp_ids_marginals = await _apply_fn(sample_exp_marginals, _ids_map_fn)
-    sample_stat_marginals = await _apply_fn(sample_marginals, _stats_map_fn)
-    experiment_stat_marginals = await _apply_fn(experiment_marginals, _stats_map_fn)
-    experiment_intervention_description_marginals = await _apply_fn(
-        experiment_marginals, _intervention_descriptions_map_fn
+    comb_stat_marginals = await _apply_fn(comb_marginals, _stats_map_fn)
+    comb_ids_marginals = await _apply_fn(comb_marginals, _ids_map_fn)
+    outer_stat_marginals = (
+        await _apply_fn(outer_marginals, _stats_map_fn) if outer_marginals else None
     )
 
     # Send all processed marginals at once
@@ -191,8 +204,8 @@ async def publish_homepage_marginals(
             {
                 "action": "specific_marginals",
                 "payload": {
-                    "request_type": "exp_stats",
-                    "result": sample_exp_stat_marginals,
+                    "request_type": "comb_stats",
+                    "result": comb_stat_marginals,
                 },
             },
         )
@@ -202,8 +215,8 @@ async def publish_homepage_marginals(
             {
                 "action": "specific_marginals",
                 "payload": {
-                    "request_type": "exp_ids",
-                    "result": sample_exp_ids_marginals,
+                    "request_type": "comb_ids",
+                    "result": comb_ids_marginals,
                 },
             },
         )
@@ -213,30 +226,8 @@ async def publish_homepage_marginals(
             {
                 "action": "specific_marginals",
                 "payload": {
-                    "request_type": "per_sample_stats",
-                    "result": sample_stat_marginals,
-                },
-            },
-        )
-        tg.start_soon(
-            publish_to_broker,
-            fg_id,
-            {
-                "action": "specific_marginals",
-                "payload": {
-                    "request_type": "per_experiment_stats",
-                    "result": experiment_stat_marginals,
-                },
-            },
-        )
-        tg.start_soon(
-            publish_to_broker,
-            fg_id,
-            {
-                "action": "specific_marginals",
-                "payload": {
-                    "request_type": "intervention_descriptions",
-                    "result": experiment_intervention_description_marginals,
+                    "request_type": "outer_stats",
+                    "result": outer_stat_marginals,
                 },
             },
         )
@@ -261,13 +252,12 @@ async def publish_framegrids(db: DBService):
 
 
 async def publish_homepage_state(db: DBService, fg_id: str):
-    # Only publish the dims that changed
-    sample_dim_id = await db.get_sample_dim_id(fg_id)
-    experiment_dim_id = await db.get_experiment_dim_id(fg_id)
-    if sample_dim_id is None or experiment_dim_id is None:
-        raise ValueError("Sample or experiment dimension not found")
+    io_dims = await db.get_io_dims(fg_id)
+    assert io_dims is not None, f"FrameGrid {fg_id} has no inner or outer dimension specified"
+    inner_dim_id, outer_dim_id = io_dims
 
     await publish_base_filter(db, fg_id)
     await publish_dims(db, fg_id)
-    await publish_homepage_marginals(db, fg_id, sample_dim_id, experiment_dim_id)
+    await publish_io_dims(db, fg_id)
+    await publish_homepage_marginals(db, fg_id, inner_dim_id, outer_dim_id)
     await publish_attribute_searches(db, fg_id)

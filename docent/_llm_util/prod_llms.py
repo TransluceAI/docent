@@ -9,81 +9,45 @@ not doing it now.
 import traceback
 from contextlib import nullcontext
 from functools import partial
-from typing import Any, Callable, Literal, Protocol, Sequence, TypedDict, cast
+from typing import Any, Literal, Sequence, cast
 
 import anyio
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
 
-from docent._llm_util import anthropic, openai
-from docent._llm_util.anthropic import (
-    get_anthropic_chat_completion_async,
-    get_anthropic_chat_completion_streaming_async,
+from docent._llm_util.data_models.exceptions import RateLimitException
+from docent._llm_util.data_models.llm_output import (
+    AsyncLLMOutputStreamingCallback,
+    AsyncSingleLLMOutputStreamingCallback,
+    LLMOutput,
 )
 from docent._llm_util.llm_cache import LLMCache
-from docent._llm_util.openai import (
-    get_openai_chat_completion_async,
-    get_openai_chat_completion_streaming_async,
-)
-from docent._llm_util.types import (
-    AsyncSingleStreamingCallback,
-    AsyncStreamingCallback,
-    ChatMessage,
-    LLMOutput,
-    ModelOption,
-    RateLimitException,
-    ToolInfo,
-    get_single_streaming_callback,
-    parse_chat_message,
+from docent._llm_util.providers.preferences import ModelOption
+from docent._llm_util.providers.registry import (
+    PROVIDERS,
+    SingleOutputGetter,
+    SingleStreamingOutputGetter,
 )
 from docent._log_util import get_logger
+from docent.data_models.chat import ChatMessage, ToolInfo, parse_chat_message
 
 logger = get_logger(__name__)
+
+
+def _get_single_streaming_callback(
+    batch_index: int,
+    streaming_callback: AsyncLLMOutputStreamingCallback,
+) -> AsyncSingleLLMOutputStreamingCallback:
+    async def single_streaming_callback(llm_output: LLMOutput):
+        await streaming_callback(batch_index, llm_output)
+
+    return single_streaming_callback
 
 
 class PleaseRotate(Exception):
     pass
 
 
-class SingleOutputGetter(Protocol):
-    async def __call__(
-        self,
-        client: Any,
-        messages: list[ChatMessage],
-        model_name: str,
-        *,
-        tools: list[ToolInfo] | None,
-        tool_choice: Literal["auto", "required"] | None,
-        max_new_tokens: int,
-        temperature: float,
-        reasoning_effort: Literal["low", "medium", "high"] | None,
-        logprobs: bool,
-        top_logprobs: int | None,
-        timeout: float,
-    ) -> LLMOutput: ...
-
-
-class SingleStreamingOutputGetter(Protocol):
-    async def __call__(
-        self,
-        client: Any,
-        streaming_callback: AsyncSingleStreamingCallback | None,
-        messages: list[ChatMessage],
-        model_name: str,
-        *,
-        tools: list[ToolInfo] | None,
-        tool_choice: Literal["auto", "required"] | None,
-        max_new_tokens: int,
-        temperature: float,
-        reasoning_effort: Literal["low", "medium", "high"] | None,
-        logprobs: bool,
-        top_logprobs: int | None,
-        timeout: float,
-    ) -> LLMOutput: ...
-
-
 def _get_offset_streaming_callback(
-    streaming_callback: AsyncStreamingCallback,
+    streaming_callback: AsyncLLMOutputStreamingCallback,
     original_indices: list[int],
 ):
     async def _offset_streaming_callback(batch_index: int, llm_output: LLMOutput):
@@ -93,7 +57,7 @@ def _get_offset_streaming_callback(
 
 
 def _get_offset_completion_callback(
-    completion_callback: AsyncStreamingCallback,
+    completion_callback: AsyncLLMOutputStreamingCallback,
     original_indices: list[int],
 ):
     async def _offset_completion_callback(batch_index: int, llm_output: LLMOutput):
@@ -102,30 +66,10 @@ def _get_offset_completion_callback(
     return _offset_completion_callback
 
 
-class ProviderConfig(TypedDict):
-    async_client_getter: Callable[[], AsyncOpenAI | AsyncAnthropic]
-    single_output_getter: SingleOutputGetter
-    single_streaming_output_getter: SingleStreamingOutputGetter
-
-
-PROVIDERS: dict[str, ProviderConfig] = {
-    "anthropic": {
-        "async_client_getter": anthropic.get_anthropic_client_async,
-        "single_output_getter": get_anthropic_chat_completion_async,
-        "single_streaming_output_getter": get_anthropic_chat_completion_streaming_async,
-    },
-    "openai": {
-        "async_client_getter": openai.get_openai_client_async,
-        "single_output_getter": get_openai_chat_completion_async,
-        "single_streaming_output_getter": get_openai_chat_completion_streaming_async,
-    },
-}
-
-
 async def _parallelize_calls(
     single_output_getter: SingleOutputGetter | SingleStreamingOutputGetter,
-    streaming_callback: AsyncStreamingCallback | None,
-    completion_callback: AsyncStreamingCallback | None,
+    streaming_callback: AsyncLLMOutputStreamingCallback | None,
+    completion_callback: AsyncLLMOutputStreamingCallback | None,
     # Arguments for the individual completion getter
     client: Any,
     messages_list: list[list[ChatMessage]],
@@ -173,7 +117,7 @@ async def _parallelize_calls(
                 else:
                     result = await base_func(
                         client=client,
-                        streaming_callback=get_single_streaming_callback(i, streaming_callback),
+                        streaming_callback=_get_single_streaming_callback(i, streaming_callback),
                         messages=messages,
                     )
 
@@ -272,8 +216,8 @@ class LLMManager:
         top_logprobs: int | None = None,
         max_concurrency: int | None = None,
         timeout: float = 5.0,
-        streaming_callback: AsyncStreamingCallback | None = None,
-        completion_callback: AsyncStreamingCallback | None = None,
+        streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
+        completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     ) -> list[LLMOutput]:
         """
         If max_concurrency is None, use LLManager.semaphore to manage concurrency
@@ -432,8 +376,8 @@ async def get_llm_completions_async(
     top_logprobs: int | None = None,
     max_concurrency: int = 100,
     timeout: float = 60.0,
-    streaming_callback: AsyncStreamingCallback | None = None,
-    completion_callback: AsyncStreamingCallback | None = None,
+    streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
+    completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     use_cache: bool = False,
 ) -> list[LLMOutput]:
     # We don't support logprobs for Anthropic yet
@@ -453,11 +397,7 @@ async def get_llm_completions_async(
 
     # Parse messages
     parsed_messages_list = [
-        [
-            message if isinstance(message, ChatMessage) else parse_chat_message(message)
-            for message in messages
-        ]
-        for messages in messages_list
+        [parse_chat_message(message) for message in messages] for messages in messages_list
     ]
 
     return await llm_manager.get_completions(

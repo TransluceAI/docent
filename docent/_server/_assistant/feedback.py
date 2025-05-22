@@ -1,6 +1,6 @@
-from docent._frames.clustering.cluster_assigner import assign_with_backend
+from docent._ai_tools.clustering.cluster_assigner import assign_with_backend
 from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.provider_preferences import PROVIDER_PREFERENCES
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 
 
 async def evaluate_new_queries(

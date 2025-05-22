@@ -3,10 +3,9 @@
 import React, {
   createContext,
   useContext,
-  useEffect,
-  useRef,
   useState,
 } from 'react';
+
 import socketService from '../services/socketService';
 
 type WebsocketContextType = {

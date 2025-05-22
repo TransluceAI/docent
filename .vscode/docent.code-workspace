@@ -18,9 +18,9 @@
       "editor.formatOnSave": true
     },
     "[markdown]": {
-      "editor.formatOnSave": false,
-      "editor.formatOnPaste": false,
-      "editor.formatOnType": false
-    }
+      "editor.formatOnSave": false
+    },
+    "eslint.enable": false,
+    "eslint.validate": ["typescript", "typescriptreact"]
   }
 }

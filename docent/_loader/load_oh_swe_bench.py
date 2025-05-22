@@ -1,17 +1,21 @@
 import json
 from pathlib import Path
+from typing import Any
 
+from pydantic import Field
 from tqdm.auto import tqdm
 
-from docent._frames.transcript import Transcript, TranscriptMetadata
-from docent._llm_util.types import (
-    ChatMessage,
-    ChatMessageAssistant,
-    ChatMessageTool,
-    ChatMessageUser,
-    ToolCall,
-)
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat import (
+    AssistantMessage,
+    ChatMessage,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
+from docent.data_models.metadata import BaseAgentRunMetadata
+from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
 
@@ -21,7 +25,18 @@ OH_SWE_BENCH_LOGS: dict[str, str] = {
 }
 
 
-def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[Transcript]:
+class OpenHandsSWEBenchMetadata(BaseAgentRunMetadata):
+    benchmark_id: str = Field(
+        description="The benchmark that the task belongs to", default="swe_bench_verified"
+    )
+    task_id: str = Field(description="The task within the benchmark that the agent is solving")
+    model: str = Field(description="The LLM used by the agent")
+    scoring_metadata: dict[str, Any] = Field(
+        description="Additional metadata about the scoring process"
+    )
+
+
+def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[AgentRun]:
     """Loads SWE-Bench transcripts from OpenHands format.
 
     Args:
@@ -29,11 +44,11 @@ def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[T
         fpath: The path to the directory containing the transcript files.
 
     Returns:
-        A list of Transcript objects.
+        A list of AgentRun objects.
     """
     logger.info("Loading %s from %s", experiment_id, fpath)
 
-    transcripts: list[Transcript] = []
+    agent_runs: list[AgentRun] = []
     for file in tqdm(
         list(Path(fpath).glob("*.json")), desc="Loading OpenHands SWEBench transcripts"
     ):
@@ -51,7 +66,7 @@ def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[T
                 raise ValueError("Action and observation cannot both be present")
 
             if source == "user":
-                cur_msg = ChatMessageUser(content=msg["message"])
+                cur_msg = UserMessage(content=msg["message"])
             elif source == "agent":
                 if not tc_metadata:
                     logger.warning(
@@ -78,11 +93,11 @@ def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[T
                                 parse_error=parse_error,
                             )
                         )
-                    cur_msg = ChatMessageAssistant(
+                    cur_msg = AssistantMessage(
                         content=response["content"] or "", tool_calls=tool_calls
                     )
                 elif observation:  # Tool response
-                    cur_msg = ChatMessageTool(
+                    cur_msg = ToolMessage(
                         tool_call_id=tc_metadata["tool_call_id"],
                         function=tc_metadata["function_name"],
                         content=msg["content"],
@@ -96,37 +111,38 @@ def load_openhands_swebench_experiment(experiment_id: str, fpath: str) -> list[T
             messages.append(cur_msg)
 
         # Build metadata
-        metadata = TranscriptMetadata(
-            task_id="swe_bench_verified",
-            sample_id=data["instance_id"],
-            original_sample_id_type="str" if isinstance(data["instance_id"], str) else "int",
-            epoch_id=1,  # Default to epoch 1
-            experiment_id=experiment_id,
-            intervention_description=None,
-            intervention_timestamp=None,
-            intervention_index=None,
+        metadata = OpenHandsSWEBenchMetadata(
+            benchmark_id="swe_bench_verified",
+            task_id=data["instance_id"],
             model=data["metadata"]["llm_config"]["model"],
-            task_args={},
-            is_loading_messages=False,
             scores={"resolved": data["report"]["resolved"]},
             default_score_key="resolved",
-            additional_metadata={},
             scoring_metadata=data["instance"],
         )
 
-        # Create the transcript
+        # Create the transcript and wrap in AgentRun
         transcript = Transcript(
             messages=messages,
             metadata=metadata,
         )
 
-        transcripts.append(transcript)
+        agent_run = AgentRun(
+            transcripts={"default": transcript},
+            metadata=metadata,
+        )
 
-    return transcripts
+        agent_runs.append(agent_run)
+
+    return agent_runs
 
 
-def load_oh_swe_bench() -> list[Transcript]:
-    result: list[Transcript] = []
+def load_oh_swe_bench() -> list[AgentRun]:
+    """Loads all OpenHands SWE-Bench transcripts.
+
+    Returns:
+        A list of AgentRun objects.
+    """
+    result: list[AgentRun] = []
     for experiment_id, fpath in OH_SWE_BENCH_LOGS.items():
         result.extend(load_openhands_swebench_experiment(experiment_id, fpath))
     return result

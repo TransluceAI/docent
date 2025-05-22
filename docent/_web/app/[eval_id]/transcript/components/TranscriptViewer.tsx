@@ -1,38 +1,8 @@
 import {
-  ChatMessage,
-  Content,
-  Datapoint,
-  ToolCall,
-} from '@/app/types/transcriptTypes';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
-import { toast } from '@/hooks/use-toast';
-import {
   ChevronDown,
   ChevronUp,
-  EyeIcon,
-  FileText,
   Loader,
   Loader2,
-  MessageSquarePlus,
-  Pencil,
   Share2,
 } from 'lucide-react';
 import React, {
@@ -40,15 +10,30 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
-import { useRouter } from 'next/navigation';
+
 import { useAppSelector } from '@/app/store/hooks';
+import {
+  ChatMessage,
+  Content,
+  AgentRun,
+  ToolCall,
+} from '@/app/types/transcriptTypes';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
-import AnsiToHtml from 'ansi-to-html';
 
-const ansiToHtml = new AnsiToHtml();
+import UuidPill from '@/components/UuidPill';
+import { useDebounce } from '@/hooks/use-debounce';
+import { toast } from '@/hooks/use-toast';
+
+import MetadataDialog from './MetadataDialog';
+
+// Export interface for use in other components
+export interface TranscriptViewerHandle {
+  scrollToBlock: (blockIndex: number) => void;
+}
 
 // Add this helper function near the top of the file
 const formatMetadataValue = (value: any): string => {
@@ -64,44 +49,56 @@ interface EditingToolCall extends Omit<ToolCall, 'arguments'> {
   argumentsString: string;
 }
 
-const TranscriptViewer = forwardRef<
-  { scrollToBlock: (blockIndex: number) => void },
-  {
-    datapoint: Datapoint | null;
-    attributes: Record<string, string[]>;
-  }
->(({ datapoint, attributes }, ref) => {
-  const transcript = useMemo(() => datapoint?.obj || null, [datapoint]);
+const TranscriptViewer = forwardRef((_, ref) => {
+  const agentRun = useAppSelector((state) => state.transcript.curAgentRun);
+  const transcript = useMemo(
+    () =>
+      agentRun && Object.keys(agentRun.transcripts).length > 0
+        ? agentRun.transcripts[Object.keys(agentRun.transcripts)[0]] // TODO(mengk): what if there are multiple transcripts?
+        : null,
+    [agentRun]
+  );
 
-  // Create a ref for the transcript scroll area specifically
-  const transcriptScrollAreaRef = useRef<HTMLDivElement>(null);
-
-  // Add state to track current block index
+  /**
+   * Scrolling
+   */
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const debouncedScrollPosition = useDebounce(scrollPosition, 100);
+  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
   const [currentBlockIndex, setCurrentBlockIndex] = useState<number | null>(
     null
   );
 
-  // Function to determine which block is most visible in the viewport
-  const updateCurrentBlockFromScroll = useCallback(() => {
-    if (!transcript || !transcriptScrollAreaRef.current) return;
+  const scrollContainerRef = useCallback((node: HTMLDivElement) => {
+    if (!node) return;
+    // Store the node reference
+    setScrollNode(node);
 
-    const scrollViewport = transcriptScrollAreaRef.current.querySelector(
-      '[data-radix-scroll-area-viewport]'
-    );
+    // Update scroll position on scroll
+    const handleScroll = () => {
+      setScrollPosition(node.scrollTop);
+    };
+    node.addEventListener('scroll', handleScroll);
+    return () => {
+      node.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
-    if (!scrollViewport) return;
+  // Compute the current block index based on scroll position
+  useEffect(() => {
+    // Skip if no transcript or no scroll node
+    if (!transcript || !scrollNode) return;
 
-    const viewportRect = scrollViewport.getBoundingClientRect();
-    const viewportTop = viewportRect.top;
-    const viewportBottom = viewportRect.bottom;
-    const viewportHeight = viewportRect.height;
-
-    // Find all block elements
+    // Get all block elements
     const blockElements = Array.from(
       document.querySelectorAll('[id^="block-"]')
     );
-
     if (blockElements.length === 0) return;
+
+    // Use the stored node reference directly
+    const containerRect = scrollNode.getBoundingClientRect();
+    const viewportTop = containerRect.top;
+    const viewportHeight = containerRect.height;
 
     // Calculate visibility for each block
     const visibilityScores = blockElements.map((element) => {
@@ -109,7 +106,7 @@ const TranscriptViewer = forwardRef<
 
       // Calculate how much of the element is visible in the viewport
       const top = Math.max(rect.top, viewportTop);
-      const bottom = Math.min(rect.bottom, viewportBottom);
+      const bottom = Math.min(rect.bottom, viewportTop + viewportHeight);
       const visibleHeight = Math.max(0, bottom - top);
 
       // Calculate visibility as a percentage of the element's height
@@ -135,24 +132,25 @@ const TranscriptViewer = forwardRef<
       mostVisibleBlock.visibilityScore > 0
     ) {
       setCurrentBlockIndex(mostVisibleBlock.blockIndex);
+      console.log('Current block index:', mostVisibleBlock.blockIndex);
     }
-  }, [transcript]);
+  }, [debouncedScrollPosition, transcript, scrollNode]);
 
-  // Updated scroll function
-  const scrollToBlock = useCallback((blockIndex: number) => {
-    const tryScrolling = (attempts = 0, maxAttempts = 5) => {
-      const blockElement = document.getElementById(`block-${blockIndex}`);
-      if (blockElement && transcriptScrollAreaRef.current) {
-        const scrollViewport = transcriptScrollAreaRef.current.querySelector(
-          '[data-radix-scroll-area-viewport]'
-        );
-        if (scrollViewport) {
-          const containerRect = scrollViewport.getBoundingClientRect();
+  /**
+   * Scroll to block function
+   */
+
+  const scrollToBlock = useCallback(
+    (blockIndex: number) => {
+      const tryScrolling = (attempts = 0, maxAttempts = 3) => {
+        const blockElement = document.getElementById(`block-${blockIndex}`);
+        if (blockElement && scrollNode) {
+          const containerRect = scrollNode.getBoundingClientRect();
           const elementRect = blockElement.getBoundingClientRect();
           const relativeTop =
-            elementRect.top - containerRect.top + scrollViewport.scrollTop;
+            elementRect.top - containerRect.top + scrollNode.scrollTop;
 
-          scrollViewport.scrollTo({
+          scrollNode.scrollTo({
             top: relativeTop,
             behavior: 'smooth',
           });
@@ -161,25 +159,37 @@ const TranscriptViewer = forwardRef<
           setCurrentBlockIndex(blockIndex);
           return true;
         }
-      }
 
-      // If element not found and we haven't exceeded max attempts
-      if (attempts < maxAttempts) {
-        // Try again after a short delay
-        setTimeout(() => tryScrolling(attempts + 1, maxAttempts), 50);
+        // If element not found and we haven't exceeded max attempts
+        if (attempts < maxAttempts) {
+          // Try again after a short delay
+          setTimeout(() => tryScrolling(attempts + 1, maxAttempts), 50);
+          return false;
+        }
+
+        console.warn(
+          `Failed to scroll to block ${blockIndex} after ${maxAttempts} attempts`
+        );
         return false;
-      }
+      };
 
-      console.warn(
-        `Failed to scroll to block ${blockIndex} after ${maxAttempts} attempts`
-      );
-      return false;
-    };
+      tryScrolling();
+    },
+    [scrollNode]
+  );
 
-    tryScrolling();
-  }, []);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      scrollToBlock,
+    }),
+    [scrollToBlock]
+  );
 
-  // Add navigation functions
+  /**
+   * Block navigation
+   */
+
   const goToNextBlock = useCallback(() => {
     if (!transcript) return;
 
@@ -190,7 +200,6 @@ const TranscriptViewer = forwardRef<
 
     scrollToBlock(nextIndex);
   }, [currentBlockIndex, transcript, scrollToBlock]);
-
   const goToPrevBlock = useCallback(() => {
     if (!transcript) return;
 
@@ -200,377 +209,91 @@ const TranscriptViewer = forwardRef<
     scrollToBlock(prevIndex);
   }, [currentBlockIndex, transcript, scrollToBlock]);
 
-  // Add scroll event listener to update current block
-  useEffect(() => {
-    if (!transcriptScrollAreaRef.current) return;
-
-    const scrollViewport = transcriptScrollAreaRef.current.querySelector(
-      '[data-radix-scroll-area-viewport]'
-    );
-
-    if (!scrollViewport) return;
-
-    // Debounce function to limit how often we update during scrolling
-    let scrollTimeout: NodeJS.Timeout | null = null;
-
-    const handleScroll = () => {
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout);
-      }
-
-      scrollTimeout = setTimeout(() => {
-        updateCurrentBlockFromScroll();
-      }, 100); // 100ms debounce
-    };
-
-    scrollViewport.addEventListener('scroll', handleScroll);
-
-    // Initial check
-    updateCurrentBlockFromScroll();
-
-    return () => {
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout);
-      }
-      scrollViewport.removeEventListener('scroll', handleScroll);
-    };
-  }, [transcript, updateCurrentBlockFromScroll]);
-
-  // Expose scrollToBlock via ref
-  React.useImperativeHandle(
-    ref,
-    () => ({
-      scrollToBlock,
-    }),
-    [scrollToBlock]
-  );
-
-  // Update the useEffect to use the new ref
-  useEffect(() => {
-    if (transcriptScrollAreaRef.current) {
-      const scrollViewport = transcriptScrollAreaRef.current.querySelector(
-        '[data-radix-scroll-area-viewport]'
-      );
-      if (scrollViewport) {
-        scrollViewport.scrollTo({
-          top: 0,
-          behavior: 'instant',
-        });
-      }
-    }
-    // Reset current block index when transcript changes
-    setCurrentBlockIndex(null);
-  }, [transcript?.id]);
-
-  const getScore = () => {
-    if (transcript?.metadata.scoring_metadata) {
-      return Object.values(transcript.metadata.scoring_metadata)[0];
-    }
-    return null;
-  };
-
   return (
-    <div className="flex flex-col space-y-2 min-h-0 relative h-full">
+    <Card className="h-full flex-1 p-3 flex flex-col space-y-2 min-h-0 min-w-0 overflow-auto relative">
       {/* Transcript metadata */}
       <div>
-        <div className="flex items-center">
-          <div className="font-semibold text-sm mr-2">Selected Transcript</div>
-          {transcript?.metadata &&
-            Object.keys(transcript.metadata).length > 0 && (
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    title="View metadata"
-                  >
-                    <FileText className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent
-                  side="left"
-                  className="w-[400px] sm:w-[540px] md:w-[640px] lg:w-[800px] p-4"
-                >
-                  <SheetHeader className="mb-4 space-y-1">
-                    <SheetTitle className="text-sm font-semibold">
-                      Transcript Metadata
-                    </SheetTitle>
-                    <SheetDescription className="text-xs text-muted-foreground">
-                      Additional information about this transcript
-                    </SheetDescription>
-                  </SheetHeader>
-                  <ScrollArea className="h-[calc(100vh-8rem)]">
-                    <div className="font-mono">
-                      <div className="w-full space-y-2">
-                        {/* Add a special section for scores if they exist */}
-                        {transcript.metadata?.['scores'] &&
-                          Object.keys(transcript.metadata?.['scores']).length >
-                            0 && (
-                            <div className="p-1.5 rounded-md bg-gray-50">
-                              <span className="text-xs font-semibold text-gray-700">
-                                Scores
-                              </span>
-                              <div className="mt-1 pl-2 border-l-2 border-gray-200">
-                                {Object.entries(
-                                  transcript.metadata?.['scores']
-                                ).map(([key, value], idx) => (
-                                  <div
-                                    key={idx}
-                                    className="text-xs leading-tight mb-1 flex justify-between overflow-x-auto"
-                                  >
-                                    <span
-                                      className={
-                                        key ===
-                                        transcript.metadata?.[
-                                          'default_score_key'
-                                        ]
-                                          ? 'font-medium'
-                                          : ''
-                                      }
-                                    >
-                                      {key}
-                                      {key ===
-                                      transcript.metadata?.['default_score_key']
-                                        ? ' (default)'
-                                        : ''}
-                                      :
-                                    </span>
-                                    <span
-                                      className={`ml-2 px-1 rounded ${
-                                        typeof value === 'boolean'
-                                          ? value
-                                            ? 'bg-green-50 text-green-600'
-                                            : 'bg-red-50 text-red-600'
-                                          : 'text-blue-600'
-                                      }`}
-                                    >
-                                      {typeof value === 'boolean'
-                                        ? value
-                                          ? '✓ correct'
-                                          : '✗ incorrect'
-                                        : value}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        {/* Filter out scores from the regular metadata display */}
-                        {Object.entries(transcript.metadata)
-                          .filter(
-                            ([key, _]) =>
-                              !['scores', 'default_score_key'].includes(key)
-                          )
-                          .map(([key, value], index) => (
-                            <div
-                              key={index}
-                              className="flex items-start p-1.5 rounded-md bg-gray-50"
-                            >
-                              <div className="flex-1">
-                                <span className="text-xs font-semibold text-gray-700">
-                                  {key}
-                                </span>
-                                <div className="mt-1 text-xs leading-tight pl-2 border-l-2 border-gray-200 whitespace-pre-wrap overflow-x-auto">
-                                  {formatMetadataValue(value)}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </ScrollArea>
-                </SheetContent>
-              </Sheet>
-            )}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                title="View score details"
-              >
-                <EyeIcon className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-5xl">
-              <DialogHeader>
-                <DialogTitle>Score Details</DialogTitle>
-                <DialogDescription>
-                  Detailed information about the transcript score
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="grid grid-cols-1 gap-4 py-4">
-                {getScore()?.metadata?.model_patch && (
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Model Patch
-                    </label>
-                    <ScrollArea className="h-[300px] w-full rounded-md border p-4">
-                      <div className="text-sm whitespace-pre-wrap font-mono">
-                        {getScore().metadata.model_patch}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                )}
-
-                {getScore()?.metadata?.raw_test_output && (
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Raw Test Output
-                    </label>
-                    <ScrollArea className="h-[300px] w-full rounded-md border p-4">
-                      <div
-                        className="text-sm whitespace-pre-wrap font-mono"
-                        dangerouslySetInnerHTML={{
-                          __html: ansiToHtml.toHtml(
-                            getScore().metadata.raw_test_output
-                          ),
-                        }}
-                      ></div>
-                    </ScrollArea>
-                  </div>
-                )}
-
-                {!getScore()?.metadata && (
-                  <div className="text-sm text-gray-500 text-center py-4">
-                    No score details available for this transcript
-                  </div>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
+        <div className="flex items-center space-x-1">
+          <div className="font-semibold text-sm">Agent Run</div>
+          <UuidPill uuid={agentRun?.id} />
+          {agentRun && transcript && (
+            <MetadataDialog
+              agentRunMetadata={agentRun.metadata}
+              transcriptMetadata={transcript.metadata}
+            />
+          )}
         </div>
-        {transcript && (
-          <div className="border-gray-100 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
-            {transcript.metadata?.is_loading_messages ? (
-              <span className="whitespace-nowrap flex items-center">
-                <Loader2 className="h-3 w-3 animate-spin text-blue-500 mr-1" />
-                <span className="text-blue-500 font-medium">
-                  Running experiment...
-                </span>
-              </span>
-            ) : (
-              <>
-                <span className="whitespace-nowrap">
-                  <span className="font-medium text-gray-600">task:</span>{' '}
-                  {transcript.metadata?.['task_id']}
-                </span>
-                <span className="whitespace-nowrap">
-                  <span className="font-medium text-gray-600">run:</span>{' '}
-                  {transcript.metadata?.['epoch_id']}
-                </span>
-                {transcript.metadata?.['experiment_id'] !== undefined && (
-                  <span className="whitespace-nowrap">
-                    <span className="font-medium text-gray-600">
-                      experiment:
-                    </span>{' '}
-                    {transcript.metadata?.['experiment_id'] as string}
+        {agentRun && transcript && (
+          <div className="border-gray-100 text-xs text-gray-500 flex items-center overflow-hidden truncate">
+            {Object.entries(agentRun.metadata).map(
+              ([key, value]) =>
+                key !== 'run_id' && (
+                  <span key={key} className="mr-3">
+                    <span className="font-medium text-gray-600">{key}:</span>{' '}
+                    {formatMetadataValue(value)}
                   </span>
-                )}
-                {transcript.metadata?.['model'] !== undefined && (
-                  <span className="whitespace-nowrap">
-                    <span className="font-medium text-gray-600">model:</span>{' '}
-                    {transcript.metadata?.['model'] as string}
-                  </span>
-                )}
-                {transcript.metadata?.['scores'] &&
-                  transcript.metadata?.['default_score_key'] && (
-                    <span
-                      className={`whitespace-nowrap font-medium px-1 rounded ${
-                        typeof transcript.metadata?.['scores'][
-                          transcript.metadata?.['default_score_key'] as string
-                        ] === 'boolean'
-                          ? transcript.metadata?.['scores'][
-                              transcript.metadata?.[
-                                'default_score_key'
-                              ] as string
-                            ]
-                            ? 'bg-green-50 text-green-600'
-                            : 'bg-red-50 text-red-600'
-                          : 'bg-blue-50 text-blue-600'
-                      }`}
-                    >
-                      {typeof transcript.metadata?.['scores'][
-                        transcript.metadata?.['default_score_key'] as string
-                      ] === 'boolean'
-                        ? transcript.metadata?.['scores'][
-                            transcript.metadata?.['default_score_key'] as string
-                          ]
-                          ? '✓ correct'
-                          : '✗ incorrect'
-                        : `${transcript.metadata?.['default_score_key']}: ${transcript.metadata?.['scores'][transcript.metadata?.['default_score_key'] as string]}`}
-                    </span>
-                  )}
-                <span className="whitespace-nowrap">
-                  <span className="font-medium text-gray-600">length:</span>{' '}
-                  {transcript.messages.length} message
-                  {transcript.messages.length !== 1 ? 's' : ''}
-                </span>
-              </>
+                )
             )}
           </div>
         )}
       </div>
 
-      {datapoint && transcript ? (
-        <>
-          <ScrollArea className="relative" ref={transcriptScrollAreaRef}>
-            <div className="space-y-2">
-              {transcript.messages.map((message, index) => (
-                <MessageBox
-                  key={index}
-                  message={message}
-                  index={index}
-                  id={`block-${index}`}
-                  datapoint={datapoint}
-                  scrollToBlock={scrollToBlock}
-                />
-              ))}
+      {/* Transcript content */}
+      {agentRun && transcript ? (
+        <div
+          className="space-y-2 overflow-y-auto custom-scrollbar"
+          ref={scrollContainerRef}
+        >
+          {transcript.messages.map((message, index) => (
+            <MessageBox
+              key={index}
+              message={message}
+              index={index}
+              id={`block-${index}`}
+              agentRun={agentRun}
+              scrollToBlock={scrollToBlock}
+            />
+          ))}
 
-              {/* Loading indicator */}
-              {transcript.metadata.is_loading_messages && (
-                <div className="flex items-center justify-center p-4 space-x-2 bg-gray-50 border border-gray-100 rounded-md">
-                  <Loader className="h-4 w-4 animate-spin text-blue-500" />
-                  <span className="text-xs font-medium text-gray-600">
-                    Running evaluation...
-                  </span>
-                </div>
-              )}
+          {/* Loading indicator */}
+          {transcript.metadata.is_loading_messages && (
+            <div className="flex items-center justify-center p-4 space-x-2 bg-gray-50 border border-gray-100 rounded-md">
+              <Loader className="h-4 w-4 animate-spin text-blue-500" />
+              <span className="text-xs font-medium text-gray-600">
+                Running evaluation...
+              </span>
             </div>
-
-            {/* Navigation buttons inside the ScrollArea */}
-            {transcript && transcript.messages.length > 0 && (
-              <div className="absolute bottom-4 right-4 flex flex-col gap-1">
-                <div className="bg-gray-100 border border-gray-200 rounded-md shadow-sm flex flex-col">
-                  <button
-                    onClick={goToPrevBlock}
-                    className="p-1.5 hover:bg-gray-200 transition-colors rounded-t-md"
-                    title="Previous block"
-                  >
-                    <ChevronUp className="h-4 w-4 text-gray-600" />
-                  </button>
-                  <div className="h-px bg-gray-200" />
-                  <button
-                    onClick={goToNextBlock}
-                    className="p-1.5 hover:bg-gray-200 transition-colors rounded-b-md"
-                    title="Next block"
-                  >
-                    <ChevronDown className="h-4 w-4 text-gray-600" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </ScrollArea>
-        </>
+          )}
+        </div>
       ) : (
         <div className="flex items-center justify-center h-full">
           <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
         </div>
       )}
-    </div>
+
+      {/* Navigation buttons inside the ScrollArea */}
+      {transcript && transcript.messages.length > 0 && (
+        <div className="absolute bottom-5 right-8 flex flex-col gap-1">
+          <div className="bg-gray-100 border border-gray-200 rounded-md shadow-sm flex flex-col">
+            <button
+              onClick={goToPrevBlock}
+              className="p-1.5 hover:bg-gray-200 transition-colors rounded-t-md"
+              title="Previous block"
+            >
+              <ChevronUp className="h-4 w-4 text-gray-600" />
+            </button>
+            <div className="h-px bg-gray-200" />
+            <button
+              onClick={goToNextBlock}
+              className="p-1.5 hover:bg-gray-200 transition-colors rounded-b-md"
+              title="Next block"
+            >
+              <ChevronDown className="h-4 w-4 text-gray-600" />
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 });
 
@@ -581,10 +304,10 @@ export default TranscriptViewer;
 
 // Add AttributeDisplay component to show attributes below citations
 const AttributeDisplay: React.FC<{
-  datapointId: string;
+  agentRunId: string;
   blockIndex: number;
   scrollToBlock?: (blockIndex: number) => void;
-}> = ({ datapointId, blockIndex, scrollToBlock }) => {
+}> = ({ agentRunId, blockIndex, scrollToBlock }) => {
   const attributeQueryDimId = useAppSelector(
     (state) => state.attributeFinder.attributeQueryDimId
   );
@@ -602,10 +325,10 @@ const AttributeDisplay: React.FC<{
 
   // Get all attributes that reference this specific block
   const relevantAttributes = useMemo(() => {
-    if (!curAttributeQuery || !attributeMap || !attributeMap[datapointId]) {
+    if (!curAttributeQuery || !attributeMap || !attributeMap[agentRunId]) {
       return [];
     }
-    const attributes = attributeMap[datapointId]?.[curAttributeQuery].filter(
+    const attributes = attributeMap[agentRunId]?.[curAttributeQuery].filter(
       (attr) => attr.value !== null
     );
     if (!attributes) {
@@ -614,7 +337,7 @@ const AttributeDisplay: React.FC<{
     return attributes.filter((attr) =>
       attr.citations?.some((citation) => citation.block_idx === blockIndex)
     );
-  }, [attributeMap, datapointId, curAttributeQuery, blockIndex]);
+  }, [attributeMap, agentRunId, curAttributeQuery, blockIndex]);
   if (relevantAttributes.length === 0) {
     return null;
   }
@@ -756,29 +479,10 @@ const MessageBox: React.FC<{
   message: ChatMessage;
   index: number;
   id?: string;
-  datapoint: Datapoint;
+  agentRun: AgentRun;
   scrollToBlock: (blockIndex: number) => void;
-}> = ({ message, index, id, datapoint, scrollToBlock }) => {
-  const router = useRouter();
-
-  const datapointId = datapoint.id;
-  const [isEditing, setIsEditing] = React.useState(false);
-  const [editedContent, setEditedContent] = React.useState('');
-  const [editedReasoningContent, setEditedReasoningContent] = React.useState<
-    string | null
-  >(null);
-  const [editedToolCalls, setEditedToolCalls] = React.useState<
-    EditingToolCall[]
-  >([]);
-  const [showNewMessageDialog, setShowNewMessageDialog] = React.useState(false);
-  const [newMessageContent, setNewMessageContent] = React.useState('');
-  // Add state for additional messages and epochs
-  const [numAdditionalMessages, setNumAdditionalMessages] =
-    React.useState<string>('');
-  const [numEpochs, setNumEpochs] = React.useState<string>('');
-  const [editNumAdditionalMessages, setEditNumAdditionalMessages] =
-    React.useState<string>('');
-  const [editNumEpochs, setEditNumEpochs] = React.useState<string>('');
+}> = ({ message, index, id, agentRun, scrollToBlock }) => {
+  const agentRunId = agentRun.id;
 
   const getRoleStyle = () => {
     switch (message.role) {
@@ -820,183 +524,6 @@ const MessageBox: React.FC<{
         item.type === 'reasoning' && typeof item.reasoning === 'string'
     );
     return reasoningItem ? reasoningItem.reasoning : null;
-  };
-
-  const handleEditClick = () => {
-    setEditedContent(getMessageContent(message.content));
-    setEditedReasoningContent(
-      message.role === 'assistant' ? getReasoningContent(message.content) : null
-    );
-    if ('tool_calls' in message && message.tool_calls) {
-      setEditedToolCalls(
-        message.tool_calls.map((tool) => ({
-          ...tool,
-          arguments: tool.arguments || {},
-          argumentsString: JSON.stringify(tool.arguments || {}, null, 2),
-        }))
-      );
-    } else {
-      setEditedToolCalls([]);
-    }
-    // Reset the additional messages and epochs fields
-    setEditNumAdditionalMessages('');
-    setEditNumEpochs('');
-    setIsEditing(true);
-  };
-
-  const handleEditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    let editedMessage: ChatMessage;
-
-    // For assistant messages, validate tool calls JSON
-    if (message.role === 'assistant' && editedToolCalls.length > 0) {
-      try {
-        // Validate each tool call's arguments
-        const validatedToolCalls = editedToolCalls.map((tool) => {
-          const parsedArguments = JSON.parse(tool.argumentsString);
-          return {
-            id: tool.id,
-            function: tool.function,
-            arguments: parsedArguments,
-            type: 'function',
-            view: tool.view
-              ? {
-                  content: tool.view.content,
-                  format: 'markdown', // TODO(vincent): why do we have both text and markdown?
-                }
-              : undefined,
-          };
-        });
-
-        // Create content array with both text and reasoning if applicable
-        let newContent: string | Content[];
-        if (typeof message.content === 'string') {
-          newContent = editedContent;
-        } else {
-          // Build a new content array
-          newContent = message.content
-            .filter((item) => item.type !== 'text' && item.type !== 'reasoning')
-            .concat([{ type: 'text', text: editedContent }]);
-
-          // Add reasoning if it exists in the original message - preserve it as is
-          const originalReasoning = message.content.find(
-            (item) => item.type === 'reasoning'
-          );
-          if (message.role === 'assistant' && originalReasoning) {
-            newContent.push(originalReasoning);
-          }
-        }
-
-        editedMessage = {
-          ...message,
-          content: newContent,
-          tool_calls: validatedToolCalls,
-        };
-      } catch (error) {
-        toast({
-          title: 'Invalid JSON',
-          description: 'Please check the tool call arguments format',
-          variant: 'destructive',
-        });
-        return;
-      }
-    } else {
-      // Handle non-assistant messages
-      // Create content array with both text and reasoning if applicable
-      let newContent: string | Content[];
-      if (typeof message.content === 'string') {
-        newContent = editedContent;
-      } else {
-        // Build a new content array
-        newContent = message.content
-          .filter((item) => item.type !== 'text' && item.type !== 'reasoning')
-          .concat([{ type: 'text', text: editedContent }]);
-
-        // Add reasoning if it exists in the original message - preserve it as is
-        const originalReasoning = message.content.find(
-          (item) => item.type === 'reasoning'
-        );
-        if (message.role === 'assistant' && originalReasoning) {
-          newContent.push(originalReasoning);
-        }
-      }
-
-      editedMessage = {
-        ...message,
-        content: newContent,
-      };
-    }
-
-    // Parse the additional messages and epochs values
-    const additionalMessages =
-      editNumAdditionalMessages.trim() !== ''
-        ? parseInt(editNumAdditionalMessages, 10)
-        : undefined;
-
-    const epochs =
-      editNumEpochs.trim() !== '' ? parseInt(editNumEpochs, 10) : undefined;
-
-    // Send to server with optional parameters
-    toast({
-      title: 'this is not implemented yet',
-      description: 'asdfa',
-    });
-    // sendMessage('conversation_intervention', {
-    //   datapoint_id: datapointId,
-    //   message_index: index,
-    //   new_message: editedMessage,
-    //   ...(additionalMessages !== undefined && {
-    //     num_additional_messages: additionalMessages,
-    //   }),
-    //   ...(epochs !== undefined && { num_epochs: epochs }),
-    // });
-
-    setIsEditing(false);
-    toast({
-      title: 'New experiment created',
-      description: 'Return to the experiment page to view the new experiment',
-    });
-  };
-
-  const handleToolCallChange = (
-    index: number,
-    field: keyof ToolCall | 'argumentsString',
-    value: string
-  ) => {
-    setEditedToolCalls((prev) => {
-      const updated = [...prev];
-      const toolCall = { ...updated[index] };
-
-      if (field === 'argumentsString') {
-        toolCall.argumentsString = value;
-        // Keep the arguments object as-is until submit
-      } else if (field === 'function' || field === 'id') {
-        toolCall[field] = value;
-      } else if (field === 'view') {
-        toolCall.view = { content: value, format: 'markdown' };
-      }
-
-      updated[index] = toolCall;
-      return updated;
-    });
-  };
-
-  const addToolCall = () => {
-    setEditedToolCalls((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        function: '',
-        arguments: {},
-        argumentsString: '{}',
-        type: 'function',
-      },
-    ]);
-  };
-
-  const removeToolCall = (index: number) => {
-    setEditedToolCalls((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Helper to render tool-specific information
@@ -1052,50 +579,6 @@ const MessageBox: React.FC<{
     return null;
   };
 
-  const handleAddMessage = () => {
-    if (!newMessageContent.trim()) {
-      toast({
-        title: 'Empty message',
-        description: 'Please enter a message',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Parse the additional messages and epochs values
-    const additionalMessages =
-      numAdditionalMessages.trim() !== ''
-        ? parseInt(numAdditionalMessages, 10)
-        : undefined;
-
-    const epochs =
-      numEpochs.trim() !== '' ? parseInt(numEpochs, 10) : undefined;
-
-    // Send to server with optional parameters
-    // sendMessage('conversation_intervention', {
-    //   datapoint_id: datapointId,
-    //   message_index: index + 1,
-    //   new_message: {
-    //     role: 'user',
-    //     content: newMessageContent,
-    //   },
-    //   insert: true,
-    //   ...(additionalMessages !== undefined && {
-    //     num_additional_messages: additionalMessages,
-    //   }),
-    //   ...(epochs !== undefined && { num_epochs: epochs }),
-    // });
-
-    setShowNewMessageDialog(false);
-    setNewMessageContent('');
-    setNumAdditionalMessages('');
-    setNumEpochs('');
-    toast({
-      title: 'New experiment created',
-      description: 'Return to the experiment page to view the new experiment',
-    });
-  };
-
   return (
     <div className="mb-1">
       <div id={id} className={`p-2 rounded-md text-sm ${getRoleStyle()}`}>
@@ -1104,300 +587,30 @@ const MessageBox: React.FC<{
             Block {index} |{' '}
             {message.role.charAt(0).toUpperCase() + message.role.slice(1)}
           </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleEditClick}
-              className="hover:text-blue-600 transition-colors p-1 hover:bg-blue-50 rounded"
-              title="Edit message"
-            >
-              <Pencil size={12} />
-            </button>
-            <button
-              onClick={() => setShowNewMessageDialog(true)}
-              className="hover:text-blue-600 transition-colors p-1 hover:bg-blue-50 rounded"
-              title="Add new message"
-            >
-              <MessageSquarePlus size={12} />
-            </button>
-            <span>ID: B{index}</span>
-          </div>
         </div>
 
-        <Dialog
-          open={showNewMessageDialog}
-          onOpenChange={setShowNewMessageDialog}
-        >
-          <DialogContent>
-            <DialogHeader className="space-y-1">
-              <DialogTitle className="text-sm font-semibold">
-                Add New Message
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Add a new user message after block {index}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="mt-4">
-              <label className="block text-xs text-gray-700 mb-1">
-                Message Content
-              </label>
-              <textarea
-                value={newMessageContent}
-                onChange={(e) => setNewMessageContent(e.target.value)}
-                className="w-full p-2 border rounded-md text-xs min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                placeholder="Enter your message here..."
-                autoFocus
-              />
-            </div>
-
-            {/* Add fields for additional messages and epochs */}
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">
-                  Number of Additional Messages
-                </label>
-                <input
-                  type="number"
-                  value={numAdditionalMessages}
-                  onChange={(e) => setNumAdditionalMessages(e.target.value)}
-                  className="w-full p-2 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                  placeholder="Leave empty for default"
-                  min="1"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">
-                  Number of Epochs
-                </label>
-                <input
-                  type="number"
-                  value={numEpochs}
-                  onChange={(e) => setNumEpochs(e.target.value)}
-                  className="w-full p-2 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                  placeholder="Leave empty for default"
-                  min="1"
-                />
-              </div>
-            </div>
-
-            <DialogFooter className="mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowNewMessageDialog(false)}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleAddMessage} className="text-xs">
-                Add Message
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {isEditing ? (
-          <form
-            onSubmit={handleEditSubmit}
-            className="mt-1 space-y-4 font-mono"
-          >
-            <div>
-              <label className="block text-xs text-gray-700 mb-1">
-                Content
-              </label>
-              <textarea
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                className="w-full p-2 border rounded-md text-xs min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-            </div>
-
-            {message.role === 'assistant' && (
-              <>
-                {editedReasoningContent !== null ? (
-                  <div>
-                    <label className="block text-xs text-gray-700 mb-1 flex items-center justify-between">
-                      <span>Reasoning (Read Only)</span>
-                      <span className="text-[10px] text-gray-500 italic">
-                        Model thinking tokens cannot be modified
-                      </span>
-                    </label>
-                    <textarea
-                      value={editedReasoningContent}
-                      className="w-full p-2 border rounded-md text-xs min-h-[80px] focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 cursor-not-allowed"
-                      placeholder="Reasoning content (read-only)"
-                      disabled={true}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <button
-                      type="button"
-                      className="text-xs px-2 py-1 bg-gray-50 text-gray-400 rounded border border-gray-200 cursor-not-allowed opacity-60 relative group"
-                      disabled={true}
-                    >
-                      Reasoning (Read Only)
-                      <span className="absolute left-0 -bottom-5 text-[9px] text-gray-500 italic whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                        Model thinking tokens cannot be modified
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Add fields for additional messages and epochs */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">
-                  Number of Additional Messages
-                </label>
-                <input
-                  type="number"
-                  value={editNumAdditionalMessages}
-                  onChange={(e) => setEditNumAdditionalMessages(e.target.value)}
-                  className="w-full p-2 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                  placeholder="Leave empty for default"
-                  min="1"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">
-                  Number of Epochs
-                </label>
-                <input
-                  type="number"
-                  value={editNumEpochs}
-                  onChange={(e) => setEditNumEpochs(e.target.value)}
-                  className="w-full p-2 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                  placeholder="Leave empty for default"
-                  min="1"
-                />
-              </div>
-            </div>
-
-            {message.role === 'assistant' && (
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="block text-xs text-gray-700">
-                    Tool Calls
-                  </label>
-                  <button
-                    type="button"
-                    onClick={addToolCall}
-                    className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded"
-                  >
-                    Add Tool Call
-                  </button>
-                </div>
-
-                {editedToolCalls.map((tool, idx) => (
-                  <div key={tool.id} className="mb-4 p-3 bg-gray-50 rounded-md">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-xs text-gray-600">
-                        Tool Call {idx + 1}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeToolCall(idx)}
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      <input
-                        value={tool.id}
-                        onChange={(e) =>
-                          handleToolCallChange(idx, 'id', e.target.value)
-                        }
-                        placeholder="Tool Call ID"
-                        className="w-full p-1.5 text-xs border rounded"
-                      />
-
-                      <input
-                        value={tool.function}
-                        onChange={(e) =>
-                          handleToolCallChange(idx, 'function', e.target.value)
-                        }
-                        placeholder="Function name"
-                        className="w-full p-1.5 text-xs border rounded"
-                      />
-
-                      <textarea
-                        value={tool.argumentsString}
-                        onChange={(e) =>
-                          handleToolCallChange(
-                            idx,
-                            'argumentsString',
-                            e.target.value
-                          )
-                        }
-                        placeholder="Arguments (JSON)"
-                        className="w-full p-1.5 text-xs border rounded font-mono min-h-[80px]"
-                      />
-
-                      {tool.view && (
-                        <textarea
-                          value={tool.view.content}
-                          onChange={(e) =>
-                            handleToolCallChange(idx, 'view', e.target.value)
-                          }
-                          placeholder="View content"
-                          className="w-full p-1.5 text-xs border rounded min-h-[60px]"
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="px-2 py-1 text-xs rounded-md bg-gray-100 hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-2 py-1 text-xs rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-              >
-                Submit
-              </button>
-            </div>
-          </form>
-        ) : (
+        {typeof message.content !== 'string' && (
           <>
-            {typeof message.content !== 'string' && (
-              <>
-                {message.role === 'assistant' &&
-                  getReasoningContent(message.content) && (
-                    <div className="mb-2 px-2 py-2 bg-gray-100 border-l-2 border-gray-400 text-xs text-gray-700 italic whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full overflow-x-auto font-mono rounded">
-                      {getReasoningContent(message.content)}
-                    </div>
-                  )}
-              </>
-            )}
-            <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono">
-              {getMessageContent(message.content)}
-            </div>
-            {renderToolInfo()}
-            {renderToolCalls()}
+            {message.role === 'assistant' &&
+              getReasoningContent(message.content) && (
+                <div className="mb-2 px-2 py-2 bg-gray-100 border-l-2 border-gray-400 text-xs text-gray-700 italic whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full overflow-x-auto font-mono rounded">
+                  {getReasoningContent(message.content)}
+                </div>
+              )}
           </>
         )}
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono">
+          {getMessageContent(message.content)}
+        </div>
+        {renderToolInfo()}
+        {renderToolCalls()}
       </div>
 
-      {/* Add the AttributeDisplay component outside the message card */}
-      {!isEditing && (
-        <AttributeDisplay
-          datapointId={datapointId}
-          blockIndex={index}
-          scrollToBlock={scrollToBlock}
-        />
-      )}
+      <AttributeDisplay
+        agentRunId={agentRunId}
+        blockIndex={index}
+        scrollToBlock={scrollToBlock}
+      />
     </div>
   );
 };

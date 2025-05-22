@@ -1,17 +1,16 @@
 'use client';
 
-import Breadcrumbs from '../components/Breadcrumbs';
-import React, { useEffect, Suspense, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import React, { useEffect, Suspense, useState, useRef } from 'react';
 
-import { useAppDispatch, useAppSelector } from '../store/hooks';
-import {
-  initSession,
-  resetFrameSlice,
-  setHasInitAttributeDimId,
-} from '../store/frameSlice';
+import Breadcrumbs from '../components/Breadcrumbs';
 import ResponsiveCheck from '../components/ResponsiveCheck';
 import { requestAttributes } from '../store/attributeFinderSlice';
+import {
+  initSession,
+  setHasInitAttributeDimId,
+} from '../store/frameSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 export default function DocentLayout({
   children,
@@ -93,7 +92,7 @@ export default function DocentLayout({
   }, [initAttributeDimId, dispatch, frameGridId, dimensionsMap]);
 
   return (
-    <div className="flex flex-col h-screen p-3 pt-2 space-y-2">
+    <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-0">
       <Suspense fallback={<div className="h-6">Loading breadcrumbs...</div>}>
         <Breadcrumbs />
       </Suspense>

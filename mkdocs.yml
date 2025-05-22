@@ -1,0 +1,110 @@
+site_name: Transluce Docent
+theme:
+  name: material
+  features:
+    # Allows copying code blocks
+    - content.code.copy
+    # Allows selecting code blocks
+    - content.code.select
+    # Shows the current path in the sidebar
+    - navigation.path
+    # Shows sections in the sidebar
+    - navigation.sections
+    # Shows sections expanded by default
+    - navigation.expand
+    # Enables annotations in code blocks
+    - content.code.annotate
+    # Enable content tabs
+    - content.tabs.link
+  palette:
+    primary: black
+  logo: images/logo.png
+  favicon: images/favicon.ico
+
+nav:
+  - Introduction: index.md
+  - Quickstart: quickstart.md
+  - Get support: support.md
+  - Tutorials:
+      - tutorials/ingesting_agent_runs.md
+      - tutorials/search_and_clustering.md
+  - Core Concepts:
+      - Configuration:
+          - concepts/configuration/environment_variables.md
+          - concepts/configuration/llm_providers_and_calls.md
+      - Data Models:
+          - concepts/data_models/agent_run.md
+          - concepts/data_models/transcript.md
+          - concepts/data_models/metadata.md
+          - concepts/data_models/chat_messages.md
+          - concepts/data_models/filters_and_dimensions.md
+          - concepts/data_models/llm_output.md
+      - SDK:
+          - concepts/sdk/python_sdk.md
+      - Developers:
+          - developers/development_tips.md
+
+repo_name: Docent
+repo_url: https://github.com/TransluceAI/docent
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["docent/data_models"]
+          selection:
+            docstring_style: google
+          options:
+            # Shows links to other members in signatures
+            signature_crossrefs: true
+            # Orders members by source order, rather than alphabetical
+            members_order: source
+            # Puts the signature on a separate line from the member name
+            separate_signature: true
+            # Shows type annotations in signatures
+            show_signature_annotations: true
+            # Makes the font sizes nicer
+            heading_level: 2
+            # Show inherited members
+            inherited_members: true
+            # Enable automatic references
+            show_root_heading: true
+            show_root_full_path: true
+            show_object_full_path: false
+            show_category_heading: false
+
+extra:
+  generator: false
+  language: en
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - scripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+extra_css:
+  - styles/extra.css

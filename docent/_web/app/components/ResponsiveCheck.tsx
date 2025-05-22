@@ -1,6 +1,5 @@
+import { RotateCcw , ZoomOut } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
-import { ZoomOut } from 'lucide-react';
 
 export default function ResponsiveCheck({
   children,

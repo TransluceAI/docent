@@ -1,2 +1,6 @@
-__all__ = ["DocentClient"]
-from ._sdk.client import DocentClient
+__all__ = [
+    "DocentClient",
+]
+
+# SDK
+from .sdk.client import DocentClient

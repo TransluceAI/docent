@@ -1,66 +1,54 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  Network,
   Loader2,
   ThumbsUp,
   ThumbsDown,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import {
-  OrganizationMethod,
-  RegexSnippet,
-} from '../types/experimentViewerTypes';
-
-import { BASE_DOCENT_PATH } from '../constants';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import { RootState } from '../store/store';
-import { TaskStats } from '../types/experimentViewerTypes';
-import { getTranscriptMetadata } from '../store/frameSlice';
-import {
-  requestRegexSnippetsIfExist,
-  voteOnAttribute,
-} from '../store/attributeFinderSlice';
+
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+
+import {
+  requestRegexSnippetsIfExist,
+  voteOnAttribute,
+} from '../store/attributeFinderSlice';
 import { updateRegexSnippets } from '../store/experimentViewerSlice';
+import { getAgentRunMetadata } from '../store/frameSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { RootState } from '../store/store';
+import { RegexSnippet, TaskStats } from '../types/experimentViewerTypes';
 import { AttributeWithCitations } from '../types/frameTypes';
 
 interface InnerCard {
   innerId: string;
   innerName?: string;
+  innerLabel: string;
   stats: TaskStats | null;
-  datapointIds: string[];
-  onShowDatapoint?: (datapointId: string, blockId?: number) => void;
+  agentRunIds: string[];
+  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
   isExpanded: boolean;
   onToggle?: () => void;
-  organizationMethod: OrganizationMethod;
-  experimentCount?: number;
+  innerCount?: number;
 }
 
 interface AttributeSectionProps {
   dataId: string;
   curAttributeQuery: string;
   attributes: AttributeWithCitations[];
-  onShowDatapoint?: (datapointId: string, blockId?: number) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
 }
 
 const AttributeSection: React.FC<AttributeSectionProps> = ({
   dataId,
   curAttributeQuery,
   attributes: attributes,
-  onShowDatapoint,
+  onShowAgentRun,
 }) => {
   const dispatch = useAppDispatch();
   const voteState = useAppSelector((state) => state.attributeFinder.voteState);
@@ -122,8 +110,8 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                 className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (onShowDatapoint) {
-                    onShowDatapoint(dataId, citation.block_idx);
+                  if (onShowAgentRun) {
+                    onShowAgentRun(dataId, citation.block_idx);
                   }
                 }}
               >
@@ -150,10 +138,10 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
             className="group bg-indigo-50 rounded-md p-1 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
             onClick={(e) => {
               e.stopPropagation();
-              if (onShowDatapoint) {
+              if (onShowAgentRun) {
                 const firstCitation =
                   citations.length > 0 ? citations[0] : null;
-                onShowDatapoint(dataId, firstCitation?.block_idx);
+                onShowAgentRun(dataId, firstCitation?.block_idx);
               }
             }}
           >
@@ -174,7 +162,7 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                           e.stopPropagation();
                           dispatch(
                             voteOnAttribute({
-                              datapoint_id: dataId,
+                              agent_run_id: dataId,
                               attribute: attributeText,
                               vote: 'up',
                             })
@@ -198,7 +186,7 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                           e.stopPropagation();
                           dispatch(
                             voteOnAttribute({
-                              datapoint_id: dataId,
+                              agent_run_id: dataId,
                               attribute: attributeText,
                               vote: 'down',
                             })
@@ -291,7 +279,7 @@ const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({
 // RegexSnippetsSection component to display regex matches
 const RegexSnippetsSection: React.FC<{
   regexSnippets?: RegexSnippet[];
-  onShowDatapoint?: (datapointId: string, blockId?: number) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
 }> = ({ regexSnippets }) => {
   if (!regexSnippets || regexSnippets.length === 0) {
     return null;
@@ -313,15 +301,55 @@ const RegexSnippetsSection: React.FC<{
   );
 };
 
+const formatMetadataValue = (value: any): string => {
+  if (typeof value === 'object' && value !== null) {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+};
+
+function MetadataDisplay({
+  metadata,
+  isLoading,
+}: {
+  metadata: Record<string, any>;
+  isLoading?: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <span className="whitespace-nowrap flex items-center">
+        <Loader2 className="h-3 w-3 animate-spin text-blue-500 mr-1" />
+        <span className="text-blue-500 font-medium">
+          Running experiment (click to view progress)...
+        </span>
+      </span>
+    );
+  }
+
+  const entries = Object.entries(metadata);
+
+  return (
+    <div className="pt-1 border-t border-gray-100 flex items-center gap-1.5 group text-[10px] text-gray-500 flex-1 truncate">
+      {entries.map(([key, value], index) => (
+        <span key={key}>
+          <span className="font-medium">{key}: </span>
+          {formatMetadataValue(value) || 'N/A'}
+          {index < entries.length - 1 ? ' • ' : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const InnerCard: React.FC<InnerCard> = ({
   innerId,
   innerName,
+  innerLabel,
   stats,
-  datapointIds,
-  onShowDatapoint,
+  agentRunIds,
+  onShowAgentRun,
   isExpanded,
   onToggle,
-  organizationMethod,
 }) => {
   const dispatch = useAppDispatch();
 
@@ -343,13 +371,8 @@ const InnerCard: React.FC<InnerCard> = ({
   const loadingAttributesForId = useSelector(
     (state: RootState) => state.attributeFinder.loadingAttributesForId
   );
-  const evalId = useSelector((state: RootState) => state.frame.evalId);
-  const transcriptMetadata = useSelector(
-    (state: RootState) => state.frame.transcriptMetadata
-  );
-  const interventionDescriptionMarginals = useSelector(
-    (state: RootState) =>
-      state.experimentViewer.interventionDescriptionMarginals
+  const agentRunMetadata = useSelector(
+    (state: RootState) => state.frame.agentRunMetadata
   );
 
   const selectedDiffTranscript = useSelector(
@@ -374,7 +397,7 @@ const InnerCard: React.FC<InnerCard> = ({
     if (
       isExpanded &&
       baseFilter &&
-      datapointIds.length > 0 &&
+      agentRunIds.length > 0 &&
       !loadingAttributesForId
     ) {
       const fetchSnippets = async () => {
@@ -382,7 +405,7 @@ const InnerCard: React.FC<InnerCard> = ({
           const result = await dispatch(
             requestRegexSnippetsIfExist({
               filterId: baseFilter.id,
-              datapointIds: datapointIds,
+              agentRunIds: agentRunIds,
             })
           ).unwrap();
           dispatch(updateRegexSnippets(result));
@@ -392,7 +415,7 @@ const InnerCard: React.FC<InnerCard> = ({
       };
       fetchSnippets();
     }
-  }, [isExpanded, baseFilter, datapointIds, dispatch, loadingAttributesForId]);
+  }, [isExpanded, baseFilter, agentRunIds, dispatch, loadingAttributesForId]);
 
   // Get all score keys from both current and previous stats
   const allScoreKeys = useMemo(() => {
@@ -423,10 +446,10 @@ const InnerCard: React.FC<InnerCard> = ({
   };
 
   useEffect(() => {
-    if (isExpanded && datapointIds.length > 0 && !loadingAttributesForId) {
-      dispatch(getTranscriptMetadata(datapointIds));
+    if (isExpanded && agentRunIds.length > 0 && !loadingAttributesForId) {
+      dispatch(getAgentRunMetadata(agentRunIds));
     }
-  }, [isExpanded, baseFilter, datapointIds, dispatch, loadingAttributesForId]); // Re-request when base filter changes too
+  }, [isExpanded, baseFilter, agentRunIds, dispatch, loadingAttributesForId]); // Re-request when base filter changes too
 
   // const handleDiffClick = (dataId: string) => {
   //   if (selectedDiffTranscript === null) {
@@ -451,40 +474,6 @@ const InnerCard: React.FC<InnerCard> = ({
   // const canDiff =
   //   selectedDiffSampleId === null || selectedDiffSampleId === sampleId;
 
-  // Create a function to get the marginal key for interventionDescriptions
-  const getMarginalKey = (
-    sampleId: string | null,
-    experimentId: string | null
-  ) => {
-    if (sampleId !== null && experimentId !== null) {
-      return `sample_id,sample_id_${sampleId}|experiment_id,experiment_id_${experimentId}`;
-    } else if (sampleId !== null) {
-      return `sample_id,sample_id_${sampleId}`;
-    } else if (experimentId !== null) {
-      return `experiment_id,experiment_id_${experimentId}`;
-    } else {
-      return '';
-    }
-  };
-
-  // Get the appropriate key for the current organization method
-  const getInterventionKey = () => {
-    if (organizationMethod === 'sample') {
-      // When organized by sample, innerId is the experiment ID
-      return getMarginalKey(null, innerId);
-    }
-    return null;
-  };
-
-  // Get intervention description if available
-  const interventionKey = getInterventionKey();
-  const hasInterventionDescription =
-    organizationMethod === 'sample' &&
-    interventionDescriptionMarginals &&
-    interventionKey &&
-    interventionDescriptionMarginals[interventionKey] &&
-    interventionDescriptionMarginals[interventionKey].length > 0;
-
   const getAttributes = useCallback(
     (dataId: string) => {
       if (!curAttributeQuery) return null;
@@ -498,7 +487,7 @@ const InnerCard: React.FC<InnerCard> = ({
   );
 
   return (
-    datapointIds.length > 0 && (
+    agentRunIds.length > 0 && (
       <div
         className={`flex flex-col p-1.5 rounded border transition-all duration-200 ${
           isExpanded
@@ -519,14 +508,12 @@ const InnerCard: React.FC<InnerCard> = ({
             <div>
               <div className="flex items-center">
                 <span className="font-medium text-gray-600">
-                  {organizationMethod === 'experiment' ? 'Task' : 'Experiment'}{' '}
-                  <span className="font-mono">{innerName || innerId}</span>
-                  {curAttributeQuery && (
-                    <span className="text-xxs text-gray-500 font-light ml-2">
-                      {datapointIds.length} datapoint
-                      {datapointIds.length === 1 ? '' : 's'}
-                    </span>
-                  )}
+                  <span className="font-mono">{innerLabel}</span>
+                  {' ' + (innerName || innerId)}
+                  <span className="text-xxs text-gray-500 font-light ml-2">
+                    {agentRunIds.length} agent run
+                    {agentRunIds.length === 1 ? '' : 's'}
+                  </span>
                 </span>
                 {/* {organizationMethod === 'experiment' &&
                   (experimentCount ?? 0) > 1 && (
@@ -544,11 +531,6 @@ const InnerCard: React.FC<InnerCard> = ({
                     </button>
                   )} */}
               </div>
-              {hasInterventionDescription && (
-                <p className="text-xs italic text-gray-600 mt-0.5">
-                  {interventionDescriptionMarginals[interventionKey][0]}
-                </p>
-              )}
             </div>
           </div>
           {stats && (
@@ -602,28 +584,29 @@ const InnerCard: React.FC<InnerCard> = ({
         </div>
         {isExpanded && (
           <div className="flex flex-col gap-1 mt-1.5 ml-5 pl-0.5">
-            {datapointIds.map((dataId) => {
+            {agentRunIds.map((agentRunId) => {
               // Skip if there is an active query but there are no matching attribute values
-              const attributes = getAttributes(dataId);
+              const attributes = getAttributes(agentRunId);
               if (curAttributeQuery && attributes === null) return null;
 
               return (
                 <div
-                  key={dataId}
+                  key={agentRunId}
                   className={`flex flex-col p-1 border rounded text-xs cursor-pointer transition-colors ${
                     selectedDiffTranscript !== undefined &&
-                    selectedDiffTranscript !== dataId
+                    selectedDiffTranscript !== agentRunId
                       ? 'bg-orange-50/50 hover:bg-orange-100/50'
                       : 'bg-white/80 hover:bg-gray-50'
                   }`}
                   onClick={() =>
-                    onShowDatapoint ? onShowDatapoint(dataId) : undefined
+                    onShowAgentRun ? onShowAgentRun(agentRunId) : undefined
                   }
                 >
                   <div>
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">
-                        Transcript <span className="font-mono">{dataId}</span>
+                        Agent Run{' '}
+                        <span className="font-mono">{agentRunId}</span>
                       </span>
                       <div className="flex gap-2">
                         {/* Only show diff option if this card's sample ID matches the selected diff sample ID or no diff is in progress */}
@@ -657,8 +640,8 @@ const InnerCard: React.FC<InnerCard> = ({
                           className="text-blue-600 font-medium hover:text-blue-700"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onShowDatapoint
-                              ? onShowDatapoint(dataId)
+                            onShowAgentRun
+                              ? onShowAgentRun(agentRunId)
                               : () => {};
                           }}
                         >
@@ -667,81 +650,45 @@ const InnerCard: React.FC<InnerCard> = ({
                       </div>
                     </div>
                     {/* Display metadata if available */}
-                    {transcriptMetadata && transcriptMetadata[dataId] && (
-                      <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
-                        {transcriptMetadata[dataId].is_loading_messages ? (
-                          <span className="whitespace-nowrap flex items-center">
-                            <Loader2 className="h-3 w-3 animate-spin text-blue-500 mr-1" />
-                            <span className="text-blue-500 font-medium">
-                              Running experiment (click to view progress)...
-                            </span>
-                          </span>
-                        ) : (
-                          <>
-                            {transcriptMetadata[dataId].epoch_id !==
-                              undefined && (
-                              <span className="whitespace-nowrap">
-                                <span className="font-medium text-gray-600">
-                                  run:
-                                </span>{' '}
-                                {transcriptMetadata[dataId].epoch_id}
-                              </span>
-                            )}
-                            {transcriptMetadata[dataId].model !== undefined && (
-                              <span className="whitespace-nowrap">
-                                <span className="font-medium text-gray-600">
-                                  model:
-                                </span>{' '}
-                                {transcriptMetadata[dataId].model}
-                              </span>
-                            )}
-                            {transcriptMetadata[dataId].scores &&
-                              transcriptMetadata[dataId].default_score_key && (
-                                <span
-                                  className={`whitespace-nowrap font-medium px-1 rounded ${
-                                    typeof transcriptMetadata[dataId].scores[
-                                      transcriptMetadata[dataId]
-                                        .default_score_key
-                                    ] === 'boolean'
-                                      ? transcriptMetadata[dataId].scores[
-                                          transcriptMetadata[dataId]
-                                            .default_score_key
-                                        ]
-                                        ? 'bg-green-50 text-green-600'
-                                        : 'bg-red-50 text-red-600'
-                                      : 'bg-blue-50 text-blue-600'
-                                  }`}
-                                >
-                                  {typeof transcriptMetadata[dataId].scores[
-                                    transcriptMetadata[dataId].default_score_key
-                                  ] === 'boolean'
-                                    ? transcriptMetadata[dataId].scores[
-                                        transcriptMetadata[dataId]
-                                          .default_score_key
-                                      ]
-                                      ? '✓ correct'
-                                      : '✗ incorrect'
-                                    : `${transcriptMetadata[dataId].default_score_key}: ${transcriptMetadata[dataId].scores[transcriptMetadata[dataId].default_score_key]}`}
-                                </span>
-                              )}
-                          </>
-                        )}
-                      </div>
+                    {agentRunMetadata && agentRunMetadata[agentRunId] && (
+                      <MetadataDisplay
+                        metadata={agentRunMetadata[agentRunId]}
+                      />
+                      // <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
+                      //   {agentRunMetadata[agentRunId].is_loading_messages ? (
+                      //     <span className="whitespace-nowrap flex items-center">
+                      //       <Loader2 className="h-3 w-3 animate-spin text-blue-500 mr-1" />
+                      //       <span className="text-blue-500 font-medium">
+                      //         Running experiment (click to view progress)...
+                      //       </span>
+                      //     </span>
+                      //   ) : (
+                      //     <>
+                      //       {Object.entries(agentRunMetadata[agentRunId]).map(
+                      //         ([key, value]) => (
+                      //           <span key={key}>
+                      //             {key}: {formatMetadataValue(value) || 'N/A'}
+                      //           </span>
+                      //         )
+                      //       )}
+                      //     </>
+                      //   )}
+                      // </div>
                     )}
                   </div>
 
                   <RegexSnippetsSection
-                    regexSnippets={regexSnippets?.[dataId]}
-                    onShowDatapoint={onShowDatapoint}
+                    regexSnippets={regexSnippets?.[agentRunId]}
+                    onShowAgentRun={onShowAgentRun}
                   />
 
                   {/* Replace the inline attribute section with the new component */}
                   {attributes && curAttributeQuery && (
                     <AttributeSection
-                      dataId={dataId}
+                      dataId={agentRunId}
                       curAttributeQuery={curAttributeQuery}
                       attributes={attributes}
-                      onShowDatapoint={onShowDatapoint}
+                      onShowAgentRun={onShowAgentRun}
                     />
                   )}
                 </div>

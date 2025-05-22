@@ -2,7 +2,6 @@ import {
   AttributeWithCitations,
   FrameDimension,
   FrameFilter,
-  Judgment,
 } from './frameTypes';
 
 export type MetadataType = 'str' | 'int' | 'float' | 'bool';
@@ -22,8 +21,8 @@ export interface Citation {
 
 export interface StreamedAttribute {
   data_dict: Record<string, Record<string, AttributeWithCitations[]>>;
-  num_datapoints_done: number;
-  num_datapoints_total: number;
+  num_agent_runs_done: number;
+  num_agent_runs_total: number;
 }
 
 export interface TaskStats {

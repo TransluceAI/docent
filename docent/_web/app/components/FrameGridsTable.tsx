@@ -1,38 +1,22 @@
 'use client';
 
-import { FrameGrid } from '@/app/types/frameTypes';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   CalendarIcon,
   CheckIcon,
   ClipboardCopyIcon,
   ExternalLinkIcon,
-  FilterIcon,
   Layers,
   Loader2,
-  MoreHorizontal,
   Pencil,
-  SearchIcon,
   Trash2,
   XIcon,
 } from 'lucide-react';
-import { BASE_DOCENT_PATH } from '@/app/constants';
 import { useRouter } from 'next/navigation';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { toast } from '@/hooks/use-toast';
-import { useAppDispatch } from '../store/hooks';
-import { deleteFrameGrid, updateFrameGrid } from '../store/frameSlice';
+
+import { BASE_DOCENT_PATH } from '@/app/constants';
+import { FrameGrid } from '@/app/types/frameTypes';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -42,8 +26,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+
+import { deleteFrameGrid, updateFrameGrid } from '../store/frameSlice';
+import { useAppDispatch } from '../store/hooks';
 
 interface FrameGridsTableProps {
   frameGrids?: FrameGrid[];

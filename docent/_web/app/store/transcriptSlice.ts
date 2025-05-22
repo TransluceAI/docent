@@ -1,26 +1,28 @@
-import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import {
+  createSlice,
+  type PayloadAction,
+  createAsyncThunk,
+} from '@reduxjs/toolkit';
+
+import { apiRestClient } from '../services/apiService';
 import socketService from '../services/socketService';
 import sseService from '../services/sseService';
 import {
   ActionsSummary,
-  ChatMessage,
-  Datapoint,
+  AgentRun,
   SolutionSummary,
   TaMessage,
 } from '../types/transcriptTypes';
+
+import { getAgentRunMetadata, getAgentRunMetadataFields } from './frameSlice';
 import { RootState } from './store';
-import {
-  getTranscriptMetadata,
-  getTranscriptMetadataFields,
-} from './frameSlice';
-import { apiRestClient } from '../services/apiService';
 import { setToastNotification } from './toastSlice';
 
 // Map to store cancel functions for active SSE connections
 const cancelFunctionsMap: Record<string, () => void> = {};
 
 export interface TranscriptState {
-  curDatapoint?: Datapoint;
+  curAgentRun?: AgentRun;
   // Actions summary
   actionsSummary?: ActionsSummary;
   loadingActionsSummaryForTranscriptId?: string;
@@ -30,7 +32,7 @@ export interface TranscriptState {
   loadingSolutionSummaryForTranscriptId?: string;
   solutionSummaryTaskId?: string;
   // Chat assistant
-  taDatapointId?: string;
+  taAgentRunId?: string;
   taSessionId?: string;
   taMessages?: TaMessage[];
   taMessageTaskId?: string;
@@ -41,7 +43,7 @@ const initialState: TranscriptState = {};
 
 export const getActionsSummary = createAsyncThunk(
   'transcript/getActionsSummary',
-  async (datapointId: string, { dispatch, getState }) => {
+  async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
     const frameGridId = state.frame.frameGridId;
 
@@ -54,7 +56,7 @@ export const getActionsSummary = createAsyncThunk(
 
     // Set UI state
     dispatch(setActionsSummary(undefined));
-    dispatch(setLoadingActionsSummaryForTranscriptId(datapointId));
+    dispatch(setLoadingActionsSummaryForTranscriptId(agentRunId));
 
     if (!frameGridId) {
       dispatch(
@@ -75,12 +77,12 @@ export const getActionsSummary = createAsyncThunk(
 
       // Create SSE connection using the service
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/actions_summary?fg_id=${frameGridId}&datapoint_id=${datapointId}`,
+        `/rest/actions_summary?fg_id=${frameGridId}&agent_run_id=${agentRunId}`,
         (data) => {
           // Update actions summary with streamed data
           dispatch(
             setActionsSummary({
-              datapoint_id: data.datapoint_id,
+              agent_run_id: data.agent_run_id,
               low_level: data.low_level,
               high_level: data.high_level,
               observations: data.observations,
@@ -119,7 +121,7 @@ export const getActionsSummary = createAsyncThunk(
 
 export const getSolutionSummary = createAsyncThunk(
   'transcript/getSolutionSummary',
-  async (datapointId: string, { dispatch, getState }) => {
+  async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
     const frameGridId = state.frame.frameGridId;
 
@@ -132,7 +134,7 @@ export const getSolutionSummary = createAsyncThunk(
 
     // Set UI state
     dispatch(setSolutionSummary(undefined));
-    dispatch(setLoadingSolutionSummaryForTranscriptId(datapointId));
+    dispatch(setLoadingSolutionSummaryForTranscriptId(agentRunId));
 
     if (!frameGridId) {
       dispatch(
@@ -153,12 +155,12 @@ export const getSolutionSummary = createAsyncThunk(
 
       // Create SSE connection using the service
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/solution_summary?fg_id=${frameGridId}&datapoint_id=${datapointId}`,
+        `/rest/solution_summary?fg_id=${frameGridId}&agent_run_id=${agentRunId}`,
         (data) => {
           // Update solution summary with streamed data
           dispatch(
             setSolutionSummary({
-              datapoint_id: data.datapoint_id,
+              agent_run_id: data.agent_run_id,
               summary: data.summary,
               parts: data.parts,
             })
@@ -210,23 +212,23 @@ export const clearSolutionSummary = createAsyncThunk(
   }
 );
 
-export const clearCurDatapoint = createAsyncThunk(
-  'transcript/clearCurDatapoint',
+export const clearCurAgentRun = createAsyncThunk(
+  'transcript/clearCurAgentRun',
   async (_, { dispatch }) => {
-    dispatch(setCurDatapoint(undefined));
+    dispatch(setCurAgentRun(undefined));
   }
 );
 
-export const getCurDatapoint = createAsyncThunk(
-  'transcript/getDatapoint',
-  async (datapointId: string, { dispatch, getState }) => {
+export const getCurAgentRun = createAsyncThunk(
+  'transcript/getAgentRun',
+  async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
     const frameGridId = state.frame.frameGridId;
 
     // Clear current datapoint
-    const curDatapoint = state.transcript.curDatapoint;
-    if (curDatapoint !== undefined) {
-      dispatch(clearCurDatapoint());
+    const curAgentRun = state.transcript.curAgentRun;
+    if (curAgentRun !== undefined) {
+      dispatch(clearCurAgentRun());
     }
 
     if (!frameGridId) {
@@ -242,14 +244,15 @@ export const getCurDatapoint = createAsyncThunk(
 
     try {
       const response = await apiRestClient.get(
-        `/datapoint?fg_id=${frameGridId}&datapoint_id=${datapointId}`
+        `/agent_run?fg_id=${frameGridId}&agent_run_id=${agentRunId}`
       );
-      dispatch(setCurDatapoint(response.data));
+      console.log('response', response);
+      dispatch(setCurAgentRun(response.data));
     } catch (error) {
       dispatch(
         setToastNotification({
-          title: 'Error getting datapoint',
-          description: 'Failed to retrieve datapoint information',
+          title: 'Error getting agent run',
+          description: 'Failed with unknown error',
           variant: 'destructive',
         })
       );
@@ -258,31 +261,31 @@ export const getCurDatapoint = createAsyncThunk(
   }
 );
 
-export const handleDatapointsUpdated = createAsyncThunk(
-  'transcript/handleDatapointsUpdated',
+export const handleAgentRunsUpdated = createAsyncThunk(
+  'transcript/handleAgentRunsUpdated',
   async (_, { dispatch, getState }) => {
     const state = getState() as RootState;
 
     // Refresh current datapoint
-    const curDatapoint = state.transcript.curDatapoint;
-    if (curDatapoint !== undefined) {
-      dispatch(getCurDatapoint(curDatapoint.id));
+    const curAgentRun = state.transcript.curAgentRun;
+    if (curAgentRun !== undefined) {
+      dispatch(getCurAgentRun(curAgentRun.id));
     }
 
     // Refresh transcript metadata
-    const transcriptMetadata = state.frame.transcriptMetadata;
+    const transcriptMetadata = state.frame.agentRunMetadata;
     if (transcriptMetadata !== undefined) {
-      dispatch(getTranscriptMetadata(Object.keys(transcriptMetadata)));
+      dispatch(getAgentRunMetadata(Object.keys(transcriptMetadata)));
     }
 
     // Refresh transcript metadata fields
-    dispatch(getTranscriptMetadataFields());
+    dispatch(getAgentRunMetadataFields());
 
     // Show a toast
     dispatch(
       setToastNotification({
-        title: 'Datapoints updated',
-        description: 'Datapoints have been updated',
+        title: 'AgentRuns updated',
+        description: 'AgentRuns have been updated',
         variant: 'default',
       })
     );
@@ -293,7 +296,7 @@ export const handleDatapointsUpdated = createAsyncThunk(
 
 export const createTaSession = createAsyncThunk(
   'transcript/createTaSession',
-  async (datapointId: string, { dispatch, getState }) => {
+  async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
     const frameGridId = state.frame.frameGridId;
 
@@ -316,14 +319,14 @@ export const createTaSession = createAsyncThunk(
       const response = await apiRestClient.post('/ta_session', {
         fg_id: frameGridId,
         base_filter: {
-          type: 'datapoint_id',
-          value: datapointId,
+          type: 'agent_run_id',
+          value: agentRunId,
         },
       });
 
       // Set the session ID and datapoint ID
       dispatch(setTaSessionId(response.data.session_id));
-      dispatch(setTaDatapointId(datapointId));
+      dispatch(setTaAgentRunId(agentRunId));
 
       // Initialize empty messages array
       dispatch(setTaMessages([]));
@@ -425,7 +428,7 @@ export const resetTaSession = createAsyncThunk(
     }
 
     // Reset TA state
-    dispatch(setTaDatapointId(undefined));
+    dispatch(setTaAgentRunId(undefined));
     dispatch(setTaSessionId(undefined));
     dispatch(setTaMessages(undefined));
     dispatch(setLoadingTaResponse(false));
@@ -437,8 +440,8 @@ export const transcriptSlice = createSlice({
   name: 'transcript',
   initialState,
   reducers: {
-    setCurDatapoint: (state, action: PayloadAction<Datapoint | undefined>) => {
-      state.curDatapoint = action.payload;
+    setCurAgentRun: (state, action: PayloadAction<AgentRun | undefined>) => {
+      state.curAgentRun = action.payload;
     },
     setActionsSummary: (
       state,
@@ -484,8 +487,8 @@ export const transcriptSlice = createSlice({
       state.loadingSolutionSummaryForTranscriptId = undefined;
       state.solutionSummaryTaskId = undefined;
     },
-    setTaDatapointId: (state, action: PayloadAction<string | undefined>) => {
-      state.taDatapointId = action.payload;
+    setTaAgentRunId: (state, action: PayloadAction<string | undefined>) => {
+      state.taAgentRunId = action.payload;
     },
     setTaSessionId: (state, action: PayloadAction<string | undefined>) => {
       state.taSessionId = action.payload;
@@ -507,7 +510,7 @@ export const transcriptSlice = createSlice({
 });
 
 export const {
-  setCurDatapoint,
+  setCurAgentRun,
   setActionsSummary,
   setLoadingActionsSummaryForTranscriptId,
   setActionsSummaryTaskId,
@@ -516,7 +519,7 @@ export const {
   setLoadingSolutionSummaryForTranscriptId,
   setSolutionSummaryTaskId,
   onFinishLoadingSolutionSummary,
-  setTaDatapointId,
+  setTaAgentRunId,
   setTaSessionId,
   setTaMessages,
   setLoadingTaResponse,

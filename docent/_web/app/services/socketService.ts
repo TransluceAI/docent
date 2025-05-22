@@ -1,5 +1,6 @@
-import { BASE_URL } from '@/app/constants';
 import { v4 as uuid4 } from 'uuid';
+
+import { BASE_URL } from '@/app/constants';
 
 // This will hold our socket instance
 let socket: WebSocket | null = null;
