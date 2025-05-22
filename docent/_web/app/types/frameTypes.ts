@@ -40,7 +40,7 @@ export interface AttributeWithCitations extends Attribute {
 
 export type FilterLiteral =
   | 'primitive'
-  | 'predicate'
+  | 'attribute_predicate'
   | 'complex'
   | 'agent_run_id';
 
@@ -65,7 +65,7 @@ export interface PrimitiveFilter extends FrameFilter {
 export type MetadataType = 'str' | 'int' | 'float' | 'bool';
 
 export interface PredicateFilter extends FrameFilter {
-  type: 'predicate';
+  type: 'attribute_predicate';
   predicate: string;
   attribute: string;
   backend: string;

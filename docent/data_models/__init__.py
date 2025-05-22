@@ -2,10 +2,10 @@ from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import Citation
 from docent.data_models.filters import (
     AgentRunIdFilter,
+    AttributePredicateFilter,
     BaseFrameFilter,
     ComplexFilter,
     FrameDimension,
-    PredicateFilter,
 )
 from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
 from docent.data_models.regex import RegexSnippet
@@ -18,7 +18,7 @@ __all__ = [
     "AgentRunIdFilter",
     "FrameDimension",
     "BaseFrameFilter",
-    "PredicateFilter",
+    "AttributePredicateFilter",
     "ComplexFilter",
     "BaseAgentRunMetadata",
     "BaseMetadata",

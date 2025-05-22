@@ -16,7 +16,7 @@ import {
 import { deleteFilter, editFilter } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store/store';
-import { PredicateFilter, Judgment , FrameFilter } from '../types/frameTypes';
+import { PredicateFilter, Judgment, FrameFilter } from '../types/frameTypes';
 
 interface BinEditorProps {
   bin: FrameFilter;

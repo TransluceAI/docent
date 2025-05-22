@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, Sequence, T
 from uuid import uuid4
 
 from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
-from sqlalchemy import ColumnElement, and_, or_
+from sqlalchemy import ColumnElement, and_, exists, or_
 
 from docent._ai_tools.attribute_extraction import Attribute
 from docent._ai_tools.clustering.cluster_assigner import (
@@ -24,7 +24,8 @@ logger = get_logger(__name__)
 
 FilterLiteral = Literal[
     "primitive",
-    "predicate",
+    "attribute_predicate",
+    "attribute_exists",
     "complex",
     "agent_run_id",
 ]
@@ -343,21 +344,70 @@ class PrimitiveFilter(BaseFrameFilter):
         ]
 
 
-class PredicateFilter(BaseFrameFilter):
-    """A filter that uses an LLM to evaluate text against a predicate.
+class AttributeExistsFilter(BaseFrameFilter):
+    """A filter that checks if a given attribute exists for each agent run.
 
-    This filter uses an LLM to determine which agent runs satisfy a given predicate,
-    based on the values of a specified attribute.
+    This filter returns a list of judgments indicating whether the specified attribute
+    exists for each agent run.
 
     Attributes:
-        type: Always "predicate" for this filter.
+        type: Always "attribute_exists" for this filter.
+        attribute: The name of the attribute to check for existence.
+    """
+
+    type: Literal["attribute_exists"] = "attribute_exists"  # type: ignore
+    attribute: str
+
+    supports_sql: bool = True
+
+    def to_sqla_where_clause(self, SQLAAgentRun: Type[SQLAAgentRun]) -> ColumnElement[bool]:
+        """Converts the filter to a SQLAlchemy where clause for database filtering.
+
+        Args:
+            SQLAAgentRun: The SQLAlchemy model class for agent runs.
+
+        Returns:
+            A SQLAlchemy column element that checks if an agent run has
+            at least one attribute with the specified name.
+        """
+        # Import SQLAlchemy functions and SQLAAttribute locally
+        # FIXME: this is a hack
+        from docent._db_service.schemas.tables import SQLAAttribute
+
+        return (
+            exists()
+            .where(
+                SQLAAttribute.agent_run_id == SQLAAgentRun.id,
+                SQLAAttribute.attribute == self.attribute,
+                SQLAAttribute.value.isnot(None),
+            )
+            .correlate(SQLAAgentRun)
+        )
+
+    async def apply(
+        self,
+        agent_runs: list[AgentRun],
+        attributes: list[Attribute] | None = None,
+        judgment_callback: JudgmentStreamingCallback | None = None,
+        return_all: bool = False,
+    ) -> list[Judgment]:
+        raise NotImplementedError("AttributeExistsFilter only supports SQL")
+
+
+class AttributePredicateFilter(BaseFrameFilter):
+    """A filter that uses an LLM to evaluate an AgentRun's attributes against a predicate.
+
+    This filter uses an LLM to determine which agent runs have attributes that satisfy a given predicate.
+
+    Attributes:
+        type: Always "attribute_predicate" for this filter.
         predicate: The predicate to evaluate against each attribute value.
         attribute: The name of the attribute to evaluate.
         backend: The LLM backend to use for evaluation.
         llm_api_keys: Optional API keys for the LLM.
     """
 
-    type: Literal["predicate"] = "predicate"  # type: ignore
+    type: Literal["attribute_predicate"] = "attribute_predicate"  # type: ignore
 
     predicate: str
     attribute: str
@@ -626,7 +676,11 @@ class FrameDimension(BaseModel):
 
 # Type union that allows the type system to infer the correct type based on the 'type' field
 FrameFilter = Annotated[
-    PrimitiveFilter | PredicateFilter | ComplexFilter | AgentRunIdFilter,
+    PrimitiveFilter
+    | AttributePredicateFilter
+    | AttributeExistsFilter
+    | ComplexFilter
+    | AgentRunIdFilter,
     Discriminator("type"),
 ]
 
@@ -711,8 +765,10 @@ def parse_filter_dict(filter_dict: dict[str, Any]) -> FrameFilter:
 
     if filter_type == "primitive":
         return PrimitiveFilter(**filter_dict)
-    elif filter_type == "predicate":
-        return PredicateFilter(**filter_dict)
+    elif filter_type == "attribute_predicate":
+        return AttributePredicateFilter(**filter_dict)
+    elif filter_type == "attribute_exists":
+        return AttributeExistsFilter(**filter_dict)
     elif filter_type == "complex":
         # Recursively parse nested filters
         nested_filters = [parse_filter_dict(f) for f in filter_dict["filters"]]

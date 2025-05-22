@@ -50,11 +50,11 @@ from docent._env_util import ENV
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.filters import (
+    AttributePredicateFilter,
     ComplexFilter,
     FrameDimension,
     FrameFilter,
     Judgment,
-    PredicateFilter,
     PrimitiveFilter,
 )
 from docent.data_models.metadata import BaseAgentRunMetadata
@@ -554,6 +554,8 @@ class DBService:
                 query = query.join(
                     SQLAAgentRun, SQLAAgentRun.id == SQLAAttribute.agent_run_id
                 ).where(where_clause)
+
+            print(query.compile(compile_kwargs={"literal_binds": True}))
             result = await session.execute(query)
         counts = {attr: count for attr, count in result.all()}
 
@@ -1073,7 +1075,9 @@ class DBService:
         # If the attribute callback is set, the caller is expecting all results to be streamed back
         # So, retrieve them and send them
         if attribute_callback is not None:
-            attrs = await self._get_attributes(fg_id, attribute, ensure_fresh=False)
+            attrs = await self._get_attributes(
+                fg_id, attribute, base_filter=base_filter, ensure_fresh=False
+            )
             await attribute_callback(attrs)
 
         # Figure out which datapoints don't have the attribute
@@ -1279,9 +1283,9 @@ class DBService:
 
             attributes = None  # Default to None, will be set if filter is a FramePredicate
 
-            # If filter is a FramePredicate, it operates on attributes
+            # If filter is a AttributePredicateFilter, it operates on attributes
             # Pull them down and insert them into the datapoints
-            if filter.type == "predicate":
+            if filter.type == "attribute_predicate":
                 datapoints_dict = {d.id: d for d in datapoints}
                 attributes = await self._get_attributes(
                     fg_id, filter.attribute, base_filter=base_filter
@@ -1407,7 +1411,7 @@ class DBService:
         # Push filters
         sqla_filters = [
             SQLAFilter.from_filter(
-                PredicateFilter(
+                AttributePredicateFilter(
                     name=predicate,
                     predicate=predicate,
                     attribute=dim.attribute,

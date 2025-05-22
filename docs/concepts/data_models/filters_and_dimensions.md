@@ -6,7 +6,8 @@ specific agent runs based on various criteria.
 ### Filter Types
 
 - [`PrimitiveFilter`][docent.data_models.filters.PrimitiveFilter]: Filter agent runs by any primitive operator. These can be run in SQL.
-- [`PredicateFilter`][docent.data_models.filters.PredicateFilter]: Use LLMs to determine if agent runs satisfy a given natural language predicate.
+- [`AttributePredicateFilter`][docent.data_models.filters.AttributePredicateFilter]: Use LLMs to determine if an agent run's attributes satisfy a given natural language predicate.
+- [`AttributeExistsFilter`][docent.data_models.filters.AttributeExistsFilter]: Check if an agent run has a given attribute.
 - [`ComplexFilter`][docent.data_models.filters.ComplexFilter]: Combine filters with AND/OR. This can be run in SQL if all its filters are primitive.
 - [`AgentRunIdFilter`][docent.data_models.filters.AgentRunIdFilter]: Filter agent runs by their ID.
 
