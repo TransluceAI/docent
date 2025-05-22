@@ -21,7 +21,7 @@ from docent._log_util import get_logger
 
 logger = get_logger(__name__)
 
-ASSIGNMENT_PROMPT = """
+ASSIGNMENT_PROMPT2 = """
 You are given a cluster label C of an item I.
 Your task is to perform membership testing: determine whether the description of C matches I.
 
@@ -34,6 +34,23 @@ Return two lines in the following exact format:
 Here is your input:
 C: {cluster}
 I: {item}
+""".strip()
+
+ASSIGNMENT_PROMPT = """
+You are given a claim C and a behavior B.
+Your task is to determine whether B is a direct example of C.
+
+The claim may come with examples, which you shouldn't treat as strict requirements.
+
+Return two lines in the following exact format:
+- ANSWER: <YES/NO>
+- EXPLANATION: <concise but specific explanation; no more than a few high-information words>
+
+Only reply yes if B is a direct example of C; if B and C are correlated but distinct behaviors, this does not count.
+
+Here is your input:
+C: {cluster}
+B: {item}
 """.strip()
 
 
