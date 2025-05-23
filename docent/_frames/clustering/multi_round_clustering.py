@@ -13,6 +13,7 @@ class Cluster:
     def __init__(self, centroid: str, indices: set[int]):
         self.centroid = centroid
         self.indices = indices
+        self.metadata: dict[str, list[int]] = {}
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -130,7 +131,6 @@ class ClusterProcessor:
     def get_residuals(
         self, clusters: list[Cluster], attribs: list[str]
     ) -> tuple[list[str], list[str], list[int]]:
-        print("start get resid")
         all_indices: set[int] = set()
         for cluster in clusters:
             all_indices.update(cluster.indices)
@@ -138,7 +138,6 @@ class ClusterProcessor:
 
         new_residuals = [attribs[i] for i in excluded_indices]
         finished = [attribs[i] for i in all_indices]
-        print("done get resid")
         return new_residuals, finished, excluded_indices
 
     def prune_small_clusters(
@@ -165,7 +164,9 @@ class ClusterProcessor:
         self,
         attribs: list[str],
         attribute: str,
-        prune_fn: Callable[[str, list[str], ClusterAssignerFromLLM], Coroutine[Any, Any, bool]],
+        prune_fn: Callable[
+            [list[Cluster], list[str], ClusterAssignerFromLLM], Coroutine[Any, Any, list[Cluster]]
+        ],
         num_rounds: int = 1,
         clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
         output_extractor: Callable[[str], list[str]] = parse_cluster_output,
@@ -200,9 +201,8 @@ class ClusterProcessor:
             attribs_subset = attribs
 
         clusters = await self.run_attributes_through_clusters(attribs_subset, cluster_centroids)
-        clusters = [
-            c for c in clusters if await prune_fn(c.centroid, attribs_subset, self.assigner)
-        ]
+        print(clusters)
+        clusters = await prune_fn(clusters, attribs_subset, self.assigner)
         clusters = self.prune_clusters_of_high_overlap(clusters, exclusive_threshold=0.4)
 
         running_centroids = [cluster.centroid for cluster in clusters]
@@ -250,11 +250,8 @@ class ClusterProcessor:
             new_clusters = await self.run_attributes_through_clusters(
                 new_residuals_subset, new_centroids
             )
-            new_clusters = [
-                c
-                for c in new_clusters
-                if await prune_fn(c.centroid, new_residuals_subset, self.assigner)
-            ]
+            print(new_clusters)
+            new_clusters = await prune_fn(new_clusters, new_residuals_subset, self.assigner)
             new_clusters = self.prune_small_clusters(
                 new_clusters,
                 exclusive_threshold=0.5,
@@ -277,6 +274,9 @@ class ClusterProcessor:
             )
             for cluster in new_clusters:
                 cluster.indices = {indices_map[i] for i in cluster.indices}
+                cluster.metadata = {
+                    k: [indices_map[i] for i in v] for k, v in cluster.metadata.items()
+                }
             all_clusters.extend(new_clusters)
             all_finished.extend(finished)
             indices_map = [indices_map[i] for i in indices_map_update]
@@ -301,7 +301,9 @@ async def cluster_from_initial_proposal(
     attribs: list[str],
     attribute: str,
     assigner: ClusterAssignerFromLLM,
-    prune_fn: Callable[[str, list[str], ClusterAssignerFromLLM], Coroutine[Any, Any, bool]],
+    prune_fn: Callable[
+        [list[Cluster], list[str], ClusterAssignerFromLLM], Coroutine[Any, Any, list[Cluster]]
+    ],
     llm_api_keys: LLMApiKeys | None = None,
     num_rounds: int = 1,
     clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,

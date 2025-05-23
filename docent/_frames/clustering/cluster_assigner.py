@@ -180,7 +180,6 @@ class ClusterAssignerFromLLM(ClusterAssigner):
             ]
             for item, cluster in zip(items, clusters, strict=True)
         ]
-        print(queries[-1][-1]["content"])
 
         # Get the LLM callback if we're streaming
         llm_callback = (
