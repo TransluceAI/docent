@@ -70,9 +70,10 @@ class AgentRun(BaseModel):
         if self.description is not None:
             metadata_obj["description"] = self.description
 
+        yaml_width = float("inf")
         return (
             f"Here is a complete agent run for analysis purposes only:\n{transcripts_str}\n\n"
-            f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=float("inf"))}\n</agent run metadata>"
+            f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</agent run metadata>"
         )
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
