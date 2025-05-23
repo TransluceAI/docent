@@ -12,7 +12,7 @@ class ToolCall:
 
     Attributes:
         id: Unique identifier for tool call.
-        type: Type of tool call. Can only be "function".
+        type: Type of tool call. Can only be "function" or None.
         function: Function called.
         arguments: Arguments to function.
         parse_error: Error which occurred parsing tool call.
@@ -20,7 +20,7 @@ class ToolCall:
     """
 
     id: str
-    type: Literal["function"]
+    type: Literal["function"] | None
     function: str
     arguments: dict[str, Any]
     parse_error: str | None = None
