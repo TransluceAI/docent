@@ -283,7 +283,8 @@ class Transcript(BaseModel):
         if self.description is not None:
             metadata_obj["description"] = self.description
 
+        yaml_width = float("inf")
         return (
             f"<blocks>\n{blocks_str}\n</blocks>\n"
-            f"<metadata>\n{yaml.dump(metadata_obj, width=float("inf"))}\n</metadata>"
+            f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"
         )
