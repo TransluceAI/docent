@@ -77,6 +77,10 @@ def _get_llm_streaming_callback(
 
 class ClusterAssigner:
     @abstractmethod
+    async def skip_queries(self, items: list[str], cluster: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def assign(
         self,
         items: list[str],
@@ -117,6 +121,32 @@ class ClusterAssignerFromLLM(ClusterAssigner):
             max_new_tokens=4096,
             temperature=1.0,
             model_options=PROVIDER_PREFERENCES.cluster_assign_sonnet_37_thinking,
+        )
+
+    async def skip_queries(self, items: list[str], cluster: str) -> None:
+        queries: list[list[dict[str, str]]] = [
+            [
+                *(
+                    [{"role": "system", "content": self.system_prompt}]
+                    if self.system_prompt
+                    else []
+                ),
+                {
+                    "role": "user",
+                    "content": ASSIGNMENT_PROMPT.format(item=item, cluster=cluster),
+                },
+            ]
+            for item in items
+        ]
+
+        await get_llm_completions_async(
+            queries,
+            model_options=self.model_options,
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+            timeout=30,
+            use_cache=True,
+            fill_cache="ANSWER: NO\nEXPLANATION: skipping query",
         )
 
     async def assign(
@@ -215,7 +245,7 @@ class FinetunedModernBertClusterAssigner(ClusterAssigner):
             logger.info("Finetuned assignment model loaded")
         return self._model
 
-    def skip_queries(self, items: list[str], cluster: str):
+    async def skip_queries(self, items: list[str], cluster: str):
         for i in items:
             self._queries_to_skip.add((i, cluster))
 
@@ -337,6 +367,9 @@ class HybridClusterAssigner(ClusterAssigner):
     ):
         self.primary = FinetunedModernBertClusterAssigner(finetuned_path, device_id=device_id)
         self.backup = cast(ClusterAssignerFromLLM, BASE_ASSIGNERS[backup_model])
+
+    async def skip_queries(self, items: list[str], cluster: str):
+        await self.primary.skip_queries(items, cluster)
 
     async def assign(
         self,

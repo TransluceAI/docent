@@ -29,6 +29,7 @@ from docent._llm_util.types import (
     AsyncSingleStreamingCallback,
     AsyncStreamingCallback,
     ChatMessage,
+    LLMCompletion,
     LLMOutput,
     ModelOption,
     RateLimitException,
@@ -122,6 +123,7 @@ async def _parallelize_calls(
     semaphore: anyio.Semaphore | None,
     use_tqdm: bool,
     cache: LLMCache | None = None,
+    fill_cache: str | None = None,
 ):
     base_func = partial(
         single_output_getter,
@@ -145,6 +147,20 @@ async def _parallelize_calls(
 
     async def _limited_task(i: int, messages: list[ChatMessage]):
         nonlocal responses
+
+        if fill_cache is not None:
+            responses[i] = LLMOutput(
+                model=model_name,
+                completions=[
+                    LLMCompletion(
+                        text=fill_cache,
+                    )
+                ],
+                errors=None,
+            )
+            if i % 10 == 0:
+                print("hacking cache!")
+            return
 
         async with ctx:
             try:
@@ -259,6 +275,7 @@ class LLMManager:
         timeout: float = 5.0,
         streaming_callback: AsyncStreamingCallback | None = None,
         completion_callback: AsyncStreamingCallback | None = None,
+        fill_cache: str | None = None,
     ) -> list[LLMOutput]:
         """
         If max_concurrency is None, use LLManager.semaphore to manage concurrency
@@ -348,6 +365,7 @@ class LLMManager:
                         semaphore=self.semaphore,
                         use_tqdm=len(uncached_messages) >= 5,
                         cache=self.cache,
+                        fill_cache=fill_cache,
                     )
                     for i, (messages, output) in enumerate(zip(uncached_messages, outputs)):
                         results[uncached_indices[i]] = output if not output.did_error else None
@@ -406,6 +424,7 @@ async def get_llm_completions_async(
     streaming_callback: AsyncStreamingCallback | None = None,
     completion_callback: AsyncStreamingCallback | None = None,
     use_cache: bool = False,
+    fill_cache: str | None = None,
 ) -> list[LLMOutput]:
     # We don't support logprobs for Anthropic yet
     if logprobs:
@@ -443,4 +462,5 @@ async def get_llm_completions_async(
         timeout=timeout,
         streaming_callback=streaming_callback,
         completion_callback=completion_callback,
+        fill_cache=fill_cache,
     )

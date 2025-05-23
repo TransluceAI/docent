@@ -1,9 +1,10 @@
 import random
 
-from docent._frames.clustering.cluster_assigner import ClusterAssigner, HybridClusterAssigner
-from docent._frames.clustering.cluster_generator import propose_clusters
+from docent._frames.clustering.cluster_assigner import ClusterAssigner
+from docent._frames.clustering.cluster_generator import propose_clusters, parse_cluster_output
 from docent._llm_util.types import LLMApiKeys
 from docent._log_util import get_logger
+from typing import Callable
 
 logger = get_logger(__name__)
 
@@ -124,14 +125,17 @@ class ClusterProcessor:
 
     def get_residuals(
         self, clusters: list[Cluster], attribs: list[str]
-    ) -> tuple[list[str], list[str]]:
+    ) -> tuple[list[str], list[str], list[int]]:
+        print("start get resid")
         all_indices: set[int] = set()
         for cluster in clusters:
             all_indices.update(cluster.indices)
+        excluded_indices = [i for i in range(len(attribs)) if i not in all_indices]
 
-        new_residuals = [attribs[i] for i in range(len(attribs)) if i not in all_indices]
-        finished = [attribs[i] for i in range(len(attribs)) if i in all_indices]
-        return new_residuals, finished
+        new_residuals = [attribs[i] for i in excluded_indices]
+        finished = [attribs[i] for i in all_indices]
+        print("done get resid")
+        return new_residuals, finished, excluded_indices
 
     def prune_small_clusters(
         self,
@@ -153,13 +157,33 @@ class ClusterProcessor:
 
         return clusters
 
-    async def cluster_from_initial_proposal(
-        self, attribs: list[str], attribute: str, cluster_centroids: list[str], num_rounds: int = 1
-    ) -> list[str]:
+    async def multiround_cluster(
+        self,
+        attribs: list[str],
+        attribute: str,
+        num_rounds: int = 1,
+        clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
+        output_extractor: Callable[[str], list[str]] = parse_cluster_output,
+    ) -> list[Cluster]:
         if not attribs:
             return []
 
+        cluster_centroids: list[str] = (
+            await propose_clusters(
+                attribs,
+                n_clusters_list=[None],
+                extra_instructions_list=[
+                    f"Specifically focus on the following attribute: {attribute}"
+                ],
+                feedback_list=[],
+                k=1,
+                clustering_prompt_fn=clustering_prompt_fn,
+                output_extractor=output_extractor,
+            )
+        )[0]
+
         all_finished: list[str] = []
+        all_clusters: list[Cluster] = []
         large = len(attribs) > self.SUBSET_THRESHOLD
 
         if large:
@@ -182,25 +206,27 @@ class ClusterProcessor:
             clusters = await self.run_attributes_through_clusters(attribs, running_centroids)
 
         self.display_cluster_overlap_info(clusters)
-        new_residuals, finished = self.get_residuals(clusters, attribs)
+        new_residuals, finished, indices_map = self.get_residuals(clusters, attribs)
         all_finished.extend(finished)
+        all_clusters.extend(clusters)
 
         logger.info(
             f"-------done with stage {num_rounds} of clustering, {len(new_residuals)} / {len(attribs)} residuals remaining-------"
         )
 
-        final_round = False
         while True:
-            num_rounds += 1
+            num_rounds -= 1
             proposed_centroids = await propose_clusters(
                 new_residuals,
                 n_clusters_list=[None],
                 extra_instructions_list=[
-                    f"Specifically focus on the following attribute: {attribute}. In addition, try your best to avoid the following existing clusters: {running_centroids}"
+                    f"Specifically focus on the following attribute: {attribute}. In addition, try your best to avoid suggesting things similar to the following list which someone else already suggested: {running_centroids}"
                 ],
                 feedback_list=None,
                 k=1,
                 llm_api_keys=self.llm_api_keys,
+                clustering_prompt_fn=clustering_prompt_fn,
+                output_extractor=output_extractor,
             )
 
             new_centroids = proposed_centroids[0]
@@ -224,9 +250,8 @@ class ClusterProcessor:
             running_new_centroids = [cluster.centroid for cluster in new_clusters]
 
             # Skip queries for already finished items if using HybridClusterAssigner
-            if isinstance(self.assigner, HybridClusterAssigner):
-                for centroid in running_new_centroids:
-                    self.assigner.primary.skip_queries(all_finished, centroid)
+            for centroid in running_new_centroids:
+                await self.assigner.skip_queries(all_finished, centroid)
 
             if large:
                 new_clusters = await self.run_attributes_through_clusters(
@@ -234,8 +259,14 @@ class ClusterProcessor:
                 )
 
             self.display_cluster_overlap_info(new_clusters)
-            new_residuals, finished = self.get_residuals(new_clusters, new_residuals)
+            new_residuals, finished, indices_map_update = self.get_residuals(
+                new_clusters, new_residuals
+            )
+            for cluster in new_clusters:
+                cluster.indices = {indices_map[i] for i in cluster.indices}
+            all_clusters.extend(new_clusters)
             all_finished.extend(finished)
+            indices_map = [indices_map[i] for i in indices_map_update]
 
             logger.info(
                 f"-------done with stage {num_rounds} of clustering, {len(new_residuals)} / {len(attribs)} residuals remaining---------"
@@ -243,28 +274,30 @@ class ClusterProcessor:
 
             running_centroids.extend(running_new_centroids)
 
-            if final_round or len(new_residuals) < 0.05 * len(attribs):
+            if num_rounds == 0 or len(new_residuals) < 0.05 * len(attribs):
                 logger.info(
-                    f"Terminating clustering: final_round={final_round}, residuals_ratio={len(new_residuals)/len(attribs):.3f}"
+                    f"Terminating clustering: residuals_ratio={len(new_residuals)/len(attribs):.3f}"
                 )
                 break
 
-            if len(new_residuals) < 0.1 * len(attribs) or num_rounds == 4:
-                final_round = True
-
-        logger.info(f"Clustering completed with {len(running_centroids)} total clusters")
-        return running_centroids
+        logger.info(f"Clustering completed with {len(all_clusters)} total clusters")
+        return all_clusters
 
 
 async def cluster_from_initial_proposal(
     attribs: list[str],
     attribute: str,
-    cluster_centroids: list[str],
     assigner: ClusterAssigner,
     llm_api_keys: LLMApiKeys | None = None,
     num_rounds: int = 1,
-) -> list[str]:
+    clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
+    output_extractor: Callable[[str], list[str]] = parse_cluster_output,
+) -> list[Cluster]:
     processor = ClusterProcessor(assigner, llm_api_keys)
-    return await processor.cluster_from_initial_proposal(
-        attribs, attribute, cluster_centroids, num_rounds
+    return await processor.multiround_cluster(
+        attribs,
+        attribute,
+        num_rounds,
+        clustering_prompt_fn=clustering_prompt_fn,
+        output_extractor=output_extractor,
     )

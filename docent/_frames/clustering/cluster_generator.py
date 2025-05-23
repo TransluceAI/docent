@@ -1,6 +1,6 @@
 import re
 from copy import deepcopy
-from typing import TypedDict, cast
+from typing import Callable, TypedDict, cast
 
 import numpy as np
 import tiktoken
@@ -68,6 +68,20 @@ class ClusterFeedback(TypedDict):
     feedback: str
 
 
+def parse_cluster_output(raw_themes: str) -> list[str]:
+    """
+    Parse the raw output from the LLM into a list of cluster themes.
+
+    Args:
+        raw_themes: The raw text output from the LLM
+
+    Returns:
+        A list of extracted cluster themes
+    """
+    themes = re.findall(r"^-\s*(.+)", raw_themes, re.MULTILINE)
+    return themes
+
+
 async def propose_clusters(
     items: list[str],
     n_clusters_list: list[int | str | None] = DEFAULT_N_CLUSTERS_LIST,
@@ -76,6 +90,8 @@ async def propose_clusters(
     k: int = 20,
     random_seed: int = 42,
     llm_api_keys: LLMApiKeys | None = None,
+    clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
+    output_extractor: Callable[[str], list[str]] = parse_cluster_output,
 ):
     # Create a separate RNG for the outer sampling
     rng = np.random.RandomState(random_seed)
@@ -106,14 +122,26 @@ async def propose_clusters(
         prompt: list[dict[str, str]] = [
             {
                 "role": "user",
-                "content": CLUSTER_PROMPT.format(
-                    # n_clusters=n_clusters or "an appropriate number of",
-                    n_clusters=5,
-                    extra_instructions=f"\n{extra_instructions}\n" if extra_instructions else "",
-                    items=all_items,
+                "content": (
+                    CLUSTER_PROMPT.format(
+                        # n_clusters=n_clusters or "an appropriate number of",
+                        n_clusters=5,
+                        extra_instructions=(
+                            f"\n{extra_instructions}\n" if extra_instructions else ""
+                        ),
+                        items=all_items,
+                    )
+                    if clustering_prompt_fn is None
+                    else clustering_prompt_fn(
+                        extra_instructions if extra_instructions else "", items
+                    )
                 ),
             },
         ]
+
+        print("================")
+        print(prompt)
+        print("================")
 
         # Add feedback if available
         for feedback in feedback_list or []:
@@ -142,21 +170,10 @@ async def propose_clusters(
         use_cache=True,
     )
 
+    print(outputs)
+
     # Parse all results
-    results = [parse_cluster_output(output.first_text or "<no response>") for output in outputs]
+    results = [output_extractor(output.first_text or "<no response>") for output in outputs]
+    print(results)
 
     return results
-
-
-def parse_cluster_output(raw_themes: str) -> list[str]:
-    """
-    Parse the raw output from the LLM into a list of cluster themes.
-
-    Args:
-        raw_themes: The raw text output from the LLM
-
-    Returns:
-        A list of extracted cluster themes
-    """
-    themes = re.findall(r"^-\s*(.+)", raw_themes, re.MULTILINE)
-    return themes
