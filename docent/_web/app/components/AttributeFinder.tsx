@@ -153,7 +153,7 @@ const AttributeFinder: React.FC<AttributeFinderProps> = ({
 
       if (metadataType === 'bool') {
         parsedValue = metadataValue === 'true';
-      } else if (metadataType === 'int') {
+      } else if (metadataType === 'int' || metadataType === 'float') {
         parsedValue = Number(metadataValue);
         if (isNaN(parsedValue)) {
           toast({
