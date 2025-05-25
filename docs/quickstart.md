@@ -52,7 +52,7 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
     f9d86be37643   redis:alpine      "docker-entrypoint.s…"   34 seconds ago   Up 33 seconds   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp   docent_redis
     ```
 
-    To shut Docent down, run:
+    To shut Docent down, either press `Ctrl+C` in the terminal or run:
 
     === "As non-root"
         ```bash
@@ -63,6 +63,9 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
         ```bash
         sudo docker compose down
         ```
+
+    !!! note
+        If you make changes to the codebase, you'll need to stop the containers, then rebuild by **keeping the `--build` argument**. If `--build` is omitted, your changes will not be reflected.
 
 === "Manual"
 
