@@ -746,7 +746,7 @@ async def get_solution_summary(fg_id: str, agent_run_id: str):
             transcript,
             streaming_callback=_solution_callback,  # api_keys=api_keys
         )
-        await recv_stream.aclose()
+        await send_stream.aclose()
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
@@ -865,7 +865,7 @@ async def get_ta_message(session_id: str, message: str):
         session.messages = _get_complete_message_list()
 
         # Close the stream
-        await recv_stream.aclose()
+        await send_stream.aclose()
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
