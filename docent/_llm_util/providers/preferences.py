@@ -248,6 +248,21 @@ class ProviderPreferences(BaseModel):
             ),
         ]
 
+    @cached_property
+    def cluster_assign_gemini_flash(self) -> list[ModelOption]:
+        """Get model options for the cluster_assign_gemini_flash function.
+
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+                reasoning_effort="medium",
+            ),
+        ]
+
 
 # Initialize the singleton preferences object
 PROVIDER_PREFERENCES = ProviderPreferences()

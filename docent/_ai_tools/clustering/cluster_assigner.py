@@ -121,6 +121,15 @@ class LlmApiClusterAssigner(ClusterAssigner):
             model_options=PROVIDER_PREFERENCES.cluster_assign_sonnet_37_thinking,
         )
 
+    @classmethod
+    def from_gemini_flash(cls):
+        return cls(
+            system_prompt=None,
+            max_new_tokens=8192,
+            temperature=1.0,
+            model_options=PROVIDER_PREFERENCES.cluster_assign_gemini_flash,
+        )
+
     async def assign(
         self,
         items: list[str],
@@ -307,7 +316,7 @@ class LlmApiClusterAssigner(ClusterAssigner):
 #         return results
 
 
-BaseAssignerType = Literal["o3-mini", "sonnet-37-thinking", "modernbert-ft"]
+BaseAssignerType = Literal["o3-mini", "sonnet-37-thinking", "modernbert-ft", "gemini-flash"]
 BASE_ASSIGNERS: dict[BaseAssignerType, ClusterAssigner] = {}
 
 
@@ -320,6 +329,8 @@ async def _get_base_assigner(backend: BaseAssignerType) -> ClusterAssigner:
             assigner = LlmApiClusterAssigner.from_o3_mini()
         elif backend == "sonnet-37-thinking":
             assigner = LlmApiClusterAssigner.from_sonnet_37_thinking()
+        elif backend == "gemini-flash":
+            assigner = LlmApiClusterAssigner.from_gemini_flash()
         # elif backend == "modernbert-ft":
         #     assigner = FinetunedModernBertClusterAssigner(
         #         model_path="/home/ubuntu/artifacts/vincent/checkpoints/cluster_assignment_032225",
