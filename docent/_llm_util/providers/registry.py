@@ -5,10 +5,14 @@ from __future__ import annotations
 from typing import Any, Callable, Literal, Protocol, TypedDict
 
 from docent._llm_util.data_models.llm_output import AsyncSingleLLMOutputStreamingCallback, LLMOutput
-from docent._llm_util.providers import anthropic, openai
+from docent._llm_util.providers import anthropic, google, openai
 from docent._llm_util.providers.anthropic import (
     get_anthropic_chat_completion_async,
     get_anthropic_chat_completion_streaming_async,
+)
+from docent._llm_util.providers.google import (
+    get_google_chat_completion_async,
+    get_google_chat_completion_streaming_async,
 )
 from docent._llm_util.providers.openai import (
     get_openai_chat_completion_async,
@@ -128,6 +132,11 @@ PROVIDERS: dict[str, ProviderConfig] = {
         async_client_getter=anthropic.get_anthropic_client_async,
         single_output_getter=get_anthropic_chat_completion_async,
         single_streaming_output_getter=get_anthropic_chat_completion_streaming_async,
+    ),
+    "google": ProviderConfig(
+        async_client_getter=google.get_google_client_async,
+        single_output_getter=get_google_chat_completion_async,
+        single_streaming_output_getter=get_google_chat_completion_streaming_async,
     ),
     "openai": ProviderConfig(
         async_client_getter=openai.get_openai_client_async,

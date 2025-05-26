@@ -35,6 +35,7 @@ dependencies = [
     # LLM
     "openai>=1.68.0",
     "anthropic>=0.47.0",
+    "google-genai>=1.16.1",
     "backoff>=2.2.1",
     "tiktoken>=0.7.0",
     # Docs
