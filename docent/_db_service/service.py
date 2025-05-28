@@ -1198,6 +1198,7 @@ class DBService:
             async with self.session() as session:
                 session.add_all(to_upload)
                 logger.info(f"Pushed {len(to_upload)} diff attributes")
+        return to_upload
 
     async def compute_attributes(
         self,

@@ -1,6 +1,5 @@
 from docent.data_models.transcript import (
     MULTI_BLOCK_CITE_INSTRUCTION,
-    Transcript,
     SINGLE_BLOCK_CITE_INSTRUCTION,
 )
 from docent.data_models.agent_run import AgentRun
@@ -205,12 +204,12 @@ Always refer to the first transcript as "Agent 1" and the second as "Agent 2".
 Explicitly mention the different actions each agents took. Explicitly qualify claims by stating which context and goals are shared between the agents, and which are different (and how they are different).
     """.strip()
 
-    # result = ""
+    result = ""
 
-    # async def _streaming_callback(batch_index: int, llm_output: LLMOutput):
-    #     nonlocal result
+    async def _streaming_callback(batch_index: int, llm_output: LLMOutput):
+        nonlocal result
 
-    #     result = llm_output.completions[0].text
+        result = llm_output.completions[0].text
 
     outputs = await get_llm_completions_async(
         [
@@ -225,7 +224,7 @@ Explicitly mention the different actions each agents took. Explicitly qualify cl
         max_new_tokens=8192 * 5,
         timeout=240.0,
         use_cache=True,
-        # streaming_callback=_streaming_callback,
+        streaming_callback=_streaming_callback,
     )
 
     text = outputs[0].first_text
