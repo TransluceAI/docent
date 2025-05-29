@@ -18,18 +18,18 @@ class DocentClient:
     Args:
         server_url: URL of the Docent API server.
         web_url: URL of the Docent web UI.
-        api_key: API key for authentication (use your email address).
+        email: Email address for authentication.
     """
 
-    def __init__(self, server_url: str, web_url: str, api_key: str | None = None):
+    def __init__(self, server_url: str, web_url: str, email: str | None = None):
         self._server_url = server_url.rstrip("/") + "/rest"
         self._web_url = web_url.rstrip("/")
-        self._api_key = api_key
+        self._email = email
 
         # Use requests.Session for connection pooling and persistent headers
         self._session = requests.Session()
-        if api_key:
-            self._session.headers.update({"Authorization": f"Bearer {self._api_key}"})
+        if email:
+            self._session.headers.update({"Authorization": f"Bearer {self._email}"})
 
     def create_framegrid(
         self,

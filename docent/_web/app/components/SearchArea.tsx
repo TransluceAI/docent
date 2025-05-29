@@ -39,7 +39,6 @@ import {
 } from '../store/searchSlice';
 import {
   addSearchDimension,
-  deleteDimension,
   deleteSearch,
 } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';

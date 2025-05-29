@@ -3,9 +3,7 @@ import type { Middleware } from '@reduxjs/toolkit';
 import socketService from '../services/socketService';
 
 import {
-  handleSearchUpdate,
   setSearchesWithStats,
-  setLoadingSearchQuery,
 } from './searchSlice';
 import {
   setOuterStatMarginals,
