@@ -34,7 +34,7 @@ import DimensionSelector from './DimensionSelector';
 import InnerCard from './InnerCard';
 
 interface ExperimentViewerProps {
-  onShowAgentRun?: (agentRunId: string, blockId?: number, paired?: boolean) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
 }
 
 export default function ExperimentViewer({

@@ -14,24 +14,16 @@ function DocentDashboardContent() {
   const evalId = useAppSelector((state) => state.frame.evalId);
 
   const handleShowAgentRun = React.useCallback(
-    (agentRunId: string, blockIdx?: number, paired?: boolean) => {
-      if (blockIdx !== undefined) {
-        if (paired) {
-          router.push(
-            `${BASE_DOCENT_PATH}/${evalId}/paired_transcript/${agentRunId}?block_id=${blockIdx}`
-          );
-        } else {
-          router.push(
-            `${BASE_DOCENT_PATH}/${evalId}/transcript/${agentRunId}?block_id=${blockIdx}`
-          );
-      } 
-      } else {
-        if (paired) {
-          router.push(`${BASE_DOCENT_PATH}/${evalId}/paired_transcript/${agentRunId}`);
-        } else {
-          router.push(`${BASE_DOCENT_PATH}/${evalId}/transcript/${agentRunId}`);
+    (agentRunId: string, blockIdx?: number, blockIdx2?: number, paired?: boolean) => {
+      console.log('PARAMS', agentRunId, blockIdx, blockIdx2, paired);
+      let prefix = `${BASE_DOCENT_PATH}/${evalId}/` + (paired ? 'paired_transcript' : 'transcript') + `/${agentRunId}`;
+      if (blockIdx != undefined) {
+        prefix += `?block_id_1=${blockIdx}`;
+        if (blockIdx2 != undefined) {
+          prefix += `&block_id_2=${blockIdx2}`;
         }
       }
+      router.push(prefix);
     },
     [router, evalId]
   );

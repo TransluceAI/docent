@@ -39,7 +39,7 @@ interface InnerCard {
   innerLabel: string;
   stats: TaskStats | null;
   agentRunIds: string[];
-  onShowAgentRun?: (agentRunId: string, blockId?: number, paired?: boolean) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
   isExpanded: boolean;
   onToggle?: () => void;
   innerCount?: number;
@@ -49,7 +49,7 @@ interface AttributeSectionProps {
   dataId: string;
   curAttributeQuery: string;
   attributes: AttributeWithCitations[];
-  onShowAgentRun?: (agentRunId: string, blockId?: number, paired?: boolean) => void;
+  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
 }
 
 const AttributeSection: React.FC<AttributeSectionProps> = ({
@@ -316,14 +316,14 @@ interface DiffSectionProps {
     claim: string[];
     evidence: EvidenceWithCitation[];
   };
-  onShowDatapoint?: (datapointId: string, blockId?: number, paired?: boolean) => void;
+  onShowAgentRun?: (datapointId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
 }
 
 const DiffSection: React.FC<DiffSectionProps> = ({
   dataId,
   otherId,
   diffResults,
-  onShowDatapoint,
+  onShowAgentRun,
 }) => {
   if (!diffResults) {
     return null;
@@ -345,7 +345,14 @@ const DiffSection: React.FC<DiffSectionProps> = ({
       </div>
 
       {diffTriples.map((triple, idx) => (
-        <div key={idx} className="bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1" onClick={() => onShowDatapoint?.(otherId)}>
+        <div key={idx} className="bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1" onClick={(e) => 
+        {
+          e.stopPropagation();
+          const leftCitations = triple.evidence.citations.filter(x => x.transcript_idx == 0)
+          const rightCitations = triple.evidence.citations.filter(x => x.transcript_idx == 1);
+          onShowAgentRun?.(dataId + "___" + otherId, leftCitations.length > 0 ? leftCitations[0].block_idx : undefined, rightCitations.length > 0 ? rightCitations[0].block_idx : undefined, true);
+
+        }}>
           {/* Claim */}
           <div className="mb-1.5">
             <p className="mt-0.5">{triple.claim}</p>
@@ -678,7 +685,7 @@ const InnerCard: React.FC<InnerCard> = ({
                       : 'bg-white/80 hover:bg-gray-50'
                   }`}
                   onClick={() =>
-                    onShowAgentRun ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, true) : onShowAgentRun(agentRunId)) : undefined
+                    onShowAgentRun ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, undefined, true) : onShowAgentRun(agentRunId)) : undefined
                   }
                 >
                   <div>
@@ -693,7 +700,7 @@ const InnerCard: React.FC<InnerCard> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             onShowAgentRun
-                              ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, true) : onShowAgentRun(agentRunId))
+                              ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, undefined, true) : onShowAgentRun(agentRunId))
                               : () => {};
                           }}
                         >
@@ -771,7 +778,7 @@ const InnerCard: React.FC<InnerCard> = ({
                       dataId={agentRunId}
                       otherId={otherId ?? ''}
                       diffResults={diffResults}
-                      onShowDatapoint={() => onShowAgentRun ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, true) : onShowAgentRun(agentRunId)) : undefined}
+                      onShowAgentRun={onShowAgentRun}
                     />
                   )}
                 </div>

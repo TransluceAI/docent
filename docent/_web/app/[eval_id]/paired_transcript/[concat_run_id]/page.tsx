@@ -23,8 +23,10 @@ export default function AgentRunPage2() {
   const params = useParams();
   const searchParams = useSearchParams();
   const agentRunIdRaw = params.concat_run_id;
-  const blockIdParam = searchParams.get('block_id');
-  const blockId = blockIdParam ? parseInt(blockIdParam, 10) : undefined;
+  const blockIdParam1 = searchParams.get('block_id_1');
+  const blockIdParam2 = searchParams.get('block_id_2');
+  const blockId1 = blockIdParam1 ? parseInt(blockIdParam1, 10) : undefined;
+  const blockId2 = blockIdParam2 ? parseInt(blockIdParam2, 10) : undefined;
 
   const agentRunIds = React.useMemo(() => {
     return (Array.isArray(agentRunIdRaw) ? agentRunIdRaw[0] : agentRunIdRaw).split('___');
@@ -37,7 +39,8 @@ export default function AgentRunPage2() {
   const transcriptViewerRef = useRef<TranscriptViewerHandle>(null);
   const altTranscriptViewerRef = useRef<TranscriptViewerHandle>(null);
 
-  const alreadyScrolledRef = useRef(false);
+  const alreadyScrolledRef1 = useRef(false);
+  const alreadyScrolledRef2 = useRef(false);
   const hasInitAttributeDimId = useAppSelector(
     (state) => state.frame.hasInitAttributeDimId
   );
@@ -45,7 +48,7 @@ export default function AgentRunPage2() {
     (state) => state.attributeFinder.attributeMap
   );
   useEffect(() => {
-    if (alreadyScrolledRef.current) return;
+    if (alreadyScrolledRef1.current) return;
 
     // We wait until hasInitAttributeDimId is known before continuing
     if (hasInitAttributeDimId === undefined) return;
@@ -56,15 +59,37 @@ export default function AgentRunPage2() {
     if (
       transcriptViewerRef.current &&
       curAgentRun?.id === agentRunIds[0] &&
-      blockId
+      blockId1
     ) {
-      alreadyScrolledRef.current = true;
+      alreadyScrolledRef1.current = true;
       setTimeout(() => {
-        console.log('Scrolling to block', blockId);
-        transcriptViewerRef.current?.scrollToBlock(blockId);
+        console.log('Scrolling to block', blockId1);
+        transcriptViewerRef.current?.scrollToBlock(blockId1);
       }, 100); // Small delay to allow for DOM rendering
     }
-  }, [curAgentRun, blockId, agentRunIds, hasInitAttributeDimId, attributeMap]);
+  }, [curAgentRun, blockId1, agentRunIds, hasInitAttributeDimId, attributeMap]);
+
+  useEffect(() => {
+    if (alreadyScrolledRef2.current) return;
+
+    // We wait until hasInitAttributeDimId is known before continuing
+    if (hasInitAttributeDimId === undefined) return;
+    // If there is an initial attributeDimId, then we wait until the attributes have populated
+    if (hasInitAttributeDimId === true && !attributeMap) return;
+    // Else, if it's false, then we don't need to wait
+
+    if (
+      altTranscriptViewerRef.current &&
+      altAgentRun?.id === agentRunIds[1] &&
+      blockId2
+    ) {
+      alreadyScrolledRef2.current = true;
+      setTimeout(() => {
+        console.log('Scrolling to block', blockId2);
+        altTranscriptViewerRef.current?.scrollToBlock(blockId2);
+      }, 100); // Small delay to allow for DOM rendering
+    }
+  }, [curAgentRun, blockId2, agentRunIds, hasInitAttributeDimId, attributeMap]);
 
   /**
    * Fetch agent run once
@@ -78,7 +103,7 @@ export default function AgentRunPage2() {
       dispatch(getAltAgentRun(agentRunIds[1]));
       fetchRef.current = true;
     }
-  }, [frameGridId, agentRunIds, blockId, dispatch, curAgentRun?.id, altAgentRun?.id]);
+  }, [frameGridId, agentRunIds, blockId1, blockId2, dispatch, curAgentRun?.id, altAgentRun?.id]);
 
   const handleShowAgentRun = (agentRunId: string, blockId?: number) => {
     if (agentRunId !== curAgentRun?.id) {

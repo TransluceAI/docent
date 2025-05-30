@@ -98,7 +98,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
 
     // Get all block elements
     const blockElements = Array.from(
-      document.querySelectorAll('[id*="block-"]')
+      document.querySelectorAll(`[id*="t-${alt ? 1 : 0}___block-"]`)
     );
     if (blockElements.length === 0) return;
 
