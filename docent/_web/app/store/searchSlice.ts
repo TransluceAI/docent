@@ -493,11 +493,14 @@ export const requestDiffs = createAsyncThunk(
       }
 
       // Start the compute diffs job
-      const response = await apiRestClient.post('/start_compute_diffs', {
-        fg_id: frameGridId,
-        experiment_id_1: experimentId1,
-        experiment_id_2: experimentId2,
-      });
+      const response = await apiRestClient.post(
+        `/${frameGridId}/start_compute_diffs`,
+        {
+          fg_id: frameGridId,
+          experiment_id_1: experimentId1,
+          experiment_id_2: experimentId2,
+        }
+      );
 
       const jobId = response.data;
 
@@ -506,7 +509,7 @@ export const requestDiffs = createAsyncThunk(
 
       // Set up event source to listen for streaming updates using sseService
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/listen_compute_diffs?job_id=${jobId}`,
+        `/rest/${frameGridId}/listen_compute_diffs?job_id=${jobId}`,
         (data: StreamedDiffs) => {
           dispatch(handleDiffsUpdate(data));
         },

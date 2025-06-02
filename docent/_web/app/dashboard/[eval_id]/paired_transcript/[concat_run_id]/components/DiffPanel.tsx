@@ -12,7 +12,7 @@ interface DiffPanelProps {
 }
 
 const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => {
-  const diffMap = useAppSelector((state) => state.attributeFinder.diffMap);
+  const diffMap = useAppSelector((state) => state.search.diffMap);
 
   // Get all diffs for this specific pair of agent runs
   const relevantDiffs = useMemo(() => {

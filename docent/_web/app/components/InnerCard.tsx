@@ -31,6 +31,8 @@ const handleTranscriptNavigation = (
 ) => {
   e.stopPropagation();
 
+  console.log("HIT FUNC");
+
   if (frameGridId !== undefined && (e.metaKey || e.ctrlKey || e.button === 1)) {
     let url = `${window.location.origin}${BASE_DOCENT_PATH}/${frameGridId}/transcript/${agentRunId}`;
 
@@ -45,6 +47,7 @@ const handleTranscriptNavigation = (
 
     window.open(url, '_blank');
   } else if (e.button === 0 && onShowAgentRun) {
+    console.log("HIT FUNC 2", onShowAgentRun);
     onShowAgentRun(agentRunId, blockId);
   }
 };
@@ -136,14 +139,17 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                 key={`citation-${i}`}
                 className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
                 onMouseDown={(e) => {
-                  handleTranscriptNavigation(
-                    e,
-                    dataId,
-                    frameGridId,
-                    citation.block_idx,
-                    curAttributeQuery,
-                    onShowAgentRun
-                  );
+                  console.log("CLICK CITATION", citation.block_idx);
+                  e.stopPropagation();
+                  onShowAgentRun?.(dataId, citation.block_idx);
+                  // handleTranscriptNavigation(
+                  //   e,
+                  //   dataId,
+                  //   frameGridId,
+                  //   citation.block_idx,
+                  //   curAttributeQuery,
+                  //   onShowAgentRun
+                  // );
                 }}
               >
                 {citedText}
@@ -168,8 +174,10 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
             key={idx}
             className="group bg-indigo-50 rounded-md p-1 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
             onMouseDown={(e) => {
+              e.stopPropagation();
               const firstCitation = citations.length > 0 ? citations[0] : null;
               const blockId = firstCitation?.block_idx;
+              console.log("CLICK ATTRIBUTE", blockId);
               handleTranscriptNavigation(
                 e,
                 dataId,

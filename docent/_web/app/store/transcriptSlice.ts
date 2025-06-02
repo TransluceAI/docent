@@ -293,8 +293,8 @@ export const getAltAgentRun = createAsyncThunk(
     }
 
     try {
-      const response = await apiRestClient.get(
-        `/agent_run?fg_id=${frameGridId}&agent_run_id=${agentRunId}`
+      const response = await await apiRestClient.get(
+        `/${frameGridId}/agent_run?agent_run_id=${agentRunId}`
       );
       console.log('response', response);
       dispatch(setAltAgentRun(response.data));

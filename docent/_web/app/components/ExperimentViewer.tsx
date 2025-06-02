@@ -135,7 +135,7 @@ export default function ExperimentViewer({
 
           if (curSearchQuery) {
             const attrs = attributeMap?.[datapointId]?.[curSearchQuery];
-            return attrs && attrs.length > 0;
+            return attrs && attrs.length && attrs[0].value !== null;
           }
 
           // Check for diff results if there's an active diff query

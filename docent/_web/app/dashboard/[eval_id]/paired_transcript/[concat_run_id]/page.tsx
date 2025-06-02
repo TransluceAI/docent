@@ -8,7 +8,7 @@ import { getCurAgentRun, getAltAgentRun } from '@/app/store/transcriptSlice';
 
 import TranscriptViewer, {
   TranscriptViewerHandle,
-} from '../../transcript/components/TranscriptViewer';
+} from '@/app/dashboard/[eval_id]/transcript/components/TranscriptViewer';
 import DiffPanel from './components/DiffPanel';
 
 const SCROLL_DELAY = 250;
@@ -23,7 +23,7 @@ export default function AgentRunPage2() {
   const params = useParams();
   const searchParams = useSearchParams();
   const agentRunIdRaw = params.concat_run_id;
-  const blockIdParam1 = searchParams.get('block_id_1');
+  const blockIdParam1 = searchParams.get('block_id');
   const blockIdParam2 = searchParams.get('block_id_2');
   const blockId1 = blockIdParam1 ? parseInt(blockIdParam1, 10) : undefined;
   const blockId2 = blockIdParam2 ? parseInt(blockIdParam2, 10) : undefined;
@@ -42,10 +42,10 @@ export default function AgentRunPage2() {
   const alreadyScrolledRef1 = useRef(false);
   const alreadyScrolledRef2 = useRef(false);
   const hasInitAttributeDimId = useAppSelector(
-    (state) => state.frame.hasInitAttributeDimId
+    (state) => state.frame.hasInitSearchQuery
   );
   const attributeMap = useAppSelector(
-    (state) => state.attributeFinder.attributeMap
+    (state) => state.search.searchResultMap
   );
   useEffect(() => {
     if (alreadyScrolledRef1.current) return;

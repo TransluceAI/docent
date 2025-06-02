@@ -18,11 +18,12 @@ function DocentDashboardContent() {
       console.log('PARAMS', agentRunId, blockIdx, blockIdx2, paired);
       let prefix = `${BASE_DOCENT_PATH}/${evalId}/` + (paired ? 'paired_transcript' : 'transcript') + `/${agentRunId}`;
       if (blockIdx != undefined) {
-        prefix += `?block_id_1=${blockIdx}`;
+        prefix += `?block_id=${blockIdx}`;
         if (blockIdx2 != undefined) {
           prefix += `&block_id_2=${blockIdx2}`;
         }
       }
+      console.log("PUSHING", prefix);
       router.push(prefix);
     },
     [router, evalId]
