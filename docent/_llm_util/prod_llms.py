@@ -122,8 +122,6 @@ async def _parallelize_calls(
                 ],
                 errors=None,
             )
-            if i % 10 == 0:
-                print("hacking cache!")
             return
 
         async with ctx:

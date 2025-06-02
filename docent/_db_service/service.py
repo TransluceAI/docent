@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from docent._ai_tools.diff import extract_states_and_diffs_2
+from docent._ai_tools.diff import extract_states_and_diffs
 from sqlalchemy.sql import ColumnElement
 
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
@@ -135,13 +135,6 @@ class MarginalizationResult(TypedDict):
     dim_ids_to_filter_ids: dict[str, list[str]]
     dims_dict: dict[str, FrameDimension] | None
     filters_dict: dict[str, FrameFilter] | None
-
-
-def _extract_unique_transcript(transcripts: dict[str, Transcript]) -> Transcript:
-    """Extract a unique transcript from a dict of transcripts."""
-    if len(transcripts) != 1:
-        raise ValueError("Expected exactly one transcript, got %d", len(transcripts))
-    return list(transcripts.values())[0]
 
 
 class DBService:
@@ -1164,7 +1157,7 @@ class DBService:
                 # Check if we already have results for this pair
                 if (first_dp.id, second_dp.id) not in existing_diff_pairs:
                     tasks.append(
-                        extract_states_and_diffs_2(
+                        extract_states_and_diffs(
                             first_dp,
                             second_dp,
                         )

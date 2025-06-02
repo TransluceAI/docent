@@ -134,12 +134,12 @@ export default function AgentRunPage2() {
       <div className="flex-1 flex space-x-3 min-h-0">
         <TranscriptViewer 
           ref={transcriptViewerRef} 
-          alt={false} 
+          secondary={false} 
           otherTranscriptRef={altTranscriptViewerRef}
         />
         <TranscriptViewer 
           ref={altTranscriptViewerRef} 
-          alt={true} 
+          secondary={true} 
           otherTranscriptRef={transcriptViewerRef}
         />
         <DiffPanel 

@@ -97,7 +97,7 @@ export default function AgentRunPage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
       <div className="flex-1 flex space-x-3 min-h-0">
-        <TranscriptViewer ref={transcriptViewerRef} alt={false} />
+        <TranscriptViewer ref={transcriptViewerRef} secondary={false} />
 
         <Card className="h-full overflow-y-auto flex-1 p-3">
           <Tabs defaultValue="agent" className="h-full flex flex-col">

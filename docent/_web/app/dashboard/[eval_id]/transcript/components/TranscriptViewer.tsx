@@ -31,7 +31,7 @@ export interface TranscriptViewerHandle {
 
 // Add props interface
 interface TranscriptViewerProps {
-  alt: boolean;
+  secondary: boolean;
   otherTranscriptRef?: React.RefObject<TranscriptViewerHandle>;
 }
 
@@ -49,8 +49,8 @@ interface EditingToolCall extends Omit<ToolCall, 'arguments'> {
   argumentsString: string;
 }
 
-const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProps>(({ alt, otherTranscriptRef }, ref) => {
-  const agentRun = useAppSelector((state) => alt ? state.transcript.altAgentRun : state.transcript.curAgentRun);
+const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProps>(({ secondary, otherTranscriptRef }, ref) => {
+  const agentRun = useAppSelector((state) => secondary ? state.transcript.altAgentRun : state.transcript.curAgentRun);
   const transcript = useMemo(
     () =>
       agentRun && Object.keys(agentRun.transcripts).length > 0
@@ -91,7 +91,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
 
     // Get all block elements
     const blockElements = Array.from(
-      document.querySelectorAll(`[id*="t-${alt ? 1 : 0}___block-"]`)
+      document.querySelectorAll(`[id*="t-${secondary ? 1 : 0}___block-"]`)
     );
     if (blockElements.length === 0) return;
 
@@ -140,9 +140,9 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
    * Scroll to block function - now with cross-scrolling support
    */
   const scrollToBlock = useCallback(
-    (blockIndex: number, transcriptIdx: number = alt ? 1 : 0) => {
+    (blockIndex: number, transcriptIdx: number = secondary ? 1 : 0) => {
       // Determine which transcript should handle this scroll
-      const currentTranscriptIdx = alt ? 1 : 0;
+      const currentTranscriptIdx = secondary ? 1 : 0;
       
       if (transcriptIdx !== currentTranscriptIdx && otherTranscriptRef?.current) {
         // Cross-scroll to the other transcript
@@ -184,7 +184,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
 
       tryScrolling();
     },
-    [scrollNode, alt, otherTranscriptRef]
+    [scrollNode, secondary, otherTranscriptRef]
   );
 
   React.useImperativeHandle(
@@ -207,7 +207,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
         ? Math.min(currentBlockIndex + 1, transcript.messages.length - 1)
         : 0;
 
-    scrollToBlock(nextIndex, alt ? 1 : 0);
+    scrollToBlock(nextIndex, secondary ? 1 : 0);
   }, [currentBlockIndex, transcript, scrollToBlock]);
   const goToPrevBlock = useCallback(() => {
     if (!transcript) return;
@@ -215,7 +215,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
     const prevIndex =
       currentBlockIndex !== null ? Math.max(currentBlockIndex - 1, 0) : 0;
 
-    scrollToBlock(prevIndex, alt ? 1 : 0);
+    scrollToBlock(prevIndex, secondary ? 1 : 0);
   }, [currentBlockIndex, transcript, scrollToBlock]);
 
   return (
@@ -258,7 +258,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
               key={index}
               message={message}
               index={index}
-              id={`t-${alt ? 1 : 0}___block-${index}`}
+              id={`t-${secondary ? 1 : 0}___block-${index}`}
               agentRun={agentRun}
               scrollToBlock={scrollToBlock}
             />
