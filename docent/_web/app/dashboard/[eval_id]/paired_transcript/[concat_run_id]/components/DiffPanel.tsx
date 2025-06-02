@@ -64,7 +64,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => 
       parts.push(
         <button
           key={`citation-${i}`}
-          className="px-1 py-0.5 bg-purple-200 text-purple-800 hover:bg-purple-400 rounded hover:text-white transition-colors font-medium text-xs"
+          className="px-1 bg-purple-200 text-purple-800 hover:bg-purple-400 rounded hover:text-white transition-colors font-medium text-xs"
           onClick={(e) => {
             e.stopPropagation();
             scrollToBlock(citation.block_idx, citation.transcript_idx == null ? undefined : citation.transcript_idx);
@@ -106,7 +106,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => 
             {relevantDiffs.map((diff, idx) => (
               <div
                 key={idx}
-                className="group bg-purple-50 rounded-md p-3 text-sm text-purple-900 leading-relaxed hover:bg-purple-100 transition-colors border border-transparent hover:border-purple-200"
+                className="group bg-purple-50 rounded-md p-3 text-xs text-purple-900 leading-relaxed hover:bg-purple-100 transition-colors border border-transparent hover:border-purple-200"
               >
                 {/* Claim */}
                 <div className="mb-2">
