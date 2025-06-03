@@ -29,7 +29,15 @@ def server(
     if reload:
         cmd.append("--reload")
 
-    subprocess.run(cmd, check=True)
+    with subprocess.Popen(["docent", "worker"]):
+        subprocess.run(cmd, check=True)
+
+
+@app.command(help="Run a background job runner worker")
+def worker():
+    from docent._worker import worker
+
+    worker.run()
 
 
 @app.command(help="Run the website")

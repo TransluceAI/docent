@@ -34,7 +34,7 @@ from docent._server._assistant.summarizer import (
     summarize_intended_solution,
 )
 from docent._server._auth.session import create_user_session, invalidate_user_session
-from docent._server._broker.redis_client import publish_to_broker
+from docent._server._broker.redis_client import REDIS, enqueue_search_job, publish_to_broker
 from docent._server._dependencies.database import get_db
 from docent._server._dependencies.permissions import require_fg_permission, require_view_permission
 from docent._server._dependencies.user import get_default_view_ctx, require_authenticated_user
@@ -652,15 +652,20 @@ async def start_compute_search(
     fg_id: str,
     request: ComputeSearchRequest,
     db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
+    query_id = await db.add_search_query(ctx, request.search_query)
+
     job_id = await db.add_job(
         {
             "type": "compute_search",
-            "fg_id": fg_id,
-            "search_query": request.search_query,
+            "query_id": query_id,
         }
     )
+
+    await enqueue_search_job(ctx, job_id)
+
     return job_id
 
 
@@ -676,10 +681,6 @@ async def listen_compute_search(
     job = await db.get_job(job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
-    fg_id, search_query = job["fg_id"], job["search_query"]
-
-    # Add search query to DB
-    await db.add_search_query(ctx, search_query)
 
     # Create AnyIO queue that we can write intermediate results to
     # At the max size of the queue, the producer will block
@@ -688,16 +689,25 @@ async def listen_compute_search(
     )
 
     # Track intermediate progress
-    progress_lock = anyio.Lock()
     num_done, num_total = 0, await db.count_base_agent_runs(ctx)
 
-    async def _ws_search_result_callback(search_results: list[SearchResult]) -> None:
+    async def _execute():
+        # Send initial 0% state message
+        init_data = StreamedSearchResult(
+            data_dict={},
+            num_agent_runs_done=0,
+            num_agent_runs_total=num_total,
+        )
+        await send_stream.send(init_data)
         nonlocal num_done
 
-        async with progress_lock:
+        while results_batch := (await REDIS.blpop([f"results_{job_id}"]))[1]:
+            results_batch = [SearchResult.model_validate(obj) for obj in json.loads(results_batch)]
+            print("results", results_batch)
+
             # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
             data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
-            for result in search_results:
+            for result in results_batch:
                 data_dict.setdefault(result.agent_run_id, {}).setdefault(
                     result.search_query, []
                 ).append(SearchResultWithCitations.from_search_result(result))
@@ -711,33 +721,27 @@ async def listen_compute_search(
                 num_agent_runs_total=num_total,
             )
 
-        # Send to event_stream so it can be sent back to the client
-        await send_stream.send(payload)
+            # Send to event_stream so it can be sent back to the client
+            await send_stream.send(payload)
 
-        if num_done == num_total:
-            # Terminate the stream so the event_stream stops waiting
-            await send_stream.aclose()
-
-    async def _execute():
-        async with db.advisory_lock(fg_id, action_id="mutation"):
-            try:
-                # Send initial 0% state message
-                init_data = StreamedSearchResult(
-                    data_dict={},
-                    num_agent_runs_done=0,
-                    num_agent_runs_total=num_total,
-                )
-                await send_stream.send(init_data)
-
-                # Compute attributes
-                await db.compute_search(ctx, search_query, _ws_search_result_callback)
-            finally:
-                with anyio.CancelScope(shield=True):
-                    await publish_searches(db, ctx)
+            if num_done == num_total:
+                # Terminate the stream so the event_stream stops waiting
+                await send_stream.aclose()
+                break
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
     )
+
+
+@authenticated_router.get("/search_jobs")
+async def search_jobs(
+    db: DBService = Depends(get_db),
+):
+    jobs = await db.list_search_jobs_and_queries()
+    for job in jobs:
+        print("-", job)
+    return [[job.dict(), query.dict()] for job, query in jobs]
 
 
 class ClusterDimensionRequest(BaseModel):

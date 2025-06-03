@@ -42,6 +42,7 @@ dependencies = [
     "mkdocs-material>=9.6.14",
     "mkdocstrings-python>=1.16.10",
     # Uncategorized
+    "arq>=0.26.3",
 ]
 
 [project.scripts]

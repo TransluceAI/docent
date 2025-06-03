@@ -16,6 +16,7 @@ from typing import (
     Literal,
     ParamSpec,
     Sequence,
+    Tuple,
     TypedDict,
     TypeVar,
     cast,
@@ -1008,6 +1009,14 @@ class DBService:
         logger.info(f"Added new search query {search_query} with id {new_id} to fg_id {ctx.fg_id}")
         return new_id
 
+    async def get_search_query(self, query_id: str) -> SQLASearchQuery:
+        async with self.session() as session:
+            # Check if the search query already exists for this frame grid
+            result = await session.execute(
+                select(SQLASearchQuery).where(SQLASearchQuery.id == query_id)
+            )
+            return result.scalar_one_or_none()
+
     async def delete_search_query(self, fg_id: str, search_query_id: str):
         """
         Delete a search query from the database.
@@ -1288,7 +1297,8 @@ class DBService:
             existing_search_results = await self._get_search_results(
                 ctx, search_query, ensure_fresh=False
             )
-            await search_result_callback(existing_search_results)
+            if existing_search_results:
+                await search_result_callback(existing_search_results)
 
         # Figure out which datapoints don't have search results computed
         agent_runs = await self._get_agent_runs_without_search_results(ctx, search_query)
@@ -1883,6 +1893,31 @@ class DBService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             job = result.scalar_one_or_none()
             return job.job_json if job else None
+
+    async def list_search_jobs_and_queries(self):
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLAJob, SQLASearchQuery)
+                .filter(SQLAJob.job_json["type"].astext == "compute_search")
+                .filter(SQLAJob.job_json["query_id"].astext == SQLASearchQuery.id)
+            )
+
+        return result.all()
+
+    async def get_search_job_and_query(self, job_id: str) -> Tuple[dict, SQLASearchQuery] | None:
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLAJob, SQLASearchQuery)
+                .filter(SQLAJob.id == job_id)
+                .filter(SQLAJob.job_json["type"].astext == "compute_search")
+                .filter(SQLAJob.job_json["query_id"].astext == SQLASearchQuery.id)
+            )
+
+        row = result.one_or_none()
+        if row is None:
+            return None
+        job, query = row
+        return job.job_json, query
 
     #########
     # Users #
