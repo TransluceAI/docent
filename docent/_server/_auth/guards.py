@@ -5,7 +5,7 @@ This module provides FastAPI dependency functions for requiring user authenticat
 in API endpoints. Supports both session-based auth (web UI) and API key auth (SDK).
 """
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 
 from docent._db_service.service import DBService
 from docent.data_models.user import User

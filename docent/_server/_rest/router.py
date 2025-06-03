@@ -13,7 +13,6 @@ from sqlalchemy.inspection import inspect as sqla_inspect
 from docent._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent._db_service.contexts import ViewContext
 from docent._db_service.service import DBService
-from docent.data_models.agent_run import AgentRun
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
@@ -42,12 +41,11 @@ from docent._server._rest.send_state import (
     publish_searches,
 )
 from docent._server.util import sse_event_stream
-
-
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import (
     Citation,
-    parse_citations_single_transcript,
     parse_citations_multi_transcript,
+    parse_citations_single_transcript,
 )
 from docent.data_models.filters import ComplexFilter, FrameDimension, FrameFilter, parse_filter_dict
 from docent.data_models.regex import RegexSnippet, get_regex_snippets

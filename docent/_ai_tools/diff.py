@@ -1,14 +1,16 @@
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+from tqdm.asyncio import tqdm
+
+from docent._llm_util.data_models.llm_output import LLMOutput
+from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import (
     MULTI_BLOCK_CITE_INSTRUCTION,
     SINGLE_BLOCK_CITE_INSTRUCTION,
 )
-from docent.data_models.agent_run import AgentRun
-from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from pydantic import BaseModel, Field
-from uuid import uuid4
-from docent._llm_util.data_models.llm_output import LLMOutput
-from tqdm.asyncio import tqdm
 
 
 class DiffAttribute(BaseModel):

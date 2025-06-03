@@ -1,9 +1,10 @@
 import asyncio
 from typing import Optional
 
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import REDIS
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 logger = get_logger(__name__)
 

@@ -32,10 +32,11 @@ repos:
       - id: black
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 6.0.1
     hooks:
       - id: isort
         name: isort (python)
+        args: ["--settings-path", "."]
 
   - repo: https://github.com/PyCQA/autoflake
     rev: v2.3.1

@@ -4,27 +4,30 @@ import React, { useMemo } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { useAppSelector } from '@/app/store/hooks';
-import { EvidenceWithCitation, Citation } from '@/app/types/experimentViewerTypes';
+import { Citation } from '@/app/types/experimentViewerTypes';
 
 interface DiffPanelProps {
   agentRunIds: [string, string];
   scrollToBlock: (blockIndex: number, transcriptIdx?: number) => void;
 }
 
-const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => {
-  const diffMap = useAppSelector((state) => state.search.diffMap);
+const DiffPanel: React.FC<DiffPanelProps> = ({
+  agentRunIds,
+  scrollToBlock,
+}) => {
+  const diffMap = useAppSelector((state) => state.diff.diffMap);
 
   // Get all diffs for this specific pair of agent runs
   const relevantDiffs = useMemo(() => {
     if (!diffMap) return [];
-    
+
     const [id1, id2] = agentRunIds;
     const pairKey = `${id1}___${id2}`;
     const reversePairKey = `${id2}___${id1}`;
-    
+
     // Look for diff data for this pair (could be in either direction)
     const diffData = diffMap[pairKey] || diffMap[reversePairKey];
-    
+
     if (!diffData) return [];
 
     // Create pairs of claims and evidence
@@ -67,7 +70,12 @@ const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => 
           className="px-1 bg-purple-200 text-purple-800 hover:bg-purple-400 rounded hover:text-white transition-colors font-medium text-xs"
           onClick={(e) => {
             e.stopPropagation();
-            scrollToBlock(citation.block_idx, citation.transcript_idx == null ? undefined : citation.transcript_idx);
+            scrollToBlock(
+              citation.block_idx,
+              citation.transcript_idx == null
+                ? undefined
+                : citation.transcript_idx
+            );
           }}
         >
           {citedText}
@@ -79,9 +87,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => 
 
     // Add any remaining text
     if (lastIndex < text.length) {
-      parts.push(
-        <span key={`text-end`}>{text.slice(lastIndex)}</span>
-      );
+      parts.push(<span key={`text-end`}>{text.slice(lastIndex)}</span>);
     }
 
     return <>{parts}</>;
@@ -111,18 +117,18 @@ const DiffPanel: React.FC<DiffPanelProps> = ({ agentRunIds, scrollToBlock }) => 
                 {/* Claim */}
                 <div className="mb-2">
                   <span className="font-semibold text-purple-800">Claim:</span>
-                  <div className="mt-1 text-purple-900">
-                    {diff.claim}
-                  </div>
+                  <div className="mt-1 text-purple-900">{diff.claim}</div>
                 </div>
 
                 {/* Evidence */}
                 {diff.evidence && (
                   <div>
-                    <span className="font-semibold text-purple-800">Evidence:</span>
+                    <span className="font-semibold text-purple-800">
+                      Evidence:
+                    </span>
                     <div className="mt-1 text-purple-900">
                       {renderTextWithCitations(
-                        diff.evidence.evidence, 
+                        diff.evidence.evidence,
                         diff.evidence.citations || []
                       )}
                     </div>

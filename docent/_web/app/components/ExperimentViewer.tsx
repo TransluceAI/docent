@@ -11,10 +11,6 @@ import { Card } from '@/components/ui/card';
 import { useDebounce } from '@/hooks/use-debounce';
 import { cn } from '@/lib/utils';
 
-
-
-
-
 import {
   addExpandedInner,
   addExpandedOuter,
@@ -29,7 +25,12 @@ import DimensionSelector from './DimensionSelector';
 import InnerCard from './InnerCard';
 
 interface ExperimentViewerProps {
-  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
+  onShowAgentRun?: (
+    agentRunId: string,
+    blockId?: number,
+    blockId2?: number,
+    paired?: boolean
+  ) => void;
 }
 
 export default function ExperimentViewer({
@@ -47,12 +48,13 @@ export default function ExperimentViewer({
 
   // Attributes
   const {
-    diffMap,
     loadingSearchQuery,
     curSearchQuery,
     searchResultMap: attributeMap,
     // voteState,
   } = useAppSelector((state) => state.search);
+
+  const { diffMap } = useAppSelector((state) => state.diff);
 
   const {
     expandedOuter,

@@ -132,17 +132,17 @@ export default function AgentRunPage2() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
       <div className="flex-1 flex space-x-3 min-h-0">
-        <TranscriptViewer 
-          ref={transcriptViewerRef} 
-          secondary={false} 
+        <TranscriptViewer
+          ref={transcriptViewerRef}
+          secondary={false}
           otherTranscriptRef={altTranscriptViewerRef}
         />
-        <TranscriptViewer 
-          ref={altTranscriptViewerRef} 
-          secondary={true} 
+        <TranscriptViewer
+          ref={altTranscriptViewerRef}
+          secondary={true}
           otherTranscriptRef={transcriptViewerRef}
         />
-        <DiffPanel 
+        <DiffPanel
           agentRunIds={[agentRunIds[0], agentRunIds[1]]}
           scrollToBlock={handleDiffScrollToBlock}
         />

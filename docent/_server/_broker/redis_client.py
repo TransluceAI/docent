@@ -2,8 +2,9 @@ import json
 from typing import Any
 
 import redis.asyncio as redis
-from docent._env_util import ENV
 from fastapi.encoders import jsonable_encoder
+
+from docent._env_util import ENV
 
 REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
 REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")

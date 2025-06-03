@@ -46,15 +46,6 @@ export interface SearchState {
     num_judgments_computed: number;
     num_total: number;
   }>;
-  // Diffs
-  activeDiffTaskId?: string;
-  diffMap?: Record<
-    string,
-    {
-      claim: string[];
-      evidence: EvidenceWithCitation[];
-    }
-  >;
 }
 
 const initialState: SearchState = {};
@@ -458,44 +449,6 @@ export const submitAttributeFeedback = createAsyncThunk(
   }
 );
 
-export const cancelCurrentDiffRequest = createAsyncThunk(
-  'experimentViewer/cancelCurrentDiffRequest',
-  async (_, { getState, dispatch }) => {
-    const state = getState() as { search: SearchState };
-    const { activeDiffTaskId } = state.search;
-
-    if (activeDiffTaskId) {
-      // If there's an active cancel function, call it
-      if (cancelFunctionsMap[activeDiffTaskId]) {
-        try {
-          cancelFunctionsMap[activeDiffTaskId]();
-          delete cancelFunctionsMap[activeDiffTaskId];
-        } catch (error) {
-          dispatch(
-            setToastNotification({
-              title: 'Error cancelling request',
-              description: 'Failed to cancel the diff request',
-              variant: 'destructive',
-            })
-          );
-          throw error;
-        }
-      } else {
-        dispatch(
-          setToastNotification({
-            title: 'Error cancelling request',
-            description: 'No active cancel function found for task',
-            variant: 'destructive',
-          })
-        );
-      }
-
-      // Reset the state
-      dispatch(setActiveDiffTaskId(undefined));
-    }
-  }
-);
-
 // export const submitAttributeFeedback = createAsyncThunk(
 //   'experimentViewer/submitAttributeFeedback',
 //   async (
@@ -640,9 +593,6 @@ export const searchSlice = createSlice({
     ) => {
       state.searchesWithStats = action.payload;
     },
-    setActiveDiffTaskId: (state, action: PayloadAction<string | undefined>) => {
-      state.activeDiffTaskId = action.payload;
-    },
     resetSearchSlice: () => initialState,
   },
 });
@@ -658,7 +608,6 @@ export const {
   setSearchQueryTextboxValue,
   setSearchQuery,
   setLoadingProgress,
-  setActiveDiffTaskId,
   setSearchesWithStats,
   resetSearchSlice,
 } = searchSlice.actions;

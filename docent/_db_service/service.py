@@ -24,8 +24,6 @@ from typing import (
 from uuid import uuid4
 
 import anyio
-from docent._env_util import ENV
-from docent._log_util import get_logger
 from sqlalchemy import URL, ColumnElement, delete, distinct, exists, func, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
@@ -34,10 +32,10 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from docent._ai_tools.diff import extract_states_and_diffs
 from sqlalchemy.sql import ColumnElement
 
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
+from docent._ai_tools.diff import extract_states_and_diffs
 from docent._ai_tools.search import SearchResult, SearchResultStreamingCallback, execute_search
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.base import SQLABase

@@ -1,9 +1,7 @@
-
-import { useRouter } from 'next/navigation';
 import {
-  OrganizationMethod,
+  RegexSnippet,
+  TaskStats,
   EvidenceWithCitation,
-  Citation,
 } from '../types/experimentViewerTypes';
 
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
@@ -17,7 +15,6 @@ import { updateRegexSnippets } from '../store/experimentViewerSlice';
 import { getAgentRunMetadata } from '../store/frameSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { RootState } from '../store/store';
-import { RegexSnippet, TaskStats } from '../types/experimentViewerTypes';
 import { SearchResultWithCitations } from '../types/frameTypes';
 
 // Helper function to handle transcript navigation with special clicks
@@ -27,11 +24,16 @@ const handleTranscriptNavigation = (
   frameGridId?: string,
   blockId?: number,
   searchQuery?: string,
-  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void
+  onShowAgentRun?: (
+    agentRunId: string,
+    blockId?: number,
+    blockId2?: number,
+    paired?: boolean
+  ) => void
 ) => {
   e.stopPropagation();
 
-  console.log("HIT FUNC");
+  console.log('HIT FUNC');
 
   if (frameGridId !== undefined && (e.metaKey || e.ctrlKey || e.button === 1)) {
     let url = `${window.location.origin}${BASE_DOCENT_PATH}/${frameGridId}/transcript/${agentRunId}`;
@@ -47,7 +49,7 @@ const handleTranscriptNavigation = (
 
     window.open(url, '_blank');
   } else if (e.button === 0 && onShowAgentRun) {
-    console.log("HIT FUNC 2", onShowAgentRun);
+    console.log('HIT FUNC 2', onShowAgentRun);
     onShowAgentRun(agentRunId, blockId);
   }
 };
@@ -58,7 +60,12 @@ interface InnerCard {
   innerLabel: string;
   stats: TaskStats | null;
   agentRunIds: string[];
-  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
+  onShowAgentRun?: (
+    agentRunId: string,
+    blockId?: number,
+    blockId2?: number,
+    paired?: boolean
+  ) => void;
   isExpanded: boolean;
   onToggle?: () => void;
   innerCount?: number;
@@ -68,7 +75,12 @@ interface AttributeSectionProps {
   dataId: string;
   curAttributeQuery: string;
   attributes: SearchResultWithCitations[];
-  onShowAgentRun?: (agentRunId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
+  onShowAgentRun?: (
+    agentRunId: string,
+    blockId?: number,
+    blockId2?: number,
+    paired?: boolean
+  ) => void;
 }
 
 const AttributeSection: React.FC<AttributeSectionProps> = ({
@@ -139,7 +151,7 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                 key={`citation-${i}`}
                 className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
                 onMouseDown={(e) => {
-                  console.log("CLICK CITATION", citation.block_idx);
+                  console.log('CLICK CITATION', citation.block_idx);
                   e.stopPropagation();
                   onShowAgentRun?.(dataId, citation.block_idx);
                   // handleTranscriptNavigation(
@@ -177,7 +189,7 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
               e.stopPropagation();
               const firstCitation = citations.length > 0 ? citations[0] : null;
               const blockId = firstCitation?.block_idx;
-              console.log("CLICK ATTRIBUTE", blockId);
+              console.log('CLICK ATTRIBUTE', blockId);
               handleTranscriptNavigation(
                 e,
                 dataId,
@@ -351,7 +363,12 @@ interface DiffSectionProps {
     claim: string[];
     evidence: EvidenceWithCitation[];
   };
-  onShowAgentRun?: (datapointId: string, blockId?: number, blockId2?: number, paired?: boolean) => void;
+  onShowAgentRun?: (
+    datapointId: string,
+    blockId?: number,
+    blockId2?: number,
+    paired?: boolean
+  ) => void;
 }
 
 const DiffSection: React.FC<DiffSectionProps> = ({
@@ -380,14 +397,27 @@ const DiffSection: React.FC<DiffSectionProps> = ({
       </div>
 
       {diffTriples.map((triple, idx) => (
-        <div key={idx} className="bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1" onClick={(e) => 
-        {
-          e.stopPropagation();
-          const leftCitations = triple.evidence.citations.filter(x => x.transcript_idx == 0)
-          const rightCitations = triple.evidence.citations.filter(x => x.transcript_idx == 1);
-          onShowAgentRun?.(dataId + "___" + otherId, leftCitations.length > 0 ? leftCitations[0].block_idx : undefined, rightCitations.length > 0 ? rightCitations[0].block_idx : undefined, true);
-
-        }}>
+        <div
+          key={idx}
+          className="bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            const leftCitations = triple.evidence.citations.filter(
+              (x) => x.transcript_idx == 0
+            );
+            const rightCitations = triple.evidence.citations.filter(
+              (x) => x.transcript_idx == 1
+            );
+            onShowAgentRun?.(
+              dataId + '___' + otherId,
+              leftCitations.length > 0 ? leftCitations[0].block_idx : undefined,
+              rightCitations.length > 0
+                ? rightCitations[0].block_idx
+                : undefined,
+              true
+            );
+          }}
+        >
           {/* Claim */}
           <div className="mb-1.5">
             <p className="mt-0.5">{triple.claim}</p>
@@ -453,10 +483,9 @@ const InnerCard: React.FC<InnerCard> = ({
     curSearchQuery,
     searchResultMap: attributeMap,
     loadingSearchQuery: loadingAttributesForId,
-    diffMap: diffMap,
   } = useAppSelector((state: RootState) => state.search);
 
-
+  const { diffMap } = useAppSelector((state: RootState) => state.diff);
 
   const { baseFilter, agentRunMetadata, frameGridId } = useAppSelector(
     (state: RootState) => state.frame
@@ -685,8 +714,14 @@ const InnerCard: React.FC<InnerCard> = ({
               if (curSearchQuery && attributes === null) return null;
               if (diffMap && !initialDiffResults) return null;
 
-              const diffResults = initialDiffResults ? initialDiffResults[1] : null;
-              const otherId = initialDiffResults ? initialDiffResults[0].split('___').filter(id => id !== agentRunId)[0] : null;
+              const diffResults = initialDiffResults
+                ? initialDiffResults[1]
+                : null;
+              const otherId = initialDiffResults
+                ? initialDiffResults[0]
+                    .split('___')
+                    .filter((id) => id !== agentRunId)[0]
+                : null;
 
               return (
                 <div
@@ -698,7 +733,16 @@ const InnerCard: React.FC<InnerCard> = ({
                       : 'bg-white/80 hover:bg-gray-50'
                   }`}
                   onClick={() =>
-                    onShowAgentRun ? (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, undefined, true) : onShowAgentRun(agentRunId)) : undefined
+                    onShowAgentRun
+                      ? otherId
+                        ? onShowAgentRun(
+                            agentRunId + '___' + otherId,
+                            undefined,
+                            undefined,
+                            true
+                          )
+                        : onShowAgentRun(agentRunId)
+                      : undefined
                   }
                 >
                   <div>
