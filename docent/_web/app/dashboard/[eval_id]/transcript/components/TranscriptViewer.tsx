@@ -143,7 +143,7 @@ const TranscriptViewer = forwardRef<TranscriptViewerHandle, TranscriptViewerProp
     (blockIndex: number, transcriptIdx: number = secondary ? 1 : 0) => {
       // Determine which transcript should handle this scroll
       const currentTranscriptIdx = secondary ? 1 : 0;
-      
+
       if (transcriptIdx !== currentTranscriptIdx && otherTranscriptRef?.current) {
         // Cross-scroll to the other transcript
         otherTranscriptRef.current.scrollToBlock(blockIndex);

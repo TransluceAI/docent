@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from pydantic_core import to_jsonable_python
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
@@ -7,15 +8,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.schema import UniqueConstraint
 
+from docent._ai_tools.diff import DiffAttribute
 from docent._ai_tools.search import SearchResult
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.base import SQLABase
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.filters import FrameDimension, FrameFilter, Judgment, parse_filter_dict
 from docent.data_models.transcript import Transcript
-from docent._ai_tools.diff import DiffAttribute
-
-from uuid import uuid4
 
 TABLE_FRAME_GRID = "frame_grids"
 TABLE_AGENT_RUN = "agent_runs"

@@ -144,4 +144,3 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
 };
 
 export default DiffPanel;
-

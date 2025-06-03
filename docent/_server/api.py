@@ -9,7 +9,7 @@ from docent._env_util import ENV
 from docent._log_util import get_logger
 from docent._server._auth.session_middleware import SessionAuthMiddleware
 from docent._server._broker.router import broker_router
-from docent._server._rest.router import public_router, authenticated_router
+from docent._server._rest.router import authenticated_router, public_router
 
 logger = get_logger(__name__)
 
