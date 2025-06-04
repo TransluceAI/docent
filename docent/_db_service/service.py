@@ -1244,21 +1244,9 @@ class DBService:
         else:
             logger.info(f"Computing results for {len(agent_runs)} datapoints")
 
-        new_search_results: list[SearchResult] = []
-
-        async def _save_and_callback(search_results: list[SearchResult]):
-            """When each search result comes back, both call the callback and also save to
-            a running list of search results that will be uploaded to the database.
-            """
-            nonlocal new_search_results
-
-            new_search_results.extend(search_results)
+        async def _results_callback(search_results: list[SearchResult]):
             if search_result_callback:
                 await search_result_callback(search_results)
-
-        async def _upload():
-            """Upload the search results we have to the database."""
-            nonlocal new_search_results
 
             with anyio.CancelScope(shield=True):
                 to_upload: list[SQLASearchResult] = [
@@ -1266,7 +1254,7 @@ class DBService:
                         search_result=attr,
                         fg_id=ctx.fg_id,
                     )
-                    for attr in new_search_results
+                    for attr in search_results
                 ]
                 async with self.session() as session:
                     session.add_all(to_upload)
@@ -1274,14 +1262,9 @@ class DBService:
                 logger.info(f"Pushed {len(to_upload)} attributes")
 
         try:
-            await execute_search(
-                agent_runs, search_query, search_result_callback=_save_and_callback
-            )
+            await execute_search(agent_runs, search_query, search_result_callback=_results_callback)
         except anyio.get_cancelled_exc_class():
             logger.info("Attribute computation cancelled")
-        finally:
-            # Upload what we have, even given cancellation
-            await _upload()
 
     async def _get_agent_runs_without_judgments(
         self, ctx: ViewContext, filter_id: str
