@@ -32,7 +32,9 @@ async def compute_search(ctx: dict, view_ctx: ViewContext, job_id: str):
 
     async def _search_result_callback(search_results: list[SearchResult]) -> None:
         if search_results:
-            await REDIS.rpush(f"results_{job_id}", json.dumps(to_jsonable_python(search_results)))
+            await REDIS.xadd(
+                f"results_{job_id}", {"results": json.dumps(to_jsonable_python(search_results))}
+            )
             with anyio.CancelScope(shield=True):
                 await publish_searches(db, view_ctx)
 

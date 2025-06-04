@@ -701,13 +701,27 @@ async def listen_compute_search(
         await send_stream.send(init_data)
         nonlocal num_done
 
-        while results_batch := (await REDIS.blpop([f"results_{job_id}"]))[1]:
-            results_batch = [SearchResult.model_validate(obj) for obj in json.loads(results_batch)]
+        last_id = 0
+        while True:
+            results_batch = await REDIS.xread({f"results_{job_id}": last_id}, block=5000)
             print("results", results_batch)
+            if not results_batch:
+                continue
+
+            # xread can handle multiple streams and returns a list of (stream, results) pairs; we
+            # only have one, so just index by 0 and then 1 to go directly to the results we want.
+            results_batch = results_batch[0][1]
+
+            last_id = results_batch[-1][0]
+            results = [
+                SearchResult.model_validate(j)
+                for _, r in results_batch
+                for j in json.loads(r["results"])
+            ]
 
             # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
             data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
-            for result in results_batch:
+            for result in results:
                 data_dict.setdefault(result.agent_run_id, {}).setdefault(
                     result.search_query, []
                 ).append(SearchResultWithCitations.from_search_result(result))
