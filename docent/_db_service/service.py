@@ -38,7 +38,6 @@ from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import extract_states_and_diffs
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
 from docent._ai_tools.diffs.models import TranscriptDiff
-
 from docent._ai_tools.search import SearchResult, SearchResultStreamingCallback, execute_search
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import Permission, ResourceType, SubjectType, User

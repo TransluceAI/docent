@@ -1,17 +1,22 @@
-from docent.data_models.agent_run import AgentRun
-from docent._ai_tools.diff import MULTI_BLOCK_CITE_INSTRUCTION, format_transcript_messages_and_states
-from docent._ai_tools.diffs.models import MessageState, TranscriptDiff, Claim
-from docent._llm_util.data_models.llm_output import LLMOutput
-from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._ai_tools.diff import (
+    MULTI_BLOCK_CITE_INSTRUCTION,
+    format_transcript_messages_and_states,
+)
 from docent._ai_tools.diffs.llm_message_summaries import compute_transcript_summaries
+from docent._ai_tools.diffs.models import Claim, MessageState, TranscriptDiff
+from docent._llm_util.data_models.llm_output import LLMOutput
+from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent.data_models.agent_run import AgentRun
 
 """ Vincent's original implementation"""
+
+
 async def compare_transcript_states(
     transcript_1: AgentRun,
     transcript_2: AgentRun,
     states_1: list[MessageState],
-    states_2: list[MessageState], 
+    states_2: list[MessageState],
 ) -> str:
     prompt = f"""
 Here are two different sequences of actions an agent took to solve a task. For each transcript, you will be given messages in the following format:
@@ -98,7 +103,7 @@ async def get_llm_output_compare_transcript_states_v2(
     transcript_1: AgentRun,
     transcript_2: AgentRun,
     states_1: list[MessageState],
-    states_2: list[MessageState], 
+    states_2: list[MessageState],
 ) -> str:
     prompt = f"""
 Here are two different sequences of actions an agent took to solve a task. For each transcript, you will be given messages in the following format:
@@ -127,7 +132,7 @@ Here are some examples of differences, and the level of specifity in which we'd 
 <claim>
     Agent 1 succeeds in locating the test.py file with grep, while Agent 2 fails.
     <shared_context>
-        Both agents have read the task description and are trying to locate the test.py file. 
+        Both agents have read the task description and are trying to locate the test.py file.
     </shared_context>
     <agent_1_action>
         Uses grep and succeeds
@@ -138,7 +143,7 @@ Here are some examples of differences, and the level of specifity in which we'd 
     <evidence>
         Agent 1 uses grep successfully [T0B40].
         Agent 2, tries multiple tool calls and fails [T1B41][T1B43]
-    </evidence> 
+    </evidence>
 </claim>
 
 <claim>
@@ -245,98 +250,108 @@ Explicitly mention the different actions each agents took. Explicitly qualify cl
 def _parse_llm_output_to_claims(output: str) -> list[Claim]:
     """
     Parse the LLM output into a TranscriptDiff object.
-    
+
     Args:
         output: The LLM output string containing claims and evidence
         agent_run_1_id: The ID of the first agent run
         agent_run_2_id: The ID of the second agent run
-        
+
     Returns:
         A TranscriptDiff object containing the parsed claims
     """
     claims: list[Claim] = []
     curr_index: int = 0
-    
+
     while True:
         # Find the next claim block
         start_claim_index = output.find("<claim>", curr_index)
         if start_claim_index == -1:
             break
-            
+
         end_claim_index = output.find("</claim>", start_claim_index)
         if end_claim_index == -1:
             break
-            
+
         # Extract the claim content
-        claim_content = output[start_claim_index + len("<claim>"):end_claim_index].strip()
-        
+        claim_content = output[start_claim_index + len("<claim>") : end_claim_index].strip()
+
         # Parse the claim content into its components
         claim_summary = ""
         shared_context = None
         agent_1_action = ""
         agent_2_action = ""
         evidence = ""
-        
+
         # Extract shared context if present
         shared_context_start = claim_content.find("<shared_context>")
         if shared_context_start != -1:
             shared_context_end = claim_content.find("</shared_context>", shared_context_start)
             if shared_context_end != -1:
-                shared_context = claim_content[shared_context_start + len("<shared_context>"):shared_context_end].strip()
-        
+                shared_context = claim_content[
+                    shared_context_start + len("<shared_context>") : shared_context_end
+                ].strip()
+
         # Extract agent actions
         agent_1_start = claim_content.find("<agent_1_action>")
         if agent_1_start != -1:
             agent_1_end = claim_content.find("</agent_1_action>", agent_1_start)
             if agent_1_end != -1:
-                agent_1_action = claim_content[agent_1_start + len("<agent_1_action>"):agent_1_end].strip()
-                
+                agent_1_action = claim_content[
+                    agent_1_start + len("<agent_1_action>") : agent_1_end
+                ].strip()
+
         agent_2_start = claim_content.find("<agent_2_action>")
         if agent_2_start != -1:
             agent_2_end = claim_content.find("</agent_2_action>", agent_2_start)
             if agent_2_end != -1:
-                agent_2_action = claim_content[agent_2_start + len("<agent_2_action>"):agent_2_end].strip()
-        
+                agent_2_action = claim_content[
+                    agent_2_start + len("<agent_2_action>") : agent_2_end
+                ].strip()
+
         # Extract evidence
         evidence_start = claim_content.find("<evidence>")
         if evidence_start != -1:
             evidence_end = claim_content.find("</evidence>", evidence_start)
             if evidence_end != -1:
-                evidence = claim_content[evidence_start + len("<evidence>"):evidence_end].strip()
-        
+                evidence = claim_content[evidence_start + len("<evidence>") : evidence_end].strip()
+
         # Extract claim summary - it's the text before any of the XML-style tags
         first_tag_index = min(
-            i for i in [
-                shared_context_start if shared_context_start != -1 else float('inf'),
-                agent_1_start if agent_1_start != -1 else float('inf'),
-                agent_2_start if agent_2_start != -1 else float('inf'),
-                evidence_start if evidence_start != -1 else float('inf')
+            i
+            for i in [
+                shared_context_start if shared_context_start != -1 else float("inf"),
+                agent_1_start if agent_1_start != -1 else float("inf"),
+                agent_2_start if agent_2_start != -1 else float("inf"),
+                evidence_start if evidence_start != -1 else float("inf"),
             ]
         )
-        if first_tag_index != float('inf'):
+        if first_tag_index != float("inf"):
             claim_summary = claim_content[:first_tag_index].strip()
         else:
             claim_summary = claim_content.strip()
-        
+
         # Create the Claim object
         claim = Claim(
             claim_summary=claim_summary,
             shared_context=shared_context,
             agent_1_action=agent_1_action,
             agent_2_action=agent_2_action,
-            evidence=evidence
+            evidence=evidence,
         )
         claims.append(claim)
-        
+
         curr_index = end_claim_index + len("</claim>")
     return claims
-    
+
+
 async def compute_transcript_diff(transcript_1: AgentRun, transcript_2: AgentRun) -> TranscriptDiff:
     summaries_1: list[MessageState] = await compute_transcript_summaries(transcript_1)
     summaries_2: list[MessageState] = await compute_transcript_summaries(transcript_2)
-    llm_diff_output = await get_llm_output_compare_transcript_states_v2(transcript_1, transcript_2, summaries_1, summaries_2)
+    llm_diff_output = await get_llm_output_compare_transcript_states_v2(
+        transcript_1, transcript_2, summaries_1, summaries_2
+    )
     claims = _parse_llm_output_to_claims(llm_diff_output)
-    diff =  TranscriptDiff(
+    diff = TranscriptDiff(
         agent_run_1_id=transcript_1.id,
         agent_run_2_id=transcript_2.id,
         claims=claims,
