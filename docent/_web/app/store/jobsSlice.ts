@@ -22,6 +22,9 @@ export const fetchJobs = createAsyncThunk('frame/fetchJobs', async (_, { dispatc
 
 export interface Job {
   id: string;
+  type: string;
+  created_at: string;
+  status: string;
   job_json: { query_id: string };
 }
 

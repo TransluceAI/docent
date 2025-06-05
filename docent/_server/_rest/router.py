@@ -694,51 +694,61 @@ async def listen_compute_search(
         await send_stream.send(init_data)
         nonlocal num_done
 
-        last_id = 0
-        while True:
-            results_batch = await REDIS.xread({f"results_{job_id}": last_id}, block=5000)
-            print("results", results_batch)
-            if not results_batch:
-                continue
+        try:
+            last_id = 0
+            while True:
+                results_batch = await REDIS.xread({f"results_{job_id}": last_id}, block=0)
+                print("results batch", results_batch)
 
-            # xread can handle multiple streams and returns a list of (stream, results) pairs; we
-            # only have one, so just index by 0 and then 1 to go directly to the results we want.
-            results_batch = results_batch[0][1]
+                # xread can handle multiple streams and returns a list of (stream, results) pairs; we
+                # only have one, so just index by 0 and then 1 to go directly to the results we want.
+                results_batch = results_batch[0][1]
 
-            last_id = results_batch[-1][0]
-            results = [
-                SearchResult.model_validate(j)
-                for _, r in results_batch
-                for j in json.loads(r["results"])
-            ]
+                last_id = results_batch[-1][0]
 
-            # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
-            data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
-            for result in results:
-                data_dict.setdefault(result.agent_run_id, {}).setdefault(
-                    result.search_query, []
-                ).append(SearchResultWithCitations.from_search_result(result))
+                for _, sub_batch in results_batch:
+                    results = json.loads(sub_batch["results"])
+                    if results is None:
+                        return
+                    if not results:
+                        continue
 
-            # Each agent_run is only included in one callback
-            num_done += len(data_dict.keys())
+                    results = [SearchResult.model_validate(r) for r in results]
 
-            payload = StreamedSearchResult(
-                data_dict=data_dict,
-                num_agent_runs_done=num_done,
-                num_agent_runs_total=num_total,
-            )
+                    # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
+                    data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
+                    for result in results:
+                        data_dict.setdefault(result.agent_run_id, {}).setdefault(
+                            result.search_query, []
+                        ).append(SearchResultWithCitations.from_search_result(result))
 
-            # Send to event_stream so it can be sent back to the client
-            await send_stream.send(payload)
+                    # Each agent_run is only included in one callback
+                    num_done += len(data_dict.keys())
 
-            if num_done == num_total:
-                # Terminate the stream so the event_stream stops waiting
-                await send_stream.aclose()
-                break
+                    payload = StreamedSearchResult(
+                        data_dict=data_dict,
+                        num_agent_runs_done=num_done,
+                        num_agent_runs_total=num_total,
+                    )
+
+                    # Send to event_stream so it can be sent back to the client
+                    await send_stream.send(payload)
+
+                    if num_done == num_total:
+                        return
+        finally:
+            # Terminate the stream so the event_stream stops waiting
+            await send_stream.aclose()
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
     )
+
+
+@authenticated_router.post("/{job_id}/cancel_compute_search")
+async def cancel_compute_search(job_id: str):
+    q = f"commands_{job_id}"
+    await REDIS.rpush(q, "cancel")
 
 
 @authenticated_router.get("/search_jobs")

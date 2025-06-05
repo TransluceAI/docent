@@ -1,3 +1,4 @@
+import enum
 import json
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -7,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -415,12 +417,23 @@ class SQLASearchQuery(SQLABase):
     search_query = mapped_column(Text, nullable=False, index=True)
 
 
+class JobStatus(enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    CANCELED = "canceled"
+    COMPLETED = "completed"
+
+
 class SQLAJob(SQLABase):
     __tablename__ = TABLE_JOB
 
     id = mapped_column(String(36), primary_key=True)
     type = mapped_column(Text)
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
     job_json = mapped_column(JSONB, nullable=False)
+    status = mapped_column(Enum(JobStatus), default=JobStatus.PENDING)
 
 
 class SQLADiffAttribute(SQLABase):

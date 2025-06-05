@@ -44,6 +44,7 @@ from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import Permission, ResourceType, SubjectType, User
 from docent._db_service.schemas.base import SQLABase
 from docent._db_service.schemas.tables import (
+    JobStatus,
     SQLAAccessControlEntry,
     SQLAAgentRun,
     SQLADiffAttribute,
@@ -1875,7 +1876,7 @@ class DBService:
         """
         job_id = job_id or str(uuid4())
         async with self.session() as session:
-            session.add(SQLAJob(id=job_id, type=type, job_json=job_json))
+            session.add(SQLAJob(id=job_id, type=type, created_at=datetime.now(), job_json=job_json))
             logger.info(f"Added job with ID: {job_id}")
         return job_id
 
@@ -1890,9 +1891,11 @@ class DBService:
                 select(SQLAJob)
                 .filter(SQLAJob.type == "compute_search")
                 .filter(SQLAJob.job_json["query_id"].astext == query_id)
+                .order_by(SQLAJob.created_at.desc())
+                .limit(1)
             )
-            existing = result.scalar_one_or_none()
-            if existing is not None:
+            existing: SQLAJob = result.scalar_one_or_none()
+            if existing is not None and existing.status != JobStatus.CANCELED:
                 return False, existing.id
 
             # Otherwise, create a new job
@@ -1918,13 +1921,32 @@ class DBService:
 
     async def list_search_jobs_and_queries(self):
         async with self.session() as session:
-            result = await session.execute(
-                select(SQLAJob, SQLASearchQuery)
+            # Find the latest job creation time corresponding to each query ID.
+            sub_q = (
+                select(
+                    SQLAJob.job_json["query_id"].astext.label("query_id"),
+                    func.max(SQLAJob.created_at).label("created_at"),
+                )
+                .group_by("query_id")
                 .filter(SQLAJob.type == "compute_search")
-                .filter(SQLAJob.job_json["query_id"].astext == SQLASearchQuery.id)
+            ).subquery()
+            # Find all search queries, along with the latest job corresponding to each one.
+            q = (
+                select(SQLAJob, SQLASearchQuery)
+                .select_from(sub_q)
+                .filter(SQLAJob.type == "compute_search")
+                .filter(SQLASearchQuery.id == sub_q.c.query_id)
+                .filter(SQLAJob.created_at == sub_q.c.created_at)
             )
+            result = await session.execute(q)
 
         return result.all()
+
+    async def set_job_status(self, job_id: str, status: JobStatus):
+        async with self.session() as session:
+            await session.execute(
+                update(SQLAJob).filter(SQLAJob.id == job_id).values(status=status)
+            )
 
     async def get_search_job_and_query(self, job_id: str) -> Tuple[dict, SQLASearchQuery] | None:
         async with self.session() as session:
