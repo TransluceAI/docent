@@ -39,6 +39,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install modal
+
+      - name: Debug
+        run: |
+          pwd
+          ls -lah
+          cd docent/_server/
+          pwd
+          ls -lah
           
       - name: Deploy to Modal
         run: modal deploy docent/_server/modal_app.py
