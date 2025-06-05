@@ -1131,7 +1131,7 @@ class StreamedDiffs(TypedDict):
     evidence: list[EvidenceWithCitation] | None
     num_pairs_done: int
     num_pairs_total: int
-    transcript_diff: dict[str, Any] | None # a TranscriptDiff as json
+    transcript_diff: dict[str, Any] | None  # a TranscriptDiff as json
 
 
 @authenticated_router.post("/{fg_id}/start_compute_diffs")
@@ -1178,6 +1178,7 @@ async def listen_compute_diffs(
     num_done, num_total = 0, 0  # Will be set after getting datapoints
 
     from docent._ai_tools.diffs.models import TranscriptDiff
+
     async def _ws_diff_streaming_callback(
         data_id_1: str,
         data_id_2: str,
@@ -1265,3 +1266,29 @@ async def listen_compute_diffs(
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
     )
+
+
+########################
+# Clustering diffs
+########################
+
+
+class ComputeClusteringDiffsRequest(BaseModel):
+    experiment_id_1: str
+    experiment_id_2: str
+
+
+@authenticated_router.post("/{fg_id}/compute_diff_clusters")
+async def compute_diff_clusters(
+    fg_id: str,
+    request: ComputeClusteringDiffsRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_fg_permission(Permission.WRITE)),
+):
+    clusters = await db.compute_diff_clusters(
+        ctx,
+        request.experiment_id_1,
+        request.experiment_id_2,
+    )
+    return clusters

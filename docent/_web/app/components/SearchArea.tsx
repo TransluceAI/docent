@@ -43,7 +43,7 @@ import { RootState } from '../store/store';
 
 import BinEditor from './BinEditor';
 import { ProgressBar } from './ProgressBar';
-import { requestDiffs } from '../store/diffSlice';
+import { requestDiffs, requestDiffClusters } from '../store/diffSlice';
 import DebugReduxState from '../debug/DebugReduxState';
 
 interface SearchAreaProps {
@@ -314,7 +314,7 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
 
   const handleClusterDiffs = () => {
     if (!diffsAttribute) return;
-    dispatch(requestClusters({ dimensionId: diffsAttribute, feedback: '' }));
+    dispatch(requestDiffClusters({ experimentId1, experimentId2 }));
   };
   /**
    * Handle share button

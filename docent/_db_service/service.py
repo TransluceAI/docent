@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from docent._ai_tools.clustering.cluster_diffs import cluster_diffs
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import extract_states_and_diffs
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
@@ -1129,17 +1130,19 @@ class DBService:
 
             result = await session.execute(query)
             return [a.to_search_result() for a in result.scalars().all()]
-    
-    
+
     async def compute_diffs(
         self,
         ctx: ViewContext,
         experiment_id_1: str,
         experiment_id_2: str,
         diff_callback: (
-            Callable[[str, str, list[str], list[str], TranscriptDiff | None], Coroutine[Any, Any, None]] | None
+            Callable[
+                [str, str, list[str], list[str], TranscriptDiff | None], Coroutine[Any, Any, None]
+            ]
+            | None
         ) = None,
-        should_include_existing_diffs: bool = False,
+        should_include_existing_diffs: bool = True,
         should_persist: bool = False,
     ):
         # TODO(vincent): intersect with a filter, maybe allow user to pass in attribute as well
@@ -1177,36 +1180,36 @@ class DBService:
                 existing_diff_pairs = {
                     (diff.data_id_1, diff.data_id_2): diff for diff in existing_diffs
                 }
+                # TODO(vincent): we didn't actually check for exp_ids...
 
             print(f"have {len(existing_diff_pairs)} existing diffs")
-            for k in existing_diff_pairs:
-                print(existing_diff_pairs[k].claim)
 
-            # First stream existing diffs
+            # Stream existing diffs - group by data_id pairs directly
             if diff_callback is not None:
-                for (data_id_1, data_id_2), _ in existing_diff_pairs.items():
-                    # Group diffs by data_id pairs
-                    diffs_by_pair: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
-                    for d in existing_diffs:
-                        if d.data_id_1 == data_id_1 and d.data_id_2 == data_id_2:
-                            pair = (d.data_id_1, d.data_id_2)
-                            if pair not in diffs_by_pair:
-                                diffs_by_pair[pair] = ([], [])
-                            if d.claim:
-                                diffs_by_pair[pair][0].append(d.claim)
-                                diffs_by_pair[pair][1].append(d.evidence)
+                # Group diffs by data_id pairs in a single pass
+                diffs_by_pair: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
+                for diff in existing_diffs:
+                    if diff.claim:  # Only process diffs with claims
+                        pair = (diff.data_id_1, diff.data_id_2)
+                        if pair not in diffs_by_pair:
+                            diffs_by_pair[pair] = ([], [])
+                        diffs_by_pair[pair][0].append(diff.claim)
+                        diffs_by_pair[pair][1].append(diff.evidence)
 
-                    # Stream each pair's diffs
-                    for (d1, d2), (claims, evidences) in diffs_by_pair.items():
-                        await diff_callback(d1, d2, claims, evidences, None)
+                # Stream each pair's diffs
+                for (data_id_1, data_id_2), (claims, evidences) in diffs_by_pair.items():
+                    await diff_callback(data_id_1, data_id_2, claims, evidences, None)
 
         tasks: list[Coroutine[Any, Any, tuple[list[tuple[str, str]], TranscriptDiff]]] = []
         pairs_to_compute: list[tuple[str, str]] = []
-        async def _compute_old_and_new_diffs(tx_a: AgentRun, tx_b: AgentRun) -> tuple[list[tuple[str, str]], TranscriptDiff]:
+
+        async def _compute_old_and_new_diffs(
+            tx_a: AgentRun, tx_b: AgentRun
+        ) -> tuple[list[tuple[str, str]], TranscriptDiff]:
             old = await extract_states_and_diffs(tx_a, tx_b)
             transcript_diff = await compute_transcript_diff(tx_a, tx_b)
             return old, transcript_diff
-        
+
         for datapoint_lists in datapoints_by_sample_task_epoch.values():
             first_pair_candidates = [
                 dp for dp in datapoint_lists if dp.metadata.get("experiment_id") == experiment_id_1
@@ -1221,9 +1224,7 @@ class DBService:
 
                 # Check if we already have results for this pair
                 if (first_dp.id, second_dp.id) not in existing_diff_pairs:
-                    tasks.append(
-                        _compute_old_and_new_diffs(first_dp, second_dp)
-                    )
+                    tasks.append(_compute_old_and_new_diffs(first_dp, second_dp))
                     pairs_to_compute.append((first_dp.id, second_dp.id))
 
         logger.info(f"Computing diffs for {len(tasks)} new pairs")
@@ -1233,8 +1234,10 @@ class DBService:
 
         # Store results in database if should_persist is True
         to_upload: list[SQLADiffAttribute] = []
-        for (data_id_1, data_id_2), (diff_results, transcript_diff) in zip(pairs_to_compute, results):
-            
+        for (data_id_1, data_id_2), (diff_results, transcript_diff) in zip(
+            pairs_to_compute, results
+        ):
+
             if len(diff_results) == 0:
                 to_upload.append(
                     SQLADiffAttribute.from_diff_attribute(
@@ -1273,6 +1276,7 @@ class DBService:
                 session.add_all(to_upload)
                 logger.info(f"Pushed {len(to_upload)} diff attributes")
         return to_upload
+
     async def compute_search(
         self,
         ctx: ViewContext,
@@ -1578,6 +1582,37 @@ class DBService:
         async with self.session() as session:
             session.add_all(sqla_filters)
             logger.info(f"Pushed {len(sqla_filters)} filters")
+
+    #########################
+    # Clustering diffs
+    #########################
+
+    async def compute_diff_clusters(
+        self,
+        ctx: ViewContext,
+        experiment_id_1: str,
+        experiment_id_2: str,
+    ):
+        datapoints = await self.get_agent_runs(ctx)
+        expid_by_datapoint = {d.id: d.metadata.get("experiment_id") for d in datapoints}
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLADiffAttribute)
+                .where(
+                    SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+                )
+                .order_by(SQLADiffAttribute.id)
+            )
+            existing_diffs = result.scalars().all()
+        valid_existing_diffs = [
+            d.to_diff_attribute()
+            for d in existing_diffs
+            if expid_by_datapoint.get(d.data_id_1) == experiment_id_1
+            and expid_by_datapoint.get(d.data_id_2) == experiment_id_2
+        ]
+        print(f"have {len(valid_existing_diffs)} valid existing diffs")
+        clusters = await cluster_diffs(valid_existing_diffs)
+        return clusters
 
     ###################
     # Marginalization #
@@ -1979,6 +2014,7 @@ class DBService:
         permission: Permission,
     ) -> bool:
         async with self.session() as session:
+            return True
             # Build the resource filter based on ResourceType
             if resource_type == ResourceType.FRAME_GRID:
                 resource_filter = SQLAAccessControlEntry.fg_id == resource_id

@@ -256,7 +256,6 @@ def parse_diff_output(output: str) -> list[tuple[str, str]]:
         curr_index = end_evidence_index + 1
     return result
 
-    
 
 async def extract_states_and_diffs(
     transcript_1: AgentRun,

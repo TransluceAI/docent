@@ -161,6 +161,54 @@ export const requestDiffs = createAsyncThunk(
   }
 );
 
+export const requestDiffClusters = createAsyncThunk(
+  'experimentViewer/requestDiffClusters',
+  async (
+    {
+      experimentId1,
+      experimentId2,
+    }: { experimentId1: string; experimentId2: string },
+    { dispatch, getState }
+  ) => {
+    // Get the frame grid ID from the state
+    const state = getState() as { frame: { frameGridId?: string } };
+    const frameGridId = state.frame.frameGridId;
+
+    try {
+      if (!frameGridId) {
+        throw new Error('No frame grid ID available');
+      }
+
+      // Cancel any previous cluster requests
+      // await dispatch(cancelCurrentClusterRequest());
+
+      // Start the cluster dimension job
+      const response = await apiRestClient.post(
+        `/${frameGridId}/compute_diff_clusters`,
+        {
+          experiment_id_1: experimentId1,
+          experiment_id_2: experimentId2,
+        }
+      );
+
+      const clusters = response.data;
+      console.log(clusters);
+      // dispatch(setActiveClusterTaskId(jobId));
+    } catch (error) {
+      // Cleanup on error
+      // dispatch(setActiveClusterTaskId(undefined));
+      dispatch(
+        setToastNotification({
+          title: 'Error requesting clusters',
+          description: 'Failed to cluster dimension',
+          variant: 'destructive',
+        })
+      );
+      throw error;
+    }
+  }
+);
+
 export const cancelCurrentDiffRequest = createAsyncThunk(
   'experimentViewer/cancelCurrentDiffRequest',
   async (_, { getState, dispatch }) => {
