@@ -22,7 +22,7 @@ jobs:
       - name: Create .env file
         run: |
           echo "OPENAI_API_KEY=${{ secrets.PROD_OPENAI_API_KEY }}" >> .env
-          echo "DOCENT_PG_USER=${{ vars.PROD_DATABASE_USERS }}" >> .env
+          echo "DOCENT_PG_USER=${{ vars.PROD_DATABASE_USER }}" >> .env
           echo "DOCENT_PG_PASSWORD=${{ secrets.PROD_DATABASE_PASSWORD }}" >> .env
           echo "DOCENT_PG_HOST=${{ secrets.PROD_DATABASE_HOST }}" >> .env
           echo "DOCENT_PG_PORT=${{ secrets.PROD_DATABASE_PORT }}" >> .env
