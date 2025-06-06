@@ -1,4 +1,4 @@
-name: Production Deploy
+name: Test Deploy
 on:
   push:
     branches: [gregor/deploy-dev]
