@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from functools import partial
@@ -1392,6 +1393,7 @@ async def listen_compute_diff_search(
 
         if num_done == num_total:
             # Terminate the stream so the event_stream stops waiting
+            await asyncio.sleep(1)
             await send_stream.aclose()
 
     async def _execute():

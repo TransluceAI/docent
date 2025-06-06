@@ -133,11 +133,11 @@ async def search_over_diffs(
                 [claim, reverse_claim],
                 [search_query, search_query],
             )
-        is_match = results[0] is not None and results[0][0]
-        is_reverse_match = results[1] is not None and results[1][0]
-        if search_result_callback is not None:
-            await search_result_callback((claim, is_match - is_reverse_match))
-        return (claim, is_match - is_reverse_match)
+            is_match = results[0] is not None and results[0][0]
+            is_reverse_match = results[1] is not None and results[1][0]
+            if search_result_callback is not None:
+                await search_result_callback((claim, is_match - is_reverse_match))
+            return (claim, is_match - is_reverse_match)
 
     tasks: list[Coroutine[Any, Any, tuple[str, int]]] = []
     for claim in claims:
