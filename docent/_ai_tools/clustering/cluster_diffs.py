@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Coroutine
+from typing import Any, Callable, Coroutine
 from docent._ai_tools.clustering.cluster_assigner import LlmApiClusterAssigner
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import DiffAttribute
@@ -114,7 +114,11 @@ B: {item}
     return ASSIGNMENT_PROMPT.format(cluster=cluster, item=item)
 
 
-async def search_over_diffs(search_query: str, claims: list[str]) -> list[tuple[str, int]]:
+async def search_over_diffs(
+    search_query: str,
+    claims: list[str],
+    search_result_callback: Callable[[tuple[str, int]], Coroutine[Any, Any, None]] | None = None,
+) -> list[tuple[str, int]]:
     assigner = LlmApiClusterAssigner.from_sonnet_37_thinking(assign_prompt_fn)
     semaphore = asyncio.Semaphore(50)
 
@@ -131,6 +135,8 @@ async def search_over_diffs(search_query: str, claims: list[str]) -> list[tuple[
             )
         is_match = results[0] is not None and results[0][0]
         is_reverse_match = results[1] is not None and results[1][0]
+        if search_result_callback is not None:
+            await search_result_callback((claim, is_match - is_reverse_match))
         return (claim, is_match - is_reverse_match)
 
     tasks: list[Coroutine[Any, Any, tuple[str, int]]] = []

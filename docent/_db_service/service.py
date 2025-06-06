@@ -1620,6 +1620,9 @@ class DBService:
         experiment_id_1: str,
         experiment_id_2: str,
         search_query: str,
+        search_result_callback: (
+            Callable[[tuple[str, int]], Coroutine[Any, Any, None]] | None
+        ) = None,
     ) -> list[tuple[str, int]]:
         datapoints = await self.get_agent_runs(ctx)
         expid_by_datapoint = {d.id: d.metadata.get("experiment_id") for d in datapoints}
@@ -1640,7 +1643,9 @@ class DBService:
         ]
 
         results = await search_over_diffs(
-            search_query, [d.claim or "" for d in valid_existing_diffs]
+            search_query,
+            [d.claim or "" for d in valid_existing_diffs],
+            search_result_callback=search_result_callback,
         )
 
         # TODO(vincent): stream the results
