@@ -1620,7 +1620,7 @@ class DBService:
         experiment_id_1: str,
         experiment_id_2: str,
         search_query: str,
-    ) -> list[tuple[bool, bool]]:
+    ) -> list[tuple[str, int]]:
         datapoints = await self.get_agent_runs(ctx)
         expid_by_datapoint = {d.id: d.metadata.get("experiment_id") for d in datapoints}
         async with self.session() as session:

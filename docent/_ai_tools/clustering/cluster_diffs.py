@@ -103,7 +103,7 @@ The claim may come with examples, which you shouldn't treat as strict requiremen
 
 Return two lines in the following exact format:
 - ANSWER: <YES/NO>
-- EXPLANATION: <concise but specific explanation; no more than a few high-information words>
+- EXPLANATION: <leave this empty, another model will fill it in later>
 
 Only reply yes if B is a direct example of C; if B and C are correlated but distinct behaviors, this does not count.
 
@@ -114,27 +114,26 @@ B: {item}
     return ASSIGNMENT_PROMPT.format(cluster=cluster, item=item)
 
 
-async def search_over_diffs(search_query: str, claims: list[str]) -> list[tuple[bool, bool]]:
+async def search_over_diffs(search_query: str, claims: list[str]) -> list[tuple[str, int]]:
     assigner = LlmApiClusterAssigner.from_sonnet_37_thinking(assign_prompt_fn)
     semaphore = asyncio.Semaphore(50)
-    reverse_query = (
-        search_query.replace("Agent 1", "Agent 3")
-        .replace("Agent 2", "Agent 1")
-        .replace("Agent 3", "Agent 2")
-    )
 
-    async def search_fn(claim: str) -> tuple[bool, bool]:
+    async def search_fn(claim: str) -> tuple[str, int]:
         async with semaphore:
-            results = await assigner.assign(
-                [claim, claim],
-                [search_query, reverse_query],
+            reverse_claim = (
+                claim.replace("Agent 1", "Agent 3")
+                .replace("Agent 2", "Agent 1")
+                .replace("Agent 3", "Agent 2")
             )
-        return (
-            results[0] is not None and results[0][0],
-            results[1] is not None and results[1][0],
-        )
+            results = await assigner.assign(
+                [claim, reverse_claim],
+                [search_query, search_query],
+            )
+        is_match = results[0] is not None and results[0][0]
+        is_reverse_match = results[1] is not None and results[1][0]
+        return (claim, is_match - is_reverse_match)
 
-    tasks: list[Coroutine[Any, Any, tuple[bool, bool]]] = []
+    tasks: list[Coroutine[Any, Any, tuple[str, int]]] = []
     for claim in claims:
         tasks.append(search_fn(claim))
     results = await asyncio.gather(*tasks)
