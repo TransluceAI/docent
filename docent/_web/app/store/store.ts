@@ -5,7 +5,6 @@ import { configureStore } from '@reduxjs/toolkit';
 import searchReducer from './searchSlice';
 import experimentViewerReducer from './experimentViewerSlice';
 import frameReducer from './frameSlice';
-import jobsReducer from './jobsSlice';
 import toastReducer from './toastSlice';
 import transcriptReducer from './transcriptSlice';
 import { diffReducer } from './diffSlice';
@@ -28,7 +27,6 @@ const store = configureStore({
     search: searchReducer,
     diff: diffReducer,
     frame: frameReducer,
-    jobs: jobsReducer,
     transcript: transcriptReducer,
     toast: toastReducer,
   },

@@ -1,4 +1,4 @@
-import { requireAuth } from '../lib/dal';
+import { requireAuth } from '../../lib/dal';
 
 /**
  * Authenticated Layout - wraps all pages that require authentication

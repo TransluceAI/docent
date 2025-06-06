@@ -24,6 +24,14 @@ import { setToastNotification } from './toastSlice';
 // Map to store cancel functions for active SSE connections
 export const cancelFunctionsMap: Record<string, () => void> = {};
 
+export interface Job {
+  id: string;
+  type: string;
+  created_at: string;
+  status: string;
+  job_json: { query_id: string };
+}
+
 export interface SearchState {
   searchQueryTextboxValue?: string;
   searchHistory?: string[];
@@ -44,6 +52,7 @@ export interface SearchState {
     search_query: string;
     num_judgments_computed: number;
     num_total: number;
+    job: Job;
   }>;
 }
 

@@ -1085,6 +1085,8 @@ class DBService:
             )
             result = await session.execute(query)
 
+        latest_jobs = {query.id: job for job, query in await self.list_search_jobs_and_queries()}
+
         # Return search queries with judgment counts
         counts = {query: count for query, count in result.all()}
         num_total = await self.count_base_agent_runs(ctx)
@@ -1094,6 +1096,7 @@ class DBService:
                 "search_query": search_query,
                 "num_judgments_computed": counts.get(search_query, 0),
                 "num_total": num_total,
+                "job": latest_jobs[search_id],
             }
             for search_id, search_query in search_ids_and_queries
         ]
@@ -1919,7 +1922,7 @@ class DBService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
 
-    async def list_search_jobs_and_queries(self):
+    async def list_search_jobs_and_queries(self) -> list[Tuple[SQLAJob, SQLASearchQuery]]:
         async with self.session() as session:
             # Find the latest job creation time corresponding to each query ID.
             sub_q = (
@@ -1937,6 +1940,7 @@ class DBService:
                 .filter(SQLAJob.type == "compute_search")
                 .filter(SQLASearchQuery.id == sub_q.c.query_id)
                 .filter(SQLAJob.created_at == sub_q.c.created_at)
+                .order_by(SQLASearchQuery.created_at.desc())
             )
             result = await session.execute(q)
 

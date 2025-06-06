@@ -416,6 +416,10 @@ class SQLASearchQuery(SQLABase):
 
     search_query = mapped_column(Text, nullable=False, index=True)
 
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
 
 class JobStatus(enum.Enum):
     PENDING = "pending"
