@@ -1292,3 +1292,53 @@ async def compute_diff_clusters(
         request.experiment_id_2,
     )
     return clusters
+
+
+class ComputeDiffSearchRequest(BaseModel):
+    experiment_id_1: str
+    experiment_id_2: str
+    search_query: str
+
+
+@authenticated_router.post("/{fg_id}/start_compute_diff_search")
+async def start_compute_diff_search(
+    fg_id: str,
+    request: ComputeDiffSearchRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+):
+    job_id = await db.add_job(
+        {
+            "type": "compute_diff_search",
+            "fg_id": fg_id,
+            "experiment_id_1": request.experiment_id_1,
+            "experiment_id_2": request.experiment_id_2,
+            "search_query": request.search_query,
+        }
+    )
+    return job_id
+
+
+@authenticated_router.post("/{fg_id}/listen_compute_diff_search")
+async def listen_compute_diff_search(
+    fg_id: str,
+    job_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_fg_permission(Permission.WRITE)),
+):
+    job = await db.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job {job_id} not found")
+    experiment_id_1, experiment_id_2, search_query = (
+        job["experiment_id_1"],
+        job["experiment_id_2"],
+        job["search_query"],
+    )
+    search_results = await db.compute_diff_search(
+        ctx,
+        experiment_id_1,
+        experiment_id_2,
+        search_query,
+    )
+    return search_results

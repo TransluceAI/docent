@@ -1,3 +1,6 @@
+import asyncio
+from typing import Any, Coroutine
+from docent._ai_tools.clustering.cluster_assigner import LlmApiClusterAssigner
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import DiffAttribute
 
@@ -89,3 +92,52 @@ async def cluster_diffs(
         )
     )[0]
     return cluster_centroids
+
+
+def assign_prompt_fn(item: str, cluster: str) -> str:
+    ASSIGNMENT_PROMPT = """
+You are given a claim C and a behavior B.
+Your task is to determine whether B is a direct example of C.
+
+The claim may come with examples, which you shouldn't treat as strict requirements.
+
+Return two lines in the following exact format:
+- ANSWER: <YES/NO>
+- EXPLANATION: <concise but specific explanation; no more than a few high-information words>
+
+Only reply yes if B is a direct example of C; if B and C are correlated but distinct behaviors, this does not count.
+
+Here is your input:
+C: {cluster}
+B: {item}
+""".strip()
+    stripped_item = item.removeprefix("<claim>").split("</claim>")[0].strip()
+    return ASSIGNMENT_PROMPT.format(cluster=cluster, item=stripped_item)
+
+
+async def search_over_diffs(search_query: str, attributes: list[str]) -> list[tuple[bool, bool]]:
+    assigner = LlmApiClusterAssigner.from_sonnet_37_thinking(assign_prompt_fn)
+    # TODO(vincent): semaphore, each fn should compare both directions
+    semaphore = asyncio.Semaphore(50)
+    reverse_query = (
+        search_query.replace("Agent 1", "Agent 3")
+        .replace("Agent 2", "Agent 1")
+        .replace("Agent 3", "Agent 2")
+    )
+
+    async def search_fn(attribute: str) -> tuple[bool, bool]:
+        results = await assigner.assign(
+            [attribute, attribute],
+            [search_query, reverse_query],
+        )
+        return (
+            results[0] is not None and results[0][0],
+            results[1] is not None and results[1][0],
+        )
+
+    tasks: list[Coroutine[Any, Any, tuple[bool, bool]]] = []
+    for attribute in attributes:
+        async with semaphore:
+            tasks.append(search_fn(attribute))
+    results = await asyncio.gather(*tasks)
+    return results

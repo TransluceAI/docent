@@ -79,8 +79,8 @@ async def _parallelize_calls(
     logprobs: bool,
     top_logprobs: int | None,
     timeout: float,
-    semaphore: AsyncContextManager | None,
-    use_tqdm: bool,
+    semaphore: AsyncContextManager[anyio.Semaphore] | None,
+    # use_tqdm: bool,
     cache: LLMCache | None = None,
     fill_cache: str | None = None,
 ):
@@ -115,7 +115,7 @@ async def _parallelize_calls(
             )
             return
 
-        async with semaphore:
+        async with semaphore or nullcontext():
             try:
                 if streaming_callback is None:
                     result = await base_func(client=client, messages=messages)
@@ -313,11 +313,9 @@ class LLMManager:
                     top_logprobs=top_logprobs,
                     timeout=timeout,
                     semaphore=(
-                        anyio.Semaphore(max_concurrency)
-                        if max_concurrency is not None
-                        else nullcontext()
+                        anyio.Semaphore(max_concurrency) if max_concurrency is not None else None
                     ),
-                    use_tqdm=len(uncached_messages) >= 5,
+                    # use_tqdm=len(uncached_messages) >= 5,
                     cache=self.cache,
                     fill_cache=fill_cache,
                 )
