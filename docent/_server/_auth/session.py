@@ -15,10 +15,16 @@ if ENVIRONMENT == "local":
     cookie_secure = False
     cookie_domain = None
     cookie_samesite = "lax"
-else:
+elif ENVIRONMENT == "dev":
+    cookie_secure = True
+    cookie_domain = "dev.transluce.org"
+    cookie_samesite = "none"
+elif ENVIRONMENT == "prod":
     cookie_secure = True
     cookie_domain = "transluce.org"
     cookie_samesite = "none"
+else:
+    raise ValueError(f"Invalid environment: {ENVIRONMENT}")
 
 async def create_user_session(user_id: str, response: Response) -> str:
     """

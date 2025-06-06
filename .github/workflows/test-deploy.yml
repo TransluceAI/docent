@@ -3,8 +3,6 @@ on:
   push:
     branches: [gregor/deploy-dev]
   workflow_dispatch:
-env:
-  VERCEL_PROJECT_ID: ${{ secrets.PROD_VERCEL_TEAM_ID }}
   
 jobs:
   deploy:
