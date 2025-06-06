@@ -42,6 +42,10 @@ export default function JobsPage() {
     await apiRestClient.post(`/${id}/cancel_compute_search`);
   };
 
+  const resumeJob = (id: string) => async () => {
+    await apiRestClient.post(`/${id}/resume_compute_search`);
+  };
+
   return (
     <div className="container mx-auto py-4 px-3 max-w-screen-xl">
       <div className="space-y-1 mb-4">
@@ -109,6 +113,8 @@ export default function JobsPage() {
                 <TableCell>
                   {search.job.status === 'running' ? (
                     <Button onClick={cancelJob(search.job.id)}>cancel</Button>
+                  ) : search.job.status === 'canceled' ? (
+                    <Button onClick={resumeJob(search.search_id)}>resume</Button>
                   ) : null}
                 </TableCell>
                 <TableCell>{search.search_query}</TableCell>

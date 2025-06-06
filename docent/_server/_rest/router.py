@@ -751,6 +751,19 @@ async def cancel_compute_search(job_id: str):
     await REDIS.rpush(q, "cancel")
 
 
+@authenticated_router.post("/{query_id}/resume_compute_search")
+async def resume_compute_search(
+    query_id: str,
+    db: DBService = Depends(get_db),
+):
+    new, job_id = await db.add_search_job(query_id)
+    query = await db.get_search_query(query_id)
+    ctx = await get_default_view_ctx(query.fg_id, db)
+    if new:
+        await enqueue_search_job(ctx, job_id)
+    return job_id
+
+
 @authenticated_router.get("/search_jobs")
 async def search_jobs(
     db: DBService = Depends(get_db),
