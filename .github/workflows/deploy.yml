@@ -24,13 +24,13 @@ jobs:
           echo "OPENAI_API_KEY=${{ secrets.PROD_OPENAI_API_KEY }}" >> .env
           echo "DOCENT_PG_USER=${{ vars.PROD_DATABASE_USER }}" >> .env
           echo "DOCENT_PG_PASSWORD=${{ secrets.PROD_DATABASE_PASSWORD }}" >> .env
-          echo "DOCENT_PG_HOST=${{ secrets.PROD_DATABASE_HOST }}" >> .env
-          echo "DOCENT_PG_PORT=${{ secrets.PROD_DATABASE_PORT }}" >> .env
+          echo "DOCENT_PG_HOST=${{ vars.PROD_DATABASE_HOST }}" >> .env
+          echo "DOCENT_PG_PORT=${{ vars.PROD_DATABASE_PORT }}" >> .env
           echo "DOCENT_PG_DATABASE=${{ vars.PROD_DATABASE_NAME }}" >> .env
-          echo "DOCENT_REDIS_HOST=${{ secrets.PROD_REDIS_HOST }}" >> .env
-          echo "DOCENT_REDIS_PORT=${{ secrets.PROD_REDIS_PORT }}" >> .env
-          echo "DOCENT_REDIS_USER=${{ secrets.PROD_REDIS_USER }}" >> .env
+          echo "DOCENT_REDIS_USER=${{ vars.PROD_REDIS_USER }}" >> .env
           echo "DOCENT_REDIS_PASSWORD=${{ secrets.PROD_REDIS_PASSWORD }}" >> .env
+          echo "DOCENT_REDIS_HOST=${{ vars.PROD_REDIS_HOST }}" >> .env
+          echo "DOCENT_REDIS_PORT=${{ vars.PROD_REDIS_PORT }}" >> .env
           echo "DOCENT_CORS_ORIGINS=${{ vars.PROD_CORS_ORIGINS }}" >> .env
 
       - name: Install Modal
