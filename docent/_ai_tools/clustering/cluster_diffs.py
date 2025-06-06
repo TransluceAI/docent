@@ -1,3 +1,6 @@
+import asyncio
+from typing import Any, Callable, Coroutine
+from docent._ai_tools.clustering.cluster_assigner import LlmApiClusterAssigner
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import DiffAttribute
 
@@ -89,3 +92,55 @@ async def cluster_diffs(
         )
     )[0]
     return cluster_centroids
+
+
+def assign_prompt_fn(item: str, cluster: str) -> str:
+    ASSIGNMENT_PROMPT = """
+You are given a claim C and a behavior B.
+Your task is to determine whether B is a direct example of C.
+
+The claim may come with examples, which you shouldn't treat as strict requirements.
+
+Return two lines in the following exact format:
+- ANSWER: <YES/NO>
+- EXPLANATION: <leave this empty, another model will fill it in later>
+
+Only reply yes if B is a direct example of C; if B and C are correlated but distinct behaviors, this does not count.
+
+Here is your input:
+C: {cluster}
+B: {item}
+""".strip()
+    return ASSIGNMENT_PROMPT.format(cluster=cluster, item=item)
+
+
+async def search_over_diffs(
+    search_query: str,
+    claims: list[str],
+    search_result_callback: Callable[[tuple[str, int]], Coroutine[Any, Any, None]] | None = None,
+) -> list[tuple[str, int]]:
+    assigner = LlmApiClusterAssigner.from_sonnet_37_thinking(assign_prompt_fn)
+    semaphore = asyncio.Semaphore(50)
+
+    async def search_fn(claim: str) -> tuple[str, int]:
+        async with semaphore:
+            reverse_claim = (
+                claim.replace("Agent 1", "Agent 3")
+                .replace("Agent 2", "Agent 1")
+                .replace("Agent 3", "Agent 2")
+            )
+            results = await assigner.assign(
+                [claim, reverse_claim],
+                [search_query, search_query],
+            )
+            is_match = results[0] is not None and results[0][0]
+            is_reverse_match = results[1] is not None and results[1][0]
+            if search_result_callback is not None:
+                await search_result_callback((claim, is_match - is_reverse_match))
+            return (claim, is_match - is_reverse_match)
+
+    tasks: list[Coroutine[Any, Any, tuple[str, int]]] = []
+    for claim in claims:
+        tasks.append(search_fn(claim))
+    results = await asyncio.gather(*tasks)
+    return results

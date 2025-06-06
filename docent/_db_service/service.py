@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from docent._ai_tools.clustering.cluster_diffs import cluster_diffs
+from docent._ai_tools.clustering.cluster_diffs import cluster_diffs, search_over_diffs
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
 from docent._ai_tools.diff import extract_states_and_diffs
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
@@ -1613,6 +1613,43 @@ class DBService:
         print(f"have {len(valid_existing_diffs)} valid existing diffs")
         clusters = await cluster_diffs(valid_existing_diffs)
         return clusters
+
+    async def compute_diff_search(
+        self,
+        ctx: ViewContext,
+        experiment_id_1: str,
+        experiment_id_2: str,
+        search_query: str,
+        search_result_callback: (
+            Callable[[tuple[str, int]], Coroutine[Any, Any, None]] | None
+        ) = None,
+    ) -> list[tuple[str, int]]:
+        datapoints = await self.get_agent_runs(ctx)
+        expid_by_datapoint = {d.id: d.metadata.get("experiment_id") for d in datapoints}
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLADiffAttribute)
+                .where(
+                    SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+                )
+                .order_by(SQLADiffAttribute.id)
+            )
+            existing_diffs = result.scalars().all()
+        valid_existing_diffs = [
+            d.to_diff_attribute()
+            for d in existing_diffs
+            if expid_by_datapoint.get(d.data_id_1) == experiment_id_1
+            and expid_by_datapoint.get(d.data_id_2) == experiment_id_2
+        ]
+
+        results = await search_over_diffs(
+            search_query,
+            [d.claim or "" for d in valid_existing_diffs],
+            search_result_callback=search_result_callback,
+        )
+
+        # TODO(vincent): stream the results
+        return results
 
     ###################
     # Marginalization #

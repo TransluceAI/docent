@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from functools import partial
@@ -8,11 +9,13 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import Permission, User
+from docent._db_service.schemas.tables import SQLADiffAttribute
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
@@ -1134,6 +1137,14 @@ class StreamedDiffs(TypedDict):
     transcript_diff: dict[str, Any] | None  # a TranscriptDiff as json
 
 
+class StreamedDiffSearchResult(TypedDict):
+    claim: str | None
+    alignment: int
+    query: str
+    num_results_done: int
+    num_results_total: int
+
+
 @authenticated_router.post("/{fg_id}/start_compute_diffs")
 async def start_compute_diffs(
     fg_id: str,
@@ -1292,3 +1303,121 @@ async def compute_diff_clusters(
         request.experiment_id_2,
     )
     return clusters
+
+
+class ComputeDiffSearchRequest(BaseModel):
+    experiment_id_1: str
+    experiment_id_2: str
+    search_query: str
+
+
+@authenticated_router.post("/{fg_id}/start_compute_diff_search")
+async def start_compute_diff_search(
+    fg_id: str,
+    request: ComputeDiffSearchRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+):
+    job_id = await db.add_job(
+        {
+            "type": "compute_diff_search",
+            "fg_id": fg_id,
+            "experiment_id_1": request.experiment_id_1,
+            "experiment_id_2": request.experiment_id_2,
+            "search_query": request.search_query,
+        }
+    )
+    return job_id
+
+
+@authenticated_router.get("/{fg_id}/listen_compute_diff_search")
+async def listen_compute_diff_search(
+    fg_id: str,
+    job_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_fg_permission(Permission.WRITE)),
+):
+    # Retrieve job arguments
+    job = await db.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job {job_id} not found")
+    experiment_id_1, experiment_id_2, search_query = (
+        job["experiment_id_1"],
+        job["experiment_id_2"],
+        job["search_query"],
+    )
+
+    datapoints = await db.get_agent_runs(ctx)
+    expid_by_datapoint = {d.id: d.metadata.get("experiment_id") for d in datapoints}
+    async with db.session() as session:
+        result = await session.execute(
+            select(SQLADiffAttribute)
+            .where(
+                SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+            )
+            .order_by(SQLADiffAttribute.id)
+        )
+        existing_diffs = result.scalars().all()
+        num_total = sum(
+            1
+            for d in existing_diffs
+            if expid_by_datapoint.get(d.data_id_1) == experiment_id_1
+            and expid_by_datapoint.get(d.data_id_2) == experiment_id_2
+        )
+
+    # Create AnyIO queue that we can write intermediate results to
+    send_stream, recv_stream = anyio.create_memory_object_stream[StreamedDiffSearchResult](
+        max_buffer_size=100_000
+    )
+
+    # Track intermediate progress
+    progress_lock = anyio.Lock()
+    num_done = 0
+
+    async def _diff_search_callback(search_result: tuple[str, int]) -> None:
+        nonlocal num_done
+
+        async with progress_lock:
+            num_done += 1
+            payload = StreamedDiffSearchResult(
+                claim=search_result[0],
+                alignment=search_result[1],
+                query=search_query,
+                num_results_done=num_done,
+                num_results_total=num_total,
+            )
+
+        # Send to event_stream so it can be sent back to the client
+        await send_stream.send(payload)
+
+        if num_done == num_total:
+            # Terminate the stream so the event_stream stops waiting
+            await asyncio.sleep(1)
+            await send_stream.aclose()
+
+    async def _execute():
+        nonlocal num_total
+        async with db.advisory_lock(fg_id, action_id="mutation"):
+            # Send initial 0% state message
+            init_data = StreamedDiffSearchResult(
+                claim=None,
+                alignment=0,
+                query=search_query,
+                num_results_done=0,
+                num_results_total=num_total,
+            )
+            await send_stream.send(init_data)
+
+            # Get all diff search results
+            await db.compute_diff_search(
+                ctx,
+                experiment_id_1,
+                experiment_id_2,
+                search_query,
+                _diff_search_callback,
+            )
+
+    return StreamingResponse(
+        sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
+    )
