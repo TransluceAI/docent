@@ -1,6 +1,5 @@
 import {
   AttributeFeedback,
-  EvidenceWithCitation,
   StreamedSearchResult,
 } from '../types/experimentViewerTypes';
 import {

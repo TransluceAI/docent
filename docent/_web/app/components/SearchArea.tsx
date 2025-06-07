@@ -44,7 +44,6 @@ import { RootState } from '../store/store';
 import BinEditor from './BinEditor';
 import { ProgressBar } from './ProgressBar';
 import { requestDiffs, requestDiffClusters } from '../store/diffSlice';
-import DebugReduxState from '../debug/DebugReduxState';
 
 interface SearchAreaProps {
   onShowAgentRun?: (agentRunId: string, blockId?: number) => void;

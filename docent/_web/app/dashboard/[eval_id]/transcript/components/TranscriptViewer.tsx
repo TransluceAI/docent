@@ -14,7 +14,6 @@ import {
   AgentRun,
   ToolCall,
 } from '@/app/types/transcriptTypes';
-import { EvidenceWithCitation, Citation } from '@/app/types/experimentViewerTypes';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 

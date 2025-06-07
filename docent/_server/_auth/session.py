@@ -7,7 +7,24 @@ This module contains functions for creating, managing, and validating user sessi
 from fastapi import Response
 
 from docent._db_service.service import DBService
+from docent._env_util import ENV
 
+ENVIRONMENT = ENV.get("ENVIRONMENT")
+
+if ENVIRONMENT == "local":
+    cookie_secure = False
+    cookie_domain = None
+    cookie_samesite = "lax"
+elif ENVIRONMENT == "dev":
+    cookie_secure = True
+    cookie_domain = "dev.transluce.org"
+    cookie_samesite = "none"
+elif ENVIRONMENT == "prod":
+    cookie_secure = True
+    cookie_domain = "transluce.org"
+    cookie_samesite = "none"
+else:
+    raise ValueError(f"Invalid environment: {ENVIRONMENT}")
 
 async def create_user_session(user_id: str, response: Response) -> str:
     """
@@ -35,8 +52,9 @@ async def create_user_session(user_id: str, response: Response) -> str:
         value=session_id,
         max_age=30 * 24 * 60 * 60,  # 30 days in seconds
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
+        secure=cookie_secure,
+        samesite=cookie_samesite,
+        domain=cookie_domain,
     )
 
     return session_id
@@ -60,6 +78,7 @@ async def invalidate_user_session(session_id: str, response: Response) -> None:
     response.delete_cookie(
         key="docent_session_id",
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
+        secure=cookie_secure,
+        samesite=cookie_samesite,
+        domain=cookie_domain,
     )
