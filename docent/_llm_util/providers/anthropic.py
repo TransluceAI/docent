@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from typing import Any, Literal, cast
 
 import backoff
@@ -167,7 +168,7 @@ async def get_anthropic_chat_completion_streaming_async(
     input_tools = _parse_tools(tools) if tools else NOT_GIVEN
 
     try:
-        async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+        async with asyncio.timeout(timeout) if timeout else contextlib.nullcontext():
             stream = await client.messages.create(
                 model=model_name,
                 messages=input_messages,
@@ -305,7 +306,7 @@ async def get_anthropic_chat_completion_async(
     input_tools = _parse_tools(tools) if tools else NOT_GIVEN
 
     try:
-        async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+        async with asyncio.timeout(timeout) if timeout else contextlib.nullcontext():
             raw_output = await client.messages.create(
                 model=model_name,
                 messages=input_messages,
@@ -372,6 +373,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
 
     text = None
     tool_calls: list[ToolCall] = []
+    reasoning_tokens = None
     for block in message.content:
         if block.type == "text":
             if text is not None:
@@ -389,7 +391,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
                 )
             )
         elif block.type == "thinking":
-            logger.warning("Anthropic returned thinking block; we should support this soon.")
+            reasoning_tokens = block.thinking
         else:
             raise ValueError(f"Unknown block type: {block.type}")
 
@@ -399,7 +401,8 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
             LLMCompletion(
                 text=text,
                 tool_calls=tool_calls,
-                finish_reason=finish_reason,
+                reasoning_tokens=reasoning_tokens,
+                finish_reason=finish_reason,  # type: ignore
             )
         ],
     )

@@ -37,6 +37,7 @@ class LLMCompletion(BaseModel):
     tool_calls: list[ToolCall] | None = None
     finish_reason: FinishReasonType | None = None
     top_logprobs: list[list[TopLogprob]] | None = None
+    reasoning_tokens: str | None = None
 
     @property
     def no_text(self) -> bool:
@@ -171,13 +172,13 @@ def finalize_llm_output_partial(partial: LLMOutputPartial) -> LLMOutput:
         if tc_partial.function is None:
             raise ValueError("Tool call function not found in partial; check for parsing errors")
 
+        arguments: dict[str, Any] = {}
         # Attempt to load arguments into JSON
         try:
-            arguments: dict[str, Any] = json.loads(tc_partial.arguments_raw or "{}")
+            arguments = json.loads(tc_partial.arguments_raw or "{}")
             parse_error = None
         # If the tool call arguments are not valid JSON, return an empty dict with the error
         except Exception as e:
-            arguments: dict[str, Any] = {}
             parse_error = f"Couldn't parse tool call arguments as JSON: {e}. Original input: {tc_partial.arguments_raw}"
 
         return ToolCall(
@@ -195,6 +196,7 @@ def finalize_llm_output_partial(partial: LLMOutputPartial) -> LLMOutput:
                 text=c.text,
                 tool_calls=[_parse_tool_call(tc) for tc in (c.tool_calls or []) if tc is not None],
                 finish_reason=c.finish_reason,
+                reasoning_tokens=c.reasoning_tokens,
             )
             for c in partial.completions
         ],
