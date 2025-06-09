@@ -46,7 +46,7 @@ image = (
 @app.function(
     image=image,
     region="us-east-1",
-    cpu=8,
+    cpu=16,
     min_containers=0,
     max_containers=10,
 )
