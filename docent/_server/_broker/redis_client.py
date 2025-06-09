@@ -2,8 +2,10 @@ import json
 from typing import Any
 
 import redis.asyncio as redis
+from arq import ArqRedis
 from fastapi.encoders import jsonable_encoder
 
+from docent._db_service.contexts import ViewContext
 from docent._env_util import ENV
 
 
@@ -22,7 +24,7 @@ def _get_redis_client():
         else ""
     )
     url = f"redis://{REDIS_USER_STRING}{REDIS_HOST}:{REDIS_PORT}"
-    return redis.from_url(url, decode_responses=True)  # type: ignore
+    return ArqRedis(connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True))  # type: ignore
 
 
 REDIS = _get_redis_client()
@@ -73,10 +75,10 @@ async def publish_view_update(fg_id: str, view_id: str, payload: dict[str, Any])
     await REDIS.publish(channel, json.dumps(jsonable_encoder(payload)))  # type: ignore
 
 
-async def _enqueue_job(queue_name, func_name, *args, **kwargs):
+async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: Any):
     j = await REDIS.enqueue_job(func_name, *args, _queue_name=queue_name, **kwargs)
     print("enqueued", queue_name, func_name, args, kwargs, j)
 
 
-async def enqueue_search_job(view_ctx, job_id):
+async def enqueue_search_job(view_ctx: ViewContext, job_id: str):
     await _enqueue_job("compute_search_queue", "compute_search", view_ctx, job_id)

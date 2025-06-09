@@ -794,13 +794,13 @@ async def listen_compute_search(
     )
 
 
-@authenticated_router.post("/{job_id}/cancel_compute_search")
+@user_router.post("/{job_id}/cancel_compute_search")
 async def cancel_compute_search(job_id: str):
     q = f"commands_{job_id}"
     await REDIS.rpush(q, "cancel")
 
 
-@authenticated_router.post("/{query_id}/resume_compute_search")
+@user_router.post("/{query_id}/resume_compute_search")
 async def resume_compute_search(
     query_id: str,
     db: DBService = Depends(get_db),
@@ -813,7 +813,7 @@ async def resume_compute_search(
     return job_id
 
 
-@authenticated_router.get("/search_jobs")
+@user_router.get("/search_jobs")
 async def search_jobs(
     db: DBService = Depends(get_db),
 ):
