@@ -10,6 +10,7 @@ from pydantic_core import to_jsonable_python
 
 from docent._ai_tools.search import SearchResult
 from docent._db_service.contexts import ViewContext
+
 from docent._db_service.schemas.tables import JobStatus
 from docent._db_service.service import DBService
 from docent._env_util import ENV
@@ -28,7 +29,11 @@ async def compute_search(ctx: dict, view_ctx: ViewContext, job_id: str):
     print("compute search:", view_ctx, job_id)
 
     db = await DBService.init()
-    job, query = await db.get_search_job_and_query(job_id)
+    result = await db.get_search_job_and_query(job_id)
+    if result is None:
+        print(f"Search job {job_id} not found")
+        return
+    _job, query = result
 
     await db.set_job_status(job_id, JobStatus.RUNNING)
 

@@ -323,7 +323,7 @@ class SQLAJudgment(SQLABase):
             "search_query",
             "search_result_idx",
             name="uq_judgment_key_combination",
-            postgresql_nulls_not_distinct=True,
+            # postgresql_nulls_not_distinct=True,
         ),
     )
 
