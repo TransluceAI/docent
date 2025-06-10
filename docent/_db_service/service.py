@@ -33,13 +33,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from docent._ai_tools.diffs.models import Claim
 from docent._ai_tools.clustering.cluster_diffs import cluster_diff_claims, search_over_diffs
 from docent._ai_tools.clustering.cluster_generator import propose_clusters
-from docent._ai_tools.diff import extract_states_and_diffs
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
-from docent._ai_tools.diffs.models import TranscriptDiff, SQLADiffsReport
-
+from docent._ai_tools.diffs.models import Claim, SQLADiffsReport, TranscriptDiff
 from docent._ai_tools.search import SearchResult, SearchResultStreamingCallback, execute_search
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import (
@@ -1137,23 +1134,19 @@ class DBService:
 
             result = await session.execute(query)
             return [a.to_search_result() for a in result.scalars().all()]
-    
-    
-    
+
     async def get_diffs_report(self, diffs_report_id: str) -> SQLADiffsReport:
         async with self.session() as session:
             result = await session.execute(
                 select(SQLADiffsReport).where(SQLADiffsReport.id == diffs_report_id)
             )
         return result.scalar_one()
-        
+
     async def compute_diffs(
         self,
         ctx: ViewContext,
         diffs_report_id: str,
-        diff_callback: (
-            Callable[[TranscriptDiff | None], Coroutine[Any, Any, None]] | None
-        ) = None,
+        diff_callback: Callable[[TranscriptDiff | None], Coroutine[Any, Any, None]] | None = None,
         should_include_existing_diffs: bool = False,
         should_persist: bool = True,
     ):
@@ -1165,6 +1158,7 @@ class DBService:
 
         datapoints = await self.get_agent_runs(ctx)
         from docent._ai_tools.diffs.models import SQLADiffsReport
+
         dbs = self.Session()
         result = await dbs.execute(
             select(SQLADiffsReport).where(SQLADiffsReport.id == diffs_report_id)
@@ -1189,10 +1183,11 @@ class DBService:
 
         existing_diff_pairs = {}
         from docent._ai_tools.diffs.models import SQLATranscriptDiff
+
         if should_include_existing_diffs:
             # Get existing diff results from database
             async with self.session() as session:
-                 
+
                 result = await session.execute(
                     select(SQLATranscriptDiff).where(
                         SQLATranscriptDiff.frame_grid_id == ctx.fg_id,
@@ -1206,11 +1201,10 @@ class DBService:
                 for diff in existing_diffs:
                     print(diff)
                     await diff_callback(diff.to_pydantic())
-                   
 
         tasks: list[Coroutine[Any, Any, TranscriptDiff]] = []
         pairs_to_compute: list[tuple[str, str]] = []
-        
+
         for datapoint_lists in datapoints_by_sample_task_epoch.values():
             first_pair_candidates = [
                 dp for dp in datapoint_lists if dp.metadata.get("experiment_id") == experiment_id_1
@@ -1225,9 +1219,7 @@ class DBService:
 
                 # Check if we already have results for this pair
                 if (first_dp.id, second_dp.id) not in existing_diff_pairs:
-                    tasks.append(
-                        compute_transcript_diff(first_dp, second_dp, diffs_report_id)
-                    )
+                    tasks.append(compute_transcript_diff(first_dp, second_dp, diffs_report_id))
                     pairs_to_compute.append((first_dp.id, second_dp.id))
 
         logger.info(f"Computing diffs for {len(tasks)} new pairs")
@@ -1236,8 +1228,9 @@ class DBService:
         results = await asyncio.gather(*tasks)
 
         # Store results in database if should_persist is True
-        
+
         from docent._ai_tools.diffs.models import SQLATranscriptDiff
+
         transcript_diffs_models: list[SQLATranscriptDiff] = []
         for transcript_diff in results:
             transcript_diffs_models.append(SQLATranscriptDiff.from_pydantic(transcript_diff, ctx))
@@ -1251,7 +1244,9 @@ class DBService:
             dbs.add_all(transcript_diffs_models)
             dbs.add(diffs_report)
             await dbs.commit()
-            logger.info(f"Pushed {len(transcript_diffs_models)} diff attributes and updated Report{diffs_report.id}")
+            logger.info(
+                f"Pushed {len(transcript_diffs_models)} diff attributes and updated Report{diffs_report.id}"
+            )
         return transcript_diffs_models
 
     async def compute_search(
@@ -1585,9 +1580,9 @@ class DBService:
         #     and expid_by_datapoint.get(d.data_id_2) == experiment_id_2
         # ]
         # print(f"have {len(valid_existing_diffs)} valid existing diffs")
-        print('-------------------------------- Claims --------------------------------')
+        print("-------------------------------- Claims --------------------------------")
         print(claims)
-        from docent._ai_tools.diffs.models import DiffTheme
+
         clusters = await cluster_diff_claims(claims)
         return clusters
 

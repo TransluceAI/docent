@@ -9,7 +9,7 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, or_, and_
+from sqlalchemy import and_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._ai_tools.search import SearchResult, SearchResultWithCitations
@@ -53,7 +53,6 @@ from docent.data_models.citation import (
 )
 from docent.data_models.filters import ComplexFilter, FrameDimension, FrameFilter, parse_filter_dict
 from docent.data_models.regex import RegexSnippet, get_regex_snippets
-from docent.data_models.shared_types import EvidenceWithCitation
 
 logger = get_logger(__name__)
 
@@ -1175,6 +1174,7 @@ class StreamedDiffs(TypedDict):
     num_pairs_total: int
     transcript_diff: dict[str, Any] | None  # a TranscriptDiff as json
 
+
 class StreamedDiffSearchResult(TypedDict):
     claim: str | None
     alignment: int
@@ -1195,7 +1195,6 @@ async def get_diffs_report(
     return report.to_pydantic().model_dump()
 
 
-
 @user_router.post("/{fg_id}/start_compute_diffs")
 async def start_compute_diffs(
     fg_id: str,
@@ -1211,7 +1210,7 @@ async def start_compute_diffs(
             select(SQLADiffsReport).where(
                 SQLADiffsReport.experiment_id_1 == request.experiment_id_1,
                 SQLADiffsReport.experiment_id_2 == request.experiment_id_2,
-                SQLADiffsReport.frame_grid_id == fg_id
+                SQLADiffsReport.frame_grid_id == fg_id,
             )
         )
     ).scalar_one_or_none()
@@ -1239,7 +1238,7 @@ async def start_compute_diffs(
             "diffs_report_id": report.id,
         }
     )
-    print("New Diff Report",report.id)
+    print("New Diff Report", report.id)
     return {
         "job_id": job_id,
         "diffs_report_id": report.id,
@@ -1254,7 +1253,9 @@ async def listen_compute_diffs(
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
     from sqlalchemy import select
+
     from docent._ai_tools.diffs.models import SQLADiffsReport
+
     # Retrieve job arguments
     job = await db.get_job(job_id)
     if job is None:
@@ -1340,10 +1341,8 @@ async def listen_compute_diffs(
             await send_stream.send(init_data)
 
             # Compute diffs
-            print('COMPUTING DIFFS', experiment_id_1, experiment_id_2)
-            await db.compute_diffs(
-                ctx, diffs_report.id, _ws_diff_streaming_callback
-            )
+            print("COMPUTING DIFFS", experiment_id_1, experiment_id_2)
+            await db.compute_diffs(ctx, diffs_report.id, _ws_diff_streaming_callback)
 
             # Final refresh of state
             await publish_homepage_state(db, ctx)
@@ -1370,7 +1369,7 @@ async def compute_diff_clusters(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
-    print('hello world')
+    print("hello world")
     diffs_report = await db.get_diffs_report(request.diffs_report_id)
     claims = [c.to_pydantic() for diff in diffs_report.diffs for c in diff.claims]
     clusters = await db.compute_diff_clusters(
@@ -1507,7 +1506,8 @@ async def get_transcript_diff(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     """Get a transcript diff between two agent runs."""
-    from sqlalchemy import select, or_
+    from sqlalchemy import or_, select
+
     from docent._ai_tools.diffs.models import SQLATranscriptDiff
 
     # Query for transcript diff in either direction
@@ -1526,8 +1526,8 @@ async def get_transcript_diff(
         )
     )
     transcript_diff = result.scalar_one_or_none()
-    
+
     if not transcript_diff:
         return None
-        
+
     return transcript_diff.to_pydantic().model_dump()
