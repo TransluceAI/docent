@@ -1,11 +1,10 @@
-import re
-
-from docent._ai_tools.diffs.models import MessageState
-from docent._llm_util.data_models.llm_output import LLMOutput
-from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
+from docent._llm_util.data_models.llm_output import LLMOutput
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._ai_tools.diffs.models import MessageState
+import re
 
 
 async def get_llm_output_for_transcript_to_message_summaries(
@@ -78,7 +77,9 @@ Relevant past actions: [summary of past actions that are relevant to the current
 
 
 def llm_output_to_message_summaries(text: str) -> list[MessageState]:
-    blocks = [block.strip() for block in re.split(r"(?=\n\[B\d+\]\n)", text) if block.strip()]
+    blocks = [
+        block.strip() for block in re.split(r"(?=\n\[B\d+\]\n)", text) if block.strip()
+    ]
     return [_parse_message_summary(block) for block in blocks]
 
 
@@ -107,3 +108,4 @@ def _parse_message_summary(block: str) -> MessageState:
 async def compute_transcript_summaries(agent_run: AgentRun) -> list[MessageState]:
     output = await get_llm_output_for_transcript_to_message_summaries(agent_run)
     return llm_output_to_message_summaries(output)
+
