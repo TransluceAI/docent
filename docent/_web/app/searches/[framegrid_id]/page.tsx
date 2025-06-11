@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
-import { BASE_DOCENT_PATH } from '@/app/constants';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -18,7 +16,7 @@ import {
 
 import { UserProfile } from '../../components/auth/UserProfile';
 import { apiRestClient } from '../../services/apiService';
-import { initSession, setHasInitSearchQuery } from '../../store/frameSlice';
+import { initSession } from '../../store/frameSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 
 export default function JobsPage() {
@@ -89,7 +87,7 @@ export default function JobsPage() {
             const completionPercentage = total > 0 ? Math.min((done / total) * 100, 100) : 0;
             const isComplete = false;
             return (
-              <TableRow>
+              <TableRow key={search.job.id}>
                 <TableCell>{search.job.created_at}</TableCell>
                 <TableCell>{search.job.status}</TableCell>
                 <TableCell>
