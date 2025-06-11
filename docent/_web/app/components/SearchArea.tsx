@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useRouter } from 'next/navigation';
 
 import type { MetadataType, PrimitiveFilter } from '@/app/types/frameTypes';
 import { Button } from '@/components/ui/button';
@@ -43,11 +44,8 @@ import { RootState } from '../store/store';
 
 import BinEditor from './BinEditor';
 import { ProgressBar } from './ProgressBar';
-import { requestDiffs, requestDiffClusters } from '../store/diffSlice';
-
-interface SearchAreaProps {
-  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
-}
+import { requestDiffs } from '../store/diffSlice';
+import DebugReduxState from '../debug/DebugReduxState';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -75,8 +73,9 @@ const PRESET_QUERIES = [
 const DEFAULT_PLACEHOLDER_TEXT =
   "Describe what you're looking for in detail, or try a sample preset above";
 
-const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
+const SearchArea = () => {
   const dispatch = useAppDispatch();
+  const router = useRouter();
 
   const {
     frameGridId,
@@ -283,7 +282,7 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
     setPlaceholderText(DEFAULT_PLACEHOLDER_TEXT);
   };
 
-  const handleRequestDiffs = () => {
+  const handleRequestDiffs = async () => {
     if (!experimentId1 || !experimentId2) {
       toast({
         title: 'Missing experiment IDs',
@@ -294,16 +293,21 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
     }
 
     setLoadingDiffs(true);
-    dispatch(
+    const { payload: diffsReportId } = await dispatch(
       requestDiffs({
         experimentId1,
         experimentId2,
       })
-    ).then(() => {
-      setLoadingDiffs(false);
-      // Set the diffs attribute to enable clustering
-      setDiffsAttribute('diffs');
-    });
+    );
+    console.log('diffsReportId', diffsReportId);
+
+    setLoadingDiffs(false);
+    // Set the diffs attribute to enable clustering
+    setDiffsAttribute('diffs');
+    // Navigate to the diff reports page
+    router.push(
+      `/dashboard/${frameGridId}/diffs_reports?diffsReportId=${diffsReportId}`
+    );
   };
 
   const handleCancelDiffs = () => {
@@ -311,10 +315,6 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
     setDiffsAttribute(null);
   };
 
-  const handleClusterDiffs = () => {
-    if (!diffsAttribute) return;
-    dispatch(requestDiffClusters({ experimentId1, experimentId2 }));
-  };
   /**
    * Handle share button
    */
@@ -339,6 +339,8 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
 
   return (
     <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
+      <DebugReduxState sliceName="search" />
+      <DebugReduxState sliceName="diff" />
       <div className="space-y-4">
         <div className="space-y-2">
           <div>
@@ -617,14 +619,6 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
                     >
                       Clear
                     </Button>
-                    <Button
-                      size="sm"
-                      className="text-xs"
-                      onClick={handleClusterDiffs}
-                    >
-                      <Sparkles className="h-3 w-3 mr-2" />
-                      Cluster Results
-                    </Button>
                   </div>
                 </div>
                 {diffLoadingProgress &&
@@ -765,7 +759,6 @@ const SearchArea: React.FC<SearchAreaProps> = ({ onShowAgentRun }) => {
                         marginalJudgments={
                           marginals?.[activeDim.id]?.[bin.id] || undefined
                         }
-                        onShowAgentRun={onShowAgentRun || (() => {})}
                       />
                     ))}
                   </div>

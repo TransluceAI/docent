@@ -11,11 +11,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
 
 import { login } from '../services/authService';
-import { useUser } from '../contexts/UserContext';
+import { useUserContext } from '../contexts/UserContext';
 
 function LoginPageContent() {
   const router = useRouter();
-  const { setUser } = useUser();
+  const { setUser } = useUserContext();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get('email') || '';
 
@@ -142,13 +142,7 @@ function LoginPageContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div>Loading...</div>
-        </div>
-      }
-    >
+    <Suspense>
       <LoginPageContent />
     </Suspense>
   );

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getUser } from './lib/dal';
+import { getUser } from './services/dal';
 
 /**
  * Root Landing Page - Server Component

@@ -33,7 +33,6 @@ export interface FrameState {
   agentRunMetadata?: Record<string, Record<string, BaseAgentRunMetadata>>;
   // Global variables
   frameGridId?: string;
-  evalId?: string;
   innerDimId?: string;
   outerDimId?: string;
   marginals?: Marginals;
@@ -79,7 +78,7 @@ export const initSession = createAsyncThunk(
 
       // Set various IDs
       dispatch(setFrameGridId(frameGridId));
-      dispatch(setEvalId(frameGridId));
+      dispatch(setFrameGridId(frameGridId));
 
       dispatch(getAgentRunMetadataFields());
       // Start a broker socket to listen for state updates with dual-channel support
@@ -90,7 +89,7 @@ export const initSession = createAsyncThunk(
       // Cleanup on error
       socketService.closeSocket();
       dispatch(setFrameGridId(undefined));
-      dispatch(setEvalId(undefined));
+      dispatch(setFrameGridId(undefined));
       dispatch(
         setToastNotification({
           title: 'Error connecting to server',
@@ -521,9 +520,6 @@ export const frameSlice = createSlice({
     setFrameGridId: (state, action: PayloadAction<string | undefined>) => {
       state.frameGridId = action.payload;
     },
-    setEvalId: (state, action: PayloadAction<string | undefined>) => {
-      state.evalId = action.payload;
-    },
     setInnerDimId: (state, action: PayloadAction<string | undefined>) => {
       state.innerDimId = action.payload;
     },
@@ -550,7 +546,6 @@ export const {
   setAgentRunMetadataFields,
   updateAgentRunMetadata,
   setFrameGridId,
-  setEvalId,
   setInnerDimId,
   setOuterDimId,
   setFrameGrids,

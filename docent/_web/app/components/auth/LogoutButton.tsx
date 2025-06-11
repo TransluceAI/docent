@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 
 import { logout } from '../../services/authService';
-import { useUser } from '../../contexts/UserContext';
+import { useUserContext } from '../../contexts/UserContext';
 
 interface LogoutButtonProps {
   variant?:
@@ -23,7 +23,7 @@ export const LogoutButton = ({
   size = 'default',
   className,
 }: LogoutButtonProps) => {
-  const { setUser } = useUser();
+  const { setUser } = useUserContext();
 
   const handleLogout = async () => {
     try {

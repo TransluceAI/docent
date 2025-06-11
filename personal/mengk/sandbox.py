@@ -23,27 +23,18 @@ await db.get_users()
 
 # %%
 
-await db.get_fgs()
+fgs = await db.get_fgs()
+fgs
 
 
 # %%
 
 from docent._db_service.schemas.auth_models import Permission, ResourceType, SubjectType
 
-fg_id = "4ffb1948-4720-4f99-8f4d-bb102009bdb7"
-# await db.set_acl_permission(
-#     SubjectType.PUBLIC, "*", ResourceType.FRAME_GRID, fg_id, Permission.READ
-# )
+fg_id = fgs[1].id
 await db.set_acl_permission(
-    SubjectType.USER,
-    "315f2b6a-14f4-40aa-9223-83bc0e4d6377",
-    ResourceType.FRAME_GRID,
-    fg_id,
-    Permission.READ,
+    SubjectType.PUBLIC, "*", ResourceType.FRAME_GRID, fg_id, Permission.READ
 )
-
-# %%
-
 views = await db.get_all_view_ctxs(fg_id)
 for view in views:
     await db.set_acl_permission(

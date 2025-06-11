@@ -12,18 +12,19 @@ import {
 } from '@/components/ui/tooltip';
 
 import { deleteFilter, editFilter } from '../store/frameSlice';
-import { useAppDispatch } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { RootState } from '../store/store';
 import {
   SearchResultPredicateFilter,
   Judgment,
   FrameFilter,
 } from '../types/frameTypes';
+import { useRouter } from 'next/navigation';
+import { navToAgentRun } from '@/lib/nav';
 
 interface BinEditorProps {
   bin: FrameFilter;
   marginalJudgments?: Judgment[];
-  onShowAgentRun: (agentRunId: string, blockId?: number) => void;
   loading?: boolean;
 }
 
@@ -40,11 +41,20 @@ function countTotalAttributes(judgments: Judgment[]): number {
 const JudgmentList: React.FC<{
   binId: string;
   judgments: Judgment[];
-  onShowAgentRun: (agentRunId: string, blockId?: number) => void;
-}> = ({ binId, judgments, onShowAgentRun }) => {
+}> = ({ binId, judgments }) => {
   const attributeMap = useSelector(
     (state: RootState) => state.search.searchResultMap
   );
+  const fgId = useAppSelector((state) => state.frame.frameGridId);
+  const router = useRouter();
+
+  const onShowAgentRun = (
+    e: React.MouseEvent,
+    agentRunId: string,
+    blockId?: number
+  ) => {
+    navToAgentRun(e, router, window, agentRunId, blockId, fgId);
+  };
 
   const renderAttributeValue = (value: string, dataId: string) => {
     const blockPattern = /B(\d+)/g;
@@ -69,12 +79,7 @@ const JudgmentList: React.FC<{
       parts.push(
         <button
           key={`block-ref-${partIndex}`}
-          onClick={(e) => {
-            e.stopPropagation(); // Prevent triggering the parent div's onClick
-            if (onShowAgentRun) {
-              onShowAgentRun(dataId, blockIndex);
-            }
-          }}
+          onClick={(e) => onShowAgentRun(e, dataId, blockIndex)}
           className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
         >
           {match[0]}
@@ -119,14 +124,14 @@ const JudgmentList: React.FC<{
             <div
               key={i}
               className={`group bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200`}
-              onClick={() => {
-                onShowAgentRun(judgment.agent_run_id);
+              onClick={(e) => {
+                onShowAgentRun(e, judgment.agent_run_id);
                 // If there's a block citation in the attribute value, scroll to the first one
                 if (attributeValue) {
                   const match = attributeValue.match(/B(\d+)/);
                   if (match && onShowAgentRun) {
                     const blockIndex = parseInt(match[1], 10);
-                    onShowAgentRun(judgment.agent_run_id, blockIndex);
+                    onShowAgentRun(e, judgment.agent_run_id, blockIndex);
                   }
                 }
               }}
@@ -157,7 +162,6 @@ const JudgmentList: React.FC<{
 export default function BinEditor({
   bin,
   marginalJudgments,
-  onShowAgentRun,
   loading,
 }: BinEditorProps) {
   const dispatch = useAppDispatch();
@@ -294,11 +298,7 @@ export default function BinEditor({
       </div>
       {isExpanded && marginalJudgments && (
         <div className="pl-4">
-          <JudgmentList
-            binId={bin.id}
-            judgments={marginalJudgments}
-            onShowAgentRun={onShowAgentRun}
-          />
+          <JudgmentList binId={bin.id} judgments={marginalJudgments} />
         </div>
       )}
     </div>

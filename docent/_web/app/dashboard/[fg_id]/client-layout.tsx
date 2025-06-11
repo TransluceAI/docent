@@ -9,33 +9,31 @@ import { initSession, setHasInitSearchQuery } from '../../store/frameSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { computeSearch } from '@/app/store/searchSlice';
 
-export default function DocentLayout({
+export default function DocentDashboardClientLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const dispatch = useAppDispatch();
   const params = useParams();
-  const evalId = params.eval_id as string;
+  const fgId = params.fg_id as string;
 
   // Fetch state from the server
   const fetchRef = React.useRef(false); // Prevent double fetch
   useEffect(() => {
-    if (!evalId || fetchRef.current) {
+    if (!fgId || fetchRef.current) {
       return;
     }
     fetchRef.current = true;
-    console.log(`Starting eval with ID from URL: ${evalId}`);
-    dispatch(initSession(evalId));
-  }, [evalId, dispatch]);
+    console.log(`Starting eval with ID from URL: ${fgId}`);
+    dispatch(initSession(fgId));
+  }, [fgId, dispatch]);
 
   /**
    * Handle shared persisted search
    */
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
   const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
 
   const [initSearchQuery, setInitSearchQuery] = useState<string | undefined>(
@@ -74,7 +72,7 @@ export default function DocentLayout({
   useEffect(() => {
     if (
       !alreadyRequestedInitSearch.current &&
-      frameGridId &&
+      fgId &&
       initSearchQuery &&
       dimensionsMap
     ) {
@@ -85,7 +83,7 @@ export default function DocentLayout({
       );
       alreadyRequestedInitSearch.current = true;
     }
-  }, [initSearchQuery, dispatch, frameGridId, dimensionsMap]);
+  }, [initSearchQuery, dispatch, fgId, dimensionsMap]);
 
   return (
     <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-0">

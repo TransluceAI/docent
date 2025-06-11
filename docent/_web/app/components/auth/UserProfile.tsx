@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { UserRoundIcon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,15 +11,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 import { logout } from '../../services/authService';
-import { useRequireAuth, useUser } from '../../contexts/UserContext';
+import {
+  useRequireUserContext,
+  useUserContext,
+} from '../../contexts/UserContext';
 import { toast } from '@/hooks/use-toast';
 
 export const UserProfile = () => {
   // User is guaranteed to be present since this component is only used in authenticated areas
-  const { user } = useRequireAuth();
+  const { user } = useRequireUserContext();
 
   // Use base useUser for logout to access setUser that accepts null
-  const { setUser } = useUser();
+  const { setUser } = useUserContext();
 
   const handleLogout = async () => {
     try {
@@ -44,14 +47,15 @@ export const UserProfile = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          className="relative h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 border-gray-300"
-        >
-          <span className="text-xs font-medium text-gray-700">
-            {getInitials(user.email)}
-          </span>
-        </Button>
+        <div className="bg-gray-100 hover:bg-gray-200 border-gray-300 h-7 w-7 border rounded-full flex items-center justify-center cursor-pointer ">
+          {user.is_anonymous ? (
+            <UserRoundIcon className="text-black h-4 w-4" />
+          ) : (
+            <span className="text-xs font-medium text-gray-700">
+              {getInitials(user.email)}
+            </span>
+          )}
+        </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">

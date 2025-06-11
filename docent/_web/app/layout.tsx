@@ -8,7 +8,7 @@ import { Toaster } from '@/components/ui/toaster';
 import ReduxToastHandler from '@/components/ReduxToastHandler';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserProvider } from './contexts/UserContext';
-import { getUser } from './lib/dal';
+import { getUser } from './services/dal';
 
 import './globals.css';
 

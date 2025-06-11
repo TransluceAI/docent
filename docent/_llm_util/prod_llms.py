@@ -12,6 +12,7 @@ from functools import partial
 from typing import Any, AsyncContextManager, Literal, Sequence, cast
 
 import anyio
+from tqdm.auto import tqdm
 
 from docent._llm_util.data_models.exceptions import RateLimitException
 from docent._llm_util.data_models.llm_output import (
@@ -99,9 +100,14 @@ async def _parallelize_calls(
     )
 
     responses: list[LLMOutput | None] = [None for _ in messages_list]
+    pbar = (
+        tqdm(total=len(messages_list), desc=f"Calling {model_name} API")
+        if len(messages_list) > 1
+        else None
+    )
 
     async def _limited_task(i: int, messages: list[ChatMessage]):
-        nonlocal responses
+        nonlocal responses, pbar
 
         if fill_cache is not None:
             responses[i] = LLMOutput(
@@ -146,6 +152,8 @@ async def _parallelize_calls(
 
             # Set the result in either case
             responses[i] = result
+            if pbar is not None:
+                pbar.update(1)
 
     def _cache_responses():
         nonlocal responses, cache
@@ -203,7 +211,13 @@ class LLMManager:
         model_options: list[ModelOption],
         use_cache: bool = False,
     ):
-        self.cache = LLMCache() if use_cache else None
+        # TODO(mengk): make this more robust, possibly move to a NoSQL database or something
+        try:
+            self.cache = LLMCache() if use_cache else None
+        except RuntimeError as e:
+            logger.error(f"Disabling LLM cache due to initialization error: {e}")
+            self.cache = None
+
         self.model_options = model_options
         self.current_model_option_index = 0
 
@@ -371,7 +385,7 @@ async def get_llm_completions_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     max_concurrency: int = 100,
-    timeout: float = 60.0,
+    timeout: float = 120.0,
     streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
     completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     use_cache: bool = False,

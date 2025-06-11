@@ -1,3 +1,4 @@
+import { TranscriptDiff } from '../store/diffSlice';
 import {
   SearchResultWithCitations,
   FrameDimension,
@@ -71,4 +72,5 @@ export interface StreamedDiffs {
   evidence: EvidenceWithCitation[] | null;
   num_pairs_done: number;
   num_pairs_total: number;
+  transcript_diff: TranscriptDiff;
 }

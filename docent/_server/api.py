@@ -9,7 +9,7 @@ from docent._env_util import ENV
 from docent._log_util import get_logger
 from docent._server._auth.session_middleware import SessionAuthMiddleware
 from docent._server._broker.router import broker_router
-from docent._server._rest.router import authenticated_router, public_router
+from docent._server._rest.router import public_router, user_router
 
 logger = get_logger(__name__)
 
@@ -124,31 +124,16 @@ asgi_app = FastAPI()
 # Add middlewares in order (they are processed in reverse order when handling responses)
 # 1. Request logging middleware first
 asgi_app.add_middleware(RequestLoggingMiddleware)
-
 # 2. Session authentication middleware second (after logging, before CORS)
 asgi_app.add_middleware(SessionAuthMiddleware)
 
 # Configure CORS with environment-based settings
-# Automatically switches between development (regex) and production (exact origins) modes
-try:
-    cors_config = get_cors_configuration()
-    asgi_app.add_middleware(CORSMiddleware, **cors_config)
-    logger.info("✅ CORS middleware configured successfully")
-except Exception as e:
-    logger.error(f"❌ Failed to configure CORS middleware: {e}")
-    # Fallback to safe development configuration
-    asgi_app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0):\d+$",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    logger.warning("⚠️  Using fallback development CORS configuration")
+cors_config = get_cors_configuration()
+asgi_app.add_middleware(CORSMiddleware, **cors_config)
 
 # Include routers with clear separation
 asgi_app.include_router(public_router, prefix="/rest")
-asgi_app.include_router(authenticated_router, prefix="/rest")
+asgi_app.include_router(user_router, prefix="/rest")
 asgi_app.include_router(broker_router, prefix="/broker")
 
 # If running in production, add Sentry middleware

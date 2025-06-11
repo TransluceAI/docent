@@ -10,7 +10,7 @@ export class AuthService {
    */
   static async login(
     email: string
-  ): Promise<{ user_id: string; email: string }> {
+  ): Promise<{ user_id: string; email: string; is_anonymous: boolean }> {
     const response = await apiRestClient.post('/login', { email });
     return response.data;
   }
@@ -20,7 +20,7 @@ export class AuthService {
    */
   static async signup(
     email: string
-  ): Promise<{ user_id: string; email: string }> {
+  ): Promise<{ user_id: string; email: string; is_anonymous: boolean }> {
     const response = await apiRestClient.post('/signup', { email });
     return response.data;
   }
@@ -39,6 +39,7 @@ export class AuthService {
   static async getCurrentUser(): Promise<{
     user_id: string;
     email: string;
+    is_anonymous: boolean;
   } | null> {
     try {
       const response = await apiRestClient.get('/me');
@@ -50,17 +51,7 @@ export class AuthService {
       throw error;
     }
   }
-
-  /**
-   * Check if user has a session cookie (client-side only)
-   * Note: This doesn't validate the session, just checks cookie presence
-   */
-  static hasSessionCookie(): boolean {
-    if (typeof document === 'undefined') return false;
-    return document.cookie.includes('docent_session_id=');
-  }
 }
 
 // Export convenience functions for easier imports
-export const { login, logout, signup, getCurrentUser, hasSessionCookie } =
-  AuthService;
+export const { login, logout, signup, getCurrentUser } = AuthService;

@@ -5,7 +5,7 @@ from docent._db_service.schemas.auth_models import Permission, ResourceType, Use
 from docent._db_service.service import DBService
 from docent._log_util import get_logger
 from docent._server._dependencies.database import get_db
-from docent._server._dependencies.user import get_default_view_ctx, require_authenticated_user
+from docent._server._dependencies.user import get_default_view_ctx, get_user_anonymous_ok
 
 logger = get_logger(__name__)
 
@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 def require_fg_permission(permission: Permission):
     async def _check_permission(
         fg_id: str,
-        user: User = Depends(require_authenticated_user),
+        user: User = Depends(get_user_anonymous_ok),
         db: DBService = Depends(get_db),
     ) -> None:
         allowed = await db.has_permission(
@@ -32,7 +32,7 @@ def require_fg_permission(permission: Permission):
 def require_view_permission(permission: Permission):
     async def _check_permission(
         ctx: ViewContext = Depends(get_default_view_ctx),
-        user: User = Depends(require_authenticated_user),
+        user: User = Depends(get_user_anonymous_ok),
         db: DBService = Depends(get_db),
     ) -> None:
         allowed = await db.has_permission(

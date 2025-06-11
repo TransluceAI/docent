@@ -1,7 +1,9 @@
+'use client';
+
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface DebugReduxStateProps {
   sliceName: keyof RootState;
@@ -14,6 +16,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
 }) => {
   const state = useSelector((state: RootState) => state[sliceName]);
   const [expandedObjects, setExpandedObjects] = useState<Set<string>>(() => {
+    // Default behavior: expand root and first level
     const initialExpanded = new Set<string>();
     initialExpanded.add('root');
     if (typeof state === 'object' && state !== null) {
@@ -23,7 +26,33 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
     }
     return initialExpanded;
   });
+
+  // Load from localStorage after component mounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storageKey = `debug-redux-expanded-${sliceName}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          setExpandedObjects(new Set(JSON.parse(stored)));
+        } catch (e) {
+          console.warn('Failed to parse stored expanded state:', e);
+        }
+      }
+    }
+  }, [sliceName]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Save to localStorage whenever expandedObjects changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storageKey = `debug-redux-expanded-${sliceName}`;
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(Array.from(expandedObjects))
+      );
+    }
+  }, [expandedObjects, sliceName]);
 
   // Helper function to copy value to clipboard
   const copyToClipboard = (value: any, key: string) => {
@@ -142,7 +171,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
                 <>
                   [
                   {value.map((item, i) => (
-                    <span key={i} className="ml-2 block">
+                    <span key={i} className="ml-1 block">
                       {formatValue(
                         item,
                         depth + 1,
@@ -193,7 +222,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
               <>
                 {'{'}
                 {entries.map(([k, v], i) => (
-                  <span key={k} className="ml-2 block">
+                  <span key={k} className="ml-1 block">
                     <span className="text-yellow-600 dark:text-yellow-400">
                       {k}
                     </span>
@@ -230,12 +259,14 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card p-4 shadow-sm bg-yellow-500/10 font-mono',
+        'rounded-lg border bg-card p-2 shadow-sm bg-yellow-500/10 font-mono',
         className
       )}
     >
-      <h3 className="mb-4 text-md font-semibold">Debug: {sliceName}</h3>
-      <div className="space-y-2">{formatValue(state, 0, 1, 'root')}</div>
+      <h3 className="mb-2 font-semibold text-sm">Debug: {sliceName}</h3>
+      <div className="space-y-1 text-xs">
+        {formatValue(state, 0, 1, 'root')}
+      </div>
     </div>
   );
 };

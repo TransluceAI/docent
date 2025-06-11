@@ -32,13 +32,13 @@ import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
 import { fetchFrameGrids, resetFrameSlice } from '../store/frameSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
-import { useRequireAuth } from '../contexts/UserContext';
+import { useRequireUserContext } from '../contexts/UserContext';
 
 export default function DocentDashboard() {
   // User is guaranteed to be present in authenticated pages
-  const { user } = useRequireAuth();
+  const { user } = useRequireUserContext();
 
-  const evalId = useAppSelector((state) => state.frame.evalId);
+  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
   const frameGrids = useAppSelector((state) => state.frame.frameGrids);
   const isLoadingFrameGrids = useAppSelector(
     (state) => state.frame.isLoadingFrameGrids
@@ -64,7 +64,7 @@ export default function DocentDashboard() {
     dispatch(cancelCurrentSearch());
     dispatch(cancelCurrentClusterRequest());
     // TODO(mengk): call thunks to cancel the transcript requests too
-  }, [dispatch, evalId]);
+  }, [dispatch, frameGridId]);
 
   const handleCreateFrameGrid = async () => {
     setIsCreatingGrid(true);
@@ -112,7 +112,7 @@ export default function DocentDashboard() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                className="flex items-center gap-1"
+                className="flex items-center gap-1 h-7"
                 size="sm"
                 onClick={() => setIsNewGridDialogOpen(true)}
               >

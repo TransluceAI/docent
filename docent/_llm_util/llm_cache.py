@@ -15,7 +15,7 @@ class LLMCache:
         if db_path is None:
             llm_cache_path = ENV.get("LLM_CACHE_PATH")
             if llm_cache_path is None:
-                raise Exception("LLM_CACHE_PATH is not set in .env")
+                raise RuntimeError("LLM_CACHE_PATH is not set in .env")
 
             cache_dir = Path(llm_cache_path)
             cache_dir.mkdir(parents=True, exist_ok=True)

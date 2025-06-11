@@ -7,6 +7,7 @@
 export interface User {
   user_id: string;
   email: string;
+  is_anonymous: boolean;
 }
 
 /**

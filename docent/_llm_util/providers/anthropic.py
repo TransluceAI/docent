@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from typing import Any, Literal, cast
 
 import backoff
@@ -167,7 +168,7 @@ async def get_anthropic_chat_completion_streaming_async(
     input_tools = _parse_tools(tools) if tools else NOT_GIVEN
 
     try:
-        async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+        async with asyncio.timeout(timeout) if timeout else contextlib.nullcontext():
             stream = await client.messages.create(
                 model=model_name,
                 messages=input_messages,
@@ -230,10 +231,11 @@ def update_llm_output(
 
     if llm_output_partial is not None:
         cur_text: str | None = llm_output_partial.completions[0].text
+        cur_reasoning_tokens: str | None = llm_output_partial.completions[0].reasoning_tokens
         cur_finish_reason: FinishReasonType | None = llm_output_partial.completions[0].finish_reason
         cur_model = llm_output_partial.model
     else:
-        cur_text, cur_finish_reason, cur_model = None, None, None
+        cur_text, cur_reasoning_tokens, cur_finish_reason, cur_model = None, None, None, None
 
     if isinstance(chunk, RawMessageStartEvent):
         cur_model = chunk.message.model
@@ -241,9 +243,9 @@ def update_llm_output(
         if isinstance(chunk.delta, TextDelta):
             cur_text = (cur_text or "") + chunk.delta.text
         elif isinstance(chunk.delta, ThinkingDelta):
-            logger.warning("Anthropic streamed thinking block; we should support this soon.")
+            cur_reasoning_tokens = (cur_reasoning_tokens or "") + chunk.delta.thinking
         elif isinstance(chunk.delta, SignatureDelta):
-            logger.warning(
+            logger.debug(
                 "Anthropic streamed thinking signature block; we should support this soon."
             )
         else:
@@ -305,7 +307,7 @@ async def get_anthropic_chat_completion_async(
     input_tools = _parse_tools(tools) if tools else NOT_GIVEN
 
     try:
-        async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+        async with asyncio.timeout(timeout) if timeout else contextlib.nullcontext():
             raw_output = await client.messages.create(
                 model=model_name,
                 messages=input_messages,
@@ -372,6 +374,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
 
     text = None
     tool_calls: list[ToolCall] = []
+    reasoning_tokens = None
     for block in message.content:
         if block.type == "text":
             if text is not None:
@@ -389,7 +392,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
                 )
             )
         elif block.type == "thinking":
-            logger.warning("Anthropic returned thinking block; we should support this soon.")
+            reasoning_tokens = block.thinking
         else:
             raise ValueError(f"Unknown block type: {block.type}")
 
@@ -399,7 +402,8 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
             LLMCompletion(
                 text=text,
                 tool_calls=tool_calls,
-                finish_reason=finish_reason,
+                reasoning_tokens=reasoning_tokens,
+                finish_reason=finish_reason,  # type: ignore
             )
         ],
     )

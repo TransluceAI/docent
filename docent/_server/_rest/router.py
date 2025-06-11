@@ -9,12 +9,12 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent._db_service.contexts import ViewContext
-from docent._db_service.schemas.auth_models import Permission, User
+from docent._db_service.schemas.auth_models import Permission, ResourceType, User
 from docent._db_service.schemas.tables import SQLADiffAttribute
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
@@ -37,7 +37,7 @@ from docent._server._auth.session import create_user_session, invalidate_user_se
 from docent._server._broker.redis_client import REDIS, enqueue_search_job, publish_to_broker
 from docent._server._dependencies.database import get_db
 from docent._server._dependencies.permissions import require_fg_permission, require_view_permission
-from docent._server._dependencies.user import get_default_view_ctx, require_authenticated_user
+from docent._server._dependencies.user import get_default_view_ctx, get_user_anonymous_ok
 from docent._server._rest.send_state import (
     publish_dims,
     publish_framegrids,
@@ -49,7 +49,6 @@ from docent._server.util import sse_event_stream
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import (
     Citation,
-    parse_citations_multi_transcript,
     parse_citations_single_transcript,
 )
 from docent.data_models.filters import ComplexFilter, FrameDimension, FrameFilter, parse_filter_dict
@@ -57,13 +56,10 @@ from docent.data_models.regex import RegexSnippet, get_regex_snippets
 
 logger = get_logger(__name__)
 
-# Public router - for endpoints that don't require authentication
-# These endpoints are accessible without login or API key
 public_router = APIRouter()
-
-# Authenticated router - all endpoints require valid authentication
-# Authentication is enforced at the router level via dependencies
-authenticated_router = APIRouter(dependencies=[Depends(require_authenticated_user)])
+# FIXME(mengk): we should move all API endpoints to another router that explicitly requires API key auth
+#   This router creates an anonymous user for each session, which is an anti-pattern for API endpoints.
+user_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
 ####################
 # Public endpoints #
@@ -145,12 +141,33 @@ async def login(request: LoginRequest, response: Response, db: DBService = Depen
     return user
 
 
-############################
-# Authenticated endpopints #
-############################
+@public_router.post("/anonymous_session")
+async def create_anonymous_session(response: Response, db: DBService = Depends(get_db)):
+    """
+    Create anonymous user endpoint. Creates a temporary anonymous user and session.
+
+    Args:
+        response: FastAPI Response object to set cookies
+        db: Database service dependency
+
+    Returns:
+        User object with anonymous properties
+    """
+    # Create and persist anonymous user
+    anonymous_user = await db.create_anonymous_user()
+
+    # Create a session for the anonymous user
+    await create_user_session(anonymous_user.id, response)
+
+    return anonymous_user
 
 
-@authenticated_router.get("/me")
+###########################
+# Authenticated endpoints #
+###########################
+
+
+@user_router.get("/me")
 async def get_current_user(request: Request, db: DBService = Depends(get_db)):
     """
     Get current user endpoint. Retrieves user information from session cookie.
@@ -178,7 +195,7 @@ async def get_current_user(request: Request, db: DBService = Depends(get_db)):
     return user
 
 
-@authenticated_router.post("/logout")
+@user_router.post("/logout")
 async def logout(request: Request, response: Response):
     """
     User logout endpoint. Invalidates the current session.
@@ -204,7 +221,7 @@ async def logout(request: Request, response: Response):
 #############
 
 
-@authenticated_router.get("/framegrids")
+@user_router.get("/framegrids")
 async def get_framegrids(db: DBService = Depends(get_db)):
     sqla_fgs = await db.get_fgs()
     return [
@@ -220,10 +237,10 @@ class CreateFrameGridRequest(BaseModel):
     description: str | None = None
 
 
-@authenticated_router.post("/create")
+@user_router.post("/create")
 async def create_fg(
     request: CreateFrameGridRequest = CreateFrameGridRequest(),
-    user: User = Depends(require_authenticated_user),
+    user: User = Depends(get_user_anonymous_ok),
     db: DBService = Depends(get_db),
 ):
     fg_id = await db.create_fg(
@@ -239,7 +256,7 @@ class UpdateFrameGridRequest(BaseModel):
     description: str | None = None
 
 
-@authenticated_router.put("/{fg_id}/framegrid")
+@user_router.put("/{fg_id}/framegrid")
 async def update_framegrid(
     fg_id: str,
     request: UpdateFrameGridRequest,
@@ -254,7 +271,7 @@ async def update_framegrid(
     return {"fg_id": fg_id}
 
 
-@authenticated_router.delete("/{fg_id}/framegrid")
+@user_router.delete("/{fg_id}/framegrid")
 async def delete_framegrid(
     fg_id: str,
     db: DBService = Depends(get_db),
@@ -279,7 +296,7 @@ async def delete_framegrid(
 ##############
 
 
-@authenticated_router.get("/{fg_id}/agent_run_metadata_fields")
+@user_router.get("/{fg_id}/agent_run_metadata_fields")
 async def agent_run_metadata_fields(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -295,7 +312,7 @@ async def agent_run_metadata_fields(
     return {"fields": fields}
 
 
-@authenticated_router.get("/{fg_id}/agent_run")
+@user_router.get("/{fg_id}/agent_run")
 async def get_agent_run(
     agent_run_id: str,
     db: DBService = Depends(get_db),
@@ -309,7 +326,7 @@ class AgentRunMetadataRequest(BaseModel):
     agent_run_ids: list[str]
 
 
-@authenticated_router.post("/{fg_id}/agent_run_metadata")
+@user_router.post("/{fg_id}/agent_run_metadata")
 async def get_agent_run_metadata(
     request: AgentRunMetadataRequest,
     db: DBService = Depends(get_db),
@@ -324,7 +341,7 @@ class PostAgentRunsRequest(BaseModel):
     agent_runs: list[AgentRun]
 
 
-@authenticated_router.post("/{fg_id}/agent_runs")
+@user_router.post("/{fg_id}/agent_runs")
 async def post_agent_runs(
     fg_id: str,
     request: PostAgentRunsRequest,
@@ -344,7 +361,7 @@ async def post_agent_runs(
 ########
 
 
-@authenticated_router.post("/{fg_id}/join")
+@user_router.post("/{fg_id}/join")
 async def join(
     fg_id: str,
     db: DBService = Depends(get_db),
@@ -362,7 +379,7 @@ class SetIODimsRequest(BaseModel):
     outer_dim_id: str | None = None
 
 
-@authenticated_router.post("/{fg_id}/io_dims")
+@user_router.post("/{fg_id}/io_dims")
 async def set_io_dims_endpoint(
     fg_id: str,
     request: SetIODimsRequest,
@@ -380,7 +397,7 @@ class SetIODimWithMetadataKeyRequest(BaseModel):
     type: Literal["inner", "outer"]
 
 
-@authenticated_router.post("/{fg_id}/io_dims_with_metadata_key")
+@user_router.post("/{fg_id}/io_dims_with_metadata_key")
 async def set_io_dim_with_metadata_key_endpoint(
     fg_id: str,
     request: SetIODimWithMetadataKeyRequest,
@@ -397,7 +414,7 @@ class PostBaseFilterRequest(BaseModel):
     filter: ComplexFilter | None
 
 
-@authenticated_router.post("/{fg_id}/base_filter")
+@user_router.post("/{fg_id}/base_filter")
 async def post_base_filter(
     fg_id: str,
     request: PostBaseFilterRequest,
@@ -417,7 +434,7 @@ async def post_base_filter(
         return request.filter.id if request.filter else None
 
 
-@authenticated_router.get("/{fg_id}/base_filter")
+@user_router.get("/{fg_id}/base_filter")
 async def get_base_filter_endpoint(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
@@ -430,9 +447,8 @@ class GetRegexSnippetsRequest(BaseModel):
     agent_run_ids: list[str]
 
 
-@authenticated_router.post("/{fg_id}/get_regex_snippets")
+@user_router.post("/{fg_id}/get_regex_snippets")
 async def get_regex_snippets_endpoint(
-    fg_id: str,
     request: GetRegexSnippetsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -470,7 +486,7 @@ async def get_regex_snippets_endpoint(
     }
 
 
-@authenticated_router.get("/{fg_id}/state")
+@user_router.get("/{fg_id}/state")
 async def get_state(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -479,7 +495,7 @@ async def get_state(
     await publish_homepage_state(db, ctx)
 
 
-@authenticated_router.get("/{fg_id}/searches")
+@user_router.get("/{fg_id}/searches")
 async def get_searches(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -489,7 +505,7 @@ async def get_searches(
     return await db.get_searches_with_result_counts(ctx)
 
 
-@authenticated_router.delete("/{fg_id}/search")
+@user_router.delete("/{fg_id}/search")
 async def delete_search(
     fg_id: str,
     search_query_id: str,
@@ -505,6 +521,37 @@ async def delete_search(
     return {"status": "success", "search_query_id": search_query_id}
 
 
+class UserPermissionsResponse(BaseModel):
+    framegrid_permissions: dict[str, str | None]
+    view_permissions: dict[str, str | None]
+
+
+@user_router.get("/{fg_id}/permissions")
+async def get_user_permissions(
+    fg_id: str,
+    user: User = Depends(get_user_anonymous_ok),
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_fg_permission(Permission.READ)),
+):
+    fg_permission = await db.get_permission_level(
+        user=user,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+    )
+
+    view_permission = await db.get_permission_level(
+        user=user,
+        resource_type=ResourceType.VIEW,
+        resource_id=ctx.view_id,
+    )
+
+    return UserPermissionsResponse(
+        framegrid_permissions={fg_id: fg_permission.value if fg_permission else None},
+        view_permissions={ctx.view_id: view_permission.value if view_permission else None},
+    )
+
+
 ##################################
 # (View-specific) dims + filters #
 ##################################
@@ -514,7 +561,7 @@ class PostDimensionRequest(BaseModel):
     dim: FrameDimension
 
 
-@authenticated_router.post("/{fg_id}/dimension")
+@user_router.post("/{fg_id}/dimension")
 async def post_dimension(
     request: PostDimensionRequest,
     db: DBService = Depends(get_db),
@@ -533,7 +580,7 @@ class GetDimensionsRequest(BaseModel):
     dim_ids: list[str] | None = None
 
 
-@authenticated_router.post("/{fg_id}/get_dimensions")
+@user_router.post("/{fg_id}/get_dimensions")
 async def get_dimensions(
     request: GetDimensionsRequest,
     db: DBService = Depends(get_db),
@@ -546,7 +593,7 @@ async def get_dimensions(
         return await db.get_dims(request.dim_ids)
 
 
-@authenticated_router.delete("/{fg_id}/dimension")
+@user_router.delete("/{fg_id}/dimension")
 async def delete_dimension(
     fg_id: str,
     dim_id: str,
@@ -566,7 +613,7 @@ async def delete_dimension(
         await publish_searches(db, ctx)
 
 
-@authenticated_router.delete("/{fg_id}/filter")
+@user_router.delete("/{fg_id}/filter")
 async def delete_filter(
     fg_id: str,
     dim_id: str,
@@ -587,7 +634,7 @@ class PostFilterRequest(BaseModel):
     new_predicate: str
 
 
-@authenticated_router.post("/{fg_id}/filter")
+@user_router.post("/{fg_id}/filter")
 async def post_filter(
     fg_id: str,
     request: PostFilterRequest,
@@ -632,11 +679,6 @@ class AttributeWithCitation(TypedDict):
     citations: list[Citation]
 
 
-class EvidenceWithCitation(TypedDict):
-    evidence: str
-    citations: list[Citation]
-
-
 class StreamedSearchResult(TypedDict):
     data_dict: dict[str, dict[str, list[SearchResultWithCitations]]]
     num_agent_runs_done: int
@@ -647,7 +689,7 @@ class ComputeSearchRequest(BaseModel):
     search_query: str
 
 
-@authenticated_router.post("/{fg_id}/start_compute_search")
+@user_router.post("/{fg_id}/start_compute_search")
 async def start_compute_search(
     fg_id: str,
     request: ComputeSearchRequest,
@@ -662,7 +704,7 @@ async def start_compute_search(
     return job_id
 
 
-@authenticated_router.get("/{fg_id}/listen_compute_search")
+@user_router.get("/{fg_id}/listen_compute_search")
 async def listen_compute_search(
     fg_id: str,
     job_id: str,
@@ -779,7 +821,7 @@ class ClusterDimensionRequest(BaseModel):
     feedback: str | None
 
 
-@authenticated_router.post("/{fg_id}/start_cluster_dimension")
+@user_router.post("/{fg_id}/start_cluster_dimension")
 async def start_cluster_dimension(
     fg_id: str,
     request: ClusterDimensionRequest,
@@ -797,7 +839,7 @@ async def start_cluster_dimension(
     return job_id
 
 
-@authenticated_router.get("/{fg_id}/listen_cluster_dimension")
+@user_router.get("/{fg_id}/listen_cluster_dimension")
 async def listen_cluster_dimension(
     fg_id: str,
     job_id: str,
@@ -881,7 +923,7 @@ async def listen_cluster_dimension(
 #######################
 
 
-@authenticated_router.get("/{fg_id}/actions_summary")
+@user_router.get("/{fg_id}/actions_summary")
 async def get_actions_summary(
     agent_run_id: str,
     db: DBService = Depends(get_db),
@@ -979,7 +1021,7 @@ async def get_actions_summary(
     )
 
 
-@authenticated_router.get("/{fg_id}/solution_summary")
+@user_router.get("/{fg_id}/solution_summary")
 async def get_solution_summary(
     agent_run_id: str,
     db: DBService = Depends(get_db),
@@ -1043,7 +1085,7 @@ class TASession(BaseModel):
 TA_SESSIONS: dict[str, TASession] = {}  # session_id -> TASession
 
 
-@authenticated_router.post("/{fg_id}/ta_session")
+@user_router.post("/{fg_id}/ta_session")
 async def create_ta_session(
     request: CreateTASessionRequest,
     db: DBService = Depends(get_db),
@@ -1082,7 +1124,7 @@ async def create_ta_session(
     }
 
 
-@authenticated_router.get("/{fg_id}/ta_message")
+@user_router.get("/{fg_id}/ta_message")
 async def get_ta_message(
     session_id: str,
     message: str,
@@ -1163,10 +1205,6 @@ class ComputeDiffRequest(BaseModel):
 
 
 class StreamedDiffs(TypedDict):
-    data_id_1: str | None
-    data_id_2: str | None
-    claim: list[str] | None
-    evidence: list[EvidenceWithCitation] | None
     num_pairs_done: int
     num_pairs_total: int
     transcript_diff: dict[str, Any] | None  # a TranscriptDiff as json
@@ -1180,40 +1218,90 @@ class StreamedDiffSearchResult(TypedDict):
     num_results_total: int
 
 
-@authenticated_router.post("/{fg_id}/start_compute_diffs")
+@user_router.get("/{fg_id}/diffs_reports/{diffs_report_id}")
+async def get_diffs_report(
+    diffs_report_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    report = await db.get_diffs_report(diffs_report_id)
+    print(report)
+    return report.to_pydantic().model_dump()
+
+
+@user_router.post("/{fg_id}/start_compute_diffs")
 async def start_compute_diffs(
     fg_id: str,
     request: ComputeDiffRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
+    from docent._ai_tools.diffs.models import SQLADiffsReport
+
+    # Check if a report already exists for these experiment IDs
+    existing_report = (
+        await db.Session().execute(
+            select(SQLADiffsReport).where(
+                SQLADiffsReport.experiment_id_1 == request.experiment_id_1,
+                SQLADiffsReport.experiment_id_2 == request.experiment_id_2,
+                SQLADiffsReport.frame_grid_id == fg_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing_report:
+        return {
+            "job_id": None,
+            "diffs_report_id": existing_report.id,
+        }
+    report = SQLADiffsReport(
+        id=str(uuid4()),
+        frame_grid_id=fg_id,
+        name=f"{request.experiment_id_1} vs {request.experiment_id_2}",
+        experiment_id_1=request.experiment_id_1,
+        experiment_id_2=request.experiment_id_2,
+    )
+    dbs = db.Session()
+    dbs.add(report)
+    await dbs.commit()
+
     job_id = await db.add_job(
         "compute_diffs",
         {
             "fg_id": fg_id,
-            "experiment_id_1": request.experiment_id_1,
-            "experiment_id_2": request.experiment_id_2,
+            "diffs_report_id": report.id,
         },
     )
-    return job_id
+    print("New Diff Report", report.id)
+    return {
+        "job_id": job_id,
+        "diffs_report_id": report.id,
+    }
 
 
-@authenticated_router.get("/{fg_id}/listen_compute_diffs")
+@user_router.get("/{fg_id}/listen_compute_diffs")
 async def listen_compute_diffs(
     fg_id: str,
     job_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
+    from sqlalchemy import select
+
+    from docent._ai_tools.diffs.models import SQLADiffsReport
+
     # Retrieve job arguments
     job = await db.get_job(job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
-    job = job.job_json
-    experiment_id_1, experiment_id_2 = (
-        job["experiment_id_1"],
-        job["experiment_id_2"],
-    )
+    diffs_report_id = job["diffs_report_id"]
+    diffs_report = (
+        await db.Session().execute(
+            select(SQLADiffsReport).where(SQLADiffsReport.id == diffs_report_id)
+        )
+    ).scalar_one()
+    experiment_id_1, experiment_id_2 = diffs_report.experiment_id_1, diffs_report.experiment_id_2
 
     # Create AnyIO queue that we can write intermediate results to
     send_stream, recv_stream = anyio.create_memory_object_stream[StreamedDiffs](
@@ -1227,10 +1315,6 @@ async def listen_compute_diffs(
     from docent._ai_tools.diffs.models import TranscriptDiff
 
     async def _ws_diff_streaming_callback(
-        data_id_1: str,
-        data_id_2: str,
-        claim: list[str],
-        evidence: list[str],
         transcript_diff: TranscriptDiff | None,
     ) -> None:
         nonlocal num_done
@@ -1238,13 +1322,6 @@ async def listen_compute_diffs(
         async with progress_lock:
             num_done += 1
             payload: StreamedDiffs = {
-                "data_id_1": data_id_1,
-                "data_id_2": data_id_2,
-                "claim": claim,
-                "evidence": [
-                    EvidenceWithCitation(evidence=e, citations=parse_citations_multi_transcript(e))
-                    for e in evidence
-                ],
                 "num_pairs_done": num_done,
                 "num_pairs_total": num_total,
                 "transcript_diff": transcript_diff.model_dump() if transcript_diff else None,
@@ -1292,10 +1369,6 @@ async def listen_compute_diffs(
 
             # Send initial 0% state message
             init_data = StreamedDiffs(
-                data_id_1=None,
-                data_id_2=None,
-                claim=None,
-                evidence=None,
                 num_pairs_done=0,
                 num_pairs_total=num_total,
                 transcript_diff=None,
@@ -1303,9 +1376,8 @@ async def listen_compute_diffs(
             await send_stream.send(init_data)
 
             # Compute diffs
-            await db.compute_diffs(
-                ctx, experiment_id_1, experiment_id_2, _ws_diff_streaming_callback
-            )
+            print("COMPUTING DIFFS", experiment_id_1, experiment_id_2)
+            await db.compute_diffs(ctx, diffs_report.id, _ws_diff_streaming_callback)
 
             # Final refresh of state
             await publish_homepage_state(db, ctx)
@@ -1321,11 +1393,10 @@ async def listen_compute_diffs(
 
 
 class ComputeClusteringDiffsRequest(BaseModel):
-    experiment_id_1: str
-    experiment_id_2: str
+    diffs_report_id: str
 
 
-@authenticated_router.post("/{fg_id}/compute_diff_clusters")
+@user_router.post("/{fg_id}/compute_diff_clusters")
 async def compute_diff_clusters(
     fg_id: str,
     request: ComputeClusteringDiffsRequest,
@@ -1333,10 +1404,12 @@ async def compute_diff_clusters(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
+    print("hello world")
+    diffs_report = await db.get_diffs_report(request.diffs_report_id)
+    claims = [c.to_pydantic() for diff in diffs_report.diffs for c in diff.claims]
     clusters = await db.compute_diff_clusters(
         ctx,
-        request.experiment_id_1,
-        request.experiment_id_2,
+        claims,
     )
     return clusters
 
@@ -1347,7 +1420,7 @@ class ComputeDiffSearchRequest(BaseModel):
     search_query: str
 
 
-@authenticated_router.post("/{fg_id}/start_compute_diff_search")
+@user_router.post("/{fg_id}/start_compute_diff_search")
 async def start_compute_diff_search(
     fg_id: str,
     request: ComputeDiffSearchRequest,
@@ -1366,7 +1439,7 @@ async def start_compute_diff_search(
     return job_id
 
 
-@authenticated_router.get("/{fg_id}/listen_compute_diff_search")
+@user_router.get("/{fg_id}/listen_compute_diff_search")
 async def listen_compute_diff_search(
     fg_id: str,
     job_id: str,
@@ -1457,3 +1530,39 @@ async def listen_compute_diff_search(
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
     )
+
+
+@user_router.get("/{fg_id}/transcript_diff")
+async def get_transcript_diff(
+    agent_run_1_id: str,
+    agent_run_2_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    """Get a transcript diff between two agent runs."""
+    from sqlalchemy import or_, select
+
+    from docent._ai_tools.diffs.models import SQLATranscriptDiff
+
+    # Query for transcript diff in either direction
+    result = await db.Session().execute(
+        select(SQLATranscriptDiff).where(
+            or_(
+                and_(
+                    SQLATranscriptDiff.agent_run_1_id == agent_run_1_id,
+                    SQLATranscriptDiff.agent_run_2_id == agent_run_2_id,
+                ),
+                and_(
+                    SQLATranscriptDiff.agent_run_1_id == agent_run_2_id,
+                    SQLATranscriptDiff.agent_run_2_id == agent_run_1_id,
+                ),
+            )
+        )
+    )
+    transcript_diff = result.scalar_one_or_none()
+
+    if not transcript_diff:
+        return None
+
+    return transcript_diff.to_pydantic().model_dump()

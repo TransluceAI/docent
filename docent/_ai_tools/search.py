@@ -153,3 +153,44 @@ async def execute_search(
         ans.append(_parse_llm_output(output))
 
     return ans
+
+
+async def _execute_search_over_text(  # type: ignore
+    texts: list[str],
+    search_query: str,
+    search_result_callback: SearchResultStreamingCallback | None = None,
+):
+    """
+    TODO(mengk): this is a hack for bridgewater, remove it later.
+    """
+    ids = [str(i) for i in range(len(texts))]
+
+    llm_callback = (
+        _get_llm_streaming_callback(search_query, ids, search_result_callback)
+        if search_result_callback is not None
+        else None
+    )
+
+    prompts = [SEARCH_PROMPT.format(search_query=search_query, item=item) for item in texts]
+    outputs = await get_llm_completions_async(
+        [
+            [
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ]
+            for prompt in prompts
+        ],
+        PROVIDER_PREFERENCES.execute_search,
+        max_new_tokens=4096,
+        timeout=180.0,
+        use_cache=True,
+        completion_callback=llm_callback,
+    )
+
+    ans: list[list[str] | None] = []
+    for output in outputs:
+        ans.append(_parse_llm_output(output))
+
+    return ans

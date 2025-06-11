@@ -11,11 +11,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
 
 import { signup } from '../services/authService';
-import { useUser } from '../contexts/UserContext';
+import { useUserContext } from '../contexts/UserContext';
 
 const SignupPage = () => {
   const router = useRouter();
-  const { setUser } = useUser();
+  const { setUser } = useUserContext();
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 

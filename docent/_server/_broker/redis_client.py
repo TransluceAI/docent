@@ -7,18 +7,26 @@ from fastapi.encoders import jsonable_encoder
 
 from docent._env_util import ENV
 
-REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
-REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
-if REDIS_HOST is None or REDIS_PORT is None:
-    raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
-REDIS_USER = ENV.get("DOCENT_REDIS_USER")
-REDIS_PASSWORD = ENV.get("DOCENT_REDIS_PASSWORD")
-REDIS_USER_STRING = f"{REDIS_USER}:{REDIS_PASSWORD}@" if REDIS_USER and REDIS_PASSWORD else ""
-REDIS = ArqRedis(
-    connection_pool=redis.ConnectionPool.from_url(
-        f"redis://{REDIS_USER_STRING}{REDIS_HOST}:{REDIS_PORT}", decode_responses=True
+
+def _get_redis_client():
+    REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
+    REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
+    REDIS_USER = ENV.get("DOCENT_REDIS_USER")
+    REDIS_PASSWORD = ENV.get("DOCENT_REDIS_PASSWORD")
+    if any(v is None for v in [REDIS_HOST, REDIS_PORT, REDIS_USER, REDIS_PASSWORD]):
+        raise ValueError(
+            "DOCENT_REDIS_HOST, DOCENT_REDIS_PORT, DOCENT_REDIS_USER, and DOCENT_REDIS_PASSWORD must all be set"
+        )
+    REDIS_USER_STRING = (
+        f"{REDIS_USER}:{REDIS_PASSWORD}@"
+        if REDIS_USER is not None and REDIS_PASSWORD is not None
+        else ""
     )
-)
+    url = f"redis://{REDIS_USER_STRING}{REDIS_HOST}:{REDIS_PORT}"
+    return ArqRedis(connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True))  # type: ignore
+
+
+REDIS = _get_redis_client()
 
 
 async def publish_to_broker(framegrid_id: str | None, data: dict[str, Any]):

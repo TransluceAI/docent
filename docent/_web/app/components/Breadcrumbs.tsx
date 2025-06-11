@@ -22,6 +22,7 @@ import {
   removeConnectionStatusListener,
 } from '../services/socketService';
 import { RootState } from '../store/store';
+import { UserProfile } from './auth/UserProfile';
 
 interface BreadcrumbsProps {}
 
@@ -32,7 +33,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
   const pathname = usePathname();
   const [isConnected, setIsConnected] = useState(false);
 
-  const evalId = useSelector((state: RootState) => state.frame.evalId);
+  const fgId = useSelector((state: RootState) => state.frame.frameGridId);
 
   // Get the current page information
   const agentRunId = params?.agent_run_id as string | undefined;
@@ -80,9 +81,9 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
         {/* Breadcrumbs */}
         <div className="flex gap-x-1 items-center">
           {/* Home link */}
-          {evalId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
+          {fgId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
             <Link
-              href={`${BASE_DOCENT_PATH}/${evalId}`}
+              href={`${BASE_DOCENT_PATH}/${fgId}`}
               className="text-blue-600 hover:underline"
             >
               All agent runs
@@ -119,10 +120,10 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-x-3">
+      <div className="flex items-center gap-x-2">
         {/* Connection status indicator */}
         <div className="flex items-center">
-          <div className="flex items-center border rounded h-7 px-2 text-xs whitespace-nowrap">
+          <div className="flex items-center border rounded-md h-7 px-2 text-xs whitespace-nowrap">
             <div
               className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} mr-1.5`}
             />
@@ -130,18 +131,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
           </div>
         </div>
 
-        <Button
-          size="sm"
-          className="h-7 text-xs whitespace-nowrap px-2 py-0"
-          onClick={() =>
-            window.open(
-              'https://docs.google.com/forms/d/e/1FAIpQLSe_vYg8UJMwZJDaYTCFkxxJxOibpkZK4llVmWoCSqiRN2Q-cQ/viewform?usp=header',
-              '_blank'
-            )
-          }
-        >
-          Become an early user!
-        </Button>
+        <UserProfile />
       </div>
     </div>
   );

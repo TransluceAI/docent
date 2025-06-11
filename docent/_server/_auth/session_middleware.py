@@ -34,33 +34,23 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         request.state.user = None
         request.state.user_id = None
 
-        # Extract session ID from cookie
-        session_id = request.cookies.get("docent_session_id")
+        # Get the user from session_id
+        if session_id := request.cookies.get("docent_session_id"):
+            db = await DBService.init()
+            user = await db.get_user_by_session_id(session_id)
 
-        if session_id:
-            try:
-                # Get database service
-                db = await DBService.init()
+            if user:
+                # Attach user information to request state
+                request.state.user = user
+                request.state.user_id = user.id
+                logger.debug(
+                    f"Authenticated user {user.id} ({user.email}) for {request.method} {request.url.path}"
+                )
+            else:
+                logger.debug(
+                    f"Invalid or expired session {session_id} for {request.method} {request.url.path}"
+                )
 
-                # Validate session and get user
-                user = await db.get_user_by_session_id(session_id)
-
-                if user:
-                    # Attach user information to request state
-                    request.state.user = user
-                    request.state.user_id = user.id
-                    logger.debug(
-                        f"Authenticated user {user.id} ({user.email}) for {request.method} {request.url.path}"
-                    )
-                else:
-                    logger.debug(
-                        f"Invalid or expired session {session_id} for {request.method} {request.url.path}"
-                    )
-
-            except Exception as e:
-                logger.warning(f"Error validating session {session_id}: {e}")
-                # Continue with unauthenticated state
-
-        # Process the request
+        # Process request
         response = await call_next(request)
         return response

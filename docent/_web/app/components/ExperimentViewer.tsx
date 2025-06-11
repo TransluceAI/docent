@@ -23,19 +23,9 @@ import { PrimitiveFilter } from '../types/frameTypes';
 
 import DimensionSelector from './DimensionSelector';
 import InnerCard from './InnerCard';
+import { Citation } from '../types/experimentViewerTypes';
 
-interface ExperimentViewerProps {
-  onShowAgentRun?: (
-    agentRunId: string,
-    blockId?: number,
-    blockId2?: number,
-    paired?: boolean
-  ) => void;
-}
-
-export default function ExperimentViewer({
-  onShowAgentRun,
-}: ExperimentViewerProps) {
+export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
 
   /**
@@ -54,7 +44,12 @@ export default function ExperimentViewer({
     // voteState,
   } = useAppSelector((state) => state.search);
 
-  const { diffMap } = useAppSelector((state) => state.diff);
+  const diffMap: Record<
+    string,
+    { claim: string[]; evidence: { evidence: string; citations: Citation[] }[] }
+  > = useMemo(() => {
+    return {};
+  }, []);
 
   const {
     expandedOuter,
@@ -550,7 +545,6 @@ export default function ExperimentViewer({
                         agentRunIds={
                           idMarginals?.[getMarginalKey(innerId, outerId)] || []
                         }
-                        onShowAgentRun={onShowAgentRun}
                         isExpanded={
                           expandedInner?.[outerId]?.[innerId] ?? false
                         }
@@ -567,7 +561,7 @@ export default function ExperimentViewer({
         {/* No outer grouping, but has an inner grouping */}
         {!hasOuterDimension &&
           hasInnerDimension &&
-          innerFilterIds?.map((innerId, index) => (
+          innerFilterIds?.map((innerId, _index) => (
             <InnerCard
               key={innerId}
               innerId={innerId}
@@ -575,7 +569,6 @@ export default function ExperimentViewer({
               innerName={innerFilters?.[innerId]?.name || innerId}
               stats={statMarginals[getMarginalKey(innerId, null)]}
               agentRunIds={idMarginals?.[getMarginalKey(innerId, null)] || []}
-              onShowAgentRun={onShowAgentRun}
               isExpanded={expandedInner?.['DEFAULT_OUTER']?.[innerId] ?? false}
               onToggle={() => toggleInner('DEFAULT_OUTER', innerId)}
               innerCount={innerFilterIds.length}
