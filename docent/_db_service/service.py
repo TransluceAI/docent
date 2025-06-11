@@ -631,8 +631,12 @@ class DBService:
                 .values(base_filter_id=sqla_filter.id)
             )
 
-        # Return the new ViewContext
-        return ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=filter)
+        new_ctx = ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=filter)
+
+        # Base filter might trigger a new clustering of metadata dimensions
+        await self._refresh_metadata_dims(new_ctx)
+
+        return new_ctx
 
     async def clear_view_base_filter(self, ctx: ViewContext):
         if ctx.base_filter is not None:
@@ -645,8 +649,12 @@ class DBService:
             # Delete the filter
             await self.delete_filter(ctx.base_filter.id)
 
-        # Return the new ViewContext
-        return ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=None)
+        new_ctx = ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=None)
+
+        # Base filter might trigger a new clustering of metadata dimensions
+        await self._refresh_metadata_dims(ctx)
+
+        return new_ctx
 
     async def set_io_dim_with_metadata_key(
         self, ctx: ViewContext, metadata_key: str, type: Literal["inner", "outer"]
@@ -1443,6 +1451,7 @@ class DBService:
         dims = await self.get_view_dims(ctx)
         for dim in dims:
             if dim.metadata_key is not None:
+                print(f"Refreshing metadata dim {dim.id}")
                 await self.cluster_metadata_dim(ctx, dim.id)
 
     async def cluster_metadata_dim(self, ctx: ViewContext, dim_id: str):
