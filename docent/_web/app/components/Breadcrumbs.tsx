@@ -33,7 +33,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
   const pathname = usePathname();
   const [isConnected, setIsConnected] = useState(false);
 
-  const evalId = useSelector((state: RootState) => state.frame.evalId);
+  const fgId = useSelector((state: RootState) => state.frame.frameGridId);
 
   // Get the current page information
   const agentRunId = params?.agent_run_id as string | undefined;
@@ -81,9 +81,9 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
         {/* Breadcrumbs */}
         <div className="flex gap-x-1 items-center">
           {/* Home link */}
-          {evalId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
+          {fgId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
             <Link
-              href={`${BASE_DOCENT_PATH}/${evalId}`}
+              href={`${BASE_DOCENT_PATH}/${fgId}`}
               className="text-blue-600 hover:underline"
             >
               All agent runs

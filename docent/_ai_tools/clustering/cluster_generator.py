@@ -1,6 +1,6 @@
 import re
 from copy import deepcopy
-from typing import Callable, TypedDict, cast
+from typing import Callable, TypedDict, cast, TypeVar
 
 import numpy as np
 import tiktoken
@@ -81,6 +81,8 @@ def parse_cluster_output(raw_themes: str) -> list[str]:
     return themes
 
 
+T = TypeVar('T')  # ClusterType Object
+
 async def propose_clusters(
     items: list[str],
     n_clusters_list: list[int | str | None] = DEFAULT_N_CLUSTERS_LIST,
@@ -89,8 +91,8 @@ async def propose_clusters(
     k: int = 20,
     random_seed: int = 42,
     clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
-    output_extractor: Callable[[str], list[str]] = parse_cluster_output,
-):
+    output_extractor: Callable[[str], list[T]] = parse_cluster_output,
+) -> list[list[T]]:
     # Create a separate RNG for the outer sampling
     rng = np.random.RandomState(random_seed)
 

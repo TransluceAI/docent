@@ -16,18 +16,18 @@ export default function DocentDashboardClientLayout({
 }) {
   const dispatch = useAppDispatch();
   const params = useParams();
-  const frameGridId = params.eval_id as string;
+  const fgId = params.fg_id as string;
 
   // Fetch state from the server
   const fetchRef = React.useRef(false); // Prevent double fetch
   useEffect(() => {
-    if (!frameGridId || fetchRef.current) {
+    if (!fgId || fetchRef.current) {
       return;
     }
     fetchRef.current = true;
-    console.log(`Starting eval with ID from URL: ${frameGridId}`);
-    dispatch(initSession(frameGridId));
-  }, [frameGridId, dispatch]);
+    console.log(`Starting eval with ID from URL: ${fgId}`);
+    dispatch(initSession(fgId));
+  }, [fgId, dispatch]);
 
   /**
    * Handle shared persisted search
@@ -72,7 +72,7 @@ export default function DocentDashboardClientLayout({
   useEffect(() => {
     if (
       !alreadyRequestedInitSearch.current &&
-      frameGridId &&
+      fgId &&
       initSearchQuery &&
       dimensionsMap
     ) {
@@ -83,7 +83,7 @@ export default function DocentDashboardClientLayout({
       );
       alreadyRequestedInitSearch.current = true;
     }
-  }, [initSearchQuery, dispatch, frameGridId, dimensionsMap]);
+  }, [initSearchQuery, dispatch, fgId, dimensionsMap]);
 
   return (
     <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-0">

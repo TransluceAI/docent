@@ -246,10 +246,11 @@ def update_llm_output(
 
     if llm_output_partial is not None:
         cur_text: str | None = llm_output_partial.completions[0].text
+        cur_reasoning_tokens: str | None = llm_output_partial.completions[0].reasoning_tokens
         cur_finish_reason: FinishReasonType | None = llm_output_partial.completions[0].finish_reason
         cur_model = llm_output_partial.model
     else:
-        cur_text, cur_finish_reason, cur_model = None, None, None
+        cur_text, cur_reasoning_tokens, cur_finish_reason, cur_model = None, None, None, None
 
     if isinstance(chunk, RawMessageStartEvent):
         cur_model = chunk.message.model
@@ -257,9 +258,9 @@ def update_llm_output(
         if isinstance(chunk.delta, TextDelta):
             cur_text = (cur_text or "") + chunk.delta.text
         elif isinstance(chunk.delta, ThinkingDelta):
-            logger.warning("Anthropic streamed thinking block; we should support this soon.")
+            cur_reasoning_tokens = (cur_reasoning_tokens or "") + chunk.delta.thinking
         elif isinstance(chunk.delta, SignatureDelta):
-            logger.warning(
+            logger.debug(
                 "Anthropic streamed thinking signature block; we should support this soon."
             )
         else:

@@ -38,7 +38,7 @@ export default function DocentDashboard() {
   // User is guaranteed to be present in authenticated pages
   const { user } = useRequireUserContext();
 
-  const evalId = useAppSelector((state) => state.frame.evalId);
+  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
   const frameGrids = useAppSelector((state) => state.frame.frameGrids);
   const isLoadingFrameGrids = useAppSelector(
     (state) => state.frame.isLoadingFrameGrids
@@ -64,7 +64,7 @@ export default function DocentDashboard() {
     dispatch(cancelCurrentSearch());
     dispatch(cancelCurrentClusterRequest());
     // TODO(mengk): call thunks to cancel the transcript requests too
-  }, [dispatch, evalId]);
+  }, [dispatch, frameGridId]);
 
   const handleCreateFrameGrid = async () => {
     setIsCreatingGrid(true);

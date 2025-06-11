@@ -9,7 +9,7 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._ai_tools.search import SearchResult, SearchResultWithCitations
@@ -49,7 +49,6 @@ from docent._server.util import sse_event_stream
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import (
     Citation,
-    parse_citations_multi_transcript,
     parse_citations_single_transcript,
 )
 from docent.data_models.filters import ComplexFilter, FrameDimension, FrameFilter, parse_filter_dict
@@ -450,7 +449,6 @@ class GetRegexSnippetsRequest(BaseModel):
 
 @user_router.post("/{fg_id}/get_regex_snippets")
 async def get_regex_snippets_endpoint(
-    fg_id: str,
     request: GetRegexSnippetsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -678,11 +676,6 @@ async def post_filter(
 
 class AttributeWithCitation(TypedDict):
     attribute: str
-    citations: list[Citation]
-
-
-class EvidenceWithCitation(TypedDict):
-    evidence: str
     citations: list[Citation]
 
 
@@ -1213,10 +1206,6 @@ class ComputeDiffRequest(BaseModel):
 
 
 class StreamedDiffs(TypedDict):
-    data_id_1: str | None
-    data_id_2: str | None
-    claim: list[str] | None
-    evidence: list[EvidenceWithCitation] | None
     num_pairs_done: int
     num_pairs_total: int
     transcript_diff: dict[str, Any] | None  # a TranscriptDiff as json
@@ -1230,6 +1219,18 @@ class StreamedDiffSearchResult(TypedDict):
     num_results_total: int
 
 
+@user_router.get("/{fg_id}/diffs_reports/{diffs_report_id}")
+async def get_diffs_report(
+    diffs_report_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    report = await db.get_diffs_report(diffs_report_id)
+    print(report)
+    return report.to_pydantic().model_dump()
+
+
 @user_router.post("/{fg_id}/start_compute_diffs")
 async def start_compute_diffs(
     fg_id: str,
@@ -1237,15 +1238,47 @@ async def start_compute_diffs(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
+    from docent._ai_tools.diffs.models import SQLADiffsReport
+
+    # Check if a report already exists for these experiment IDs
+    existing_report = (
+        await db.Session().execute(
+            select(SQLADiffsReport).where(
+                SQLADiffsReport.experiment_id_1 == request.experiment_id_1,
+                SQLADiffsReport.experiment_id_2 == request.experiment_id_2,
+                SQLADiffsReport.frame_grid_id == fg_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing_report:
+        return {
+            "job_id": None,
+            "diffs_report_id": existing_report.id,
+        }
+    report = SQLADiffsReport(
+        id=str(uuid4()),
+        frame_grid_id=fg_id,
+        name=f"{request.experiment_id_1} vs {request.experiment_id_2}",
+        experiment_id_1=request.experiment_id_1,
+        experiment_id_2=request.experiment_id_2,
+    )
+    dbs = db.Session()
+    dbs.add(report)
+    await dbs.commit()
+
     job_id = await db.add_job(
         "compute_diffs",
         {
             "fg_id": fg_id,
-            "experiment_id_1": request.experiment_id_1,
-            "experiment_id_2": request.experiment_id_2,
+            "diffs_report_id": report.id,
         },
     )
-    return job_id
+    print("New Diff Report", report.id)
+    return {
+        "job_id": job_id,
+        "diffs_report_id": report.id,
+    }
 
 
 @user_router.get("/{fg_id}/listen_compute_diffs")
@@ -1255,15 +1288,21 @@ async def listen_compute_diffs(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
+    from sqlalchemy import select
+
+    from docent._ai_tools.diffs.models import SQLADiffsReport
+
     # Retrieve job arguments
     job = await db.get_job(job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
-    job = job.job_json
-    experiment_id_1, experiment_id_2 = (
-        job["experiment_id_1"],
-        job["experiment_id_2"],
-    )
+    diffs_report_id = job["diffs_report_id"]
+    diffs_report = (
+        await db.Session().execute(
+            select(SQLADiffsReport).where(SQLADiffsReport.id == diffs_report_id)
+        )
+    ).scalar_one()
+    experiment_id_1, experiment_id_2 = diffs_report.experiment_id_1, diffs_report.experiment_id_2
 
     # Create AnyIO queue that we can write intermediate results to
     send_stream, recv_stream = anyio.create_memory_object_stream[StreamedDiffs](
@@ -1277,10 +1316,6 @@ async def listen_compute_diffs(
     from docent._ai_tools.diffs.models import TranscriptDiff
 
     async def _ws_diff_streaming_callback(
-        data_id_1: str,
-        data_id_2: str,
-        claim: list[str],
-        evidence: list[str],
         transcript_diff: TranscriptDiff | None,
     ) -> None:
         nonlocal num_done
@@ -1288,13 +1323,6 @@ async def listen_compute_diffs(
         async with progress_lock:
             num_done += 1
             payload: StreamedDiffs = {
-                "data_id_1": data_id_1,
-                "data_id_2": data_id_2,
-                "claim": claim,
-                "evidence": [
-                    EvidenceWithCitation(evidence=e, citations=parse_citations_multi_transcript(e))
-                    for e in evidence
-                ],
                 "num_pairs_done": num_done,
                 "num_pairs_total": num_total,
                 "transcript_diff": transcript_diff.model_dump() if transcript_diff else None,
@@ -1342,10 +1370,6 @@ async def listen_compute_diffs(
 
             # Send initial 0% state message
             init_data = StreamedDiffs(
-                data_id_1=None,
-                data_id_2=None,
-                claim=None,
-                evidence=None,
                 num_pairs_done=0,
                 num_pairs_total=num_total,
                 transcript_diff=None,
@@ -1353,9 +1377,8 @@ async def listen_compute_diffs(
             await send_stream.send(init_data)
 
             # Compute diffs
-            await db.compute_diffs(
-                ctx, experiment_id_1, experiment_id_2, _ws_diff_streaming_callback
-            )
+            print("COMPUTING DIFFS", experiment_id_1, experiment_id_2)
+            await db.compute_diffs(ctx, diffs_report.id, _ws_diff_streaming_callback)
 
             # Final refresh of state
             await publish_homepage_state(db, ctx)
@@ -1371,8 +1394,7 @@ async def listen_compute_diffs(
 
 
 class ComputeClusteringDiffsRequest(BaseModel):
-    experiment_id_1: str
-    experiment_id_2: str
+    diffs_report_id: str
 
 
 @user_router.post("/{fg_id}/compute_diff_clusters")
@@ -1383,10 +1405,12 @@ async def compute_diff_clusters(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
+    print("hello world")
+    diffs_report = await db.get_diffs_report(request.diffs_report_id)
+    claims = [c.to_pydantic() for diff in diffs_report.diffs for c in diff.claims]
     clusters = await db.compute_diff_clusters(
         ctx,
-        request.experiment_id_1,
-        request.experiment_id_2,
+        claims,
     )
     return clusters
 
@@ -1507,3 +1531,39 @@ async def listen_compute_diff_search(
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
     )
+
+
+@user_router.get("/{fg_id}/transcript_diff")
+async def get_transcript_diff(
+    agent_run_1_id: str,
+    agent_run_2_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    """Get a transcript diff between two agent runs."""
+    from sqlalchemy import or_, select
+
+    from docent._ai_tools.diffs.models import SQLATranscriptDiff
+
+    # Query for transcript diff in either direction
+    result = await db.Session().execute(
+        select(SQLATranscriptDiff).where(
+            or_(
+                and_(
+                    SQLATranscriptDiff.agent_run_1_id == agent_run_1_id,
+                    SQLATranscriptDiff.agent_run_2_id == agent_run_2_id,
+                ),
+                and_(
+                    SQLATranscriptDiff.agent_run_1_id == agent_run_2_id,
+                    SQLATranscriptDiff.agent_run_2_id == agent_run_1_id,
+                ),
+            )
+        )
+    )
+    transcript_diff = result.scalar_one_or_none()
+
+    if not transcript_diff:
+        return None
+
+    return transcript_diff.to_pydantic().model_dump()

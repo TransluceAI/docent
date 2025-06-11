@@ -19,7 +19,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.schema import UniqueConstraint
 
-from docent._ai_tools.diff import DiffAttribute
 from docent._ai_tools.search import SearchResult
 from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import Permission, User
@@ -496,6 +495,8 @@ class SQLADiffAttribute(SQLABase):
         )
 
     def to_diff_attribute(self):
+        from docent._ai_tools.diff import DiffAttribute
+
         return DiffAttribute(
             id=self.id,
             data_id_1=self.data_id_1,

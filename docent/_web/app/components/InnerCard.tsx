@@ -1,12 +1,7 @@
-import {
-  RegexSnippet,
-  TaskStats,
-  EvidenceWithCitation,
-} from '../types/experimentViewerTypes';
+import { RegexSnippet, TaskStats } from '../types/experimentViewerTypes';
 
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { BASE_DOCENT_PATH } from '../constants';
 import {
   requestRegexSnippetsIfExist,
   // voteOnAttribute,
@@ -17,56 +12,15 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { RootState } from '../store/store';
 import { SearchResultWithCitations } from '../types/frameTypes';
 import { AgentRunMetadata } from './AgentRunMetadata';
+import { useRouter } from 'next/navigation';
+import { navToAgentRun } from '@/lib/nav';
 
-// Helper function to handle transcript navigation with special clicks
-const handleTranscriptNavigation = (
-  e: React.MouseEvent,
-  agentRunId: string,
-  frameGridId?: string,
-  blockId?: number,
-  searchQuery?: string,
-  onShowAgentRun?: (
-    agentRunId: string,
-    blockId?: number,
-    blockId2?: number,
-    paired?: boolean
-  ) => void
-) => {
-  e.stopPropagation();
-
-  console.log('HIT FUNC');
-
-  if (frameGridId !== undefined && (e.metaKey || e.ctrlKey || e.button === 1)) {
-    let url = `${window.location.origin}${BASE_DOCENT_PATH}/${frameGridId}/transcript/${agentRunId}`;
-
-    const blockIdParam = blockId ? `?block_id=${blockId}` : '';
-    url += blockIdParam;
-
-    if (searchQuery) {
-      url += blockIdParam
-        ? `&searchQuery=${searchQuery}`
-        : `?searchQuery=${searchQuery}`;
-    }
-
-    window.open(url, '_blank');
-  } else if (e.button === 0 && onShowAgentRun) {
-    console.log('HIT FUNC 2', onShowAgentRun);
-    onShowAgentRun(agentRunId, blockId);
-  }
-};
-
-interface InnerCard {
+interface InnerCardProps {
   innerId: string;
   innerName?: string;
   innerLabel: string;
   stats: TaskStats | null;
   agentRunIds: string[];
-  onShowAgentRun?: (
-    agentRunId: string,
-    blockId?: number,
-    blockId2?: number,
-    paired?: boolean
-  ) => void;
   isExpanded: boolean;
   onToggle?: () => void;
   innerCount?: number;
@@ -76,22 +30,14 @@ interface AttributeSectionProps {
   dataId: string;
   curAttributeQuery: string;
   attributes: SearchResultWithCitations[];
-  onShowAgentRun?: (
-    agentRunId: string,
-    blockId?: number,
-    blockId2?: number,
-    paired?: boolean
-  ) => void;
 }
 
 const AttributeSection: React.FC<AttributeSectionProps> = ({
   dataId,
   curAttributeQuery,
   attributes: attributes,
-  onShowAgentRun,
 }) => {
-  // const dispatch = useAppDispatch();
-  // const voteState = useAppSelector((state) => state.search.voteState);
+  const router = useRouter();
   const frameGridId = useAppSelector(
     (state: RootState) => state.frame.frameGridId
   );
@@ -152,17 +98,15 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
                 key={`citation-${i}`}
                 className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
                 onMouseDown={(e) => {
-                  console.log('CLICK CITATION', citation.block_idx);
-                  e.stopPropagation();
-                  onShowAgentRun?.(dataId, citation.block_idx);
-                  // handleTranscriptNavigation(
-                  //   e,
-                  //   dataId,
-                  //   frameGridId,
-                  //   citation.block_idx,
-                  //   curAttributeQuery,
-                  //   onShowAgentRun
-                  // );
+                  navToAgentRun(
+                    e,
+                    router,
+                    window,
+                    dataId,
+                    citation.block_idx,
+                    frameGridId,
+                    curAttributeQuery
+                  );
                 }}
               >
                 {citedText}
@@ -187,17 +131,16 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
             key={idx}
             className="group bg-indigo-50 rounded-md p-1 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
             onMouseDown={(e) => {
-              e.stopPropagation();
               const firstCitation = citations.length > 0 ? citations[0] : null;
               const blockId = firstCitation?.block_idx;
-              console.log('CLICK ATTRIBUTE', blockId);
-              handleTranscriptNavigation(
+              navToAgentRun(
                 e,
+                router,
+                window,
                 dataId,
-                frameGridId,
                 blockId,
-                curAttributeQuery,
-                onShowAgentRun
+                frameGridId,
+                curAttributeQuery
               );
             }}
           >
@@ -335,7 +278,6 @@ const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({
 // RegexSnippetsSection component to display regex matches
 const RegexSnippetsSection: React.FC<{
   regexSnippets?: RegexSnippet[];
-  onShowAgentRun?: (agentRunId: string, blockId?: number) => void;
 }> = ({ regexSnippets }) => {
   if (!regexSnippets || regexSnippets.length === 0) {
     return null;
@@ -357,88 +299,16 @@ const RegexSnippetsSection: React.FC<{
   );
 };
 
-interface DiffSectionProps {
-  dataId: string;
-  otherId: string;
-  diffResults: {
-    claim: string[];
-    evidence: EvidenceWithCitation[];
-  };
-  onShowAgentRun?: (
-    datapointId: string,
-    blockId?: number,
-    blockId2?: number,
-    paired?: boolean
-  ) => void;
-}
-
-const DiffSection: React.FC<DiffSectionProps> = ({
-  dataId,
-  otherId,
-  diffResults,
-  onShowAgentRun,
-}) => {
-  if (!diffResults) {
-    return null;
-  }
-
-  // Create an array of (claim, evidence) tuples
-  const diffTriples = diffResults.claim.map((claim, idx) => ({
-    claim,
-    evidence: diffResults.evidence[idx] || null,
-  }));
-
-  return (
-    <div className="pt-1 mt-1 border-t border-indigo-100 text-xs space-y-1">
-      <div className="flex items-center mb-1">
-        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-        <span className="text-xs font-medium text-indigo-700">
-          Diff results with {otherId}
-        </span>
-      </div>
-
-      {diffTriples.map((triple, idx) => (
-        <div
-          key={idx}
-          className="bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1"
-          onClick={(e) => {
-            e.stopPropagation();
-            const leftCitations = triple.evidence.citations.filter(
-              (x) => x.transcript_idx == 0
-            );
-            const rightCitations = triple.evidence.citations.filter(
-              (x) => x.transcript_idx == 1
-            );
-            onShowAgentRun?.(
-              dataId + '___' + otherId,
-              leftCitations.length > 0 ? leftCitations[0].block_idx : undefined,
-              rightCitations.length > 0
-                ? rightCitations[0].block_idx
-                : undefined,
-              true
-            );
-          }}
-        >
-          {/* Claim */}
-          <div className="mb-1.5">
-            <p className="mt-0.5">{triple.claim}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const InnerCard: React.FC<InnerCard> = ({
+const InnerCard: React.FC<InnerCardProps> = ({
   innerId,
   innerName,
   innerLabel,
   stats,
   agentRunIds,
-  onShowAgentRun,
   isExpanded,
   onToggle,
 }) => {
+  const router = useRouter();
   const dispatch = useAppDispatch();
 
   const {
@@ -447,13 +317,11 @@ const InnerCard: React.FC<InnerCard> = ({
     loadingSearchQuery: loadingAttributesForId,
   } = useAppSelector((state: RootState) => state.search);
 
-  const { diffMap } = useAppSelector((state: RootState) => state.diff);
-
   const { baseFilter, agentRunMetadata, frameGridId } = useAppSelector(
     (state: RootState) => state.frame
   );
 
-  const { selectedDiffTranscript, regexSnippets } = useAppSelector(
+  const { regexSnippets } = useAppSelector(
     (state: RootState) => state.experimentViewer
   );
 
@@ -510,29 +378,6 @@ const InnerCard: React.FC<InnerCard> = ({
     }
   }, [isExpanded, baseFilter, agentRunIds, dispatch, loadingAttributesForId]); // Re-request when base filter changes too
 
-  // const handleDiffClick = (dataId: string) => {
-  //   if (selectedDiffTranscript === null) {
-  //     // First transcript selected
-  //     setSelectedDiffTranscript(dataId);
-  //     setSelectedDiffSampleId(sampleId);
-  //   } else if (selectedDiffTranscript === dataId) {
-  //     // Deselect if clicking the same transcript
-  //     setSelectedDiffTranscript(null);
-  //     setSelectedDiffSampleId(null);
-  //   } else {
-  //     // Second transcript selected - navigate to diff view
-  //     router.push(
-  //       `${BASE_DOCENT_PATH}/${evalId}/diff?datapoint1=${selectedDiffTranscript}&datapoint2=${dataId}`
-  //     );
-  //     setSelectedDiffTranscript(null);
-  //     setSelectedDiffSampleId(null);
-  //   }
-  // };
-
-  // Check if diffing is allowed for this card
-  // const canDiff =
-  //   selectedDiffSampleId === null || selectedDiffSampleId === sampleId;
-
   const getAttributes = useCallback(
     (dataId: string) => {
       if (!curSearchQuery) return null;
@@ -543,22 +388,6 @@ const InnerCard: React.FC<InnerCard> = ({
       return attributes;
     },
     [curSearchQuery, attributeMap]
-  );
-
-  const getDiffResults = useCallback(
-    (dataId: string) => {
-      if (!diffMap) return null;
-
-      // Find any diff results where this datapoint is involved
-      const diffEntry = Object.entries(diffMap).find(([key]) => {
-        const [id1, id2] = key.split('___');
-        return id1 === dataId; // || id2 === dataId;
-      });
-
-      if (!diffEntry) return null;
-      return diffEntry;
-    },
-    [diffMap]
   );
 
   return (
@@ -590,21 +419,6 @@ const InnerCard: React.FC<InnerCard> = ({
                     {agentRunIds.length === 1 ? '' : 's'}
                   </span>
                 </span>
-                {/* {organizationMethod === 'experiment' &&
-                  (experimentCount ?? 0) > 1 && (
-                    <button
-                      className="ml-2 text-gray-400 hover:text-blue-500 flex items-center text-[10px] transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(
-                          `${BASE_DOCENT_PATH}/${evalId}/forest/${innerId}`
-                        );
-                      }}
-                      title="View experiment tree"
-                    >
-                      <Network className="h-3 w-3" />
-                    </button>
-                  )} */}
               </div>
             </div>
           </div>
@@ -662,43 +476,27 @@ const InnerCard: React.FC<InnerCard> = ({
             {agentRunIds.map((agentRunId) => {
               // Skip if there is an active query but there are no matching attribute values
               const attributes = getAttributes(agentRunId);
-              const initialDiffResults = getDiffResults(agentRunId);
 
               if (curSearchQuery && attributes === null) return null;
-              // if (diffMap && !initialDiffResults) return null;
-
-              const diffResults = initialDiffResults
-                ? initialDiffResults[1]
-                : null;
-              const otherId = initialDiffResults
-                ? initialDiffResults[0]
-                    .split('___')
-                    .filter((id) => id !== agentRunId)[0]
-                : null;
 
               return (
                 <div
                   key={agentRunId}
-                  className={`flex flex-col p-1 border rounded text-xs cursor-pointer transition-colors ${
-                    selectedDiffTranscript !== undefined &&
-                    selectedDiffTranscript !== agentRunId
-                      ? 'bg-orange-50/50 hover:bg-orange-100/50'
-                      : 'bg-white/80 hover:bg-gray-50'
-                  }`}
-                  onClick={() =>
-                    onShowAgentRun
-                      ? otherId
-                        ? onShowAgentRun(
-                            agentRunId + '___' + otherId,
-                            undefined,
-                            undefined,
-                            true
-                          )
-                        : onShowAgentRun(agentRunId)
-                      : undefined
-                  }
+                  className="flex flex-col p-1 border rounded text-xs bg-white/80 hover:bg-gray-50"
                 >
-                  <div>
+                  <div
+                    className="cursor-pointer"
+                    onMouseDown={(e) =>
+                      navToAgentRun(
+                        e,
+                        router,
+                        window,
+                        agentRunId,
+                        undefined,
+                        frameGridId
+                      )
+                    }
+                  >
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">
                         Agent Run{' '}
@@ -708,14 +506,14 @@ const InnerCard: React.FC<InnerCard> = ({
                         <span
                           className="text-blue-600 font-medium hover:text-blue-700"
                           onMouseDown={(e) => {
-                            // (otherId ? onShowAgentRun(agentRunId + "___" + otherId, undefined, undefined, true) : onShowAgentRun(agentRunId))
-                            handleTranscriptNavigation(
+                            navToAgentRun(
                               e,
+                              router,
+                              window,
                               agentRunId,
-                              frameGridId,
                               undefined,
-                              curSearchQuery,
-                              onShowAgentRun
+                              frameGridId,
+                              curSearchQuery
                             );
                           }}
                         >
@@ -723,28 +521,6 @@ const InnerCard: React.FC<InnerCard> = ({
                         </span>
                       </div>
                     </div>
-                    {/* {otherId && <hr/>}
-                    {otherId && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600">
-                            Agent Run{' '}
-                            <span className="font-mono">{otherId}</span>
-                      </span>
-                      <div className="flex gap-2">
-                        <span
-                          className="text-blue-600 font-medium hover:text-blue-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onShowAgentRun
-                              ? onShowAgentRun(otherId)
-                              : () => {};
-                          }}
-                        >
-                          View
-                        </span>
-                        </div>
-                      </div>
-                    )} */}
                     {/* Display metadata if available */}
                     {agentRunMetadata && agentRunMetadata[agentRunId] && (
                       <AgentRunMetadata agentRunId={agentRunId} />
@@ -753,7 +529,6 @@ const InnerCard: React.FC<InnerCard> = ({
 
                   <RegexSnippetsSection
                     regexSnippets={regexSnippets?.[agentRunId]}
-                    onShowAgentRun={onShowAgentRun}
                   />
 
                   {/* Replace the inline attribute section with the new component */}
@@ -762,16 +537,6 @@ const InnerCard: React.FC<InnerCard> = ({
                       dataId={agentRunId}
                       curAttributeQuery={curSearchQuery}
                       attributes={attributes}
-                      onShowAgentRun={onShowAgentRun}
-                    />
-                  )}
-                  {/* Display diff results if available */}
-                  {diffResults && (
-                    <DiffSection
-                      dataId={agentRunId}
-                      otherId={otherId ?? ''}
-                      diffResults={diffResults}
-                      onShowAgentRun={onShowAgentRun}
                     />
                   )}
                 </div>

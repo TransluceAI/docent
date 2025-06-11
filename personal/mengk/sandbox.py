@@ -31,7 +31,7 @@ fgs
 
 from docent._db_service.schemas.auth_models import Permission, ResourceType, SubjectType
 
-fg_id = fgs[0].id
+fg_id = fgs[1].id
 await db.set_acl_permission(
     SubjectType.PUBLIC, "*", ResourceType.FRAME_GRID, fg_id, Permission.READ
 )

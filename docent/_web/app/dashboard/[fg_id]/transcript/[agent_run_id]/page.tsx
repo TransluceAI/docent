@@ -82,7 +82,7 @@ export default function AgentRunPage() {
     }
   }, [frameGridId, agentRunId, blockId, dispatch, curAgentRun?.id]);
 
-  const handleShowAgentRun = (agentRunId: string, blockId?: number) => {
+  const onShowAgentRun = (agentRunId: string, blockId?: number) => {
     if (agentRunId !== curAgentRun?.id) {
       dispatch(getCurAgentRun(agentRunId));
     }
@@ -95,7 +95,7 @@ export default function AgentRunPage() {
   };
 
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense>
       <div className="flex-1 flex space-x-3 min-h-0">
         <TranscriptViewer ref={transcriptViewerRef} secondary={false} />
 
@@ -121,13 +121,13 @@ export default function AgentRunPage() {
 
             <TabsContent value="agent" className="flex-1 mt-0">
               <ScrollArea className="h-full px-1 py-2">
-                <AgentSummary onCitationClick={handleShowAgentRun} />
+                <AgentSummary onCitationClick={onShowAgentRun} />
               </ScrollArea>
             </TabsContent>
 
             <TabsContent value="chat" className="flex-1 mt-0">
               <div className="h-full px-1 py-2">
-                <TaPanel onShowAgentRun={handleShowAgentRun} />
+                <TaPanel onShowAgentRun={onShowAgentRun} />
               </div>
             </TabsContent>
           </Tabs>
