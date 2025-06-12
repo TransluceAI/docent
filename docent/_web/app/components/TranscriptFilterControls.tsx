@@ -1,4 +1,4 @@
-import {  CircleX, RefreshCw } from 'lucide-react';
+import { CircleX, RefreshCw } from 'lucide-react';
 import { PrimitiveFilter, MetadataType } from '@/app/types/frameTypes';
 import { TranscriptMetadataField } from '@/app/types/experimentViewerTypes';
 import { Button } from '@/components/ui/button';
@@ -14,23 +14,30 @@ import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { clearSearch } from '../store/searchSlice';
-import { addBaseFilter, clearBaseFilters, removeBaseFilter } from '../store/searchSlice';
+import {
+  addBaseFilter,
+  clearBaseFilters,
+  removeBaseFilter,
+} from '../store/searchSlice';
 import { toast } from '@/hooks/use-toast';
 
 export const TranscriptFilterControls = () => {
   const dispatch = useDispatch<AppDispatch>();
   const baseFilter = useSelector((state: RootState) => state.frame.baseFilter);
-  const agentRunMetadataFields = useSelector(
-    (state: RootState) => state.frame.agentRunMetadataFields
-  ) || [];
-  const frameGridId = useSelector((state: RootState) => state.frame.frameGridId);
+  const agentRunMetadataFields =
+    useSelector((state: RootState) => state.frame.agentRunMetadataFields) || [];
+  const frameGridId = useSelector(
+    (state: RootState) => state.frame.frameGridId
+  );
 
   const [metadataKey, setMetadataKey] = useState('');
   const [metadataValue, setMetadataValue] = useState('');
-  const [metadataType, setMetadataType] = useState<MetadataType | undefined>(undefined);
+  const [metadataType, setMetadataType] = useState<MetadataType | undefined>(
+    undefined
+  );
   const [metadataOp, setMetadataOp] = useState<string>('==');
 
-  const onUpdateMetadataFilter = () => {
+  const onUpdateMetadataFilter = (value: string) => {
     if (!frameGridId) return;
     if (!metadataKey.trim()) {
       toast({
@@ -42,16 +49,16 @@ export const TranscriptFilterControls = () => {
     }
     let parsedKey;
     let parsedValue;
-    if (!metadataValue) {
+    if (!value) {
       parsedKey = null;
       parsedValue = null;
     } else {
       parsedKey = metadataKey.trim();
-      parsedValue = metadataValue;
+      parsedValue = value;
       if (metadataType === 'bool') {
-        parsedValue = metadataValue === 'true';
+        parsedValue = value === 'true';
       } else if (metadataType === 'int' || metadataType === 'float') {
-        parsedValue = Number(metadataValue);
+        parsedValue = Number(value);
         if (isNaN(parsedValue)) {
           toast({
             title: 'Invalid number',
@@ -65,7 +72,7 @@ export const TranscriptFilterControls = () => {
       dispatch(
         addBaseFilter({
           type: 'primitive',
-          key_path: ["metadata", parsedKey],
+          key_path: parsedKey.split('.'),
           value: parsedValue,
           op: metadataOp,
           id: crypto.randomUUID(),
@@ -144,23 +151,22 @@ export const TranscriptFilterControls = () => {
         <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2">
           <div className="space-y-1">
             <div className="text-xs text-gray-600 font-mono">Filter by</div>
-            <Select
-              value={metadataKey}
-              onValueChange={handleFieldChange}
-            >
+            <Select value={metadataKey} onValueChange={handleFieldChange}>
               <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600">
                 <SelectValue placeholder="Select field" />
               </SelectTrigger>
               <SelectContent>
-                {agentRunMetadataFields?.map((field: TranscriptMetadataField) => (
-                  <SelectItem
-                    key={field.name}
-                    value={field.name}
-                    className="font-mono text-gray-600 text-xs"
-                  >
-                    {field.name}
-                  </SelectItem>
-                ))}
+                {agentRunMetadataFields?.map(
+                  (field: TranscriptMetadataField) => (
+                    <SelectItem
+                      key={field.name}
+                      value={field.name}
+                      className="font-mono text-gray-600 text-xs"
+                    >
+                      {field.name}
+                    </SelectItem>
+                  )
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -223,7 +229,7 @@ export const TranscriptFilterControls = () => {
             {metadataType === 'bool' ? (
               <Select
                 value={metadataValue}
-                onValueChange={setMetadataValue}
+                onValueChange={onUpdateMetadataFilter}
               >
                 <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600">
                   <SelectValue placeholder="Select value" />
@@ -241,15 +247,13 @@ export const TranscriptFilterControls = () => {
               <Input
                 value={metadataValue}
                 onChange={(e) => setMetadataValue(e.target.value)}
-                placeholder={
-                  metadataType === 'int' ? 'e.g. 42' : 'e.g. value'
-                }
+                placeholder={metadataType === 'int' ? 'e.g. 42' : 'e.g. value'}
                 type={metadataType === 'int' ? 'number' : 'text'}
                 className="h-8 text-xs bg-white font-mono text-gray-600"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    onUpdateMetadataFilter();
+                    onUpdateMetadataFilter(metadataValue);
                   }
                 }}
               />
@@ -258,7 +262,7 @@ export const TranscriptFilterControls = () => {
           <div className="space-y-1">
             <div className="text-xs text-gray-600">&nbsp;</div>
             <Button
-              onClick={onUpdateMetadataFilter}
+              onClick={() => onUpdateMetadataFilter(metadataValue)}
               disabled={
                 !frameGridId ||
                 !metadataKey.trim() ||
