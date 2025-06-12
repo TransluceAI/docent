@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  CircleX,
   CornerDownLeft,
   Earth,
   HelpCircle,
@@ -11,32 +10,21 @@ import {
   Sparkles,
   XOctagon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 
-import type { MetadataType, PrimitiveFilter } from '@/app/types/frameTypes';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 
 import { addSearchDimension, deleteSearch } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
 import {
-  addBaseFilter,
-  clearBaseFilters,
   clearSearch,
   computeSearch,
-  removeBaseFilter,
   requestClusters,
   setSearchQueryTextboxValue,
 } from '../store/searchSlice';
@@ -46,6 +34,7 @@ import BinEditor from './BinEditor';
 import { ProgressBar } from './ProgressBar';
 import { requestDiffs } from '../store/diffSlice';
 import DebugReduxState from '../debug/DebugReduxState';
+import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -77,13 +66,9 @@ const SearchArea = () => {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const {
-    frameGridId,
-    baseFilter,
-    agentRunMetadataFields,
-    marginals,
-    dimensionsMap,
-  } = useSelector((state: RootState) => state.frame);
+  const { frameGridId, marginals, dimensionsMap } = useSelector(
+    (state: RootState) => state.frame
+  );
   const {
     curSearchQuery,
     activeClusterTaskId,
@@ -106,13 +91,6 @@ const SearchArea = () => {
    * Local state for UI components
    */
 
-  // Metadata filters
-  const [metadataKey, setMetadataKey] = useState('');
-  const [metadataValue, setMetadataValue] = useState('');
-  const [metadataType, setMetadataType] = useState<MetadataType | undefined>(
-    undefined
-  );
-  const [metadataOp, setMetadataOp] = useState<string>('==');
   // Search box hints
   const [placeholderText, setPlaceholderText] = useState(
     DEFAULT_PLACEHOLDER_TEXT
@@ -124,73 +102,6 @@ const SearchArea = () => {
   const [experimentId2, setExperimentId2] = useState('');
   const [loadingDiffs, setLoadingDiffs] = useState(false);
   const [diffsAttribute, setDiffsAttribute] = useState<string | null>(null);
-
-  // Metadata filter manipulation
-  const onUpdateMetadataFilter = useCallback(() => {
-    if (!frameGridId) return;
-
-    if (!metadataKey.trim()) {
-      toast({
-        title: 'Missing key',
-        description: 'Please enter a metadata key',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    let parsedKey;
-    let parsedValue;
-
-    if (!metadataValue) {
-      parsedKey = null;
-      parsedValue = null;
-    } else {
-      parsedKey = metadataKey.trim();
-      parsedValue = metadataValue;
-
-      if (metadataType === 'bool') {
-        parsedValue = metadataValue === 'true';
-      } else if (metadataType === 'int' || metadataType === 'float') {
-        parsedValue = Number(metadataValue);
-        if (isNaN(parsedValue)) {
-          toast({
-            title: 'Invalid number',
-            description: 'Please enter a valid number',
-            variant: 'destructive',
-          });
-          return;
-        }
-      }
-
-      dispatch(clearSearch());
-      dispatch(
-        addBaseFilter({
-          type: 'primitive',
-          key_path: parsedKey.split('.'),
-          value: parsedValue,
-          op: metadataOp,
-        } as PrimitiveFilter)
-      );
-    }
-
-    // Reset form
-    setMetadataKey('');
-    setMetadataValue('');
-  }, [
-    metadataValue,
-    metadataType,
-    metadataKey,
-    metadataOp,
-    dispatch,
-    frameGridId,
-  ]);
-
-  // Auto-submit when a value is selected from a dropdown
-  useEffect(() => {
-    if (metadataType === 'bool' && metadataValue && metadataKey) {
-      onUpdateMetadataFilter();
-    }
-  }, [metadataValue, metadataType, metadataKey, onUpdateMetadataFilter]);
 
   const handleClearSearch = useCallback(() => {
     if (curSearchQuery) {
@@ -342,204 +253,7 @@ const SearchArea = () => {
       <DebugReduxState sliceName="search" />
       <DebugReduxState sliceName="diff" />
       <div className="space-y-4">
-        <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Filter Transcripts</div>
-            <div className="text-xs">
-              Investigate only a subset of transcripts.
-            </div>
-          </div>
-          <div className="border rounded-md bg-gray-50 p-2 space-y-2">
-            {baseFilter && baseFilter.filters.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {baseFilter.filters.map((subFilter) => (
-                  <div
-                    key={subFilter.id}
-                    className="inline-flex items-center gap-x-1 text-xs bg-indigo-50 text-indigo-800 border border-indigo-100 pl-1.5 pr-1 py-0.5 rounded-md"
-                  >
-                    {(() => {
-                      if (subFilter.type === 'primitive') {
-                        const filterCast = subFilter as PrimitiveFilter;
-                        return (
-                          <>
-                            <span className="">
-                              {filterCast.key_path.join('.')}
-                            </span>
-                            <span className="text-indigo-400">
-                              {filterCast.op || '=='}
-                            </span>
-                            <span className="font-mono">
-                              {String(filterCast.value)}
-                            </span>
-                          </>
-                        );
-                      } else {
-                        return `${subFilter.type} filter`;
-                      }
-                    })()}
-                    <button
-                      onClick={() => dispatch(removeBaseFilter(subFilter.id))}
-                      className="ml-0.5 hover:bg-indigo-100 rounded-full p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
-                    >
-                      <CircleX size={12} />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={() => dispatch(clearBaseFilters())}
-                  className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
-                >
-                  <RefreshCw className="h-3 w-3 mr" />
-                  Clear
-                </button>
-              </div>
-            )}
-            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2">
-              <div className="space-y-1">
-                <div className="text-xs text-gray-600">Filter by</div>
-                <Select
-                  value={metadataKey}
-                  onValueChange={(value: string) => {
-                    setMetadataKey(value);
-                    const selectedField = agentRunMetadataFields?.find(
-                      (f) => f.name === value
-                    );
-                    if (selectedField) {
-                      setMetadataType(selectedField.type);
-                      setMetadataValue('');
-                      // Reset operator to == when changing fields if not text, else '~*'
-                      setMetadataOp(
-                        selectedField.name === 'text' ? '~*' : '=='
-                      );
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600">
-                    <SelectValue placeholder="Select field" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agentRunMetadataFields?.map((field) => (
-                      <SelectItem
-                        key={field.name}
-                        value={field.name}
-                        className="font-mono text-gray-600 text-xs"
-                      >
-                        {field.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {metadataType === 'int' || metadataType === 'float' ? (
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-600">Operator</div>
-                  <Select value={metadataOp} onValueChange={setMetadataOp}>
-                    <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600 w-16">
-                      <SelectValue placeholder="==" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="==" className="font-mono text-xs">
-                        ==
-                      </SelectItem>
-                      <SelectItem value="!=" className="font-mono text-xs">
-                        !=
-                      </SelectItem>
-                      <SelectItem value="<" className="font-mono text-xs">
-                        &lt;
-                      </SelectItem>
-                      <SelectItem value="<=" className="font-mono text-xs">
-                        &lt;=
-                      </SelectItem>
-                      <SelectItem value=">" className="font-mono text-xs">
-                        &gt;
-                      </SelectItem>
-                      <SelectItem value=">=" className="font-mono text-xs">
-                        &gt;=
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-600">Operator</div>
-                  <Select value={metadataOp} onValueChange={setMetadataOp}>
-                    <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600 w-16">
-                      <SelectValue placeholder="==" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {metadataType === 'str' && (
-                        <SelectItem value="~*" className="font-mono text-xs">
-                          ~*
-                        </SelectItem>
-                      )}
-                      <SelectItem value="==" className="font-mono text-xs">
-                        ==
-                      </SelectItem>
-                      <SelectItem value="!=" className="font-mono text-xs">
-                        !=
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="space-y-1">
-                <div className="text-xs text-gray-600">
-                  Value{metadataType ? ` (${metadataType})` : ''}
-                </div>
-                {metadataType === 'bool' ? (
-                  <Select
-                    value={metadataValue}
-                    onValueChange={setMetadataValue}
-                  >
-                    <SelectTrigger className="h-8 text-xs bg-white font-mono text-gray-600">
-                      <SelectValue placeholder="Select value" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true" className="font-mono text-xs">
-                        true
-                      </SelectItem>
-                      <SelectItem value="false" className="font-mono text-xs">
-                        false
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    value={metadataValue}
-                    onChange={(e) => setMetadataValue(e.target.value)}
-                    placeholder={
-                      metadataType === 'int' ? 'e.g. 42' : 'e.g. value'
-                    }
-                    type={metadataType === 'int' ? 'number' : 'text'}
-                    className="h-8 text-xs bg-white font-mono text-gray-600"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        onUpdateMetadataFilter();
-                      }
-                    }}
-                  />
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs text-gray-600">&nbsp;</div>
-                <Button
-                  onClick={onUpdateMetadataFilter}
-                  disabled={
-                    !frameGridId ||
-                    !metadataKey.trim() ||
-                    !metadataValue.trim() ||
-                    metadataType === 'bool' // Disable button for boolean type since it auto-submits
-                  }
-                  className="h-8 text-xs whitespace-nowrap"
-                  size="sm"
-                >
-                  Add filter
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TranscriptFilterControls />
         <div className="border-t" />
         <div className="space-y-2">
           <div>
