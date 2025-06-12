@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 import anyio
 import redis.asyncio as redis
@@ -24,11 +25,15 @@ REDIS = ArqRedis(
 )
 
 
-async def compute_search(ctx: dict, view_ctx: ViewContext, job_id: str):
+async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
     print("compute search:", view_ctx, job_id)
 
     db = await DBService.init()
-    job, query = await db.get_search_job_and_query(job_id)
+    result = await db.get_search_job_and_query(job_id)
+    if result is None:
+        print(f"Search job {job_id} not found")
+        return
+    _job, query = result
 
     await db.set_job_status(job_id, JobStatus.RUNNING)
 
@@ -59,10 +64,8 @@ async def compute_search(ctx: dict, view_ctx: ViewContext, job_id: str):
                     print(f"job {job_id} completed")
                     await db.set_job_status(job_id, JobStatus.COMPLETED)
 
-                # Push a None into the stream to signal the end of this run.
-                await _search_result_callback(None)
-
                 await publish_searches(db, view_ctx)
+                await REDIS.delete(f"results_{job_id}")
 
     async def await_commands():
         q = f"commands_{job_id}"
@@ -95,5 +98,6 @@ def run():
             "functions": [compute_search],
             "redis_settings": RedisSettings(host=REDIS_HOST, port=REDIS_PORT),
             "queue_name": "compute_search_queue",
+            "max_jobs": 5,  # Allow up to 5 concurrent jobs per worker
         }
     )

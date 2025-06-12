@@ -6,10 +6,11 @@ not doing it now.
 - mengk
 """
 
+import asyncio
 import traceback
 from contextlib import nullcontext
 from functools import partial
-from typing import Any, AsyncContextManager, Literal, Sequence, cast
+from typing import Any, AsyncContextManager, Coroutine, Literal, Sequence, cast
 
 import anyio
 from tqdm.auto import tqdm
@@ -350,18 +351,22 @@ class LLMManager:
 
         # If any results are None, set them to an error result
         final_results: list[LLMOutput] = []
-        for result in results:
+        unfinished_callbacks: list[Coroutine[Any, Any, None]] = []
+        for batch_index, result in enumerate(results):
             if result is None:
-                final_results.append(
-                    LLMOutput(
-                        model="all model options exhausted",
-                        completions=[],
-                        errors=["all_providers_exhausted"],
-                    )
+                placeholder = LLMOutput(
+                    model="all model options exhausted",
+                    completions=[],
+                    errors=["all_providers_exhausted"],
                 )
+                final_results.append(placeholder)
+                if completion_callback:
+                    unfinished_callbacks.append(completion_callback(batch_index, placeholder))
             else:
                 final_results.append(result)
 
+        if unfinished_callbacks:
+            await asyncio.gather(*unfinished_callbacks)
         return final_results
 
     def _rotate_model_option(self) -> ModelOption | None:

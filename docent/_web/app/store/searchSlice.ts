@@ -596,6 +596,7 @@ export const searchSlice = createSlice({
           search_query: string;
           num_judgments_computed: number;
           num_total: number;
+          job: Job;
         }>
       >
     ) => {

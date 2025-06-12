@@ -3,7 +3,17 @@ import contextlib
 from typing import Any, Literal, cast
 
 import backoff
-from anthropic import AsyncAnthropic, AuthenticationError, BadRequestError, RateLimitError
+
+# all errors: https://docs.anthropic.com/en/api/errors
+from anthropic import (
+    AsyncAnthropic,
+    AuthenticationError,
+    BadRequestError,
+    PermissionDeniedError,
+    NotFoundError,
+    UnprocessableEntityError,
+    RateLimitError,
+)
 from anthropic._types import NOT_GIVEN
 from anthropic.types import (
     Message,
@@ -26,7 +36,10 @@ from anthropic.types import (
 from backoff.types import Details
 
 from docent._env_util import ENV
-from docent._llm_util.data_models.exceptions import CompletionTooLongException, RateLimitException
+from docent._llm_util.data_models.exceptions import (
+    CompletionTooLongException,
+    RateLimitException,
+)
 from docent._llm_util.data_models.llm_output import (
     AsyncSingleLLMOutputStreamingCallback,
     FinishReasonType,
@@ -138,11 +151,13 @@ def _parse_tool_choice(tool_choice: Literal["auto", "required"] | None) -> ToolC
     backoff.expo,
     exception=(Exception),
     giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, RateLimitException)
     or isinstance(e, AuthenticationError)
-    or isinstance(e, NotImplementedError),
-    max_tries=3,
-    factor=2.0,
+    or isinstance(e, NotImplementedError)
+    or isinstance(e, PermissionDeniedError)
+    or isinstance(e, NotFoundError)
+    or isinstance(e, UnprocessableEntityError),
+    max_tries=5,
+    factor=3.0,
     on_backoff=_print_backoff_message,
 )
 async def get_anthropic_chat_completion_streaming_async(
@@ -270,10 +285,13 @@ def update_llm_output(
     backoff.expo,
     exception=(Exception),
     giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, RateLimitException)
-    or isinstance(e, AuthenticationError),
-    max_tries=3,
-    factor=2.0,
+    or isinstance(e, AuthenticationError)
+    or isinstance(e, NotImplementedError)
+    or isinstance(e, PermissionDeniedError)
+    or isinstance(e, NotFoundError)
+    or isinstance(e, UnprocessableEntityError),
+    max_tries=5,
+    factor=3.0,
     on_backoff=_print_backoff_message,
 )
 async def get_anthropic_chat_completion_async(

@@ -5,12 +5,17 @@ from typing import Any, Literal, cast
 import backoff
 import tiktoken
 from backoff.types import Details
+
+# all errors: https://platform.openai.com/docs/guides/error-codes/api-errors#python-library-error-types
 from openai import (
     AsyncAzureOpenAI,
     AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
     OpenAI,
+    PermissionDeniedError,
+    NotFoundError,
+    UnprocessableEntityError,
     RateLimitError,
 )
 from openai._types import NOT_GIVEN
@@ -33,7 +38,10 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 from openai.types.shared_params.function_definition import FunctionDefinition
 
 from docent._env_util import ENV
-from docent._llm_util.data_models.exceptions import CompletionTooLongException, RateLimitException
+from docent._llm_util.data_models.exceptions import (
+    CompletionTooLongException,
+    RateLimitException,
+)
 from docent._llm_util.data_models.llm_output import (
     AsyncSingleLLMOutputStreamingCallback,
     FinishReasonType,
@@ -154,10 +162,12 @@ def _parse_tools(tools: list[ToolInfo]) -> list[ChatCompletionToolParam]:
     backoff.expo,
     exception=(Exception,),
     giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, RateLimitException)
-    or isinstance(e, AuthenticationError),
-    max_tries=3,
-    factor=2.0,
+    or isinstance(e, AuthenticationError)
+    or isinstance(e, PermissionDeniedError)
+    or isinstance(e, NotFoundError)
+    or isinstance(e, UnprocessableEntityError),
+    max_tries=5,
+    factor=3.0,
     on_backoff=_print_backoff_message,
 )
 async def get_openai_chat_completion_streaming_async(
@@ -325,10 +335,12 @@ def update_llm_output(llm_output_partial: LLMOutputPartial | None, chunk: ChatCo
     backoff.expo,
     exception=(Exception,),
     giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, RateLimitException)
-    or isinstance(e, AuthenticationError),
-    max_tries=3,
-    factor=2.0,
+    or isinstance(e, AuthenticationError)
+    or isinstance(e, PermissionDeniedError)
+    or isinstance(e, NotFoundError)
+    or isinstance(e, UnprocessableEntityError),
+    max_tries=5,
+    factor=3.0,
     on_backoff=_print_backoff_message,
 )
 async def get_openai_chat_completion_async(
@@ -509,12 +521,12 @@ def get_openai_embeddings_sync(
 
 def _parse_openai_tool_call(tc: ChatCompletionMessageToolCall) -> ToolCall:
     # Attempt to parse the tool call arguments as JSON
+    arguments: dict[str, Any] = {}
     try:
-        arguments: dict[str, Any] = json.loads(tc.function.arguments)
+        arguments = json.loads(tc.function.arguments)
         parse_error = None
     # If the tool call arguments are not valid JSON, return an empty dict with the error
     except Exception as e:
-        arguments: dict[str, Any] = {}
         parse_error = f"Couldn't parse tool call arguments as JSON: {e}. Original input: {tc.function.arguments}"
 
     return ToolCall(

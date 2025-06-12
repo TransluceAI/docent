@@ -1029,7 +1029,7 @@ class DBService:
             result = await session.execute(
                 select(SQLASearchQuery).where(SQLASearchQuery.id == query_id)
             )
-            return result.scalar_one_or_none()
+            return result.scalar_one()
 
     async def delete_search_query(self, fg_id: str, search_query_id: str):
         """
@@ -1293,11 +1293,13 @@ class DBService:
         else:
             logger.info(f"Computing results for {len(agent_runs)} datapoints")
 
-        async def _results_callback(search_results: list[SearchResult]):
+        async def _results_callback(search_results: list[SearchResult] | None):
             if search_result_callback:
                 await search_result_callback(search_results)
 
             with anyio.CancelScope(shield=True):
+                if search_results is None:
+                    return
                 to_upload: list[SQLASearchResult] = [
                     SQLASearchResult.from_search_result(
                         search_result=attr,
@@ -1865,7 +1867,7 @@ class DBService:
             logger.info(f"Added job with ID: {job_id}")
         return job_id
 
-    async def add_search_job(self, query_id: str) -> (bool, str):
+    async def add_search_job(self, query_id: str) -> tuple[bool, str]:
         """
         Adds or finds a search job for the given query. The first return value is whether this
         call added a new job.
@@ -1879,8 +1881,8 @@ class DBService:
                 .order_by(SQLAJob.created_at.desc())
                 .limit(1)
             )
-            existing: SQLAJob = result.scalar_one_or_none()
-            if existing is not None and existing.status != JobStatus.CANCELED:
+            existing: SQLAJob | None = result.scalar_one_or_none()
+            if existing is not None and existing.status in [JobStatus.PENDING, JobStatus.RUNNING]:
                 return False, existing.id
 
             # Otherwise, create a new job
@@ -1904,7 +1906,7 @@ class DBService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
 
-    async def list_search_jobs_and_queries(self) -> list[Tuple[SQLAJob, SQLASearchQuery]]:
+    async def list_search_jobs_and_queries(self) -> list[tuple[SQLAJob, SQLASearchQuery]]:
         async with self.session() as session:
             # Find the latest job creation time corresponding to each query ID.
             sub_q = (
@@ -1934,7 +1936,9 @@ class DBService:
                 update(SQLAJob).filter(SQLAJob.id == job_id).values(status=status)
             )
 
-    async def get_search_job_and_query(self, job_id: str) -> Tuple[dict, SQLASearchQuery] | None:
+    async def get_search_job_and_query(
+        self, job_id: str
+    ) -> tuple[dict[Any, Any], SQLASearchQuery] | None:
         async with self.session() as session:
             result = await session.execute(
                 select(SQLAJob, SQLASearchQuery)

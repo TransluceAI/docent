@@ -119,7 +119,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-asgi_app = FastAPI()
+def lifespan(app: FastAPI):
+    import subprocess
+
+    worker_process = subprocess.Popen(["python", "-m", "docent._worker.worker"])
+
+    yield
+    logger.info("Shutting down...")
+
+    worker_process.terminate()
+
+
+asgi_app = FastAPI(lifespan=lifespan)
 
 # Add middlewares in order (they are processed in reverse order when handling responses)
 # 1. Request logging middleware first

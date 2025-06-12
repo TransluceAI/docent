@@ -724,6 +724,7 @@ async def listen_compute_search(
     )
 
     # Track intermediate progress
+    num_errors = 0
     num_done, num_total = 0, await db.count_base_agent_runs(ctx)
 
     async def _execute():
@@ -734,13 +735,12 @@ async def listen_compute_search(
             num_agent_runs_total=num_total,
         )
         await send_stream.send(init_data)
-        nonlocal num_done
+        nonlocal num_done, num_errors
 
         try:
             last_id = 0
             while True:
                 results_batch = await REDIS.xread({f"results_{job_id}": last_id}, block=0)
-                print("results batch", results_batch)
 
                 # xread can handle multiple streams and returns a list of (stream, results) pairs; we
                 # only have one, so just index by 0 and then 1 to go directly to the results we want.
@@ -751,8 +751,9 @@ async def listen_compute_search(
                 for _, sub_batch in results_batch:
                     results = json.loads(sub_batch["results"])
                     if results is None:
-                        return
-                    if not results:
+                        num_errors += 1
+                        if num_done + num_errors == num_total:
+                            return
                         continue
 
                     results = [SearchResult.model_validate(r) for r in results]
@@ -776,7 +777,7 @@ async def listen_compute_search(
                     # Send to event_stream so it can be sent back to the client
                     await send_stream.send(payload)
 
-                    if num_done == num_total:
+                    if num_done + num_errors == num_total:
                         return
         finally:
             # Terminate the stream so the event_stream stops waiting
@@ -787,13 +788,13 @@ async def listen_compute_search(
     )
 
 
-@authenticated_router.post("/{job_id}/cancel_compute_search")
+@user_router.post("/{job_id}/cancel_compute_search")
 async def cancel_compute_search(job_id: str):
     q = f"commands_{job_id}"
     await REDIS.rpush(q, "cancel")
 
 
-@authenticated_router.post("/{query_id}/resume_compute_search")
+@user_router.post("/{query_id}/resume_compute_search")
 async def resume_compute_search(
     query_id: str,
     db: DBService = Depends(get_db),
@@ -806,7 +807,7 @@ async def resume_compute_search(
     return job_id
 
 
-@authenticated_router.get("/search_jobs")
+@user_router.get("/search_jobs")
 async def search_jobs(
     db: DBService = Depends(get_db),
 ):

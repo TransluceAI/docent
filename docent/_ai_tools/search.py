@@ -67,7 +67,7 @@ class SearchResultStreamingCallback(Protocol):
 
     async def __call__(
         self,
-        search_results: list[SearchResult],
+        search_results: list[SearchResult] | None,
     ) -> None: ...
 
 
@@ -81,7 +81,7 @@ def _get_llm_streaming_callback(
 
         # Return nothing if the LLM call failed (hence None)
         if search_results is None:
-            await search_result_callback(list[SearchResult]())
+            await search_result_callback(None)
         else:
             await search_result_callback(
                 [

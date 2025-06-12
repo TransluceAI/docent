@@ -647,8 +647,19 @@ const SearchArea = () => {
             {curSearchQuery ? (
               <div className="space-y-2">
                 <div className="flex items-center">
-                  <div className="flex-1 px-2 py-1 bg-indigo-50 border border-indigo-100 rounded text-xs font-mono whitespace-pre-wrap text-indigo-800">
-                    {curSearchQuery}
+                  <div className="flex-1">
+                    <div className="px-2 py-1 bg-indigo-50 border border-indigo-100 rounded text-xs font-mono whitespace-pre-wrap text-indigo-800">
+                      {curSearchQuery}
+                    </div>
+                    {loadingProgress && !loadingSearchQuery && (
+                      <div className="py-1 text-xs text-gray-600 ml-2">
+                        {loadingProgress[0]} searches finished, {loadingProgress[1] - loadingProgress[0]} had API issues {loadingProgress[1] - loadingProgress[0] > 0 && (
+                          <>
+                            <span className="cursor-pointer text-indigo-500 hover:text-indigo-600" onClick={() => handleSearch(curSearchQuery)}>(retry)</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col xl:flex-row ml-2 space-y-1 xl:space-y-0 xl:space-x-1">
                     <button
