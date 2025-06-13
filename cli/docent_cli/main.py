@@ -66,7 +66,6 @@ def web(
         subprocess.run(["npm", "run", "build"], env=env, check=True)
         subprocess.run(["npm", "run", "start", "--", "--port", str(port)], env=env, check=True)
     else:
-        # Use Popen instead of run for the dev server to enable hot reloading
         subprocess.run(["npm", "run", "dev", "--", "--port", str(port)], env=env, check=True)
 
 
