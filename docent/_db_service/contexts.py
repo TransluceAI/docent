@@ -8,10 +8,12 @@ from docent.data_models.filters import ComplexFilter
 if TYPE_CHECKING:
     from docent._db_service.schemas.tables import SQLAAgentRun
 
+from docent._db_service.schemas.auth_models import User
 
 class ViewContext(BaseModel):
     fg_id: str
     view_id: str
+    user: User | None
     base_filter: ComplexFilter | None
 
     def get_base_where_clause(self, SQLAAgentRun: Type["SQLAAgentRun"]) -> ColumnElement[bool]:

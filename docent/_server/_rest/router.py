@@ -442,6 +442,7 @@ async def post_base_filter(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
+    logger.critical(f"post_base_filter for fg_id: {fg_id} and user, view id: {ctx.view_id}, user.email={ctx.user.email if ctx.user else 'None'}")
     async with db.advisory_lock(fg_id, action_id="mutation"):
         if request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
@@ -571,10 +572,9 @@ async def get_user_permissions(
         view_permissions={ctx.view_id: view_permission.value if view_permission else None},
     )
 
-
-class FramegridCollaboratorsResponse(BaseModel):
-    collaborators: list[FramegridCollaborator]
-
+@user_router.get("/organizations/{org_id}/users")
+async def get_org_users(org_id: str, db: DBService = Depends(get_db)):
+    return [u for u in await db.get_users() if not u.is_anonymous]
 
 @user_router.get("/framegrids/{fg_id}/collaborators")
 async def get_framegrid_collaborators(
@@ -583,16 +583,66 @@ async def get_framegrid_collaborators(
     # You need READ permissions to see other people's permissions
     _: None = Depends(require_fg_permission(Permission.READ)),
 ):
-    return FramegridCollaboratorsResponse(
-        collaborators=[
-            FramegridCollaborator.from_sqla_acl(acl)
-            for acl in await db.get_acl_entries(
-                resource_id=fg_id,
-                resource_type=ResourceType.FRAME_GRID,
-            )
-        ]
-    )
+    return [FramegridCollaborator.from_sqla_acl(acl) for acl in await db.get_acl_entries(
+        resource_id=fg_id,
+        resource_type=ResourceType.FRAME_GRID,
+    )]
 
+from typing import Optional
+from pydantic import model_validator
+
+class UpsertCollaboratorRequest(BaseModel):
+    subject_id: str | None = None
+    subject_type: SubjectType
+    framegrid_id: str
+    permission_level: Permission
+    
+    
+    @model_validator(mode="after")
+    def validate_user_or_organization(self):
+        if self.subject_type == SubjectType.USER and self.subject_id is None:
+            raise ValueError("subject_id must be provided for user")
+        if self.subject_type == SubjectType.ORGANIZATION and self.subject_id is None:
+            raise ValueError("subject_id must be provided for organization")
+        return self
+
+
+@user_router.put("/framegrids/{fg_id}/collaborators/upsert")
+async def upsert_collaborator(
+    fg_id: str,
+    request: UpsertCollaboratorRequest,
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_fg_permission(Permission.READ)),
+):
+    collaborator = await db.set_acl_permission(
+        subject_type=request.subject_type,
+        subject_id=request.subject_id,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+        permission=request.permission_level,
+    )
+   
+    return collaborator
+
+class RemoveCollaboratorRequest(BaseModel):
+    subject_id: str
+    subject_type: SubjectType
+    framegrid_id: str
+
+@user_router.delete("/framegrids/{fg_id}/collaborators/delete")
+async def remove_collaborator(
+    fg_id: str,
+    request: RemoveCollaboratorRequest,
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_fg_permission(Permission.READ)),
+):
+    await db.clear_acl_permission(
+        subject_type=request.subject_type,
+        subject_id=request.subject_id,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+    )
+    return {"status": "success"}
 
 class ShareViewRequest(BaseModel):
     subject_type: Literal["user", "organization", "public"]

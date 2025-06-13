@@ -23,6 +23,7 @@ import {
 } from '../services/socketService';
 import { RootState } from '../store/store';
 import { UserProfile } from './auth/UserProfile';
+import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
 
 interface BreadcrumbsProps {}
 
@@ -59,7 +60,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
   }, []);
 
   return (
-    <div className="text-sm flex items-center justify-between w-full">
+    <div className="$Breadcrumbs text-sm flex items-center justify-between w-full">
       <div className="flex items-center gap-x-3">
         {/* Go Home button */}
         <Tooltip>
@@ -121,15 +122,13 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
       </div>
 
       <div className="flex items-center gap-x-2">
-        {/* Connection status indicator */}
-        <div className="flex items-center">
-          <div className="flex items-center border rounded-md h-7 px-2 text-xs whitespace-nowrap">
+          {fgId && <ShareViewPopover framegridId={fgId} />}
+          <Button variant="outline" size="sm" className="gap-x-2">
             <div
-              className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} mr-1.5`}
+              className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
             />
-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-          </div>
-        </div>
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </Button>
 
         <UserProfile />
       </div>

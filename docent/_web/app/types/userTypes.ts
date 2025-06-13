@@ -5,9 +5,10 @@
  * Maps to backend UserResponse fields
  */
 export interface User {
-  user_id: string;
+  id: string;
   email: string;
   is_anonymous: boolean;
+  name?: string;
 }
 
 /**

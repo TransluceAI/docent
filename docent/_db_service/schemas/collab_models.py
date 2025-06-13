@@ -7,8 +7,9 @@ from docent._db_service.schemas.tables import SQLAAccessControlEntry, SQLAUser, 
 class FramegridCollaborator(BaseModel):
     framegrid_id: str
     subject_type: SubjectType
+    subject_id: str
     subject: User | Organization | Literal["public"]
-    permission: Permission
+    permission_level: Permission
 
     @classmethod
     def from_sqla_acl(cls, sqla_acl: SQLAAccessControlEntry) -> "FramegridCollaborator":
@@ -23,15 +24,17 @@ class FramegridCollaborator(BaseModel):
         return cls(
             framegrid_id=sqla_acl.fg_id,
             subject_type=subject_type,
+            subject_id=sqla_acl.user_id if subject_type == SubjectType.USER else sqla_acl.organization_id if subject_type == SubjectType.ORGANIZATION else 'public',
             subject=subject,
-            permission=sqla_acl.permission,
+            permission_level=sqla_acl.permission,
         )
 
 class ViewCollaborator(BaseModel):
     view_id: str
     subject_type: SubjectType
+    subject_id: str
     subject: User | Organization | Literal["public"]
-    permission: Permission
+    permission_level: Permission
 
     @classmethod
     def from_sqla_acl(cls, sqla_acl: SQLAAccessControlEntry) -> "ViewCollaborator":
@@ -46,6 +49,7 @@ class ViewCollaborator(BaseModel):
         return cls(
             view_id=sqla_acl.view_id,
             subject_type=subject_type,
+            subject_id=sqla_acl.user_id if subject_type == SubjectType.USER else sqla_acl.organization_id if subject_type == SubjectType.ORGANIZATION else 'public',
             subject=subject,
-            permission=sqla_acl.permission,
+            permission_level=sqla_acl.permission,
         )

@@ -259,8 +259,6 @@ const SearchArea = () => {
 
   return (
     <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
-      {/* <DebugReduxState sliceName="search" />
-      <DebugReduxState sliceName="diff" /> */}
       <div className="space-y-4">
         <TranscriptFilterControls />
         <div className="border-t" />
