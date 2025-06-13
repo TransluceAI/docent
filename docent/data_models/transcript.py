@@ -1,9 +1,15 @@
+import sys
 from typing import Any
 from uuid import uuid4
 
 import yaml
 from pydantic import BaseModel, Field, PrivateAttr, SerializeAsAny
 
+from docent._llm_util.util import (
+    get_token_count,
+    group_messages_into_ranges,
+    truncate_to_token_limit,
+)
 from docent.data_models.chat import AssistantMessage, ChatMessage, ContentReasoning
 from docent.data_models.metadata import BaseMetadata
 
@@ -223,7 +229,7 @@ class Transcript(BaseModel):
         transcript_idx_label: int | None = None,
         highlight_action_unit: int | None = None,
         max_action_unit_idx: int | None = None,
-    ):
+    ) -> str:
         """Convert the transcript to a string representation.
 
         Creates a formatted string representation of the transcript, optionally
@@ -240,6 +246,30 @@ class Transcript(BaseModel):
 
         Raises:
             ValueError: If highlight_action_unit or max_action_unit_idx is invalid.
+        """
+        return self.to_str_with_token_limit(
+            token_limit=sys.maxsize,
+            transcript_idx_label=transcript_idx_label,
+            highlight_action_unit=highlight_action_unit,
+            max_action_unit_idx=max_action_unit_idx,
+        )[0]
+
+    def to_str_with_token_limit(
+        self,
+        token_limit: int,
+        transcript_idx_label: int | None = None,
+        highlight_action_unit: int | None = None,
+        max_action_unit_idx: int | None = None,
+    ) -> list[str]:
+        """Represents the transcript as a list of strings, each of which is at most token_limit tokens
+        under the GPT-4 tokenization scheme.
+
+        We'll try to split up long transcripts along message boundaries and include metadata.
+        For very long messages, we'll have to truncate them and remove metadata.
+
+        Returns:
+            list[str]: A list of strings, each of which is at most token_limit tokens
+            under the GPT-4 tokenization scheme.
         """
         if highlight_action_unit is not None and not (
             0 <= highlight_action_unit < len(self._units_of_action or [])
@@ -284,7 +314,33 @@ class Transcript(BaseModel):
             metadata_obj["description"] = self.description
 
         yaml_width = float("inf")
-        return (
-            f"<blocks>\n{blocks_str}\n</blocks>\n"
-            f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"
-        )
+        block_str = f"<blocks>\n{blocks_str}\n</blocks>\n"
+        metadata_str = f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"
+
+        metadata_token_count = get_token_count(metadata_str)
+        block_token_count = get_token_count(block_str)
+
+        if metadata_token_count + block_token_count <= token_limit:
+            return [f"{block_str}" f"{metadata_str}"]
+        else:
+            results: list[str] = []
+            block_token_counts = [get_token_count(block) for block in au_blocks]
+            ranges = group_messages_into_ranges(
+                block_token_counts, metadata_token_count, token_limit
+            )
+            for msg_range in ranges:
+                if msg_range.include_metadata:
+                    results.append(
+                        f"<blocks>\n{"\n".join(au_blocks[msg_range.start:msg_range.end])}\n</blocks>\n"
+                        f"{metadata_str}"
+                    )
+                else:
+                    assert (
+                        msg_range.end == msg_range.start + 1
+                    ), "Ranges without metadata should be a single message"
+                    result = str(au_blocks[msg_range.start])
+                    if msg_range.num_tokens > token_limit - 10:
+                        result = truncate_to_token_limit(result, token_limit - 10)
+                    results.append(f"<blocks>\n{result}\n</blocks>\n")
+
+            return results

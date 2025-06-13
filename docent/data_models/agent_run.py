@@ -1,9 +1,11 @@
+import sys
 from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
 
 import yaml
 from pydantic import BaseModel, Field, SerializeAsAny, model_validator
 
+from docent._llm_util.util import get_token_count, group_messages_into_ranges
 from docent.data_models.metadata import BaseAgentRunMetadata
 from docent.data_models.transcript import Transcript
 
@@ -48,20 +50,21 @@ class AgentRun(BaseModel):
             raise ValueError("AgentRun must have at least one transcript")
         return self
 
-    @property
-    def text(self) -> str:
-        """Concatenates all transcript texts with double newlines as separators.
+    def to_text(self, token_limit: int = sys.maxsize) -> list[str]:
+        """
+        Represents an agent run as a list of strings, each of which is at most token_limit tokens
+        under the GPT-4 tokenization scheme.
 
-        Returns:
-            str: A string representation of all transcripts.
+        We'll try to split up long AgentRuns along transcript boundaries and include metadata.
+        For very long transcripts, we'll have to split them up further and remove metadata.
         """
 
-        transcripts_str = "\n\n".join(
-            [
-                f"<transcript {t_id}>\n{t.to_str()}\n</transcript {t_id}>"
-                for t_id, t in self.transcripts.items()
-            ]
-        )
+        transcript_strs: list[str] = [
+            f"<transcript {t_id}>\n{t.to_str()}\n</transcript {t_id}>"
+            for t_id, t in self.transcripts.items()
+        ]
+
+        transcripts_str = "\n\n".join(transcript_strs)
 
         # Gather metadata
         metadata_obj = self.metadata.model_dump(strip_internal_fields=True)
@@ -71,10 +74,55 @@ class AgentRun(BaseModel):
             metadata_obj["description"] = self.description
 
         yaml_width = float("inf")
-        return (
+        transcripts_str = (
             f"Here is a complete agent run for analysis purposes only:\n{transcripts_str}\n\n"
-            f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</agent run metadata>"
         )
+        metadata_str = f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</agent run metadata>"
+        transcript_str_tokens = get_token_count(transcripts_str)
+        metadata_str_tokens = get_token_count(metadata_str)
+        if transcript_str_tokens + metadata_str_tokens <= token_limit:
+            return [f"{transcripts_str}" f"{metadata_str}"]
+        else:
+            results: list[str] = []
+            transcript_token_counts = [get_token_count(t) for t in transcript_strs]
+            ranges = group_messages_into_ranges(
+                transcript_token_counts, metadata_str_tokens, token_limit - 50
+            )
+            for msg_range in ranges:
+                if msg_range.include_metadata:
+                    results.append(
+                        f"Here is a partial agent run for analysis purposes only:\n{"\n\n".join(transcript_strs[msg_range.start:msg_range.end])}"
+                        f"{metadata_str}"
+                    )
+                else:
+                    assert (
+                        msg_range.end == msg_range.start + 1
+                    ), "Ranges without metadata should be a single message"
+                    t_id, t = list(self.transcripts.items())[msg_range.start]
+                    if msg_range.num_tokens < token_limit - 50:
+                        transcript = f"<transcript {t_id}>\n{t.to_str()}\n</transcript {t_id}>"
+                        result = (
+                            f"Here is a partial agent run for analysis purposes only:\n{transcript}"
+                        )
+                        results.append(result)
+                    else:
+                        transcript_fragments = t.to_str_with_token_limit(token_limit - 50)
+                        for fragment in transcript_fragments:
+                            result = f"<transcript {t_id}>\n{fragment}\n</transcript {t_id}>"
+                            result = (
+                                f"Here is a partial agent run for analysis purposes only:\n{result}"
+                            )
+                            results.append(result)
+            return results
+
+    @property
+    def text(self) -> str:
+        """Concatenates all transcript texts with double newlines as separators.
+
+        Returns:
+            str: A string representation of all transcripts.
+        """
+        return self.to_text()[0]
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Extends the parent model_dump method to include the text property.

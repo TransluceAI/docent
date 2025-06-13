@@ -3,21 +3,10 @@ from copy import deepcopy
 from typing import Callable, TypedDict, cast, TypeVar
 
 import numpy as np
-import tiktoken
 
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
-
-
-def truncate_to_token_limit(text: str, max_tokens: int, model: str = "gpt-4") -> str:
-    """Truncate text to stay within the specified token limit."""
-    encoding = tiktoken.encoding_for_model(model)
-    tokens = encoding.encode(text)
-
-    if len(tokens) <= max_tokens:
-        return text
-
-    return encoding.decode(tokens[:max_tokens])
+from docent._llm_util.util import truncate_to_token_limit
 
 
 CLUSTER_PROMPT = """
@@ -81,7 +70,8 @@ def parse_cluster_output(raw_themes: str) -> list[str]:
     return themes
 
 
-T = TypeVar('T')  # ClusterType Object
+T = TypeVar("T")  # ClusterType Object
+
 
 async def propose_clusters(
     items: list[str],
