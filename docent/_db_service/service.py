@@ -407,6 +407,17 @@ class DBService:
         async with self.session() as session:
             await session.execute(delete(SQLAAgentRun).where(SQLAAgentRun.fg_id == fg_id))
 
+        # Delete all Access Control Entries
+        async with self.session() as session:
+            view_ids = await session.execute(select(SQLAView.id).where(SQLAView.fg_id == fg_id))
+            view_ids = view_ids.scalars().all()
+            await session.execute(
+                delete(SQLAAccessControlEntry).where(SQLAAccessControlEntry.view_id.in_(view_ids))
+            )
+            await session.execute(
+                delete(SQLAAccessControlEntry).where(SQLAAccessControlEntry.fg_id == fg_id)
+            )
+
         # Delete views
         async with self.session() as session:
             await session.execute(delete(SQLAView).where(SQLAView.fg_id == fg_id))
@@ -1436,6 +1447,9 @@ class DBService:
             judgments = [
                 Judgment(agent_run_id=id, matches=True, filter_id=filter_id) for id in datapoint_ids
             ]
+            async with self.session() as session:
+                session.add_all([SQLAJudgment.from_judgment(j, ctx.fg_id) for j in judgments])
+                logger.info(f"Pushed {len(judgments)} judgments")
         else:
             # Which datapoints do not have judgments for this filter? Early exit if all fresh
             agent_runs = await self._get_agent_runs_without_judgments(ctx, filter_id)
@@ -1455,13 +1469,19 @@ class DBService:
                 search_results = await self._get_search_results(ctx, filter.search_query)
                 agent_runs = list(datapoints_dict.values())
 
-            # Apply filter
-            judgments = await filter.apply(agent_runs, search_results, return_all=True)
+            async def _upload_judgement_callback(judgment: Judgment):
+                # TODO(vincent): if it becomes a bottleneck, we should queue uploads and batch upload them at regular intervals.
+                # unlikely to be an issue right now, as the llm api bottleneck is worse.
+                async with self.session() as session:
+                    session.add(SQLAJudgment.from_judgment(judgment, ctx.fg_id))
 
-        # Push matching judgments to the database
-        async with self.session() as session:
-            session.add_all([SQLAJudgment.from_judgment(j, ctx.fg_id) for j in judgments])
-            logger.info(f"Pushed {len(judgments)} judgments")
+            # Apply filter
+            await filter.apply(
+                agent_runs,
+                search_results,
+                return_all=True,
+                judgment_callback=_upload_judgement_callback,
+            )
 
     async def _refresh_metadata_dims(self, ctx: ViewContext):
         dims = await self.get_view_dims(ctx)

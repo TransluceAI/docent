@@ -36,7 +36,7 @@ async def _stats_map_fn(_: Any, metadata: list[BaseAgentRunMetadata]):
     for m in metadata:
         for score_key, score_value in m.scores.items():
             cur_list = all_outcomes.setdefault(score_key, [])
-            cur_list.append(float(score_value))
+            cur_list.append(float(score_value) if score_value is not None else None)
 
     # Calculate statistics for each score key
     results: dict[str, dict[str, float | None]] = {}

@@ -148,7 +148,7 @@ class DocentClient:
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._server_url}/{fg_id}/agent_runs"
-        payload = {"agent_runs": [ar.model_dump() for ar in agent_runs]}
+        payload = {"agent_runs": [ar.model_dump(mode="json") for ar in agent_runs]}
 
         response = self._session.post(url, json=payload)
         response.raise_for_status()

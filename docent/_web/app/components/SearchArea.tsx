@@ -10,7 +10,7 @@ import {
   Sparkles,
   XOctagon,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 
@@ -85,6 +85,18 @@ const SearchArea = () => {
       (dim) => dim.search_query === curSearchQuery
     );
   }, [dimensionsMap, curSearchQuery]);
+
+  useEffect(() => {
+    if (activeDim && activeDim.bins && activeDim.bins.length > 0) {
+      if (marginals == null && activeClusterTaskId == null) {
+        // if we have bins for a search result and no ongoing clustering task, then we've already
+        // computed the marginals in an earlier query and just need to request them
+        dispatch(
+          requestClusters({ dimensionId: activeDim.id, feedback: '' })
+        );
+      }
+    }
+  }, [activeDim, marginals, dispatch, activeClusterTaskId])
 
   /**
    * Local state for UI components

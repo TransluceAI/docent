@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, Sequence, Type
 from uuid import uuid4
 
@@ -151,7 +152,7 @@ class AgentRunIdFilter(BaseFrameFilter):
         Returns:
             A list of Judgment objects for each matching agent run.
         """
-        return [
+        judgments = [
             Judgment(
                 matches=b,
                 reason=f"agent_run_id {'matches' if b else 'does not match'} {self.value}",
@@ -161,6 +162,10 @@ class AgentRunIdFilter(BaseFrameFilter):
             for ar in agent_runs
             if (b := ar.id == self.value) or return_all
         ]
+        if judgment_callback is not None:
+            tasks = [judgment_callback(judgment) for judgment in judgments]
+            await asyncio.gather(*tasks)
+        return judgments
 
 
 class PrimitiveFilter(BaseFrameFilter):

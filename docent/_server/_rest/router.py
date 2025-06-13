@@ -791,7 +791,7 @@ async def listen_compute_search(
 @user_router.post("/{job_id}/cancel_compute_search")
 async def cancel_compute_search(job_id: str):
     q = f"commands_{job_id}"
-    await REDIS.rpush(q, "cancel")
+    await REDIS.rpush(q, "cancel")  # type: ignore
 
 
 @user_router.post("/{query_id}/resume_compute_search")

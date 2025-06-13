@@ -213,7 +213,7 @@ class BaseAgentRunMetadata(BaseMetadata):
         description="The ID of the run that the transcript belongs to",
         default_factory=lambda: str(uuid.uuid4()),
     )
-    scores: dict[str, int | float | bool] = Field(
+    scores: dict[str, int | float | bool | None] = Field(
         description="A dict of score_key -> score_value. Use one key for each metric you're tracking."
     )
     default_score_key: str | None = Field(

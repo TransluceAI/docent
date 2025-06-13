@@ -130,7 +130,7 @@ def lifespan(app: FastAPI):
     worker_process.terminate()
 
 
-asgi_app = FastAPI(lifespan=lifespan)
+asgi_app = FastAPI(lifespan=lifespan)  # type: ignore
 
 # Add middlewares in order (they are processed in reverse order when handling responses)
 # 1. Request logging middleware first

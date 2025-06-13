@@ -74,7 +74,7 @@ class SearchResultStreamingCallback(Protocol):
 
 
 def _get_llm_streaming_callback(
-    search_result: str,
+    search_query: str,
     datapoint_ids: list[str],
     search_result_callback: SearchResultStreamingCallback,
 ):
@@ -89,7 +89,7 @@ def _get_llm_streaming_callback(
                 [
                     SearchResult(
                         agent_run_id=datapoint_ids[batch_index],
-                        search_query=search_result,
+                        search_query=search_query,
                         search_result_idx=i,
                         value=value,
                     )
@@ -103,7 +103,7 @@ def _get_llm_streaming_callback(
 
 
 def _get_llm_streaming_callback_for_sharded_search(
-    search_result: str,
+    search_query: str,
     datapoint_ids: list[str],
     search_result_callback: SearchResultStreamingCallback,
 ):
@@ -121,7 +121,7 @@ def _get_llm_streaming_callback_for_sharded_search(
                 [
                     SearchResult(
                         agent_run_id=datapoint_ids[batch_index],
-                        search_query=search_result,
+                        search_query=search_query,
                         search_result_idx=i,
                         value=value,
                     )
