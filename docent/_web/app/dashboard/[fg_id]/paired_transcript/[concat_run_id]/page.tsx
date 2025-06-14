@@ -6,9 +6,9 @@ import React, { Suspense, useEffect, useRef, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { getCurAgentRun, getAltAgentRun } from '@/app/store/transcriptSlice';
 
-import TranscriptViewer, {
-  TranscriptViewerHandle,
-} from '@/app/dashboard/[fg_id]/transcript/components/TranscriptViewer';
+import AgentRunViewer, {
+  AgentRunViewerHandle,
+} from '@/app/dashboard/[fg_id]/transcript/components/AgentRunViewer';
 import DiffPanel from './components/DiffPanel';
 
 const SCROLL_DELAY = 250;
@@ -38,8 +38,8 @@ export default function AgentRunPage2() {
    * Handle scrolling to the block
    */
 
-  const transcriptViewerRef = useRef<TranscriptViewerHandle>(null);
-  const altTranscriptViewerRef = useRef<TranscriptViewerHandle>(null);
+  const transcriptViewerRef = useRef<AgentRunViewerHandle>(null);
+  const altTranscriptViewerRef = useRef<AgentRunViewerHandle>(null);
 
   const alreadyScrolledRef1 = useRef(false);
   const alreadyScrolledRef2 = useRef(false);
@@ -64,7 +64,7 @@ export default function AgentRunPage2() {
       alreadyScrolledRef1.current = true;
       setTimeout(() => {
         console.log('Scrolling to block', blockId1);
-        transcriptViewerRef.current?.scrollToBlock(blockId1);
+        transcriptViewerRef.current?.scrollToBlock(blockId1, 0, 0);
       }, 100); // Small delay to allow for DOM rendering
     }
   }, [curAgentRun, blockId1, agentRunIds, hasInitAttributeDimId, attributeMap]);
@@ -86,7 +86,7 @@ export default function AgentRunPage2() {
       alreadyScrolledRef2.current = true;
       setTimeout(() => {
         console.log('Scrolling to block', blockId2);
-        altTranscriptViewerRef.current?.scrollToBlock(blockId2);
+        altTranscriptViewerRef.current?.scrollToBlock(blockId2, 0, 0);
       }, 100); // Small delay to allow for DOM rendering
     }
   }, [curAgentRun, blockId2, agentRunIds, hasInitAttributeDimId, attributeMap]);
@@ -123,7 +123,7 @@ export default function AgentRunPage2() {
 
     if (blockId) {
       setTimeout(() => {
-        transcriptViewerRef.current?.scrollToBlock(blockId);
+        transcriptViewerRef.current?.scrollToBlock(blockId, 0, 0);
       }, SCROLL_DELAY); // Small delay to allow the transcript to load before scrolling
     }
   };
@@ -132,12 +132,12 @@ export default function AgentRunPage2() {
   const handleDiffScrollToBlock = useCallback(
     (blockIndex: number, transcriptIdx?: number) => {
       if (transcriptIdx === 0 && transcriptViewerRef.current) {
-        transcriptViewerRef.current.scrollToBlock(blockIndex);
+        transcriptViewerRef.current.scrollToBlock(blockIndex, 0, 0);
       } else if (transcriptIdx === 1 && altTranscriptViewerRef.current) {
-        altTranscriptViewerRef.current.scrollToBlock(blockIndex);
+        altTranscriptViewerRef.current.scrollToBlock(blockIndex, 0, 0);
       } else {
         // If no transcriptIdx provided, try to scroll the first transcript
-        transcriptViewerRef.current?.scrollToBlock(blockIndex);
+        transcriptViewerRef.current?.scrollToBlock(blockIndex, 0, 0);
       }
     },
     []
@@ -146,15 +146,15 @@ export default function AgentRunPage2() {
   return (
     <Suspense>
       <div className="flex-1 flex space-x-3 min-h-0">
-        <TranscriptViewer
+        <AgentRunViewer
           ref={transcriptViewerRef}
           secondary={false}
-          otherTranscriptRef={altTranscriptViewerRef}
+          otherAgentRunRef={altTranscriptViewerRef}
         />
-        <TranscriptViewer
+        <AgentRunViewer
           ref={altTranscriptViewerRef}
           secondary={true}
-          otherTranscriptRef={transcriptViewerRef}
+          otherAgentRunRef={transcriptViewerRef}
         />
         <DiffPanel
           agentRunIds={[agentRunIds[0], agentRunIds[1]]}

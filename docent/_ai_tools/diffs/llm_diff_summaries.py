@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from docent._ai_tools.diff import (
-    MULTI_BLOCK_CITE_INSTRUCTION,
+    MULTI_RUN_CITE_INSTRUCTION,
     format_transcript_messages_and_states,
 )
 from docent._ai_tools.diffs.llm_message_summaries import compute_transcript_summaries
@@ -10,7 +10,7 @@ from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.citation import parse_citations_multi_transcript
+from docent.data_models.citation import parse_citations_multi_run
 from docent.data_models.shared_types import EvidenceWithCitation
 
 """ Vincent's original implementation"""
@@ -52,7 +52,7 @@ Both models are trying to test their solutions, and agent 1 writes much more det
 
 Look through the transcripts and list the major differences in actions between the two agents. If there are no major differences, minor differences are also fine.
 
-Use these guidelines for citations: {MULTI_BLOCK_CITE_INSTRUCTION}
+Use these guidelines for citations: {MULTI_RUN_CITE_INSTRUCTION}
 
 Format your final list as follows:
 <claim>
@@ -196,7 +196,7 @@ Here are some examples of differences, and the level of specifity in which we'd 
 
 Look through the transcripts and list the major differences in actions between the two agents. If there are no major differences, minor differences are also fine.
 
-Use these guidelines for citations: {MULTI_BLOCK_CITE_INSTRUCTION}
+Use these guidelines for citations: {MULTI_RUN_CITE_INSTRUCTION}
 
 Format each entry in your final list of claims follows:
 <claim>
@@ -344,7 +344,7 @@ def _parse_llm_output_to_claims(output: str) -> list[Claim]:
             agent_2_action=agent_2_action,
             evidence=evidence,
             evidence_with_citations=EvidenceWithCitation(
-                evidence=evidence, citations=parse_citations_multi_transcript(evidence)
+                evidence=evidence, citations=parse_citations_multi_run(evidence)
             ),
         )
         claims.append(claim)

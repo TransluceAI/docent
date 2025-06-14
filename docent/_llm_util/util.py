@@ -1,5 +1,7 @@
 import tiktoken
 
+MAX_TOKENS = 100_000
+
 
 def get_token_count(text: str, model: str = "gpt-4") -> int:
     """Get the number of tokens in a text under the GPT-4 tokenization scheme."""

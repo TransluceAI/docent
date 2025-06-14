@@ -15,7 +15,7 @@ export default function UuidPill({ uuid }: { uuid?: string }) {
 
   return (
     <span
-      className="inline-flex items-center px-0.5 py-0.5 rounded-md text-xs font-mono text-gray-500 bg-gray-100 border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
+      className="inline-flex items-center h-6 px-0.5 py-0.5 rounded-md text-xs font-mono text-gray-500 bg-gray-100 border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
       onClick={copyToClipboard}
       title="Click to copy full UUID"
     >

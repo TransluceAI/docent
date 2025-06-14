@@ -11,10 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import AgentSummary from '../components/AgentSummary';
 import TaPanel from '../components/TaPanel';
-import TaskSummary from '../components/TaskSummary';
-import TranscriptViewer, {
-  TranscriptViewerHandle,
-} from '../components/TranscriptViewer';
+import AgentRunViewer, {
+  AgentRunViewerHandle,
+} from '../components/AgentRunViewer';
 
 const SCROLL_DELAY = 250;
 
@@ -27,8 +26,12 @@ export default function AgentRunPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const agentRunIdRaw = params.agent_run_id;
-  const blockIdParam = searchParams.get('block_id');
-  const blockId = blockIdParam ? parseInt(blockIdParam, 10) : undefined;
+  const blockIdxParam = searchParams.get('block_idx');
+  const blockIdx = blockIdxParam ? parseInt(blockIdxParam, 10) : undefined;
+  const transcriptIdxParam = searchParams.get('transcript_idx');
+  const transcriptIdx = transcriptIdxParam
+    ? parseInt(transcriptIdxParam, 10)
+    : undefined;
 
   const agentRunId = React.useMemo(() => {
     return Array.isArray(agentRunIdRaw) ? agentRunIdRaw[0] : agentRunIdRaw;
@@ -38,7 +41,7 @@ export default function AgentRunPage() {
    * Handle scrolling to the block
    */
 
-  const transcriptViewerRef = useRef<TranscriptViewerHandle>(null);
+  const agentRunViewerRef = useRef<AgentRunViewerHandle>(null);
 
   const alreadyScrolledRef = useRef(false);
   const hasInitSearchQuery = useAppSelector(
@@ -57,17 +60,21 @@ export default function AgentRunPage() {
     // Else, if it's false, then we don't need to wait
 
     if (
-      transcriptViewerRef.current &&
+      agentRunViewerRef.current &&
       curAgentRun?.id === agentRunId &&
-      blockId
+      blockIdx !== undefined
     ) {
       alreadyScrolledRef.current = true;
       setTimeout(() => {
-        console.log('Scrolling to block', blockId);
-        transcriptViewerRef.current?.scrollToBlock(blockId);
+        console.log('Scrolling to block', blockIdx, transcriptIdx);
+        agentRunViewerRef.current?.scrollToBlock(
+          blockIdx,
+          transcriptIdx || 0,
+          0
+        );
       }, 100); // Small delay to allow for DOM rendering
     }
-  }, [curAgentRun, blockId, agentRunId, hasInitSearchQuery, searchResultMap]);
+  }, [curAgentRun, blockIdx, agentRunId, hasInitSearchQuery, searchResultMap]);
 
   /**
    * Fetch agent run once
@@ -80,16 +87,20 @@ export default function AgentRunPage() {
       dispatch(getCurAgentRun(agentRunId));
       fetchRef.current = true;
     }
-  }, [frameGridId, agentRunId, blockId, dispatch, curAgentRun?.id]);
+  }, [frameGridId, agentRunId, blockIdx, dispatch, curAgentRun?.id]);
 
-  const onShowAgentRun = (agentRunId: string, blockId?: number) => {
+  const onShowAgentRun = (agentRunId: string, blockIdx?: number) => {
     if (agentRunId !== curAgentRun?.id) {
       dispatch(getCurAgentRun(agentRunId));
     }
 
-    if (blockId) {
+    if (blockIdx) {
       setTimeout(() => {
-        transcriptViewerRef.current?.scrollToBlock(blockId);
+        agentRunViewerRef.current?.scrollToBlock(
+          blockIdx,
+          transcriptIdx || 0,
+          0
+        );
       }, SCROLL_DELAY); // Small delay to allow the transcript to load before scrolling
     }
   };
@@ -97,33 +108,33 @@ export default function AgentRunPage() {
   return (
     <Suspense>
       <div className="flex-1 flex space-x-3 min-h-0">
-        <TranscriptViewer ref={transcriptViewerRef} secondary={false} />
+        <AgentRunViewer ref={agentRunViewerRef} secondary={false} />
 
         <Card className="h-full overflow-y-auto flex-1 p-3">
           <Tabs defaultValue="agent" className="h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-3 h-8">
+            <TabsList className="grid w-full grid-cols-2 h-8">
               <TabsTrigger value="agent" className="text-xs">
                 Agent Summary
               </TabsTrigger>
-              <TabsTrigger value="task" className="text-xs">
+              {/* <TabsTrigger value="task" className="text-xs">
                 Task Summary
-              </TabsTrigger>
+              </TabsTrigger> */}
               <TabsTrigger value="chat" className="text-xs">
                 Chat
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="task" className="flex-1 mt-0">
-              <ScrollArea className="h-full px-1 py-2">
-                <TaskSummary />
-              </ScrollArea>
-            </TabsContent>
 
             <TabsContent value="agent" className="flex-1 mt-0">
               <ScrollArea className="h-full px-1 py-2">
                 <AgentSummary onCitationClick={onShowAgentRun} />
               </ScrollArea>
             </TabsContent>
+
+            {/* <TabsContent value="task" className="flex-1 mt-0">
+              <ScrollArea className="h-full px-1 py-2">
+                <TaskSummary />
+              </ScrollArea>
+            </TabsContent> */}
 
             <TabsContent value="chat" className="flex-1 mt-0">
               <div className="h-full px-1 py-2">

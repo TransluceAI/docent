@@ -60,10 +60,9 @@ class AgentRun(BaseModel):
         """
 
         transcript_strs: list[str] = [
-            f"<transcript {t_id}>\n{t.to_str()}\n</transcript {t_id}>"
-            for t_id, t in self.transcripts.items()
+            f"<transcript {t_key}>\n{t.to_str(agent_run_idx=None, transcript_idx=i)}\n</transcript {t_key}>"
+            for i, (t_key, t) in enumerate(self.transcripts.items())
         ]
-
         transcripts_str = "\n\n".join(transcript_strs)
 
         # Gather metadata
@@ -78,10 +77,15 @@ class AgentRun(BaseModel):
             f"Here is a complete agent run for analysis purposes only:\n{transcripts_str}\n\n"
         )
         metadata_str = f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</agent run metadata>"
+
+        # Compute message length; if fits, return the full transcript and metadata
         transcript_str_tokens = get_token_count(transcripts_str)
         metadata_str_tokens = get_token_count(metadata_str)
         if transcript_str_tokens + metadata_str_tokens <= token_limit:
             return [f"{transcripts_str}" f"{metadata_str}"]
+
+        # Otherwise, split up the transcript and metadata into chunks
+        # TODO(vincent, mengk): does this code account for multiple transcripts correctly? a little confused.
         else:
             results: list[str] = []
             transcript_token_counts = [get_token_count(t) for t in transcript_strs]

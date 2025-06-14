@@ -223,8 +223,8 @@ export default function ExperimentViewer() {
     ];
   }, [outerDimId, innerDimId, dimensionsMap]);
 
-  const [outerLabel, innerLabel]: [string, string] = useMemo(() => {
-    return [outerDimName || 'outer', innerDimName || 'inner'];
+  const [outerLabel, innerLabel] = useMemo(() => {
+    return [outerDimName, innerDimName];
   }, [outerDimName, innerDimName]);
   const getOuterKey = (outerId: string) => getMarginalKey(null, outerId);
 
@@ -403,10 +403,12 @@ export default function ExperimentViewer() {
         <div>
           <div className="text-sm font-semibold">
             Agent Run Viewer
-            <span className="text-xxs text-gray-500 font-light ml-2">
-              {outerFilterIds.length} {outerLabel}
-              {outerFilterIds.length === 1 ? '' : 's'}
-            </span>
+            {outerLabel && (
+              <span className="text-xxs text-gray-500 font-light ml-2">
+                {outerFilterIds.length} {outerLabel}
+                {outerFilterIds.length === 1 ? '' : 's'}
+              </span>
+            )}
           </div>
           <div className="text-xs">Compare agent performance across runs.</div>
         </div>

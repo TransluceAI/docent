@@ -14,24 +14,29 @@ from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.tables import JobStatus
 from docent._db_service.service import DBService
 from docent._env_util import ENV
+from docent._log_util import get_logger
 from docent._server._rest.send_state import publish_searches
 
+logger = get_logger(__name__)
+
+
+# Initialize Redis connection
 REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
 REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
-
-
+if REDIS_HOST is None or REDIS_PORT is None:
+    raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
 REDIS = ArqRedis(
     connection_pool=redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 )
 
 
 async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
-    print("compute search:", view_ctx, job_id)
+    logger.info("compute search:", view_ctx, job_id)
 
     db = await DBService.init()
     result = await db.get_search_job_and_query(job_id)
     if result is None:
-        print(f"Search job {job_id} not found")
+        logger.error(f"Search job {job_id} not found")
         return
     _job, query = result
 
@@ -71,9 +76,10 @@ async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str
         q = f"commands_{job_id}"
 
         while True:
-            _queue, command = await REDIS.blpop(q)
-            print(f"{job_id} received {command}")
-            match command:
+            _queue, command = await REDIS.blpop(q)  # type: ignore
+            logger.info(f"{job_id} received {command}")
+
+            match command:  # type: ignore
                 case "cancel":
                     # The search task may internally prevent cancellation requests from bubbling all
                     # the way up, so explicitly note down the cancellation if we do it ourselves.
@@ -89,14 +95,15 @@ async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str
     for task in pending:
         task.cancel()
 
-    print(f"worker finishing job {job_id}")
+    logger.info(f"worker finishing job {job_id}")
 
 
 def run():
+    assert REDIS_HOST is not None and REDIS_PORT is not None
     run_worker(
         {
             "functions": [compute_search],
-            "redis_settings": RedisSettings(host=REDIS_HOST, port=REDIS_PORT),
+            "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
             "queue_name": "compute_search_queue",
             "max_jobs": 5,  # Allow up to 5 concurrent jobs per worker
         }

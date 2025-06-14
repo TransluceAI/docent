@@ -1922,7 +1922,7 @@ class DBService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
 
-    async def list_search_jobs_and_queries(self) -> list[tuple[SQLAJob, SQLASearchQuery]]:
+    async def list_search_jobs_and_queries(self):
         async with self.session() as session:
             # Find the latest job creation time corresponding to each query ID.
             sub_q = (

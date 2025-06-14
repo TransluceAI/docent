@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent._llm_util.util import get_token_count
+from docent._llm_util.util import MAX_TOKENS, get_token_count
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.citation import Citation, parse_citations_single_transcript
-from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
+from docent.data_models.citation import Citation, parse_citations_single_run
+from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
 
 SEARCH_PROMPT = f"""
 Your task is to check for instances of a search query in some text:
@@ -35,7 +35,7 @@ description
 description
 </instance>
 
-{SINGLE_BLOCK_CITE_INSTRUCTION}
+{SINGLE_RUN_CITE_INSTRUCTION}
 """.strip()
 
 
@@ -55,9 +55,7 @@ class SearchResultWithCitations(SearchResult):
         return cls(
             **result.model_dump(),
             citations=(
-                parse_citations_single_transcript(result.value)
-                if result.value is not None
-                else None
+                parse_citations_single_run(result.value) if result.value is not None else None
             ),
         )
 
@@ -157,13 +155,15 @@ async def execute_search(
     Searches over provided AgentRuns sequentially and uses streaming_callback to stream the results
     of each search. Results are returned in the same order as the provided AgentRuns, but you should
     not make any assumptions about streaming order.
+
+    TODO(vincent, mengk): i believe this code can be simplified by using a stateful callback.
     """
     ids = [ar.id for ar in agent_runs]
     texts = [ar.text for ar in agent_runs]
 
     # try to search over all short AgentRuns first, since we can stream those immediately
 
-    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) < 100_000]
+    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
@@ -247,46 +247,5 @@ async def execute_search(
             long_llm_callback(i, output_group) for i, output_group in enumerate(grouped_outputs)
         ]
         await asyncio.gather(*callbacks)
-
-    return ans
-
-
-async def _execute_search_over_text(  # type: ignore
-    texts: list[str],
-    search_query: str,
-    search_result_callback: SearchResultStreamingCallback | None = None,
-):
-    """
-    TODO(mengk): this is a hack for bridgewater, remove it later.
-    """
-    ids = [str(i) for i in range(len(texts))]
-
-    llm_callback = (
-        _get_llm_streaming_callback(search_query, ids, search_result_callback)
-        if search_result_callback is not None
-        else None
-    )
-
-    prompts = [SEARCH_PROMPT.format(search_query=search_query, item=item) for item in texts]
-    outputs = await get_llm_completions_async(
-        [
-            [
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ]
-            for prompt in prompts
-        ],
-        PROVIDER_PREFERENCES.execute_search,
-        max_new_tokens=4096,
-        timeout=180.0,
-        use_cache=True,
-        completion_callback=llm_callback,
-    )
-
-    ans: list[list[str] | None] = []
-    for output in outputs:
-        ans.append(_parse_llm_output(output))
 
     return ans

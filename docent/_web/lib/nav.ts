@@ -4,23 +4,35 @@ import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.share
 export const getAgentRunUrl = (
   fgId: string,
   agentRunId: string,
+  transcriptIdx?: number,
   blockIdx?: number,
   blockIdx2?: number,
-  paired?: boolean
+  paired?: boolean,
+  searchQuery?: string
 ) => {
-  let prefix =
+  const prefix =
     `${BASE_DOCENT_PATH}/${fgId}/` +
     (paired ? 'paired_transcript' : 'transcript') +
     `/${agentRunId}`;
+  const params = new URLSearchParams();
+
+  if (transcriptIdx != undefined) {
+    params.append('transcript_idx', transcriptIdx.toString());
+  }
 
   if (blockIdx != undefined) {
-    prefix += `?block_id=${blockIdx}`;
+    params.append('block_idx', blockIdx.toString());
     if (blockIdx2 != undefined) {
-      prefix += `&block_id_2=${blockIdx2}`;
+      params.append('block_idx_2', blockIdx2.toString());
     }
   }
 
-  return prefix;
+  if (searchQuery) {
+    params.append('searchQuery', searchQuery);
+  }
+
+  const queryString = params.toString();
+  return queryString ? `${prefix}?${queryString}` : prefix;
 };
 
 export const navToAgentRun = (
@@ -28,7 +40,8 @@ export const navToAgentRun = (
   router: AppRouterInstance,
   window: Window,
   agentRunId: string,
-  blockId?: number,
+  transcriptIdx?: number,
+  blockIdx?: number,
   frameGridId?: string,
   searchQuery?: string
 ) => {
@@ -40,22 +53,27 @@ export const navToAgentRun = (
 
   if (e.metaKey || e.ctrlKey || e.button === 1) {
     // Open in new tab
-    let url = `${window.location.origin}${BASE_DOCENT_PATH}/${frameGridId}/transcript/${agentRunId}`;
-
-    const blockIdParam = blockId ? `?block_id=${blockId}` : '';
-    url += blockIdParam;
-
-    if (searchQuery) {
-      url += blockIdParam
-        ? `&searchQuery=${searchQuery}`
-        : `?searchQuery=${searchQuery}`;
-    }
-
+    const url = getAgentRunUrl(
+      frameGridId,
+      agentRunId,
+      transcriptIdx,
+      blockIdx,
+      undefined,
+      undefined,
+      searchQuery
+    );
     window.open(url, '_blank');
   } else if (e.button === 0) {
     // Open in same tab
-    const url = getAgentRunUrl(frameGridId, agentRunId, blockId);
-    console.log('url', url);
+    const url = getAgentRunUrl(
+      frameGridId,
+      agentRunId,
+      transcriptIdx,
+      blockIdx,
+      undefined,
+      undefined,
+      undefined // When opening in same tab, don't need to pass the search query
+    );
     router.push(url);
   }
 };

@@ -15,7 +15,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-
 interface TaPanelProps {
   onShowAgentRun?: (agentRunId: string, blockId: number) => void;
 }

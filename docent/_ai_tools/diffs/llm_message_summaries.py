@@ -1,10 +1,11 @@
-from docent.data_models.agent_run import AgentRun
-from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
-from docent._llm_util.data_models.llm_output import LLMOutput
-from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent._llm_util.prod_llms import get_llm_completions_async
-from docent._ai_tools.diffs.models import MessageState
 import re
+
+from docent._ai_tools.diffs.models import MessageState
+from docent._llm_util.data_models.llm_output import LLMOutput
+from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
 
 
 async def get_llm_output_for_transcript_to_message_summaries(
@@ -19,7 +20,7 @@ Note that each message in the sequence can have one of several roles - system, u
 For each ASSISTANT message, perform the following procedure:
 - Summarize the action taken in the message
 - Summarize the goal of the agent's current action
-- Provide a concise but specific summary of the agent's past actions that are relevant to the current goal. You are encouraged to cite evidence from the transcripts: {SINGLE_BLOCK_CITE_INSTRUCTION}
+- Provide a concise but specific summary of the agent's past actions that are relevant to the current goal. You are encouraged to cite evidence from the transcripts: {SINGLE_RUN_CITE_INSTRUCTION}
 
 Do not mention non-assistant messages in your output.
 
@@ -77,9 +78,7 @@ Relevant past actions: [summary of past actions that are relevant to the current
 
 
 def llm_output_to_message_summaries(text: str) -> list[MessageState]:
-    blocks = [
-        block.strip() for block in re.split(r"(?=\n\[B\d+\]\n)", text) if block.strip()
-    ]
+    blocks = [block.strip() for block in re.split(r"(?=\n\[B\d+\]\n)", text) if block.strip()]
     return [_parse_message_summary(block) for block in blocks]
 
 
@@ -108,4 +107,3 @@ def _parse_message_summary(block: str) -> MessageState:
 async def compute_transcript_summaries(agent_run: AgentRun) -> list[MessageState]:
     output = await get_llm_output_for_transcript_to_message_summaries(agent_run)
     return llm_output_to_message_summaries(output)
-

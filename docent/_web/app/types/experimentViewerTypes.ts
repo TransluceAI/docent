@@ -14,8 +14,9 @@ export interface TranscriptMetadataField {
 export interface Citation {
   start_idx: number;
   end_idx: number;
-  block_idx: number;
+  agent_run_idx: number | null;
   transcript_idx: number | null;
+  block_idx: number;
   action_unit_idx: number | null;
 }
 

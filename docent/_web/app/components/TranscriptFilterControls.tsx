@@ -13,8 +13,7 @@ import {
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { clearSearch } from '../store/searchSlice';
-import {
+import { clearSearch ,
   addBaseFilter,
   clearBaseFilters,
   removeBaseFilter,

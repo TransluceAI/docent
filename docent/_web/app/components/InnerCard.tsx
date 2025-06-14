@@ -14,11 +14,12 @@ import { SearchResultWithCitations } from '../types/frameTypes';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { useRouter } from 'next/navigation';
 import { navToAgentRun } from '@/lib/nav';
+import { renderTextWithCitations } from '@/lib/renderCitations';
 
 interface InnerCardProps {
   innerId: string;
   innerName?: string;
-  innerLabel: string;
+  innerLabel?: string | null;
   stats: TaskStats | null;
   agentRunIds: string[];
   isExpanded: boolean;
@@ -64,81 +65,19 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
         const citations = attribute.citations || [];
         // const currentVote = voteState?.[dataId]?.[attributeText];
 
-        // Create a component that renders text with citations highlighted
-        const renderTextWithCitations = () => {
-          if (!citations.length) {
-            return attributeText;
-          }
-
-          // Sort citations by start index to process them in order
-          const sortedCitations = [...citations].sort(
-            (a, b) => a.start_idx - b.start_idx
-          );
-
-          const parts: JSX.Element[] = [];
-          let lastIndex = 0;
-
-          sortedCitations.forEach((citation, i) => {
-            // Add text before the citation
-            if (citation.start_idx > lastIndex) {
-              parts.push(
-                <span key={`text-${i}`}>
-                  {attributeText.slice(lastIndex, citation.start_idx)}
-                </span>
-              );
-            }
-
-            // Add the cited text as a clickable element
-            const citedText = attributeText.slice(
-              citation.start_idx,
-              citation.end_idx
-            );
-            parts.push(
-              <button
-                key={`citation-${i}`}
-                className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
-                onMouseDown={(e) => {
-                  navToAgentRun(
-                    e,
-                    router,
-                    window,
-                    dataId,
-                    citation.block_idx,
-                    frameGridId,
-                    curAttributeQuery
-                  );
-                }}
-              >
-                {citedText}
-              </button>
-            );
-
-            lastIndex = citation.end_idx;
-          });
-
-          // Add any remaining text
-          if (lastIndex < attributeText.length) {
-            parts.push(
-              <span key={`text-end`}>{attributeText.slice(lastIndex)}</span>
-            );
-          }
-
-          return <>{parts}</>;
-        };
-
         return (
           <div
             key={idx}
             className="group bg-indigo-50 rounded-md p-1 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
             onMouseDown={(e) => {
               const firstCitation = citations.length > 0 ? citations[0] : null;
-              const blockId = firstCitation?.block_idx;
               navToAgentRun(
                 e,
                 router,
                 window,
                 dataId,
-                blockId,
+                firstCitation?.transcript_idx ?? undefined,
+                firstCitation?.block_idx,
                 frameGridId,
                 curAttributeQuery
               );
@@ -146,7 +85,17 @@ const AttributeSection: React.FC<AttributeSectionProps> = ({
           >
             <div className="flex flex-col">
               <div className="flex items-start justify-between gap-2">
-                <p className="mb-0.5 flex-1">{renderTextWithCitations()}</p>
+                <p className="mb-0.5 flex-1">
+                  {renderTextWithCitations(
+                    attributeText,
+                    citations,
+                    dataId,
+                    router,
+                    window,
+                    curAttributeQuery,
+                    frameGridId
+                  )}
+                </p>
                 <div className="flex shrink-0">
                   {/* <Tooltip>
                     <TooltipContent>This result is relevant</TooltipContent>
@@ -412,7 +361,7 @@ const InnerCard: React.FC<InnerCardProps> = ({
             <div>
               <div className="flex items-center">
                 <span className="font-medium text-gray-600">
-                  <span className="font-mono">{innerLabel}</span>
+                  <span className="font-mono">{innerLabel || 'inner'}</span>
                   {' ' + (innerName || innerId)}
                   <span className="text-xxs text-gray-500 font-light ml-2">
                     {agentRunIds.length} agent run
@@ -493,6 +442,7 @@ const InnerCard: React.FC<InnerCardProps> = ({
                         window,
                         agentRunId,
                         undefined,
+                        undefined,
                         frameGridId
                       )
                     }
@@ -511,6 +461,7 @@ const InnerCard: React.FC<InnerCardProps> = ({
                               router,
                               window,
                               agentRunId,
+                              undefined,
                               undefined,
                               frameGridId,
                               curSearchQuery

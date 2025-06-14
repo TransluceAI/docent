@@ -11,9 +11,7 @@ import {
 import { useEffect, useState, useRef, useCallback } from 'react';
 
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import {
-  getActionsSummary,
-} from '@/app/store/transcriptSlice';
+import { getActionsSummary } from '@/app/store/transcriptSlice';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import {
   AgentRun,

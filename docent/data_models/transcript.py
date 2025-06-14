@@ -21,33 +21,22 @@ TRANSCRIPT_BLOCK_TEMPLATE = """
 """.strip()
 
 # Instructions for citing single transcript blocks
-SINGLE_BLOCK_CITE_INSTRUCTION = "Each transcript block has a unique index; cite the relevant block index in brackets when relevant, like [B<idx>]. Use multiple tags to cite multiple blocks, like [B<idx1>][B<idx2>]. Use dashes to cite ranges, like [B<idx1>-B<idx2>], but cite ranges sparingly; do your best to be specific."
+SINGLE_RUN_CITE_INSTRUCTION = "Each transcript and each block has a unique index. Cite the relevant indices in brackets when relevant, like [T<idx>B<idx>]. Use multiple tags to cite multiple blocks, like [T<idx1>B<idx1>][T<idx2>B<idx2>]. Use an inner dash to cite a range of blocks, like [T<idx1>B<idx1>-T<idx2>B<idx2>]. Remember to cite specific blocks and NOT action units."
 
 # Instructions for citing multiple transcript blocks
-MULTI_BLOCK_CITE_INSTRUCTION = "Each transcript block has a unique index; cite the relevant block index in brackets when relevant, like [T<idx>B<idx>]. Use multiple tags to cite multiple blocks, like [T<idx1>B<idx1>][T<idx2>B<idx2>]. Use dashes to cite ranges, like [T<idx1>B<idx1>-T<idx2>B<idx2>], but cite ranges sparingly; do your best to be specific."
+MULTI_RUN_CITE_INSTRUCTION = "Each run, each transcript, and each block has a unique index. Cite the relevant indices in brackets when relevant, like [R<idx>T<idx>B<idx>]. Use multiple tags to cite multiple blocks, like [R<idx1>T<idx1>B<idx1>][R<idx2>T<idx2>B<idx2>]. Use an inner dash to cite a range of blocks, like [R<idx1>T<idx1>B<idx1>-R<idx2>T<idx2>B<idx2>]. Remember to cite specific blocks and NOT action units."
 
 
 def format_chat_message(
-    transcript_idx: int | None, block_idx: int | None, message: ChatMessage
+    message: ChatMessage,
+    block_idx: int,
+    transcript_idx: int = 0,
+    agent_run_idx: int | None = None,
 ) -> str:
-    """Format a chat message with appropriate indexing and content presentation.
-
-    Args:
-        transcript_idx: Optional transcript index to include in the label.
-        block_idx: Optional block index to include in the label.
-        message: The chat message to format.
-
-    Returns:
-        str: Formatted chat message string with appropriate index labeling.
-    """
-    if transcript_idx is not None and block_idx is not None:
-        index_label = f"T{transcript_idx}B{block_idx}"
-    elif transcript_idx is not None:
-        index_label = f"T{transcript_idx}"
-    elif block_idx is not None:
-        index_label = f"B{block_idx}"
+    if agent_run_idx is not None:
+        index_label = f"R{agent_run_idx}T{transcript_idx}B{block_idx}"
     else:
-        index_label = ""
+        index_label = f"T{transcript_idx}B{block_idx}"
 
     cur_content = ""
 
@@ -226,40 +215,23 @@ class Transcript(BaseModel):
 
     def to_str(
         self,
-        transcript_idx_label: int | None = None,
+        transcript_idx: int = 0,
+        agent_run_idx: int | None = None,
         highlight_action_unit: int | None = None,
-        max_action_unit_idx: int | None = None,
     ) -> str:
-        """Convert the transcript to a string representation.
-
-        Creates a formatted string representation of the transcript, optionally
-        highlighting a specific action unit and limiting the number of action units shown.
-
-        Args:
-            transcript_idx_label: Optional transcript index to include in block labels.
-            highlight_action_unit: Optional index of an action unit to highlight.
-            max_action_unit_idx: Optional maximum action unit index to include in the output.
-                If provided, only the first `max_action_unit_idx + 1` action units will be included.
-
-        Returns:
-            str: Formatted string representation of the transcript.
-
-        Raises:
-            ValueError: If highlight_action_unit or max_action_unit_idx is invalid.
-        """
         return self.to_str_with_token_limit(
             token_limit=sys.maxsize,
-            transcript_idx_label=transcript_idx_label,
+            agent_run_idx=agent_run_idx,
+            transcript_idx=transcript_idx,
             highlight_action_unit=highlight_action_unit,
-            max_action_unit_idx=max_action_unit_idx,
         )[0]
 
     def to_str_with_token_limit(
         self,
         token_limit: int,
-        transcript_idx_label: int | None = None,
+        transcript_idx: int = 0,
+        agent_run_idx: int | None = None,
         highlight_action_unit: int | None = None,
-        max_action_unit_idx: int | None = None,
     ) -> list[str]:
         """Represents the transcript as a list of strings, each of which is at most token_limit tokens
         under the GPT-4 tokenization scheme.
@@ -275,21 +247,19 @@ class Transcript(BaseModel):
             0 <= highlight_action_unit < len(self._units_of_action or [])
         ):
             raise ValueError(f"Invalid action unit index: {highlight_action_unit}")
-        if max_action_unit_idx is not None and max_action_unit_idx >= len(
-            self._units_of_action or []
-        ):
-            raise ValueError(f"Invalid max action unit index: {max_action_unit_idx}")
 
         # Format blocks by units of action
         au_blocks: list[str] = []
         for unit_idx, unit in enumerate(self._units_of_action or []):
-            if max_action_unit_idx is not None and unit_idx > max_action_unit_idx:
-                break
-
             unit_blocks: list[str] = []
             for msg_idx in unit:
                 unit_blocks.append(
-                    format_chat_message(transcript_idx_label, msg_idx, self.messages[msg_idx])
+                    format_chat_message(
+                        self.messages[msg_idx],
+                        msg_idx,
+                        transcript_idx,
+                        agent_run_idx,
+                    )
                 )
 
             unit_content = "\n".join(unit_blocks)
@@ -308,11 +278,6 @@ class Transcript(BaseModel):
 
         # Gather metadata
         metadata_obj = self.metadata.model_dump(strip_internal_fields=True)
-        if self.name is not None:
-            metadata_obj["name"] = self.name
-        if self.description is not None:
-            metadata_obj["description"] = self.description
-
         yaml_width = float("inf")
         block_str = f"<blocks>\n{blocks_str}\n</blocks>\n"
         metadata_str = f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"

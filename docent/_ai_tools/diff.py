@@ -10,8 +10,8 @@ from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import (
-    MULTI_BLOCK_CITE_INSTRUCTION,
-    SINGLE_BLOCK_CITE_INSTRUCTION,
+    MULTI_RUN_CITE_INSTRUCTION,
+    SINGLE_RUN_CITE_INSTRUCTION,
 )
 
 
@@ -39,7 +39,7 @@ Note that each message in the sequence can have one of several roles - system, u
 For each ASSISTANT message, perform the following procedure:
 - Summarize the action taken in the message
 - Summarize the goal of the agent's current action
-- Provide a concise but specific summary of the agent's past actions that are relevant to the current goal. You are encouraged to cite evidence from the transcripts: {SINGLE_BLOCK_CITE_INSTRUCTION}
+- Provide a concise but specific summary of the agent's past actions that are relevant to the current goal. You are encouraged to cite evidence from the transcripts: {SINGLE_RUN_CITE_INSTRUCTION}
 
 Do not mention non-assistant messages in your output.
 
@@ -179,7 +179,7 @@ Both models are trying to test their solutions, and agent 1 writes much more det
 
 Look through the transcripts and list the major differences in actions between the two agents. If there are no major differences, minor differences are also fine.
 
-Use these guidelines for citations: {MULTI_BLOCK_CITE_INSTRUCTION}
+Use these guidelines for citations: {MULTI_RUN_CITE_INSTRUCTION}
 
 Format your final list as follows:
 <claim>

@@ -31,7 +31,6 @@ from docent._server._assistant.summarizer import (
     group_actions_into_high_level_steps,
     interesting_agent_observations,
     summarize_agent_actions,
-    summarize_intended_solution,
 )
 from docent._server._auth.session import create_user_session, invalidate_user_session
 from docent._server._broker.redis_client import REDIS, enqueue_search_job, publish_to_broker
@@ -49,7 +48,7 @@ from docent._server.util import sse_event_stream
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import (
     Citation,
-    parse_citations_single_transcript,
+    parse_citations_single_run,
 )
 from docent.data_models.filters import ComplexFilter, FrameDimension, FrameFilter, parse_filter_dict
 from docent.data_models.regex import RegexSnippet, get_regex_snippets
@@ -1022,44 +1021,44 @@ async def get_actions_summary(
     )
 
 
-@user_router.get("/{fg_id}/solution_summary")
-async def get_solution_summary(
-    agent_run_id: str,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    agent_run = await db.get_agent_run(ctx, agent_run_id)
-    if not agent_run:
-        raise ValueError(f"Agent run {agent_run_id} not found")
-    transcript = next(
-        iter(agent_run.transcripts.values())
-    )  # Get first transcript TODO(mengk): generalize
+# @user_router.get("/{fg_id}/solution_summary")
+# async def get_solution_summary(
+#     agent_run_id: str,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.READ)),
+# ):
+#     agent_run = await db.get_agent_run(ctx, agent_run_id)
+#     if not agent_run:
+#         raise ValueError(f"Agent run {agent_run_id} not found")
+#     transcript = next(
+#         iter(agent_run.transcripts.values())
+#     )  # Get first transcript TODO(mengk): generalize
 
-    # AnyIO queue that we can write intermediate results to
-    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
-        max_buffer_size=100_000
-    )
+#     # AnyIO queue that we can write intermediate results to
+#     send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+#         max_buffer_size=100_000
+#     )
 
-    async def _solution_callback(summary: str, parts: list[str]):
-        await send_stream.send(
-            {
-                "summary": summary,
-                "parts": parts,
-                "agent_run_id": agent_run_id,
-            }
-        )
+#     async def _solution_callback(summary: str, parts: list[str]):
+#         await send_stream.send(
+#             {
+#                 "summary": summary,
+#                 "parts": parts,
+#                 "agent_run_id": agent_run_id,
+#             }
+#         )
 
-    async def _execute():
-        await summarize_intended_solution(
-            transcript,
-            streaming_callback=_solution_callback,  # api_keys=api_keys
-        )
-        await recv_stream.aclose()
+#     async def _execute():
+#         await summarize_intended_solution(
+#             transcript,
+#             streaming_callback=_solution_callback,  # api_keys=api_keys
+#         )
+#         await recv_stream.aclose()
 
-    return StreamingResponse(
-        sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
-    )
+#     return StreamingResponse(
+#         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
+#     )
 
 
 ############
@@ -1148,7 +1147,7 @@ async def get_ta_message(
         current_assistant_message: TaChatMessage = {
             "role": "assistant",
             "content": continuation_text,
-            "citations": parse_citations_single_transcript(continuation_text),
+            "citations": parse_citations_single_run(continuation_text),
         }
         return prompt_msgs + [current_assistant_message]
 
@@ -1300,7 +1299,7 @@ async def listen_compute_diffs(
     job = await db.get_job(job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
-    diffs_report_id = job["diffs_report_id"]
+    diffs_report_id = job.job_json["diffs_report_id"]
 
     async with db.session() as session:
         diffs_report = (
@@ -1436,13 +1435,14 @@ async def start_compute_diff_search(
     ctx: ViewContext = Depends(get_default_view_ctx),
 ):
     job_id = await db.add_job(
+        "diff",
         {
             "type": "compute_diff_search",
             "fg_id": fg_id,
             "experiment_id_1": request.experiment_id_1,
             "experiment_id_2": request.experiment_id_2,
             "search_query": request.search_query,
-        }
+        },
     )
     return job_id
 
@@ -1460,9 +1460,9 @@ async def listen_compute_diff_search(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
     experiment_id_1, experiment_id_2, search_query = (
-        job["experiment_id_1"],
-        job["experiment_id_2"],
-        job["search_query"],
+        job.job_json["experiment_id_1"],
+        job.job_json["experiment_id_2"],
+        job.job_json["search_query"],
     )
 
     datapoints = await db.get_agent_runs(ctx)

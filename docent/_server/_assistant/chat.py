@@ -1,7 +1,7 @@
 import tiktoken
 
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.transcript import SINGLE_BLOCK_CITE_INSTRUCTION
+from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
 
 MAX_TOKENS = 50_000
 GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used
@@ -23,7 +23,7 @@ You are a chat assistant that analyzes a transcript of a conversation between a 
 
 {{transcript}}
 
-You must adhere exactly to the following: {SINGLE_BLOCK_CITE_INSTRUCTION}
+You must adhere exactly to the following: {SINGLE_RUN_CITE_INSTRUCTION}
 """.strip()
 
 

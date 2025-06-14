@@ -21,6 +21,7 @@ import {
 } from '../types/frameTypes';
 import { useRouter } from 'next/navigation';
 import { navToAgentRun } from '@/lib/nav';
+import { renderTextWithCitations } from '@/lib/renderCitations';
 
 interface BinEditorProps {
   bin: FrameFilter;
@@ -48,58 +49,6 @@ const JudgmentList: React.FC<{
   const fgId = useAppSelector((state) => state.frame.frameGridId);
   const router = useRouter();
 
-  const onShowAgentRun = (
-    e: React.MouseEvent,
-    agentRunId: string,
-    blockId?: number
-  ) => {
-    navToAgentRun(e, router, window, agentRunId, blockId, fgId);
-  };
-
-  const renderAttributeValue = (value: string, dataId: string) => {
-    const blockPattern = /B(\d+)/g;
-    const parts: (string | JSX.Element)[] = [];
-    let lastIndex = 0;
-    let match;
-    let partIndex = 0;
-
-    while ((match = blockPattern.exec(value)) !== null) {
-      // Add text before the match
-      if (match.index > lastIndex) {
-        parts.push(
-          <span key={`text-${partIndex}`}>
-            {value.slice(lastIndex, match.index)}
-          </span>
-        );
-        partIndex++;
-      }
-
-      // Add the clickable block reference
-      const blockIndex = parseInt(match[1], 10);
-      parts.push(
-        <button
-          key={`block-ref-${partIndex}`}
-          onClick={(e) => onShowAgentRun(e, dataId, blockIndex)}
-          className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
-        >
-          {match[0]}
-        </button>
-      );
-      partIndex++;
-
-      lastIndex = blockPattern.lastIndex;
-    }
-
-    // Add any remaining text
-    if (lastIndex < value.length) {
-      parts.push(
-        <span key={`text-${partIndex}`}>{value.slice(lastIndex)}</span>
-      );
-    }
-
-    return parts;
-  };
-
   return (
     <div className="mt-2 space-y-1">
       <div className="flex items-center mb-1">
@@ -124,21 +73,29 @@ const JudgmentList: React.FC<{
             <div
               key={i}
               className={`group bg-indigo-50 rounded-md p-1.5 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200`}
-              onClick={(e) => {
-                onShowAgentRun(e, judgment.agent_run_id);
-                // If there's a block citation in the attribute value, scroll to the first one
-                if (attributeValue) {
-                  const match = attributeValue.match(/B(\d+)/);
-                  if (match && onShowAgentRun) {
-                    const blockIndex = parseInt(match[1], 10);
-                    onShowAgentRun(e, judgment.agent_run_id, blockIndex);
-                  }
-                }
-              }}
+              onClick={(e) =>
+                navToAgentRun(
+                  e,
+                  router,
+                  window,
+                  judgment.agent_run_id,
+                  undefined,
+                  undefined,
+                  fgId
+                )
+              }
             >
               {attributeValue !== undefined && (
                 <p className="mb-0.5">
-                  {renderAttributeValue(attributeValue, judgment.agent_run_id)}
+                  {renderTextWithCitations(
+                    attributeValue,
+                    [],
+                    judgment.agent_run_id,
+                    router,
+                    window,
+                    undefined,
+                    fgId
+                  )}
                 </p>
               )}
               <div className="flex items-center gap-1 text-[10px] text-indigo-600 mt-1">

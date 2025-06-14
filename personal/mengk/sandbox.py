@@ -1,6 +1,26 @@
 # autoflake: skip_file
 # pyright: ignore
 
+
+# %%
+
+from docent.data_models.citation import (
+    parse_citations_multi_run,
+    parse_citations_single_run,
+)
+
+text = "This is a test [R1T1B1-R1T1B2], [T1B1] and [T1B2, T1B3]"
+
+parse_citations_multi_run(text)
+
+
+# %%
+
+parse_citations_single_run(text)
+
+# %%
+
+
 # %%
 
 import IPython
@@ -26,6 +46,12 @@ await db.get_users()
 fgs = await db.get_fgs()
 fgs
 
+
+# %%
+
+ctx = await db.get_default_view_ctx(fgs[0].id)
+run = await db.get_any_agent_run(ctx)
+print(run.text)
 
 # %%
 
