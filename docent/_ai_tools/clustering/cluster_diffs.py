@@ -122,19 +122,15 @@ async def cluster_diff_claims(
 
     indices_to_ids = {index: claim.id for index, claim in enumerate(claims)}
 
-    cluster_centroids: list[DiffTheme] = (
-        await propose_clusters(
-            formatted_claims,
-            n_clusters_list=[None],
-            extra_instructions_list=[
-                "Specifically focus on the following attribute: ways in which agent 1 and agent 2 differ"
-            ],
-            feedback_list=[],
-            k=1,
-            clustering_prompt_fn=prompt_build_fn,
-            output_extractor=make_extract_fn(indices_to_ids),
-        )
-    )[0]
+    cluster_centroids: list[DiffTheme] = await propose_clusters(
+        formatted_claims,
+        extra_instructions_list=[
+            "Specifically focus on the following attribute: ways in which agent 1 and agent 2 differ"
+        ],
+        feedback_list=[],
+        clustering_prompt_fn=prompt_build_fn,
+        output_extractor=make_extract_fn(indices_to_ids),
+    )
     return cluster_centroids
 
 

@@ -1,13 +1,12 @@
 import re
 from copy import deepcopy
-from typing import Callable, TypedDict, cast, TypeVar
+from typing import Callable, TypedDict, TypeVar, cast
 
 import numpy as np
 
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent._llm_util.util import truncate_to_token_limit
-
 
 CLUSTER_PROMPT = """
 Here are some items:
@@ -33,15 +32,6 @@ For example:
 The user may provide feedback on the clusters you propose; please take that into careful account.
 """.strip()
 
-# These lists are sampled, so duplicates indicate higher probability.
-DEFAULT_N_CLUSTERS_LIST: list[int | str | None] = [
-    # None,
-    "between 1-5",
-    "between 1-5",
-    "between 1-5",
-    "between 3-8",
-    "between 5-10",
-]
 DEFAULT_EXTRA_INSTRUCTIONS_LIST: list[str | None] = [
     None,
     None,
@@ -75,80 +65,62 @@ T = TypeVar("T")  # ClusterType Object
 
 async def propose_clusters(
     items: list[str],
-    n_clusters_list: list[int | str | None] = DEFAULT_N_CLUSTERS_LIST,
     extra_instructions_list: list[str | None] = DEFAULT_EXTRA_INSTRUCTIONS_LIST,
     feedback_list: list[ClusterFeedback] | None = None,
-    k: int = 20,
     random_seed: int = 42,
     clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
     output_extractor: Callable[[str], list[T]] = parse_cluster_output,
-) -> list[list[T]]:
+) -> list[T]:
     # Create a separate RNG for the outer sampling
     rng = np.random.RandomState(random_seed)
 
     # Sample k elements with replacement from both lists
-    n_clusters_samples = cast(
-        list[int | str | None], rng.choice(n_clusters_list, size=k, replace=True)  # type: ignore
-    )
-    extra_instructions_samples = cast(
-        list[str | None], rng.choice(extra_instructions_list, size=k, replace=True)  # type: ignore
-    )
+    extra_instructions = cast(str | None, rng.choice(extra_instructions_list))  # type: ignore
 
-    # Generate all prompts at once
-    prompts: list[list[dict[str, str]]] = []
-    for i, (_, extra_instructions) in enumerate(
-        zip(n_clusters_samples, extra_instructions_samples)
-    ):
-        # Shuffle descriptions using a task-specific RNG
-        task_rng = np.random.RandomState(random_seed + i)
-        shuffled_items = deepcopy(items)
-        task_rng.shuffle(shuffled_items)
+    # Shuffle descriptions using a task-specific RNG
+    task_rng = np.random.RandomState(random_seed)
+    shuffled_items = deepcopy(items)
+    task_rng.shuffle(shuffled_items)
 
-        # Truncate items to 100k tokens
-        all_items = "\n".join([f"- {d}" for d in shuffled_items])
-        all_items = truncate_to_token_limit(all_items, 100_000)
+    # Truncate items to 100k tokens
+    all_items = "\n".join([f"- {d}" for d in shuffled_items])
+    all_items = truncate_to_token_limit(all_items, 100_000)
 
-        # Generate prompt
-        prompt: list[dict[str, str]] = [
-            {
-                "role": "user",
-                "content": (
-                    CLUSTER_PROMPT.format(
-                        # n_clusters=n_clusters or "an appropriate number of",
-                        n_clusters=5,
-                        extra_instructions=(
-                            f"\n{extra_instructions}\n" if extra_instructions else ""
-                        ),
-                        items=all_items,
-                    )
-                    if clustering_prompt_fn is None
-                    else clustering_prompt_fn(
-                        extra_instructions if extra_instructions else "", items
-                    )
-                ),
-            },
-        ]
+    # Generate prompt
+    prompt: list[dict[str, str]] = [
+        {
+            "role": "user",
+            "content": (
+                CLUSTER_PROMPT.format(
+                    # n_clusters=n_clusters or "an appropriate number of",
+                    n_clusters=5,
+                    extra_instructions=(f"\n{extra_instructions}\n" if extra_instructions else ""),
+                    items=all_items,
+                )
+                if clustering_prompt_fn is None
+                else clustering_prompt_fn(extra_instructions if extra_instructions else "", items)
+            ),
+        },
+    ]
 
-        # Add feedback if available
-        for feedback in feedback_list or []:
-            prompt.extend(
-                [
-                    {
-                        "role": "assistant",
-                        "content": "\n".join([f"- {cluster}" for cluster in feedback["clusters"]]),
-                    },
-                    {
-                        "role": "user",
-                        "content": feedback["feedback"],
-                    },
-                ]
-            )
-
-        prompts.append(prompt)
+    # Add feedback if available
+    for feedback in feedback_list or []:
+        prompt.extend(
+            [
+                {
+                    "role": "assistant",
+                    "content": "\n".join([f"- {cluster}" for cluster in feedback["clusters"]]),
+                },
+                {
+                    "role": "user",
+                    "content": feedback["feedback"],
+                },
+            ]
+        )
 
     # Make a single batch call to get_llm_completions_async
     outputs = await get_llm_completions_async(
-        prompts,
+        [prompt],
         PROVIDER_PREFERENCES.propose_clusters,
         max_new_tokens=4096,
         temperature=1.0,
@@ -157,6 +129,7 @@ async def propose_clusters(
     )
 
     # Parse all results
-    results = [output_extractor(output.first_text or "<no response>") for output in outputs]
+    if outputs[0].first_text is None:
+        raise ValueError("Could not propose clusters - no response from LLM")
 
-    return results
+    return output_extractor(outputs[0].first_text)
