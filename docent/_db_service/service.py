@@ -1550,7 +1550,6 @@ class DBService:
         self,
         ctx: ViewContext,
         dim_id: str,
-        n_proposals: int = 1,
         search_result_callback: SearchResultStreamingCallback | None = None,
     ):
         dim = await self.get_dim(dim_id)
@@ -1569,14 +1568,11 @@ class DBService:
 
         # Propose clusters with guidance on what attribute to focus on
         guidance = f"Specifically focus on the following attribute: {dim.search_query}"
-        proposals = await propose_clusters(
+        predicates: list[str] = await propose_clusters(
             to_cluster,
-            n_clusters_list=[None],
             extra_instructions_list=[guidance],
             feedback_list=[],
-            k=n_proposals,
         )
-        predicates = proposals[0]
 
         # Delete existing filters
         await self._delete_filters([f.id for f in await self._get_dim_filters(dim_id)])

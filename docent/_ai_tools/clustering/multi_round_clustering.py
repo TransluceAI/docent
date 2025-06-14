@@ -171,19 +171,13 @@ class ClusterProcessor:
         if not attribs:
             return []
 
-        cluster_centroids: list[str] = (
-            await propose_clusters(
-                attribs,
-                n_clusters_list=[None],
-                extra_instructions_list=[
-                    f"Specifically focus on the following attribute: {attribute}"
-                ],
-                feedback_list=[],
-                k=1,
-                clustering_prompt_fn=clustering_prompt_fn,
-                output_extractor=output_extractor,
-            )
-        )[0]
+        cluster_centroids: list[str] = await propose_clusters(
+            attribs,
+            extra_instructions_list=[f"Specifically focus on the following attribute: {attribute}"],
+            feedback_list=[],
+            clustering_prompt_fn=clustering_prompt_fn,
+            output_extractor=output_extractor,
+        )
 
         all_finished: list[str] = []
         all_clusters: list[Cluster] = []
@@ -221,19 +215,16 @@ class ClusterProcessor:
 
         while True:
             num_rounds -= 1
-            proposed_centroids = await propose_clusters(
+            new_centroids = await propose_clusters(
                 new_residuals,
-                n_clusters_list=[None],
                 extra_instructions_list=[
                     f"Specifically focus on the following attribute: {attribute}. In addition, try your best to avoid suggesting things similar to the following list which someone else already suggested: {running_centroids}"
                 ],
                 feedback_list=None,
-                k=1,
                 clustering_prompt_fn=clustering_prompt_fn,
                 output_extractor=output_extractor,
             )
 
-            new_centroids = proposed_centroids[0]
             assert new_centroids is not None
             logger.info(f"Proposed {len(new_centroids)} new centroids for round {num_rounds}")
 
