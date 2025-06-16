@@ -126,7 +126,9 @@ export default function DimensionSelector({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {/* Do not allow a None option here */}
+              {agentRunMetadataFields.length === 0 && <SelectItem value="None" className="text-xs">
+                None
+              </SelectItem>}
               {agentRunMetadataFields
                 .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
                 .map((field) => (

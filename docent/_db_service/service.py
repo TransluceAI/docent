@@ -63,7 +63,6 @@ from docent._db_service.schemas.tables import (
     SQLASession,
     SQLATranscript,
     SQLAUser,
-    SQLAUserOrganization,
     SQLAView,
 )
 from docent._env_util import ENV
@@ -1511,8 +1510,19 @@ class DBService:
 
         # Collect all datapoints with each unique metadata value
         value_to_datapoint_ids: dict[Any, set[str]] = {}
+
+        def _get_metadata_value(metadata: BaseAgentRunMetadata, key: str) -> Any:
+            if (value := metadata.get(key)) is not None:
+                return value
+            if "." in key:
+                prefix, suffix = key.split(".", 1)
+                if (field := metadata.get(prefix)) is not None:
+                    if isinstance(field, dict):
+                        return field.get(suffix, None)
+            return None
+
         for id, metadata in all_metadata_with_ids:
-            if (value := metadata.get(metadata_key)) is not None:
+            if (value := _get_metadata_value(metadata, metadata_key)) is not None:
                 value_to_datapoint_ids.setdefault(value, set()).add(id)
 
         # Create a MetadataFilter for each unique value
@@ -1980,9 +1990,7 @@ class DBService:
             users_result = await session.execute(select(SQLAUser))
             sqla_users = users_result.scalars().all()
 
-            return [
-                user.to_user() for user in sqla_users
-            ]
+            return [user.to_user() for user in sqla_users]
 
     async def create_user(self, email: str) -> User:
         """
