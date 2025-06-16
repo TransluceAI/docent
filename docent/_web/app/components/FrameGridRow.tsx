@@ -23,8 +23,7 @@ import { cn } from '@/lib/utils';
 
 import { updateFrameGrid } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
-import { useGetFramegridPermissionsQuery } from '@/lib/permissions/collabSlice';
-import { useHasFramegridAdminPermission, useHasFramegridPermission, useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { useHasFramegridPermission } from '@/lib/permissions/hooks';
 
 interface FrameGridRowProps {
   framegrid: FrameGrid;
@@ -42,7 +41,6 @@ export default function FrameGridRow({
 }: FrameGridRowProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const {data: permissions} = useGetFramegridPermissionsQuery(framegrid.id);
   const hasAdminPermission = useHasFramegridPermission('admin', framegrid.id)
   const hasWritePermission = useHasFramegridPermission('write', framegrid.id)
 
@@ -125,8 +123,6 @@ export default function FrameGridRow({
       day: 'numeric',
     });
   };
-  console.log('hasAdminPermission', hasAdminPermission);
-  console.log('hasWritePermission', hasWritePermission);
 
   /* --------------------------------- Render -------------------------------- */
   return (
