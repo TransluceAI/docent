@@ -6,6 +6,7 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { Card } from '@/components/ui/card';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -24,32 +25,167 @@ import { PrimitiveFilter } from '../types/frameTypes';
 import DimensionSelector from './DimensionSelector';
 import InnerCard from './InnerCard';
 import { Citation } from '../types/experimentViewerTypes';
+import { AgentRunMetadata } from './AgentRunMetadata';
+import { RegexSnippet } from '../types/experimentViewerTypes';
+import { navToAgentRun } from '@/lib/nav';
+import { renderTextWithCitations } from '@/lib/renderCitations';
+import { RootState } from '../store/store';
+import { SearchResultWithCitations } from '../types/frameTypes';
+import { addBaseFilter, updateBaseFilter } from '../store/searchSlice';
+
+interface AttributeSectionProps {
+  dataId: string;
+  curAttributeQuery: string;
+  attributes: SearchResultWithCitations[];
+}
+
+const AttributeSection: React.FC<AttributeSectionProps> = ({
+  dataId,
+  curAttributeQuery,
+  attributes,
+}) => {
+  const router = useRouter();
+  const frameGridId = useAppSelector((state: RootState) => state.frame.frameGridId);
+
+  if (attributes.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="pt-1 mt-1 border-t border-indigo-100 text-xs space-y-1">
+      <div className="flex items-center mb-1">
+        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+        <span className="text-xs font-medium text-indigo-700">
+          Attributes from your query
+        </span>
+      </div>
+      {attributes.map((attribute, idx) => {
+        const attributeText = attribute.value;
+        if (!attributeText) {
+          return null;
+        }
+        const citations = attribute.citations || [];
+        return (
+          <div
+            key={idx}
+            className="group bg-indigo-50 rounded-md p-1 text-xs text-indigo-900 leading-snug mt-1 hover:bg-indigo-100 transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
+            onMouseDown={(e) => {
+              const firstCitation = citations.length > 0 ? citations[0] : null;
+              navToAgentRun(
+                e,
+                router,
+                window,
+                dataId,
+                firstCitation?.transcript_idx ?? undefined,
+                firstCitation?.block_idx,
+                frameGridId,
+                curAttributeQuery
+              );
+            }}
+          >
+            <div className="flex flex-col">
+              <div className="flex items-start justify-between gap-2">
+                <p className="mb-0.5 flex-1">
+                  {renderTextWithCitations(
+                    attributeText,
+                    citations,
+                    dataId,
+                    router,
+                    window,
+                    curAttributeQuery,
+                    frameGridId
+                  )}
+                </p>
+                <div className="flex shrink-0"></div>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-indigo-600 mt-1">
+                <span className="opacity-70">{curAttributeQuery}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({ snippetData }) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  try {
+    if (!snippetData || typeof snippetData !== 'object') {
+      return <p className="text-xs text-red-600">Error: Invalid snippet data</p>;
+    }
+    const { snippet, match_start, match_end } = snippetData;
+    if (
+      typeof snippet !== 'string' ||
+      typeof match_start !== 'number' ||
+      typeof match_end !== 'number'
+    ) {
+      return <p className="text-xs text-red-600">Error: Invalid snippet format</p>;
+    }
+    if (
+      match_start < 0 ||
+      match_end > snippet.length ||
+      match_start >= match_end
+    ) {
+      return <p className="text-xs">{snippet}</p>;
+    }
+    const before = snippet.substring(0, match_start);
+    const matched = snippet.substring(match_start, match_end);
+    const after = snippet.substring(match_end);
+    return (
+      <div
+        className="bg-indigo-50 p-2 rounded-md border border-transparent hover:border-indigo-200 max-w-full cursor-pointer transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div
+          className={`overflow-y-auto ${isExpanded ? '' : 'max-h-20'}`}
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#a5b3e6 #e0e7ff' }}
+        >
+          <span className="text-xs text-indigo-900 break-words whitespace-pre-wrap">
+            {before}
+            <span className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded">{matched}</span>
+            {after}
+          </span>
+        </div>
+      </div>
+    );
+  } catch (error) {
+    return <p className="text-xs text-red-600">Error rendering snippet</p>;
+  }
+};
+
+const RegexSnippetsSection: React.FC<{ regexSnippets?: RegexSnippet[] }> = ({ regexSnippets }) => {
+  if (!regexSnippets || regexSnippets.length === 0) {
+    return null;
+  }
+  return (
+    <div className="border-indigo-100 border-t pt-1 mt-1 space-y-1">
+      <div className="flex items-center">
+        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+        <span className="text-xs font-medium text-indigo-700">Regex matches</span>
+      </div>
+      {regexSnippets?.map((snippetData, index) => (
+        <HighlightedSnippet key={index} snippetData={snippetData} />
+      ))}
+    </div>
+  );
+};
 
 export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
-
-  /**
-   * Get state
-   */
-
-  const { innerDimId, outerDimId, dimensionsMap } = useAppSelector(
+  const router = useRouter();
+  
+  // Get all state at the top level
+  const { innerDimId, outerDimId, dimensionsMap, agentRunMetadata, frameGridId, baseFilter } = useAppSelector(
     (state) => state.frame
   );
 
-  // Attributes
   const {
     loadingSearchQuery,
     curSearchQuery,
     searchResultMap: attributeMap,
-    // voteState,
   } = useAppSelector((state) => state.search);
-
-  const diffMap: Record<
-    string,
-    { claim: string[]; evidence: { evidence: string; citations: Citation[] }[] }
-  > = useMemo(() => {
-    return {};
-  }, []);
 
   const {
     expandedOuter,
@@ -57,294 +193,15 @@ export default function ExperimentViewer() {
     experimentViewerScrollPosition,
     dimIdsToFilterIds,
     filtersMap,
-  } = useAppSelector((state) => state.experimentViewer);
-
-  // Assemble maps of the inner and outer filters
-  const outerFilters = useMemo(() => {
-    if (!outerDimId || !filtersMap) return undefined;
-    return dimIdsToFilterIds?.[outerDimId]?.reduce(
-      (acc, filter_id) => {
-        acc[filter_id] = filtersMap[filter_id];
-        return acc;
-      },
-      {} as Record<string, PrimitiveFilter>
-    );
-  }, [outerDimId, filtersMap, dimIdsToFilterIds]);
-  const innerFilters = useMemo(() => {
-    if (!innerDimId || !filtersMap) return undefined;
-    return dimIdsToFilterIds?.[innerDimId]?.reduce(
-      (acc, filter_id) => {
-        acc[filter_id] = filtersMap[filter_id];
-        return acc;
-      },
-      {} as Record<string, PrimitiveFilter>
-    );
-  }, [innerDimId, filtersMap, dimIdsToFilterIds]);
-
-  const outerFilterIds = useMemo(() => {
-    if (!outerFilters) return [];
-    return Object.keys(outerFilters);
-  }, [outerFilters]);
-
-  const innerFilterIds = useMemo(() => {
-    if (!innerFilters) return [];
-    return Object.keys(innerFilters);
-  }, [innerFilters]);
-
-  // Marginals
-  const {
+    regexSnippets,
     statMarginals: rawStatMarginals,
     idMarginals: rawIdMarginals,
     outerStatMarginals,
   } = useAppSelector((state) => state.experimentViewer);
 
-  // Create a function to get the marginal key - safe to use even if data is null
-  const getMarginalKey = useCallback(
-    (innerId: string | null, outerId: string | null) => {
-      if (innerId !== null && outerId !== null) {
-        return `${innerDimId},${innerId}|${outerDimId},${outerId}`;
-      } else if (innerId !== null) {
-        return `${innerDimId},${innerId}`;
-      } else if (outerId !== null) {
-        return `${outerDimId},${outerId}`;
-      } else {
-        return '';
-      }
-    },
-    [innerDimId, outerDimId]
-  );
-
-  /**
-   * Deal with filtering by the attribute query and diff results
-   */
-
-  // Filter to IDs to ones that have the attribute query
-  const idMarginals = useMemo(() => {
-    if (!rawIdMarginals) return rawIdMarginals;
-    if (!curSearchQuery && !Object.entries(diffMap).length)
-      return rawIdMarginals;
-
-    // Filter the keys and their datapoints based on attribute query or diff results
-    const filtered = Object.entries(rawIdMarginals).reduce(
-      (result, [key, datapointsList]) => {
-        // Filter datapoints to ones that have the attributes and/or diff results
-        const filteredAgentRuns = datapointsList.filter((datapointId) => {
-          // Check for attributes if there's an active attribute query
-
-          if (curSearchQuery) {
-            const attrs = attributeMap?.[datapointId]?.[curSearchQuery];
-            return attrs && attrs.length && attrs[0].value !== null;
-          }
-
-          // Check for diff results if there's an active diff query
-          let hasDiffResults = true;
-          if (diffMap) {
-            hasDiffResults = Object.keys(diffMap).some((key) => {
-              const [id1, id2] = key.split('___');
-              return id1 === datapointId || id2 === datapointId;
-            });
-          }
-
-          return hasDiffResults;
-        });
-
-        // Only include keys that have at least one datapoint after filtering
-        if (filteredAgentRuns.length > 0) {
-          result[key] = filteredAgentRuns;
-        }
-
-        return result;
-      },
-      {} as typeof rawIdMarginals
-    );
-
-    return filtered;
-  }, [rawIdMarginals, curSearchQuery, attributeMap, diffMap]);
-
-  // Only keep stat marginals that have datapoints, after filtering by attribute query
-  const statMarginals = useMemo(() => {
-    if (!rawStatMarginals) return rawStatMarginals;
-    if (!curSearchQuery && !diffMap) return rawStatMarginals;
-    return Object.fromEntries(
-      Object.entries(rawStatMarginals).filter(([key, _]) => {
-        return idMarginals && key in idMarginals;
-      })
-    );
-  }, [rawStatMarginals, curSearchQuery, idMarginals, diffMap]);
-
-  // For each outer filter, get the inner filters that have non-null stats
-  const [outerIdsToInnerIds, filteredInnerIds] = useMemo(() => {
-    const validMap = new Map<string, string[]>();
-    const validInnerSet = new Set<string>();
-    if (!statMarginals) return [validMap, validInnerSet];
-
-    outerFilterIds.forEach((outerId) => {
-      const validSamples = innerFilterIds.filter((innerId) => {
-        const stats = statMarginals[getMarginalKey(innerId, outerId)];
-        const isValid =
-          stats &&
-          Object.keys(stats).length > 0 &&
-          Object.values(stats)[0]?.n > 0;
-        return isValid;
-      });
-      if (validSamples.length > 0) {
-        validMap.set(outerId, validSamples);
-      }
-    });
-
-    innerFilterIds.forEach((innerId) => {
-      const stats = statMarginals[getMarginalKey(innerId, null)];
-      const isValid =
-        stats &&
-        Object.keys(stats).length > 0 &&
-        Object.values(stats)[0]?.n > 0;
-
-      if (isValid) {
-        validInnerSet.add(innerId);
-      }
-    });
-
-    return [validMap, validInnerSet];
-  }, [outerFilterIds, innerFilterIds, statMarginals, getMarginalKey]);
-
-  // Determine whether there is an outer or inner dimension
-  const hasOuterDimension = useMemo(() => {
-    return outerIdsToInnerIds && outerIdsToInnerIds.size > 0;
-  }, [outerIdsToInnerIds]);
-  const hasInnerDimension = useMemo(() => {
-    return filteredInnerIds && filteredInnerIds.size > 0;
-  }, [filteredInnerIds]);
-
-  // Determine what to display as the outer and inner dim names
-  const [outerDimName, innerDimName] = useMemo(() => {
-    return [
-      outerDimId && dimensionsMap?.[outerDimId]?.name,
-      innerDimId && dimensionsMap?.[innerDimId]?.name,
-    ];
-  }, [outerDimId, innerDimId, dimensionsMap]);
-
-  const [outerLabel, innerLabel] = useMemo(() => {
-    return [outerDimName, innerDimName];
-  }, [outerDimName, innerDimName]);
-  const getOuterKey = (outerId: string) => getMarginalKey(null, outerId);
-
-  /**
-   * Handle feedback
-   */
-
-  // const attributeFeedback = useMemo(() => {
-  //   if (!voteState) return [];
-  //   return Object.entries(voteState).flatMap(([agent_run_id, attributes]) =>
-  //     Object.entries(attributes).map(
-  //       ([attribute, vote]) =>
-  //         ({
-  //           attribute,
-  //           vote,
-  //         }) as AttributeFeedback
-  //     )
-  //   );
-  // }, [voteState]);
-  // const [missingQueries, setMissingQueries] = useState<string>('');
-  // const [waitingOnNewQuery, setWaitingOnNewQuery] = useState(false);
-  // const handleFeedbackSubmit = useCallback(async () => {
-  //   if (!curSearchQuery) return;
-  //   // if (attributeFeedback.length === 0 && !missingQueries) {
-  //   if (!missingQueries) {
-  //     toast({
-  //       title: 'No feedback provided',
-  //       description: 'Please provide feedback',
-  //       variant: 'destructive',
-  //     });
-  //     return;
-  //   }
-
-  //   toast({
-  //     title: 'Feedback submitted',
-  //     description: "We're recomputing the search results with your feedback...",
-  //   });
-  //   setWaitingOnNewQuery(true);
-
-  //   try {
-  //     const result = await dispatch(
-  //       submitAttributeFeedback({
-  //         originalQuery: curSearchQuery,
-  //         feedback: attributeFeedback,
-  //         missingQueries,
-  //       })
-  //     ).unwrap();
-
-  //     // Update the curAttributeQuery
-  //     dispatch(clearSearch());
-  //     dispatch(setSearchQueryTextboxValue(result));
-
-  //     // Reset feedback state
-  //     dispatch(clearVoteState());
-  //     setMissingQueries('');
-  //   } finally {
-  //     setWaitingOnNewQuery(false);
-  //   }
-  // }, [curSearchQuery, attributeFeedback, missingQueries, dispatch]);
-
-  /**
-   * Handle toggling of outer and inner panels
-   */
-
-  // Get first item so we can expand it
-  const getFirstItemId = useCallback(() => {
-    const items = outerIdsToInnerIds.keys();
-    // Get first item from the iterator if it exists
-    const firstItem = items?.next();
-    return firstItem && !firstItem.done ? firstItem.value : null;
-  }, [outerIdsToInnerIds]);
-
-  const toggleOuter = (outerId: string) => {
-    // First determine whether to add or remove; prevents double-toggling in StrictMode
-    const isCurrentlyExpanded = expandedOuter?.[outerId] ?? false;
-    const actionToTake = !isCurrentlyExpanded;
-
-    if (actionToTake) {
-      dispatch(addExpandedOuter(outerId));
-    } else {
-      dispatch(removeExpandedOuter(outerId));
-    }
-  };
-
-  const toggleInner = (outerId: string, innerId: string) => {
-    // First determine whether to add or remove; prevents double-toggling in StrictMode
-    const isCurrentlyExpanded = expandedInner?.[outerId]?.[innerId] ?? false;
-    const actionToTake = !isCurrentlyExpanded;
-
-    // Update the expandedInner state
-    if (actionToTake) {
-      dispatch(addExpandedInner({ outerId, innerId }));
-    } else {
-      dispatch(removeExpandedInner({ outerId, innerId }));
-    }
-  };
-
-  // Initialize expanded state when component mounts or dependencies change
-  const alreadyExpanded = useRef(false); // If a user clicks, it should still be reactive; this gets reset when there is a refresh of samples/exps
-  useEffect(() => {
-    if (alreadyExpanded.current) return;
-
-    const firstItem = getFirstItemId();
-    if (
-      firstItem &&
-      (expandedOuter === undefined || Object.keys(expandedOuter).length === 0)
-    ) {
-      dispatch(addExpandedOuter(firstItem));
-      alreadyExpanded.current = true;
-    }
-  }, [getFirstItemId, dispatch, expandedOuter]);
-
-  /**
-   * Scrolling
-   */
-
+  // Scroll handling
   const scrolledOnceRef = useRef(false);
-  const [scrollPosition, setScrollPosition] = useState<number | undefined>(
-    undefined
-  );
+  const [scrollPosition, setScrollPosition] = useState<number | undefined>(undefined);
   const debouncedScrollPosition = useDebounce(scrollPosition, 100);
 
   // Use debouncing to prevent too many updates
@@ -374,16 +231,157 @@ export default function ExperimentViewer() {
     [experimentViewerScrollPosition]
   );
 
-  /**
-   * Styling
-   */
+  // Create a function to get the marginal key - safe to use even if data is null
+  const getMarginalKey = useCallback(
+    (innerId: string | null, outerId: string | null) => {
+      if (innerId !== null && outerId !== null) {
+        return `${innerDimId},${innerId}|${outerDimId},${outerId}`;
+      } else if (innerId !== null) {
+        return `${innerDimId},${innerId}`;
+      } else if (outerId !== null) {
+        return `${outerDimId},${outerId}`;
+      } else {
+        return '';
+      }
+    },
+    [innerDimId, outerDimId]
+  );
 
-  const getColorForAccuracy = (accuracy: number) => {
-    if (accuracy >= 0.8) return 'bg-green-100 text-green-800';
-    if (accuracy > 0.0) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
+  // Filter to IDs to ones that have the attribute query
+  const idMarginals = useMemo(() => {
+    if (!rawIdMarginals) return rawIdMarginals;
+    if (!curSearchQuery) return rawIdMarginals;
+
+    // Filter the keys and their datapoints based on attribute query
+    const filtered = Object.entries(rawIdMarginals).reduce(
+      (result, [key, datapointsList]) => {
+        // Filter datapoints to ones that have the attributes
+        const filteredAgentRuns = datapointsList.filter((datapointId) => {
+          if (curSearchQuery) {
+            const attrs = attributeMap?.[datapointId]?.[curSearchQuery];
+            return attrs && attrs.length && attrs[0].value !== null;
+          }
+          return true;
+        });
+
+        // Only include keys that have at least one datapoint after filtering
+        if (filteredAgentRuns.length > 0) {
+          result[key] = filteredAgentRuns;
+        }
+
+        return result;
+      },
+      {} as typeof rawIdMarginals
+    );
+
+    return filtered;
+  }, [rawIdMarginals, curSearchQuery, attributeMap]);
+
+  // Only keep stat marginals that have datapoints, after filtering by attribute query
+  const statMarginals = useMemo(() => {
+    if (!rawStatMarginals) return rawStatMarginals;
+    if (!curSearchQuery) return rawStatMarginals;
+    return Object.fromEntries(
+      Object.entries(rawStatMarginals).filter(([key, _]) => {
+        return idMarginals && key in idMarginals;
+      })
+    );
+  }, [rawStatMarginals, curSearchQuery, idMarginals]);
+
+  // FLAT LIST: Collect all agent runs (datapoint IDs) from idMarginals
+  const allAgentRunEntries: [string, string[]][] = useMemo(() => {
+    if (!idMarginals) return [];
+    return Object.entries(idMarginals);
+  }, [idMarginals]);
+
+  // Get unique outer and inner dimension values with their IDs
+  const outerValuesWithIds = useMemo(() => {
+    if (!outerDimId || !filtersMap || !dimIdsToFilterIds) return [];
+    return dimIdsToFilterIds[outerDimId]?.map(id => ({
+      id,
+      value: filtersMap[id].value
+    })) || [];
+  }, [outerDimId, filtersMap, dimIdsToFilterIds]);
+
+  const innerValuesWithIds = useMemo(() => {
+    if (!innerDimId || !filtersMap || !dimIdsToFilterIds) return [];
+    return dimIdsToFilterIds[innerDimId]?.map(id => ({
+      id,
+      value: filtersMap[id].value
+    })) || [];
+  }, [innerDimId, filtersMap, dimIdsToFilterIds]);
+
+  // Calculate average scores for each dimension combination or single dimension
+  const dimensionScores = useMemo(() => {
+    if (!statMarginals) return {};
+    // 2D case
+    if (outerValuesWithIds.length && innerValuesWithIds.length) {
+      const scores: Record<string, Record<string, { score: number; n?: number }>> = {};
+      outerValuesWithIds.forEach(({ id: outerId, value: outerValue }) => {
+        scores[outerValue] = {};
+        innerValuesWithIds.forEach(({ id: innerId, value: innerValue }) => {
+          const key = `${innerDimId},${innerId}|${outerDimId},${outerId}`;
+          const stats = statMarginals[key];
+          let scoreKey = stats && Object.keys(stats).find(k => k.toLowerCase().includes('default'));
+          if (!scoreKey && stats) scoreKey = Object.keys(stats)[0];
+          if (stats && scoreKey && stats[scoreKey]?.mean !== undefined && stats[scoreKey].mean !== null) {
+            scores[outerValue][innerValue] = { 
+              score: stats[scoreKey].mean as number,
+              n: stats[scoreKey].n
+            };
+          } else {
+            scores[outerValue][innerValue] = { score: 0 };
+          }
+        });
+      });
+      return scores;
+    }
+    // 1D case: only outer
+    if (outerValuesWithIds.length && !innerValuesWithIds.length) {
+      const scores: Record<string, { score: number; n?: number }> = {};
+      outerValuesWithIds.forEach(({ id: outerId, value: outerValue }) => {
+        const key = `${outerDimId},${outerId}`;
+        const stats = statMarginals[key];
+        let scoreKey = stats && Object.keys(stats).find(k => k.toLowerCase().includes('default'));
+        if (!scoreKey && stats) scoreKey = Object.keys(stats)[0];
+        if (stats && scoreKey && stats[scoreKey]?.mean !== undefined && stats[scoreKey].mean !== null) {
+          scores[outerValue] = { 
+            score: stats[scoreKey].mean as number,
+            n: stats[scoreKey].n
+          };
+        } else {
+          scores[outerValue] = { score: 0 };
+        }
+      });
+      return scores;
+    }
+    // 1D case: only inner
+    if (!outerValuesWithIds.length && innerValuesWithIds.length) {
+      const scores: Record<string, { score: number; n?: number }> = {};
+      innerValuesWithIds.forEach(({ id: innerId, value: innerValue }) => {
+        const key = `${innerDimId},${innerId}`;
+        const stats = statMarginals[key];
+        let scoreKey = stats && Object.keys(stats).find(k => k.toLowerCase().includes('default'));
+        if (!scoreKey && stats) scoreKey = Object.keys(stats)[0];
+        if (stats && scoreKey && stats[scoreKey]?.mean !== undefined && stats[scoreKey].mean !== null) {
+          scores[innerValue] = { 
+            score: stats[scoreKey].mean as number,
+            n: stats[scoreKey].n
+          };
+        } else {
+          scores[innerValue] = { score: 0 };
+        }
+      });
+      return scores;
+    }
+    return {};
+  }, [statMarginals, outerValuesWithIds, innerValuesWithIds, innerDimId, outerDimId]);
+
+  // Helper to safely get dimension name
+  const getDimensionName = (dimId: string | undefined) => {
+    if (!dimId || !dimensionsMap) return 'Dimension';
+    return dimensionsMap[dimId]?.name ?? 'Dimension';
   };
-  const formatAccuracy = (value: number) => `${value.toFixed(2)}`;
 
   // If data isn't available, show a loading spinner
   if (!statMarginals || !idMarginals) {
@@ -403,181 +401,301 @@ export default function ExperimentViewer() {
         <div>
           <div className="text-sm font-semibold">
             Agent Run Viewer
-            {outerLabel && (
-              <span className="text-xxs text-gray-500 font-light ml-2">
-                {outerFilterIds.length} {outerLabel}
-                {outerFilterIds.length === 1 ? '' : 's'}
-              </span>
-            )}
           </div>
           <div className="text-xs">Compare agent performance across runs.</div>
         </div>
-
         {/* Place dimension selector in the header */}
         <DimensionSelector />
       </div>
 
-      {/* Hint for refining search queries */}
-      {/* {curSearchQuery && (
-        <div className="text-xs text-indigo-800 italic flex items-center justify-between gap-1.5 p-1.5 rounded-md border border-indigo-100">
-          {waitingOnNewQuery ? (
-            <div className="flex items-center justify-between w-full">
-              <span>Search query is being refined with your feedback...</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between w-full">
-              <input
-                type="text"
-                placeholder="Relevant queries that are entirely missing from the search results"
-                className="text-xs px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-[400px]"
-                value={missingQueries}
-                onChange={(e) => setMissingQueries(e.target.value)}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-green-600 hover:text-green-800"
-                onClick={handleFeedbackSubmit}
-              >
-                Submit feedback
-              </Button>
-            </div>
-          )}
-        </div>
-      )} */}
+      {/* Debug info */}
+      <div className="text-xs text-gray-500">
+        <div>Outer values: {outerValuesWithIds.map(v => v.value).join(', ')}</div>
+        <div>Inner values: {innerValuesWithIds.map(v => v.value).join(', ')}</div>
+      </div>
 
-      {/* Content area */}
-      <div
-        className="space-y-2 overflow-auto custom-scrollbar"
-        ref={containerRef}
-      >
-        {/* If there is an outer grouping, do that */}
-        {hasOuterDimension &&
-          Array.from(outerIdsToInnerIds.keys()).map((outerId, index) => (
-            <Card
-              key={index}
-              className={cn(
-                `p-2 rounded-md shadow-none transition-all duration-200 ${
-                  (expandedOuter?.[outerId] ?? false)
-                    ? 'border-blue-200'
-                    : 'border-gray-200'
-                }`,
-                'space-y-2'
-              )}
-            >
-              <div
-                className="flex items-center justify-between cursor-pointer group"
-                onClick={() => toggleOuter(outerId)}
-              >
-                <div className="flex items-center">
-                  {expandedOuter?.[outerId] ? (
-                    <ChevronDown className="h-4 w-4 mr-1.5 text-blue-500" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 mr-1.5 text-gray-400 group-hover:text-gray-600" />
-                  )}
-                  <div className="flex items-center">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">
-                        <span className="font-mono">{outerLabel}</span>
-                        {' ' + outerFilters?.[outerId]?.name || outerId}
-                        <span className="text-xxs text-gray-500 font-light ml-2">
-                          {outerIdsToInnerIds.get(outerId)?.length || 0}{' '}
-                          {innerLabel}
-                          {outerIdsToInnerIds.get(outerId)?.length === 1
-                            ? ''
-                            : 's'}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                {outerStatMarginals &&
-                  outerStatMarginals[getOuterKey(outerId)] &&
-                  !curSearchQuery && (
-                    <div className="flex flex-row flex-wrap gap-2 font-mono">
-                      {Object.entries(
-                        outerStatMarginals[getOuterKey(outerId)] || {}
-                      ).map(([scoreKey, stats], idx, arr) => {
-                        const isLoading =
-                          !stats || stats.mean === null || stats.ci === null;
-                        return (
-                          <React.Fragment key={scoreKey}>
-                            <div className="inline-flex items-center gap-1">
-                              <>
-                                <span className="text-[10px] text-gray-400 font-normal">
-                                  {scoreKey}:
-                                </span>
-                                <div
-                                  className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${
-                                    isLoading
-                                      ? 'bg-gray-100 text-gray-600'
-                                      : getColorForAccuracy(stats.mean!)
-                                  }`}
-                                >
-                                  {isLoading ? (
-                                    '--'
-                                  ) : (
-                                    <>{formatAccuracy(stats.mean!)}</>
-                                  )}
-                                </div>
-                              </>
-                            </div>
-                            {idx === arr.length - 1 && (
-                              <span className="text-gray-500 text-[11px]">
-                                n={stats.n}
-                              </span>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-              </div>
-
-              {expandedOuter?.[outerId] && (
-                <div className="space-y-1.5 mt-2 pl-5">
-                  {outerIdsToInnerIds.get(outerId)?.map((innerId) => {
+      {/* Dimension scores table */}
+      {outerValuesWithIds.length > 0 && innerValuesWithIds.length > 0 && (
+        <div className="w-full border border-gray-200 rounded mb-4">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="border border-gray-200 p-2 bg-gray-50 sticky left-0"></th>
+                {innerValuesWithIds.map(({ id: innerId, value: innerValue }) => (
+                  <th key={innerId} className="border border-gray-200 p-2 bg-gray-50">
+                    {innerValue}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {outerValuesWithIds.map(({ id: outerId, value: outerValue }) => (
+                <tr key={outerId}>
+                  <td className="border border-gray-200 p-2 bg-gray-50 font-medium sticky left-0">
+                    {outerValue}
+                  </td>
+                  {innerValuesWithIds.map(({ id: innerId, value: innerValue }) => {
+                    const row = dimensionScores[outerValue];
+                    const cellData = typeof row === 'object' && row !== null ? (row as Record<string, { score: number; n?: number }>)[innerValue] : undefined;
+                    const score = cellData?.score;
+                    const n = cellData?.n;
                     return (
-                      <InnerCard
-                        key={innerId}
-                        innerId={innerId}
-                        innerLabel={innerLabel}
-                        innerName={innerFilters?.[innerId]?.name || innerId}
-                        stats={statMarginals[getMarginalKey(innerId, outerId)]}
-                        agentRunIds={
-                          idMarginals?.[getMarginalKey(innerId, outerId)] || []
-                        }
-                        isExpanded={
-                          expandedInner?.[outerId]?.[innerId] ?? false
-                        }
-                        onToggle={() => toggleInner(outerId, innerId)}
-                        innerCount={outerIdsToInnerIds.get(outerId)?.length}
-                      />
+                      <td 
+                        key={innerId} 
+                        className={`border border-gray-200 p-2 cursor-pointer hover:bg-indigo-100 transition-colors relative ${
+                          typeof score === 'number' && score >= 0.8 
+                            ? 'bg-green-50' 
+                            : typeof score === 'number' && score > 0 
+                              ? 'bg-yellow-50' 
+                              : 'bg-red-50'
+                        }`}
+                        title={`Filter to ${getDimensionName(outerDimId)}: ${outerValue}, ${getDimensionName(innerDimId)}: ${innerValue}`}
+                        onClick={() => {
+                          if (outerDimId && innerDimId && dimensionsMap) {
+                            console.log('dimensionsMap:', dimensionsMap);
+                            console.log('outerDimId:', outerDimId, 'outer dimension:', dimensionsMap[outerDimId]);
+                            console.log('innerDimId:', innerDimId, 'inner dimension:', dimensionsMap[innerDimId]);
+                            const outerFilter = {
+                              type: 'primitive',
+                              key_path: dimensionsMap[outerDimId]?.metadata_key
+                                ? ['metadata', ...dimensionsMap[outerDimId].metadata_key.split('.')]
+                                : undefined,
+                              value: outerValue,
+                              op: '==',
+                              id: crypto.randomUUID(),
+                              name: null,
+                            } as PrimitiveFilter;
+                            const innerFilter = {
+                              type: 'primitive',
+                              key_path: dimensionsMap[innerDimId]?.metadata_key
+                                ? ['metadata', ...dimensionsMap[innerDimId].metadata_key.split('.')]
+                                : undefined,
+                              value: innerValue,
+                              op: '==',
+                              id: crypto.randomUUID(),
+                              name: null,
+                            } as PrimitiveFilter;
+                            console.log('Dispatching combined updateBaseFilter:', { outerFilter, innerFilter });
+                            // Remove any filters with the same key_path as outerFilter or innerFilter
+                            const filtersToKeep = (baseFilter?.filters || []).filter((f: import('../types/frameTypes').FrameFilter) => {
+                              if (f.type !== 'primitive') return true;
+                              const fKeyPath = (f as PrimitiveFilter).key_path?.join('.') || '';
+                              const outerKeyPath = outerFilter.key_path?.join('.') || '';
+                              const innerKeyPath = innerFilter.key_path?.join('.') || '';
+                              return fKeyPath !== outerKeyPath && fKeyPath !== innerKeyPath;
+                            });
+                            // Add the new filters
+                            const newFilters = [...filtersToKeep, outerFilter, innerFilter];
+                            const newBaseFilter: import('../types/frameTypes').ComplexFilter = {
+                              type: 'complex',
+                              op: 'and',
+                              id: baseFilter?.id || crypto.randomUUID(),
+                              name: null,
+                              filters: newFilters,
+                            };
+                            dispatch(updateBaseFilter(newBaseFilter));
+                          }
+                        }}
+                      >
+                        <span className="underline decoration-dotted underline-offset-2 cursor-pointer" style={{textDecorationStyle: 'dotted'}}>
+                          {typeof score === 'number' ? score.toFixed(2) : ''}
+                        </span>
+                        {n !== undefined && <span className="text-gray-500 ml-1">(n={n})</span>}
+                        <span className="absolute right-1 top-1 text-xs text-indigo-400" style={{fontSize: '10px'}}>&#128269;</span>
+                      </td>
                     );
                   })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {/* 1D table: only outer */}
+      {outerValuesWithIds.length > 0 && innerValuesWithIds.length === 0 && dimensionsMap && (
+        (() => {
+          const scores = dimensionScores as Record<string, { score: number; n?: number }>;
+          return (
+            <div className="w-full border border-gray-200 rounded mb-4">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="border border-gray-200 p-2 bg-gray-50">{dimensionsMap[outerDimId as keyof typeof dimensionsMap]?.name || 'Dimension'}</th>
+                    <th className="border border-gray-200 p-2 bg-gray-50">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outerValuesWithIds.map(({ id: outerId, value: outerValue }) => (
+                    <tr key={outerId}>
+                      <td 
+                        className="border border-gray-200 p-2 bg-gray-50 font-medium cursor-pointer hover:bg-indigo-100 transition-colors relative"
+                        title={`Filter to ${getDimensionName(outerDimId)}: ${outerValue}`}
+                        onClick={() => {
+                          if (outerDimId && dimensionsMap) {
+                            console.log('dimensionsMap:', dimensionsMap);
+                            console.log('outerDimId:', outerDimId, 'outer dimension:', dimensionsMap[outerDimId]);
+                            const outerFilter = {
+                              type: 'primitive',
+                              key_path: dimensionsMap[outerDimId]?.metadata_key
+                                ? ['metadata', ...dimensionsMap[outerDimId].metadata_key.split('.')]
+                                : undefined,
+                              value: outerValue,
+                              op: '==',
+                              id: crypto.randomUUID(),
+                              name: null,
+                            } as PrimitiveFilter;
+                            console.log('Dispatching outer addBaseFilter:', outerFilter);
+                            dispatch(addBaseFilter(outerFilter));
+                          }
+                        }}
+                      >
+                        <span className="underline decoration-dotted underline-offset-2 cursor-pointer" style={{textDecorationStyle: 'dotted'}}>{outerValue}</span>
+                        <span className="absolute right-1 top-1 text-xs text-indigo-400" style={{fontSize: '10px'}}>&#128269;</span>
+                      </td>
+                      <td className={`border border-gray-200 p-2 ${
+                        scores[outerValue]?.score >= 0.8
+                          ? 'bg-green-50'
+                          : scores[outerValue]?.score > 0
+                            ? 'bg-yellow-50'
+                            : 'bg-red-50'
+                      }`}>
+                        {typeof scores[outerValue]?.score === 'number' ? scores[outerValue].score.toFixed(2) : ''}
+                        {scores[outerValue]?.n !== undefined && <span className="text-gray-500 ml-1">(n={scores[outerValue].n})</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()
+      )}
+      {/* 1D table: only inner */}
+      {innerValuesWithIds.length > 0 && outerValuesWithIds.length === 0 && dimensionsMap && (
+        (() => {
+          const scores = dimensionScores as Record<string, { score: number; n?: number }>;
+          return (
+            <div className="w-full border border-gray-200 rounded mb-4">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="border border-gray-200 p-2 bg-gray-50">{dimensionsMap[innerDimId as keyof typeof dimensionsMap]?.name || 'Dimension'}</th>
+                    <th className="border border-gray-200 p-2 bg-gray-50">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {innerValuesWithIds.map(({ id: innerId, value: innerValue }) => (
+                    <tr key={innerId}>
+                      <td 
+                        className="border border-gray-200 p-2 bg-gray-50 font-medium cursor-pointer hover:bg-indigo-100 transition-colors relative"
+                        title={`Filter to ${getDimensionName(innerDimId)}: ${innerValue}`}
+                        onClick={() => {
+                          if (innerDimId && dimensionsMap) {
+                            console.log('dimensionsMap:', dimensionsMap);
+                            console.log('innerDimId:', innerDimId, 'inner dimension:', dimensionsMap[innerDimId]);
+                            const innerFilter = {
+                              type: 'primitive',
+                              key_path: dimensionsMap[innerDimId]?.metadata_key
+                                ? ['metadata', ...dimensionsMap[innerDimId].metadata_key.split('.')]
+                                : undefined,
+                              value: innerValue,
+                              op: '==',
+                              id: crypto.randomUUID(),
+                              name: null,
+                            } as PrimitiveFilter;
+                            console.log('Dispatching inner addBaseFilter:', innerFilter);
+                            dispatch(addBaseFilter(innerFilter));
+                          }
+                        }}
+                      >
+                        <span className="underline decoration-dotted underline-offset-2 cursor-pointer" style={{textDecorationStyle: 'dotted'}}>{innerValue}</span>
+                        <span className="absolute right-1 top-1 text-xs text-indigo-400" style={{fontSize: '10px'}}>&#128269;</span>
+                      </td>
+                      <td className={`border border-gray-200 p-2 ${
+                        scores[innerValue]?.score >= 0.8
+                          ? 'bg-green-50'
+                          : scores[innerValue]?.score > 0
+                            ? 'bg-yellow-50'
+                            : 'bg-red-50'
+                      }`}>
+                        {typeof scores[innerValue]?.score === 'number' ? scores[innerValue].score.toFixed(2) : ''}
+                        {scores[innerValue]?.n !== undefined && <span className="text-gray-500 ml-1">(n={scores[innerValue].n})</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()
+      )}
+
+      {/* Content area: FLAT LIST of all agent runs */}
+      <div className="space-y-2 overflow-auto custom-scrollbar" ref={containerRef}>
+        {allAgentRunEntries.length > 0 ? (
+          allAgentRunEntries.map(([marginalKey, agentRunIds]) => (
+            agentRunIds.map((agentRunId) => {
+              const attributes = curSearchQuery ? (attributeMap?.[agentRunId]?.[curSearchQuery]?.filter(attr => attr.value !== null) || null) : null;
+              return (
+                <div key={agentRunId} className="flex flex-col p-1 border rounded text-xs bg-white/80 hover:bg-gray-50">
+                  <div
+                    className="cursor-pointer"
+                    onMouseDown={(e) =>
+                      navToAgentRun(
+                        e,
+                        router,
+                        window,
+                        agentRunId,
+                        undefined,
+                        undefined,
+                        frameGridId
+                      )
+                    }
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">
+                        Agent Run <span className="font-mono">{agentRunId}</span>
+                      </span>
+                      <div className="flex gap-2">
+                        <span
+                          className="text-blue-600 font-medium hover:text-blue-700"
+                          onMouseDown={(e) => {
+                            navToAgentRun(
+                              e,
+                              router,
+                              window,
+                              agentRunId,
+                              undefined,
+                              undefined,
+                              frameGridId,
+                              curSearchQuery
+                            );
+                          }}
+                        >
+                          View
+                        </span>
+                      </div>
+                    </div>
+                    {/* Display metadata if available */}
+                    {agentRunMetadata && agentRunMetadata[agentRunId] && (
+                      <AgentRunMetadata agentRunId={agentRunId} />
+                    )}
+                  </div>
+                  {/* Regex matches */}
+                  <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} />
+                  {/* Attribute section if search query is active */}
+                  {attributes && curSearchQuery && (
+                    <AttributeSection
+                      dataId={agentRunId}
+                      curAttributeQuery={curSearchQuery}
+                      attributes={attributes}
+                    />
+                  )}
                 </div>
-              )}
-            </Card>
-          ))}
-
-        {/* No outer grouping, but has an inner grouping */}
-        {!hasOuterDimension &&
-          hasInnerDimension &&
-          innerFilterIds?.map((innerId, _index) => (
-            <InnerCard
-              key={innerId}
-              innerId={innerId}
-              innerLabel={innerLabel}
-              innerName={innerFilters?.[innerId]?.name || innerId}
-              stats={statMarginals[getMarginalKey(innerId, null)]}
-              agentRunIds={idMarginals?.[getMarginalKey(innerId, null)] || []}
-              isExpanded={expandedInner?.['DEFAULT_OUTER']?.[innerId] ?? false}
-              onToggle={() => toggleInner('DEFAULT_OUTER', innerId)}
-              innerCount={innerFilterIds.length}
-            />
-          ))}
-
-        {!hasOuterDimension && !hasInnerDimension && (
+              );
+            })
+          ))
+        ) : (
           <div className="text-xs text-gray-500 min-h-[24px]">
             {loadingSearchQuery ? (
               <div className="flex items-center space-x-2">
