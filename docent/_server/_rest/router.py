@@ -52,6 +52,7 @@ from docent._server._dependencies.permissions import (
 from docent._server._dependencies.user import (
     get_default_view_ctx,
     get_user_anonymous_ok,
+    get_authenticated_user,
 )
 from docent._server._rest.send_state import (
     publish_dims,
@@ -242,12 +243,13 @@ async def logout(request: Request, response: Response):
 
 
 @user_router.get("/framegrids")
-async def get_framegrids(db: DBService = Depends(get_db)):
+async def get_framegrids(user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)):
     sqla_fgs = await db.get_fgs()
     return [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
         for obj in sqla_fgs
+        if await db.has_permission(user, resource_type=ResourceType.FRAME_GRID, resource_id=obj.id, permission=Permission.READ)
     ]
 
 
@@ -260,7 +262,7 @@ class CreateFrameGridRequest(BaseModel):
 @user_router.post("/create")
 async def create_fg(
     request: CreateFrameGridRequest = CreateFrameGridRequest(),
-    user: User = Depends(get_user_anonymous_ok),
+    user: User = Depends(get_authenticated_user),
     db: DBService = Depends(get_db),
 ):
     fg_id = await db.create_fg(

@@ -2051,8 +2051,9 @@ class DBService:
             # Call to_user() inside the session context
             user = sqla_user.to_user()
 
-        logger.info(f"Created anonymous user with ID: {user_id}")
-        return user
+            logger.info(f"Created anonymous user with ID: {user_id}")
+            return user
+
 
     async def get_user_by_email(self, email: str) -> User | None:
         """
