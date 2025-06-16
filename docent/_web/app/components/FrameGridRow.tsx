@@ -41,8 +41,8 @@ export default function FrameGridRow({
 }: FrameGridRowProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const hasAdminPermission = useHasFramegridPermission('admin', framegrid.id)
-  const hasWritePermission = useHasFramegridPermission('write', framegrid.id)
+  const hasAdminPermission = useHasFramegridPermission('admin', framegrid.id);
+  const hasWritePermission = useHasFramegridPermission('write', framegrid.id);
 
   // Local editing state
   const [isEditing, setIsEditing] = useState(false);
@@ -165,7 +165,9 @@ export default function FrameGridRow({
           />
         ) : (
           <span className="text-gray-900 text-xs">
-            {framegrid.name || <span className="italic text-gray-400">Unnamed Grid</span>}
+            {framegrid.name || (
+              <span className="italic text-gray-400">Unnamed Grid</span>
+            )}
           </span>
         )}
       </TableCell>
@@ -183,7 +185,9 @@ export default function FrameGridRow({
         ) : (
           <span className="text-xs text-gray-500">
             {framegrid.description || (
-              <span className="italic text-gray-400">No description provided</span>
+              <span className="italic text-gray-400">
+                No description provided
+              </span>
             )}
           </span>
         )}
@@ -259,4 +263,4 @@ export default function FrameGridRow({
       </TableCell>
     </TableRow>
   );
-} 
+}

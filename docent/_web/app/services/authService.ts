@@ -10,7 +10,7 @@ export class AuthService {
    */
   static async login(
     email: string
-  ): Promise<{ user_id: string; email: string; is_anonymous: boolean }> {
+  ): Promise<{ id: string; email: string; is_anonymous: boolean }> {
     const response = await apiRestClient.post('/login', { email });
     return response.data;
   }
@@ -20,7 +20,7 @@ export class AuthService {
    */
   static async signup(
     email: string
-  ): Promise<{ user_id: string; email: string; is_anonymous: boolean }> {
+  ): Promise<{ id: string; email: string; is_anonymous: boolean }> {
     const response = await apiRestClient.post('/signup', { email });
     return response.data;
   }
@@ -37,7 +37,7 @@ export class AuthService {
    * Use sparingly - prefer server-side auth via DAL
    */
   static async getCurrentUser(): Promise<{
-    user_id: string;
+    id: string;
     email: string;
     is_anonymous: boolean;
   } | null> {

@@ -113,7 +113,7 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
               </button>
             </div>
           }
-          placeholder={hasWritePermission ? "Add collaborators by name or email" : "You don't have permission to add collaborators s"}
+          placeholder={hasWritePermission ? "Add collaborators by name or email" : "You don't have permission to add collaborators"}
         />
       </div>
       <PermissionDropdown
@@ -142,7 +142,6 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
     }),
   });
 
-//   const [isPublic, setIsPublic] = useState<boolean>(false);
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [removeCollaborator] = useRemoveCollaboratorMutation();
 

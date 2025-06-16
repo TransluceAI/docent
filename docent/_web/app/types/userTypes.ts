@@ -10,20 +10,3 @@ export interface User {
   is_anonymous: boolean;
   name?: string;
 }
-
-/**
- * Request payload for creating a new user
- * Matches backend UserCreateRequest
- */
-export interface UserCreateRequest {
-  email: string;
-}
-
-/**
- * Response from user-related API endpoints
- * Matches backend UserResponse
- */
-export interface UserResponse {
-  user_id: string;
-  email: string;
-}

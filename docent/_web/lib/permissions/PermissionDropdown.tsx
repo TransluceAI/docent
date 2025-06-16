@@ -1,6 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PermissionLevel } from "./types"
-import { cn } from "@/lib/utils"
 import { useHasFramegridWritePermission } from "./hooks";
 
 

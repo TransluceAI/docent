@@ -60,7 +60,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
   }, []);
 
   return (
-    <div className="$Breadcrumbs text-sm flex items-center justify-between w-full">
+    <div className="_Breadcrumbs text-sm flex items-center justify-between w-full">
       <div className="flex items-center gap-x-3">
         {/* Go Home button */}
         <Tooltip>

@@ -72,7 +72,6 @@ export function AutoComplete<T extends string, I extends { value: T; label: stri
     }
     setOpen(false);
   };
-  console.log('is disabled', disabled)
 
   return (
     <div className="flex items-center">

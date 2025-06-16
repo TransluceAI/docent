@@ -88,10 +88,3 @@ export interface PublicCollaborator {
 }
 
 export type Collaborator = UserCollaborator | OrganizationCollaborator | PublicCollaborator;
-
-export interface CollabState {
-  collaborators: Collaborator[];
-}
-const initialState: CollabState = {
-  collaborators: [],
-}

@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils';
 import { PermissionLevel, SubjectType } from './types';
 import PermissionDropdown from './PermissionDropdown';
 import {
-  Collaborator,
   UserCollaborator,
   OrganizationCollaborator,
   useGetCollaboratorsQuery,
@@ -73,10 +72,8 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
         return <User size={14} />;
     }
   };
-  // @ts-ignore
   const displayName = getDisplayName(collaborator)
   const displayEmail =
-    // @ts-ignore
     collaborator.subject_type === 'user'
       ? collaborator.subject.email
       : undefined;
