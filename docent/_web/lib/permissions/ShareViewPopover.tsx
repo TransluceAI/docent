@@ -10,11 +10,12 @@ import {
 } from '@/components/ui/popover';
 import { Share2, UserPlus } from 'lucide-react';
 import CollaboratorsList from './CollaboratorsList';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   useGetCollaboratorsQuery,
   useGetOrgUsersQuery,
   useUpsertCollaboratorMutation,
+  useRemoveCollaboratorMutation,
 } from './collabSlice';
 import { PermissionLevel } from './types';
 import PermissionDropdown from './PermissionDropdown';
@@ -129,8 +130,46 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
 };
 
 const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
-  const [isPublic, setIsPublic] = useState(false);
-  const { data: collaborators } = useGetCollaboratorsQuery(framegridId);
+  // Determine current public access state from collaborators
+  const { isPublicCollab } = useGetCollaboratorsQuery(framegridId, {
+    selectFromResult: (result) => ({
+      isPublicCollab:
+        result.data?.some((c) => c.subject_type === 'public') ?? false,
+    }),
+  });
+
+  const [isPublic, setIsPublic] = useState<boolean>(false);
+  const [upsertCollaborator] = useUpsertCollaboratorMutation();
+  const [removeCollaborator] = useRemoveCollaboratorMutation();
+
+  // Sync local state when data arrives/changes
+  useEffect(() => {
+    setIsPublic(isPublicCollab);
+  }, [isPublicCollab]);
+
+  // Toggle handler that also updates backend
+  const handlePublicToggle = useCallback(
+    (checked: boolean) => {
+      setIsPublic(checked);
+
+      if (checked) {
+        upsertCollaborator({
+          subject_id: 'public',
+          subject_type: 'public',
+          framegrid_id: framegridId,
+          permission_level: 'read', // Public access is always read-only
+        });
+      } else {
+        removeCollaborator({
+          subject_id: 'public',
+          subject_type: 'public',
+          framegrid_id: framegridId,
+        });
+      }
+    },
+    [framegridId, upsertCollaborator, removeCollaborator]
+  );
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -160,7 +199,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
               <Switch
                 id="public-access"
                 checked={isPublic}
-                onCheckedChange={setIsPublic}
+                onCheckedChange={handlePublicToggle}
               />
             </div>
           </div>
