@@ -7,26 +7,20 @@ import React, {
   useCallback,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { FixedSizeList, ListChildComponentProps } from 'react-window';
 
 import { Card } from '@/components/ui/card';
 import { useDebounce } from '@/hooks/use-debounce';
 import { cn } from '@/lib/utils';
 
 import {
-  addExpandedInner,
-  addExpandedOuter,
-  removeExpandedInner,
-  removeExpandedOuter,
   setExperimentViewerScrollPosition,
 } from '../store/experimentViewerSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { PrimitiveFilter } from '../types/frameTypes';
 
 import DimensionSelector from './DimensionSelector';
-import InnerCard from './InnerCard';
-import { Citation } from '../types/experimentViewerTypes';
 import { AgentRunMetadata } from './AgentRunMetadata';
+import { Citation } from '../types/experimentViewerTypes';
 import { RegexSnippet } from '../types/experimentViewerTypes';
 import { navToAgentRun } from '@/lib/nav';
 import { renderTextWithCitations } from '@/lib/renderCitations';
@@ -189,15 +183,12 @@ export default function ExperimentViewer() {
   } = useAppSelector((state) => state.search);
 
   const {
-    expandedOuter,
-    expandedInner,
     experimentViewerScrollPosition,
     dimIdsToFilterIds,
     filtersMap,
     regexSnippets,
     statMarginals: rawStatMarginals,
     idMarginals: rawIdMarginals,
-    outerStatMarginals,
   } = useAppSelector((state) => state.experimentViewer);
 
   // Scroll handling
