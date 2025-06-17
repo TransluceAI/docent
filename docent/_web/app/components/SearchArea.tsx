@@ -173,7 +173,6 @@ const SearchArea = () => {
       requestClusters({ dimensionId: dimId, feedback: clusterFeedback })
     );
     // Clear feedback after sending and hide the input
-    setClusterFeedback('');
     setShowFeedbackInput(false);
   };
 
@@ -220,7 +219,6 @@ const SearchArea = () => {
         experimentId2,
       })
     );
-    console.log('diffsReportId', diffsReportId);
 
     setLoadingDiffs(false);
     // Set the diffs attribute to enable clustering
