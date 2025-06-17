@@ -169,6 +169,24 @@ export const computeSearch = createAsyncThunk(
   }
 );
 
+export const getExistingClusters = createAsyncThunk(
+  'experimentViewer/getExistingClusters',
+  async (payload: { dimensionId: string }, { dispatch, getState }) => {
+    const state = getState() as { frame: { frameGridId?: string } };
+    const frameGridId = state.frame.frameGridId;
+
+    if (!frameGridId) {
+      throw new Error('No frame grid ID available');
+    }
+
+    const response = await apiRestClient.get(
+      `/${frameGridId}/get_existing_clusters?dim_id=${payload.dimensionId}`
+    );
+
+    return response.data;
+  }
+);
+
 export const requestClusters = createAsyncThunk(
   'experimentViewer/requestClusters',
   async (

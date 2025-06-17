@@ -80,6 +80,8 @@ export default function DocentDashboard() {
         description: newGridDescription,
       });
 
+      dispatch(fetchFrameGrids());
+
       // Close dialog and reset form
       setIsNewGridDialogOpen(false);
       setNewGridName('');
@@ -129,7 +131,7 @@ export default function DocentDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              
+
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger>{createButton}</TooltipTrigger>
@@ -140,7 +142,7 @@ export default function DocentDashboard() {
                     )}
                   </Tooltip>
                 </TooltipProvider>
-              
+
               <UserProfile />
             </div>
           </div>

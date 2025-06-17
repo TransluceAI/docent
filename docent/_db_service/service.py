@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import selectinload
 
 from docent._ai_tools.clustering.cluster_diffs import cluster_diff_claims, search_over_diffs
-from docent._ai_tools.clustering.cluster_generator import propose_clusters
+from docent._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
 from docent._ai_tools.diffs.models import Claim, SQLADiffsReport, TranscriptDiff
 from docent._ai_tools.search import SearchResult, SearchResultStreamingCallback, execute_search
@@ -47,7 +47,6 @@ from docent._db_service.schemas.auth_models import (
     SubjectType,
     User,
 )
-from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._db_service.schemas.base import SQLABase
 from docent._db_service.schemas.tables import (
     JobStatus,
@@ -64,7 +63,6 @@ from docent._db_service.schemas.tables import (
     SQLASession,
     SQLATranscript,
     SQLAUser,
-    SQLAUserOrganization,
     SQLAView,
 )
 from docent._env_util import ENV
@@ -583,7 +581,9 @@ class DBService:
             if base_filter is not None:
                 assert isinstance(base_filter, ComplexFilter), "Base filter must be a ComplexFilter"
 
-            return ViewContext(fg_id=view.fg_id, view_id=view.id, base_filter=base_filter, user=view.user.to_user())
+            return ViewContext(
+                fg_id=view.fg_id, view_id=view.id, base_filter=base_filter, user=view.user.to_user()
+            )
 
     async def get_default_view_ctx(self, fg_id: str, user: User) -> ViewContext:
         # Check if a default view exists for this fg
@@ -616,7 +616,8 @@ class DBService:
                 )
                 # Convert to SQLA and add to session
                 sqla_dim, _ = SQLAFrameDimension.from_frame_dimension(
-                    default_dim, ViewContext(fg_id=fg_id, view_id=view.id, base_filter=None, user=user)
+                    default_dim,
+                    ViewContext(fg_id=fg_id, view_id=view.id, base_filter=None, user=user),
                 )
                 session.add(sqla_dim)
                 await session.flush()  # Flush to get the dimension ID
@@ -662,7 +663,9 @@ class DBService:
                 .values(base_filter_id=sqla_filter.id)
             )
 
-        new_ctx = ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=filter, user=ctx.user)
+        new_ctx = ViewContext(
+            fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=filter, user=ctx.user
+        )
 
         # Base filter might trigger a new clustering of metadata dimensions
         await self._refresh_metadata_dims(new_ctx)
@@ -1534,8 +1537,19 @@ class DBService:
 
         # Collect all datapoints with each unique metadata value
         value_to_datapoint_ids: dict[Any, set[str]] = {}
+
+        def _get_metadata_value(metadata: BaseAgentRunMetadata, key: str) -> Any:
+            if (value := metadata.get(key)) is not None:
+                return value
+            if "." in key:
+                prefix, suffix = key.split(".", 1)
+                if (field := metadata.get(prefix)) is not None:
+                    if isinstance(field, dict):
+                        return field.get(suffix, None)
+            return None
+
         for id, metadata in all_metadata_with_ids:
-            if (value := metadata.get(metadata_key)) is not None:
+            if (value := _get_metadata_value(metadata, metadata_key)) is not None:
                 value_to_datapoint_ids.setdefault(value, set()).add(id)
 
         # Create a MetadataFilter for each unique value
@@ -1574,6 +1588,7 @@ class DBService:
         self,
         ctx: ViewContext,
         dim_id: str,
+        feedback: str | None = None,
         search_result_callback: SearchResultStreamingCallback | None = None,
     ):
         dim = await self.get_dim(dim_id)
@@ -1592,14 +1607,26 @@ class DBService:
 
         # Propose clusters with guidance on what attribute to focus on
         guidance = f"Specifically focus on the following attribute: {dim.search_query}"
-        predicates: list[str] = await propose_clusters(
-            to_cluster,
-            extra_instructions_list=[guidance],
-            feedback_list=[],
-        )
+        existing_filters = await self._get_dim_filters(dim_id)
+        if feedback is not None:
+            predicates: list[str] = await propose_clusters(
+                to_cluster,
+                extra_instructions_list=[guidance],
+                feedback_list=[
+                    ClusterFeedback(
+                        clusters=[f.name for f in existing_filters if f.name is not None],
+                        feedback=feedback,
+                    )
+                ],
+            )
+        else:
+            predicates: list[str] = await propose_clusters(
+                to_cluster,
+                extra_instructions_list=[guidance],
+            )
 
         # Delete existing filters
-        await self._delete_filters([f.id for f in await self._get_dim_filters(dim_id)])
+        await self._delete_filters([f.id for f in existing_filters])
 
         # Push filters
         sqla_filters = [
@@ -2003,9 +2030,7 @@ class DBService:
             users_result = await session.execute(select(SQLAUser))
             sqla_users = users_result.scalars().all()
 
-            return [
-                user.to_user() for user in sqla_users
-            ]
+            return [user.to_user() for user in sqla_users]
 
     async def create_user(self, email: str) -> User:
         """
@@ -2053,7 +2078,6 @@ class DBService:
 
             logger.info(f"Created anonymous user with ID: {user_id}")
             return user
-
 
     async def get_user_by_email(self, email: str) -> User | None:
         """
@@ -2272,22 +2296,22 @@ class DBService:
 
             # Check if any permission already exists for this subject/resource combination
             result = await session.execute(
-                    select(SQLAAccessControlEntry).where(
-                        subject_filter,
-                        resource_filter,
-                    )
+                select(SQLAAccessControlEntry).where(
+                    subject_filter,
+                    resource_filter,
                 )
+            )
             acl_entry = result.scalar_one_or_none()
-     
+
             # Permission doesn't exist, create it
             if acl_entry is None:
                 acl_entry = SQLAAccessControlEntry(
-                    id=str(uuid4()),         
+                    id=str(uuid4()),
                 )
 
                 session.add(acl_entry)
-            print('SUBJECT_FIELDS', subject_fields)
-            print('RESOURCE_FIELDS', resource_fields)
+            print("SUBJECT_FIELDS", subject_fields)
+            print("RESOURCE_FIELDS", resource_fields)
             # Set the fields
             for field, value in subject_fields.items():
                 setattr(acl_entry, field, value)
@@ -2299,7 +2323,6 @@ class DBService:
                 f"Granted {permission.value} permission on {resource_type.value}:{resource_id} "
                 f"for {subject_type.value}:{subject_id}"
             )
-
 
     async def clear_acl_permission(
         self,

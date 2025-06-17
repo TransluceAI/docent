@@ -31,7 +31,6 @@ REDIS = ArqRedis(
 
 
 async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
-    logger.info("compute search:", view_ctx, job_id)
 
     db = await DBService.init()
     result = await db.get_search_job_and_query(job_id)
