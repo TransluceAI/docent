@@ -220,7 +220,7 @@ async def execute_search(
             for prompt in prompts
         ],
         PROVIDER_PREFERENCES.execute_search,
-        max_new_tokens=4096,
+        max_new_tokens=8192,
         timeout=180.0,
         use_cache=True,
     )
