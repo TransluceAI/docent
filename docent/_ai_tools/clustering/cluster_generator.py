@@ -122,9 +122,9 @@ async def propose_clusters(
     outputs = await get_llm_completions_async(
         [prompt],
         PROVIDER_PREFERENCES.propose_clusters,
-        max_new_tokens=4096,
+        max_new_tokens=8192,
         temperature=1.0,
-        timeout=120.0,
+        timeout=180.0,
         use_cache=True,
     )
 

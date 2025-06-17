@@ -80,6 +80,8 @@ export default function DocentDashboard() {
         description: newGridDescription,
       });
 
+      dispatch(fetchFrameGrids());
+
       // Close dialog and reset form
       setIsNewGridDialogOpen(false);
       setNewGridName('');

@@ -20,6 +20,7 @@ from docent._db_service.schemas.auth_models import (
     SubjectType,
     User,
 )
+from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._db_service.schemas.tables import SQLADiffAttribute
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
@@ -37,7 +38,6 @@ from docent._server._assistant.summarizer import (
     interesting_agent_observations,
     summarize_agent_actions,
 )
-from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._server._auth.session import create_user_session, invalidate_user_session
 from docent._server._broker.redis_client import (
     REDIS,
@@ -50,9 +50,9 @@ from docent._server._dependencies.permissions import (
     require_view_permission,
 )
 from docent._server._dependencies.user import (
+    get_authenticated_user,
     get_default_view_ctx,
     get_user_anonymous_ok,
-    get_authenticated_user,
 )
 from docent._server._rest.send_state import (
     publish_dims,
@@ -243,13 +243,20 @@ async def logout(request: Request, response: Response):
 
 
 @user_router.get("/framegrids")
-async def get_framegrids(user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)):
+async def get_framegrids(
+    user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)
+):
     sqla_fgs = await db.get_fgs()
     return [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
         for obj in sqla_fgs
-        if await db.has_permission(user, resource_type=ResourceType.FRAME_GRID, resource_id=obj.id, permission=Permission.READ)
+        if await db.has_permission(
+            user,
+            resource_type=ResourceType.FRAME_GRID,
+            resource_id=obj.id,
+            permission=Permission.READ,
+        )
     ]
 
 
@@ -444,7 +451,9 @@ async def post_base_filter(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    logger.critical(f"post_base_filter for fg_id: {fg_id} and user, view id: {ctx.view_id}, user.email={ctx.user.email if ctx.user else 'None'}")
+    logger.critical(
+        f"post_base_filter for fg_id: {fg_id} and user, view id: {ctx.view_id}, user.email={ctx.user.email if ctx.user else 'None'}"
+    )
     async with db.advisory_lock(fg_id, action_id="mutation"):
         if request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
@@ -574,9 +583,11 @@ async def get_user_permissions(
         view_permissions={ctx.view_id: view_permission.value if view_permission else None},
     )
 
+
 @user_router.get("/organizations/{org_id}/users")
 async def get_org_users(org_id: str, db: DBService = Depends(get_db)):
     return [u for u in await db.get_users() if not u.is_anonymous]
+
 
 @user_router.get("/framegrids/{fg_id}/collaborators")
 async def get_framegrid_collaborators(
@@ -585,21 +596,24 @@ async def get_framegrid_collaborators(
     # You need READ permissions to see other people's permissions
     _: None = Depends(require_fg_permission(Permission.READ)),
 ):
-    return [FramegridCollaborator.from_sqla_acl(acl) for acl in await db.get_acl_entries(
-        resource_id=fg_id,
-        resource_type=ResourceType.FRAME_GRID,
-    )]
+    return [
+        FramegridCollaborator.from_sqla_acl(acl)
+        for acl in await db.get_acl_entries(
+            resource_id=fg_id,
+            resource_type=ResourceType.FRAME_GRID,
+        )
+    ]
 
-from typing import Optional
+
 from pydantic import model_validator
+
 
 class UpsertCollaboratorRequest(BaseModel):
     subject_id: str | None = None
     subject_type: SubjectType
     framegrid_id: str
     permission_level: Permission
-    
-    
+
     @model_validator(mode="after")
     def validate_user_or_organization(self):
         if self.subject_type == SubjectType.USER and self.subject_id is None:
@@ -623,13 +637,15 @@ async def upsert_collaborator(
         resource_id=fg_id,
         permission=request.permission_level,
     )
-   
+
     return collaborator
+
 
 class RemoveCollaboratorRequest(BaseModel):
     subject_id: str
     subject_type: SubjectType
     framegrid_id: str
+
 
 @user_router.delete("/framegrids/{fg_id}/collaborators/delete")
 async def remove_collaborator(
@@ -646,6 +662,7 @@ async def remove_collaborator(
     )
     return {"status": "success"}
 
+
 class ShareViewRequest(BaseModel):
     subject_type: Literal["user", "organization", "public"]
     subject_id: str
@@ -659,7 +676,7 @@ async def share_view(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.READ)),
-):  
+):
     await db.set_acl_permission(
         subject_type=SubjectType(request.subject_type),
         subject_id=request.subject_id,
@@ -925,6 +942,20 @@ async def resume_compute_search(
     return job_id
 
 
+@user_router.get("/{fg_id}/get_existing_clusters")
+async def get_existing_clusters(
+    dim_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    # Publish latest marginals in case there was an update
+    await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
+
+    await publish_dims(db, ctx)
+    return
+
+
 @user_router.get("/search_jobs")
 async def search_jobs(
     db: DBService = Depends(get_db),
@@ -978,9 +1009,6 @@ async def listen_cluster_dimension(
     if dim is None:
         raise ValueError(f"Dimension {dim_id} not found")
 
-    if feedback:
-        raise NotImplementedError("Feedback not implemented")
-
     async def event_stream():
         async with db.advisory_lock(fg_id, action_id="mutation"):
             try:
@@ -991,7 +1019,7 @@ async def listen_cluster_dimension(
                 # TODO(mengk): assert that all agent_runs have the associated attribute
                 # This should be guaranteed by the frontend, but just make sure.
 
-                await db.cluster_search_results(ctx, dim_id)
+                await db.cluster_search_results(ctx, dim_id, feedback)
 
                 # Upload loading state and send updated bins
                 await db.set_dim_loading_state(

@@ -21,7 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import { deleteFrameGrid } from '../store/frameSlice';
+import { deleteFrameGrid, fetchFrameGrids } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
 
 import FrameGridRow from './FrameGridRow';
@@ -48,7 +48,10 @@ export function FrameGridsTable({
 
   const handleDeleteFrameGrid = () => {
     if (!deletingGrid) return;
-    dispatch(deleteFrameGrid(deletingGrid.id));
+
+    dispatch(deleteFrameGrid(deletingGrid.id)).then(() => {
+      dispatch(fetchFrameGrids());
+    });
     setIsDeleteDialogOpen(false);
   };
 
