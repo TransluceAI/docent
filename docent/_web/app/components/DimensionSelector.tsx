@@ -1,5 +1,5 @@
 import { ArrowLeftRight } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +31,21 @@ export default function DimensionSelector({
     dimensionsMap,
     agentRunMetadataFields = [],
   } = useAppSelector((state) => state.frame);
+
+  // Set default dimensions when component mounts
+  useEffect(() => {
+    if (!innerDimId && !outerDimId && agentRunMetadataFields.length > 0) {
+      // Find task_id and model fields
+      const taskIdField = agentRunMetadataFields.find(field => field.name === 'metadata.task_id');
+      const modelField = agentRunMetadataFields.find(field => field.name === 'metadata.model');
+      
+      if (taskIdField && modelField) {
+        // Set task_id as outer dimension and model as inner dimension
+        dispatch(setIODimByMetadataKey({ metadataKey: 'model', type: 'outer' }));
+        dispatch(setIODimByMetadataKey({ metadataKey: 'default_score_key', type: 'inner' }));
+      }
+    }
+  }, [agentRunMetadataFields, innerDimId, outerDimId, dispatch]);
 
   const selectedInnerMetadataKey = useMemo(() => {
     return innerDimId && dimensionsMap?.[innerDimId]?.metadata_key;
@@ -93,6 +108,7 @@ export default function DimensionSelector({
               </SelectItem>
               {agentRunMetadataFields
                 .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
+                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
                 .map((field) => (
                   <SelectItem
                     key={field.name}
@@ -129,6 +145,7 @@ export default function DimensionSelector({
               {/* Do not allow a None option here */}
               {agentRunMetadataFields
                 .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
+                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
                 .map((field) => (
                   <SelectItem
                     key={field.name}
