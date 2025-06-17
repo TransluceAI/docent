@@ -101,18 +101,6 @@ export default function DocentDashboard() {
     }
   };
 
-  const createButton = (
-    <Button
-      className="flex items-center gap-1 h-7"
-      size="sm"
-      onClick={() => setIsNewGridDialogOpen(true)}
-      disabled={user.is_anonymous}
-    >
-      <PlusIcon className="h-3.5 w-3.5" />
-      Create New Frame Grid
-    </Button>
-  );
-
   return (
     <ScrollArea className="h-screen">
       <div className="container mx-auto py-4 px-3 max-w-screen-xl">
@@ -129,18 +117,26 @@ export default function DocentDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>{createButton}</TooltipTrigger>
-                    {user.is_anonymous && (
-                      <TooltipContent>
-                        <p>Create an account to create frame grids</p>
-                      </TooltipContent>
-                    )}
-                  </Tooltip>
-                </TooltipProvider>
-              
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      className="flex items-center gap-1 h-7"
+                      size="sm"
+                      onClick={() => setIsNewGridDialogOpen(true)}
+                      disabled={user.is_anonymous}
+                    >
+                      <PlusIcon className="h-3.5 w-3.5" />
+                      Create New Frame Grid
+                    </Button>
+                  </TooltipTrigger>
+                  {user.is_anonymous && (
+                    <TooltipContent>
+                      <p>Create an account to create frame grids</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
               <UserProfile />
             </div>
           </div>
