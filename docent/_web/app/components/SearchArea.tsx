@@ -25,6 +25,7 @@ import { useAppDispatch } from '../store/hooks';
 import {
   clearSearch,
   computeSearch,
+  getExistingClusters,
   requestClusters,
   setSearchQueryTextboxValue,
 } from '../store/searchSlice';
@@ -91,7 +92,7 @@ const SearchArea = () => {
       if (marginals == null && activeClusterTaskId == null) {
         // if we have bins for a search result and no ongoing clustering task, then we've already
         // computed the marginals in an earlier query and just need to request them
-        dispatch(requestClusters({ dimensionId: activeDim.id, feedback: '' }));
+        dispatch(getExistingClusters({ dimensionId: activeDim.id}));
       }
     }
   }, [activeDim, marginals, dispatch, activeClusterTaskId]);
@@ -172,7 +173,6 @@ const SearchArea = () => {
       requestClusters({ dimensionId: dimId, feedback: clusterFeedback })
     );
     // Clear feedback after sending and hide the input
-    setClusterFeedback('');
     setShowFeedbackInput(false);
   };
 
@@ -219,7 +219,6 @@ const SearchArea = () => {
         experimentId2,
       })
     );
-    console.log('diffsReportId', diffsReportId);
 
     setLoadingDiffs(false);
     // Set the diffs attribute to enable clustering

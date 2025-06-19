@@ -37,7 +37,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-import { deleteFrameGrid, updateFrameGrid } from '../store/frameSlice';
+import { deleteFrameGrid, fetchFrameGrids, updateFrameGrid } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
 
 interface FrameGridsTableProps {
@@ -127,7 +127,9 @@ export function FrameGridsTable({
   const handleDeleteFrameGrid = () => {
     if (!deletingGrid) return;
 
-    dispatch(deleteFrameGrid(deletingGrid.id));
+    dispatch(deleteFrameGrid(deletingGrid.id)).then(() => {
+      dispatch(fetchFrameGrids());
+    });
     setIsDeleteDialogOpen(false);
   };
 

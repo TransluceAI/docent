@@ -20,6 +20,7 @@ from docent._db_service.schemas.auth_models import (
     SubjectType,
     User,
 )
+from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._db_service.schemas.tables import SQLADiffAttribute
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
@@ -37,7 +38,6 @@ from docent._server._assistant.summarizer import (
     interesting_agent_observations,
     summarize_agent_actions,
 )
-from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._server._auth.session import create_user_session, invalidate_user_session
 from docent._server._broker.redis_client import (
     REDIS,
@@ -607,7 +607,7 @@ async def share_view(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.READ)),
-):  
+):
     await db.set_acl_permission(
         subject_type=SubjectType(request.subject_type),
         subject_id=request.subject_id,
@@ -873,6 +873,20 @@ async def resume_compute_search(
     return job_id
 
 
+@user_router.get("/{fg_id}/get_existing_clusters")
+async def get_existing_clusters(
+    dim_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    # Publish latest marginals in case there was an update
+    await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
+
+    await publish_dims(db, ctx)
+    return
+
+
 @user_router.get("/search_jobs")
 async def search_jobs(
     db: DBService = Depends(get_db),
@@ -926,9 +940,6 @@ async def listen_cluster_dimension(
     if dim is None:
         raise ValueError(f"Dimension {dim_id} not found")
 
-    if feedback:
-        raise NotImplementedError("Feedback not implemented")
-
     async def event_stream():
         async with db.advisory_lock(fg_id, action_id="mutation"):
             try:
@@ -939,7 +950,7 @@ async def listen_cluster_dimension(
                 # TODO(mengk): assert that all agent_runs have the associated attribute
                 # This should be guaranteed by the frontend, but just make sure.
 
-                await db.cluster_search_results(ctx, dim_id)
+                await db.cluster_search_results(ctx, dim_id, feedback)
 
                 # Upload loading state and send updated bins
                 await db.set_dim_loading_state(
