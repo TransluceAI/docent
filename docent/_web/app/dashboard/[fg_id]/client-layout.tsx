@@ -5,9 +5,10 @@ import React, { useEffect, Suspense, useState, useRef } from 'react';
 
 import Breadcrumbs from '../../components/Breadcrumbs';
 import ResponsiveCheck from '../../components/ResponsiveCheck';
-import { initSession, setHasInitSearchQuery } from '../../store/frameSlice';
+import { getDimensions, initSession, setHasInitSearchQuery } from '../../store/frameSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { computeSearch } from '@/app/store/searchSlice';
+import { computeSearch, handleSearchUpdate, setSearchQuery } from '@/app/store/searchSlice';
+import { apiRestClient } from '@/app/services/apiService';
 
 export default function DocentDashboardClientLayout({
   children,
@@ -40,12 +41,45 @@ export default function DocentDashboardClientLayout({
     undefined
   );
 
+  const searchResultMap = useAppSelector(
+    (state) => state.search.searchResultMap
+  );
+
+  const searchQuery = useAppSelector((state) => state.search.curSearchQuery);
+
+  useEffect(() => {
+    console.log(searchResultMap);
+    console.log(searchQuery);
+  }, [searchResultMap, searchQuery]);
+
   // Check if the URL contains a searchQuery parameter
   const searchParamsCheckedRef = useRef(false);
   useEffect(() => {
     if (searchParamsCheckedRef.current) return;
+    searchParamsCheckedRef.current = true;
 
     const searchQuery = searchParams.get('searchQuery');
+    const filterId = searchParams.get('filterId');
+    const viewId = searchParams.get('viewId');
+    if (searchQuery === null || viewId === null) {
+      return;
+    }
+    apiRestClient.post(`/${fgId}/apply_existing_filter`, {
+      filter_id: filterId === 'null' ? null : filterId,
+      search_query: searchQuery,
+      view_id: viewId,
+    }).then((response) => {
+      let dimId = response.data;
+      dispatch(setSearchQuery(searchQuery));
+      dispatch(setHasInitSearchQuery(true));
+      apiRestClient.get(`/${fgId}/get_existing_search_results?search_query=${searchQuery}`).then((response) => {
+        dispatch(handleSearchUpdate(response.data));
+        if (dimId) {
+          dispatch(getDimensions([dimId]));
+        }
+      });
+    });
+    return;
     if (searchQuery) {
       setInitSearchQuery(searchQuery);
       dispatch(setHasInitSearchQuery(true));
@@ -65,25 +99,25 @@ export default function DocentDashboardClientLayout({
     }
 
     searchParamsCheckedRef.current = true;
-  }, [searchParams, router, dispatch]);
+  }, [searchParams, dispatch]);
 
   // If the URL comes with an searchQuery, we need to request the search
   const alreadyRequestedInitSearch = useRef(false);
-  useEffect(() => {
-    if (
-      !alreadyRequestedInitSearch.current &&
-      fgId &&
-      initSearchQuery &&
-      dimensionsMap
-    ) {
-      dispatch(
-        computeSearch({
-          searchQuery: initSearchQuery,
-        })
-      );
-      alreadyRequestedInitSearch.current = true;
-    }
-  }, [initSearchQuery, dispatch, fgId, dimensionsMap]);
+  // useEffect(() => {
+  //   if (
+  //     !alreadyRequestedInitSearch.current &&
+  //     fgId &&
+  //     initSearchQuery &&
+  //     dimensionsMap
+  //   ) {
+  //     dispatch(
+  //       computeSearch({
+  //         searchQuery: initSearchQuery,
+  //       })
+  //     );
+  //     alreadyRequestedInitSearch.current = true;
+  //   }
+  // }, [initSearchQuery, dispatch, fgId, dimensionsMap]);
 
   return (
     <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-0">

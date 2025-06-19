@@ -2,9 +2,7 @@ import type { Middleware } from '@reduxjs/toolkit';
 
 import socketService from '../services/socketService';
 
-import {
-  setSearchesWithStats,
-} from './searchSlice';
+import { setSearchesWithStats } from './searchSlice';
 import {
   setOuterStatMarginals,
   setIdMarginals,
