@@ -517,7 +517,7 @@ async def apply_existing_filter(
             existing_filter = parse_filter_dict(sqla_filters[0].filter_json)
             assert isinstance(existing_filter, ComplexFilter)
             new_filter = existing_filter.model_copy(update={"id": str(uuid4())})
-            await db.set_view_base_filter(new_ctx, new_filter)
+            new_ctx = await db.set_view_base_filter(new_ctx, new_filter)
     await publish_homepage_state(db, new_ctx)
     return dim_id
 

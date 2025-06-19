@@ -36,6 +36,7 @@ import { ProgressBar } from './ProgressBar';
 import { requestDiffs } from '../store/diffSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 import { apiRestClient } from '../services/apiService';
+import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -235,6 +236,8 @@ const SearchArea = () => {
     setDiffsAttribute(null);
   };
 
+  const hasWritePermission = useHasFramegridWritePermission();
+
   /**
    * Handle share button
    */
@@ -282,6 +285,7 @@ const SearchArea = () => {
                       onChange={(e) => setExperimentId1(e.target.value)}
                       placeholder="e.g. experiment-1"
                       className="h-8 text-xs bg-white font-mono text-gray-600"
+                      disabled={!hasWritePermission}
                     />
                   </div>
                   <div className="space-y-1">
@@ -291,6 +295,7 @@ const SearchArea = () => {
                       onChange={(e) => setExperimentId2(e.target.value)}
                       placeholder="e.g. experiment-2"
                       className="h-8 text-xs bg-white font-mono text-gray-600"
+                      disabled={!hasWritePermission}
                     />
                   </div>
                 </div>
@@ -298,7 +303,7 @@ const SearchArea = () => {
                   size="sm"
                   className="text-xs w-full"
                   onClick={handleRequestDiffs}
-                  disabled={!experimentId1 || !experimentId2}
+                  disabled={!experimentId1 || !experimentId2 || !hasWritePermission}
                 >
                   Compare Experiments
                 </Button>
@@ -518,6 +523,7 @@ const SearchArea = () => {
                         onMouseEnter={() => handlePresetHover(preset.query)}
                         onMouseLeave={handlePresetLeave}
                         className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                        disabled={!hasWritePermission}
                       >
                         <IconComponent className="h-3 w-3 text-blue-500" />
                         {preset.label}
@@ -542,6 +548,7 @@ const SearchArea = () => {
                           handleSearch(searchQueryTextboxValue);
                         }
                       }}
+                      disabled={!hasWritePermission}
                     />
                     <div className="flex items-center justify-end p-2">
                       <Button
@@ -559,7 +566,7 @@ const SearchArea = () => {
                 </div>
 
                 {/* Search History Section - Updated with consistent colors */}
-                {searchesWithStats && searchesWithStats.length > 0 && (
+                {searchesWithStats && searchesWithStats.length > 0 && hasWritePermission && (
                   <div className="max-h-[20rem] overflow-y-auto pr-1">
                     <div className="flex justify-between items-center mb-1">
                       <div className="text-xs font-medium text-gray-500">

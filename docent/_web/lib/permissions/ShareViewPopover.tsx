@@ -172,7 +172,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-x-2">
+        <Button variant="outline" size="sm" className="gap-x-2" disabled={!hasWritePermission}>
           <Share2 size={16} /> Share view
         </Button>
       </PopoverTrigger>
@@ -206,7 +206,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
 
           {/* Section 3: Collaborators */}
           <div className="space-y-3 pt-2 border-t">
-      
+
             <CollaboratorsList framegridId={framegridId} />
           </div>
         </div>
