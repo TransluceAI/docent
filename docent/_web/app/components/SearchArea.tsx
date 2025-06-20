@@ -420,22 +420,34 @@ const SearchArea = () => {
                       <Share2 className="h-3 w-3" />
                       Share
                     </button>
-                    <button
-                      onClick={() => handleClearSearch()}
-                      className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
-                      title="Clear display (search continues in background)"
-                    >
-                      <EyeOff className="h-3 w-3" />
-                      Run in background
-                    </button>
+                    {loadingSearchQuery ?
+                    <>
+                      <button
+                        onClick={() => handleClearSearch()}
+                        className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
+                        title="Clear display (search continues in background)"
+                      >
+                        <EyeOff className="h-3 w-3" />
+                        Run in background
+                      </button>
+                      <button
+                        onClick={() => handleStopSearch()}
+                        className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                        title="Stop search and clear results"
+                      >
+                        <Square className="h-3 w-3" />
+                        Stop
+                      </button>
+                    </> :
                     <button
                       onClick={() => handleStopSearch()}
                       className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
                       title="Stop search and clear results"
                     >
-                      <Square className="h-3 w-3" />
-                      Stop
+                      <RefreshCw className="h-3 w-3 mr" />
+                      Clear
                     </button>
+                    }
                   </div>
                 </div>
 
@@ -454,7 +466,7 @@ const SearchArea = () => {
                   className="text-xs w-full"
                   onClick={handleRequestClusters}
                   disabled={
-                    !frameGridId ||
+                    !frameGridId || !hasWritePermission ||
                     // Already loading clusters or marginals
                     (activeDim &&
                       (activeDim.loading_clusters ||
