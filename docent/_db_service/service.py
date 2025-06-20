@@ -310,6 +310,25 @@ class DBService:
         finally:
             await session.close()
 
+    ###########################
+    # Raw access (dangerous!) #
+    ###########################
+
+    async def run_raw_query(self, query: str) -> list[dict[str, Any]]:
+        raise NotImplementedError("This method is not implemented")
+        logger.error("RUNNING A RAW QUERY!!!!!!!!!!")
+        async with self.session() as session:
+            result = await session.execute(text(query))
+            rows = result.all()
+            if not rows:
+                return []
+
+            # Get column names from the result
+            column_names = list(result.keys())
+
+            # Convert each row to a dictionary
+            return [dict(zip(column_names, row)) for row in rows]
+
     #############
     # FrameGrid #
     #############
@@ -1552,7 +1571,7 @@ class DBService:
                 prefix, suffix = key.split(".", 1)
                 if (field := metadata.get(prefix)) is not None:
                     if isinstance(field, dict):
-                        return field.get(suffix, None)
+                        return cast(dict[str, Any], field).get(suffix, None)
             return None
 
         for id, metadata in all_metadata_with_ids:

@@ -59,7 +59,7 @@ def web(
 
     # Install dependencies if requested
     if install:
-        subprocess.run(["npm", "install"], check=True)
+        subprocess.run(["npm", "install", "--legacy-peer-deps"], check=True)
 
     # Either build or run in debug mode
     if build:

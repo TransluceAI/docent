@@ -6,6 +6,12 @@ import {
   MetadataType,
 } from './frameTypes';
 
+// export interface PaginationState {
+//   currentPage: number;
+//   startIndex: number;
+//   endIndex: number;
+// }
+
 export interface TranscriptMetadataField {
   name: string;
   type: MetadataType;

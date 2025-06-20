@@ -27,6 +27,7 @@ import { useAppDispatch } from '../store/hooks';
 import {
   clearSearch,
   computeSearch,
+  executeRawQuery,
   getExistingClusters,
   requestClusters,
   setSearchQueryTextboxValue,
@@ -39,6 +40,7 @@ import { requestDiffs } from '../store/diffSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 import { apiRestClient } from '../services/apiService';
 import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { setGraphData } from '../store/experimentViewerSlice';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -97,7 +99,7 @@ const SearchArea = () => {
       if (activeClusterTaskId == null) {
         // if we have bins for a search result and no ongoing clustering task, then we've already
         // computed the marginals in an earlier query and just need to request them
-        dispatch(getExistingClusters({ dimensionId: activeDim.id}));
+        dispatch(getExistingClusters({ dimensionId: activeDim.id }));
       }
     }
   }, [activeDim, dispatch, activeClusterTaskId]);
@@ -117,6 +119,9 @@ const SearchArea = () => {
   const [experimentId2, setExperimentId2] = useState('');
   const [loadingDiffs, setLoadingDiffs] = useState(false);
   const [diffsAttribute, setDiffsAttribute] = useState<string | null>(null);
+  // SQL query state
+  const [sqlQuery, setSqlQuery] = useState('');
+  const [loadingSqlQuery, setLoadingSqlQuery] = useState(false);
 
   const handleClearSearch = useCallback(() => {
     if (curSearchQuery) {
@@ -250,6 +255,30 @@ const SearchArea = () => {
   };
 
   const hasWritePermission = useHasFramegridWritePermission();
+  const handleExecuteSqlQuery = async () => {
+    if (!sqlQuery.trim()) {
+      toast({
+        title: 'Missing SQL query',
+        description: 'Please enter a SQL query',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setLoadingSqlQuery(true);
+    try {
+      const result = await dispatch(
+        executeRawQuery({ query: sqlQuery.trim() })
+      ).unwrap();
+      console.log('SQL Query Results:', result);
+      dispatch(setGraphData(result));
+    } catch (error) {
+      // Error handling is already done in the thunk
+      console.error('SQL Query Error:', error);
+    } finally {
+      setLoadingSqlQuery(false);
+    }
+  };
 
   /**
    * Handle share button
@@ -275,10 +304,19 @@ const SearchArea = () => {
   };
 
   return (
-    <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
-      <div className="space-y-4">
-        <TranscriptFilterControls />
-        <div className="border-t" />
+    // <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
+    //   <div className="space-y-4">
+    //     <TranscriptFilterControls />
+    //     <div className="border-t" />
+    <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar">
+      {/* <DebugReduxState sliceName="search" />
+      <DebugReduxState sliceName="diff" /> */}
+      <div className="space-y-3">
+        {/* Filtering */}
+        {/* <TranscriptFilterControls /> */}
+
+        {/* Comparing experiments */}
+        {/* <div className="border-t" />
         <div className="space-y-2">
           <div>
             <div className="text-sm font-semibold">Compare Experiments</div>
@@ -371,14 +409,64 @@ const SearchArea = () => {
               </div>
             )}
           </div>
-        </div>
-        <div className="border-t" />
+        </div> */}
+
+        {/* <div className="space-y-2">
+          <div>
+            <div className="text-sm font-semibold">Base Filtering</div>
+            <div className="text-xs">
+              Restrict analysis to a subset of agent runs
+            </div>
+          </div>
+          <TranscriptFilterControls />
+        </div> */}
+
+        {/* SQL */}
+        {/* <div className="space-y-2">
+          <div>
+            <div className="text-sm font-semibold">SQL Query</div>
+            <div className="text-xs">
+              Run custom SQL queries against the transcript data.
+            </div>
+          </div>
+
+          <div className="border rounded-md bg-gray-50 p-2 space-y-2">
+            <div className="space-y-1">
+              <div className="text-xs text-gray-600">SQL Query</div>
+              <Textarea
+                value={sqlQuery}
+                onChange={(e) => setSqlQuery(e.target.value)}
+                placeholder="SELECT * FROM transcripts WHERE..."
+                className="h-24 text-xs bg-white font-mono text-gray-600 resize-none"
+                disabled={loadingSqlQuery}
+              />
+            </div>
+            <Button
+              size="sm"
+              className="text-xs w-full"
+              onClick={handleExecuteSqlQuery}
+              disabled={loadingSqlQuery || !sqlQuery.trim()}
+            >
+              {loadingSqlQuery ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                  Executing...
+                </>
+              ) : (
+                'Execute Query'
+              )}
+            </Button>
+          </div>
+        </div> */}
+
+        {/* Global search */}
+        {/* <div className="border-t" /> */}
         <div className="space-y-2">
           <div>
             <div className="text-sm font-semibold">Global Search</div>
             <div className="text-xs">
-              Look for patterns, errors, or other interesting phenomena in the
-              transcripts.
+              Look for qualitative patterns, errors, or other interesting
+              phenomena
             </div>
           </div>
 

@@ -15,6 +15,7 @@ import {
   SearchResultWithCitations,
   ComplexFilter,
   FrameFilter,
+  PrimitiveFilter,
 } from '../types/frameTypes';
 
 import { clearRegexSnippets } from './experimentViewerSlice';
@@ -347,17 +348,47 @@ export const updateBaseFilter = createAsyncThunk(
 
 export const addBaseFilter = createAsyncThunk(
   'experimentViewer/addBaseFilter',
-  async (filter: FrameFilter, { dispatch, getState }) => {
+  async (filter: FrameFilter, { dispatch }) => {
+    dispatch(addBaseFilters([filter]));
+  }
+);
+
+export const addBaseFilters = createAsyncThunk(
+  'experimentViewer/addBaseFilters',
+  async (filters: FrameFilter[], { dispatch, getState }) => {
     const state = getState() as RootState;
 
-    // Clone the current filter
+    // Create new base filter with all filters added
     const newBaseFilter: ComplexFilter = state.frame.baseFilter
       ? {
           ...state.frame.baseFilter,
-          filters: [...state.frame.baseFilter.filters],
+          filters: [...state.frame.baseFilter.filters, ...filters]
         }
-      : { filters: [], type: 'complex', op: 'and', id: uuid4(), name: null };
-    newBaseFilter.filters.push(filter);
+      : { 
+          filters: [...filters], 
+          type: 'complex', 
+          op: 'and', 
+          id: uuid4(), 
+          name: null 
+        };
+
+    // Remove duplicate primitive filters
+    const seenFilterKeys = new Set<string>();
+    newBaseFilter.filters = newBaseFilter.filters.reduceRight((acc, filter) => {
+      if (filter.type === 'primitive') {
+        const primitiveFilter = filter as PrimitiveFilter;
+        const keyPath = primitiveFilter.key_path?.join('.') || '';
+        const value = primitiveFilter.value;
+        const op = primitiveFilter.op;
+        const filterKey = `${keyPath}:${value}:${op}`;
+        
+        if (seenFilterKeys.has(filterKey)) {
+          return acc;
+        }
+        seenFilterKeys.add(filterKey);
+      }
+      return [filter, ...acc];
+    }, [] as FrameFilter[]);
 
     dispatch(updateBaseFilter(newBaseFilter));
   }
@@ -475,39 +506,26 @@ export const submitAttributeFeedback = createAsyncThunk(
   }
 );
 
-// export const submitAttributeFeedback = createAsyncThunk(
-//   'experimentViewer/submitAttributeFeedback',
-//   async (
-//     {
-//       originalQuery,
-//       feedback,
-//       missingQueries,
-//     }: {
-//       originalQuery: string;
-//       feedback: AttributeFeedback[];
-//       missingQueries: string;
-//     },
-//     { dispatch }
-//   ) => {
-//     try {
-//       const response = await apiRestClient.post('/submit_attribute_feedback', {
-//         original_query: originalQuery,
-//         attribute_feedback: feedback,
-//         missing_queries: missingQueries,
-//       });
-//       return response.data.rewritten_query;
-//     } catch (error) {
-//       dispatch(
-//         setToastNotification({
-//           title: 'Error submitting attribute feedback',
-//           description: 'Failed to submit attribute feedback',
-//           variant: 'destructive',
-//         })
-//       );
-//       throw error;
-//     }
-//   }
-// );
+export const executeRawQuery = createAsyncThunk(
+  'search/executeRawQuery',
+  async ({ query }: { query: string }, { dispatch }) => {
+    try {
+      const response = await apiRestClient.post('/raw_query', {
+        query: query,
+      });
+      return response.data;
+    } catch (error) {
+      dispatch(
+        setToastNotification({
+          title: 'Error executing raw query',
+          description: 'Failed to execute raw SQL query',
+          variant: 'destructive',
+        })
+      );
+      throw error;
+    }
+  }
+);
 
 export const searchSlice = createSlice({
   name: 'search',

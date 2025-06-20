@@ -58,7 +58,7 @@ Goal: The agent is trying to test its solution to ensure correctness.
 Relevant past actions: The agent previously implemented a solution that resolves the issue by modifying the function to use sets instead of lists. <further explanation and citations>
 
 Format your output as follows:
-[B<message_idx>]
+[T0B<message_idx>]
 Action: [action taken]
 Goal: [goal of the action]
 Relevant past actions: [summary of past actions that are relevant to the current goal, with citations]
@@ -102,14 +102,14 @@ def parse_output(output: str) -> list[MessageState]:
     result: list[MessageState] = []
     idx, action, goal, past_actions = -1, "", "", ""
     for line in output.split("\n"):
-        if line.startswith("[B"):
+        if line.startswith("[T0B"):
             try:
                 # TODO(sherwin): this is a hack in case the idx doesn't parse correctly
-                idx = int(line.removeprefix("[B").removesuffix("]"))
+                idx = int(line.removeprefix("[T0B").removesuffix("]"))
             except ValueError:
                 idx = 0
             action, goal, past_actions = "", "", ""
-        elif line.startswith("Action:"):
+        if line.startswith("Action:"):
             action = line.removeprefix("Action:").strip()
         elif line.startswith("Goal:"):
             goal = line.removeprefix("Goal:").strip()

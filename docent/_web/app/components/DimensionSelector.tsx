@@ -25,12 +25,12 @@ export default function DimensionSelector({
 }: DimensionSelectorProps) {
   const dispatch = useAppDispatch();
 
-  const {
-    innerDimId,
-    outerDimId,
-    dimensionsMap,
-    agentRunMetadataFields = [],
-  } = useAppSelector((state) => state.frame);
+  // Frame slice
+  const innerDimId = useAppSelector((state) => state.frame.innerDimId);
+  const outerDimId = useAppSelector((state) => state.frame.outerDimId);
+  const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
+  const agentRunMetadataFields =
+    useAppSelector((state) => state.frame.agentRunMetadataFields) || [];
 
   const selectedInnerMetadataKey = useMemo(() => {
     return innerDimId && dimensionsMap?.[innerDimId]?.metadata_key;
@@ -93,6 +93,7 @@ export default function DimensionSelector({
               </SelectItem>
               {agentRunMetadataFields
                 .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
+                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
                 .map((field) => (
                   <SelectItem
                     key={field.name}
@@ -109,7 +110,7 @@ export default function DimensionSelector({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 px-0 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 text-gray-500 hover:text-gray-800"
+              className="h-6 px-1 rounded-xl bg-gray-100 hover:bg-gray-200 transition-all duration-200 text-gray-500 hover:text-gray-800"
               onClick={handleSwapDimensions}
               title="Swap dimensions"
             >
@@ -126,11 +127,14 @@ export default function DimensionSelector({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {agentRunMetadataFields.length === 0 && <SelectItem value="None" className="text-xs">
-                None
-              </SelectItem>}
+              {agentRunMetadataFields.length === 0 && (
+                <SelectItem value="None" className="text-xs">
+                  None
+                </SelectItem>
+              )}
               {agentRunMetadataFields
                 .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
+                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
                 .map((field) => (
                   <SelectItem
                     key={field.name}

@@ -39,7 +39,7 @@ Goal: The agent is trying to test its solution to ensure correctness.
 Relevant past actions: The agent previously implemented a solution that resolves the issue by modifying the function to use sets instead of lists. <further explanation and citations>
 
 Format your output as follows:
-[B<message_idx>]
+[T0B<message_idx>]
 Action: [action taken]
 Goal: [goal of the action]
 Relevant past actions: [summary of past actions that are relevant to the current goal, with citations]
@@ -85,7 +85,7 @@ def llm_output_to_message_summaries(text: str) -> list[MessageState]:
 def _parse_message_summary(block: str) -> MessageState:
     lines = block.split("\n")
     # Extract message index from the first line
-    idx = int(lines[0].removeprefix("[B").removesuffix("]"))
+    idx = int(lines[0].removeprefix("[T0B").removesuffix("]"))
 
     # Initialize variables with empty strings
     action = ""

@@ -15,6 +15,7 @@ import { PrimitiveFilter } from '../types/frameTypes';
 
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
+import { GraphDatum } from '../components/Graph';
 
 export interface ExperimentViewerState {
   // Global marginalization results
@@ -24,18 +25,22 @@ export interface ExperimentViewerState {
   dimIdsToFilterIds?: Record<string, string[]>;
   filtersMap?: Record<string, PrimitiveFilter>;
   // UI state of the viewer
-  expandedOuter?: Record<string, boolean>; // Object replacement for Set
-  expandedInner?: Record<string, Record<string, boolean>>;
+  chartType?: 'bar' | 'line' | 'table';
   experimentViewerScrollPosition?: number;
+  // paginationState?: ;
   // Diffing state
   selectedDiffTranscript?: string;
   selectedDiffSampleId?: string;
   transcriptDiffViewport?: TranscriptDiffViewport;
   // Regex snippets
   regexSnippets?: Record<string, RegexSnippet[]>;
+  // Graph state
+  graphData?: GraphDatum[];
 }
 
-const initialState: ExperimentViewerState = {};
+const initialState: ExperimentViewerState = {
+  chartType: 'table',
+};
 
 // Create a thunk that accesses both slices
 export const setStatMarginalsAndFilters = createAsyncThunk(
@@ -172,44 +177,8 @@ export const experimentViewerSlice = createSlice({
     ) => {
       state.filtersMap = action.payload;
     },
-    clearExpandedOuter: (state) => {
-      state.expandedOuter = {};
-    },
-    clearExpandedInner: (state) => {
-      state.expandedInner = {};
-    },
-    addExpandedOuter: (state, action: PayloadAction<string>) => {
-      state.expandedOuter = { ...state.expandedOuter, [action.payload]: true };
-    },
-    removeExpandedOuter: (state, action: PayloadAction<string>) => {
-      const { [action.payload]: _, ...rest } = state.expandedOuter ?? {};
-      state.expandedOuter = rest;
-    },
-    addExpandedInner: (
-      state,
-      action: PayloadAction<{ outerId: string; innerId: string }>
-    ) => {
-      const { outerId, innerId } = action.payload;
-      state.expandedInner = {
-        ...state.expandedInner,
-        [outerId]: {
-          ...(state.expandedInner?.[outerId] || {}),
-          [innerId]: true,
-        },
-      };
-    },
-    removeExpandedInner: (
-      state,
-      action: PayloadAction<{ outerId: string; innerId: string }>
-    ) => {
-      const { outerId, innerId } = action.payload;
-      if (state.expandedInner?.[outerId]) {
-        const { [innerId]: _, ...rest } = state.expandedInner[outerId];
-        state.expandedInner = {
-          ...state.expandedInner,
-          [outerId]: rest,
-        };
-      }
+    setChartType: (state, action: PayloadAction<'bar' | 'line' | 'table'>) => {
+      state.chartType = action.payload;
     },
     setExperimentViewerScrollPosition: (
       state,
@@ -241,6 +210,9 @@ export const experimentViewerSlice = createSlice({
     clearRegexSnippets: (state) => {
       state.regexSnippets = undefined;
     },
+    setGraphData: (state, action: PayloadAction<GraphDatum[] | undefined>) => {
+      state.graphData = action.payload;
+    },
     resetExperimentViewerSlice: () => initialState,
   },
 });
@@ -249,18 +221,14 @@ export const {
   setStatMarginals,
   setIdMarginals,
   setOuterStatMarginals,
-  clearExpandedOuter,
-  clearExpandedInner,
-  addExpandedOuter,
-  removeExpandedOuter,
-  addExpandedInner,
-  removeExpandedInner,
+  setChartType,
   setExperimentViewerScrollPosition,
   setSelectedDiffTranscript,
   setSelectedDiffSampleId,
   setTranscriptDiffViewport,
   updateRegexSnippets,
   clearRegexSnippets,
+  setGraphData,
   resetExperimentViewerSlice,
   setDimIdsToFilterIds,
   setFiltersMap,
