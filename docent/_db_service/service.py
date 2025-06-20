@@ -1138,12 +1138,14 @@ class DBService:
             )
             result = await session.execute(query)
 
-        latest_jobs = {query.id: job for job, query in await self.list_search_jobs_and_queries()}
+        latest_jobs: dict[str, SQLASearchQuery] = {
+            query.id: job for job, query in await self.list_search_jobs_and_queries()
+        }
 
         # Return search queries with judgment counts
         counts = {query: count for query, count in result.all()}
         num_total = await self.count_base_agent_runs(ctx)
-        return [
+        searches = [
             {
                 "search_id": search_id,
                 "search_query": search_query,
@@ -1153,6 +1155,8 @@ class DBService:
             }
             for search_id, search_query in search_ids_and_queries
         ]
+        searches.sort(key=lambda x: x["job"].created_at, reverse=True)
+        return searches
 
     async def _get_agent_runs_without_search_results(
         self, ctx: ViewContext, search_query: str

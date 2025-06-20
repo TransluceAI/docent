@@ -35,22 +35,6 @@ export default function DocentDashboardClientLayout({
    */
   const router = useRouter();
   const searchParams = useSearchParams();
-  const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
-
-  const [initSearchQuery, setInitSearchQuery] = useState<string | undefined>(
-    undefined
-  );
-
-  const searchResultMap = useAppSelector(
-    (state) => state.search.searchResultMap
-  );
-
-  const searchQuery = useAppSelector((state) => state.search.curSearchQuery);
-
-  useEffect(() => {
-    console.log(searchResultMap);
-    console.log(searchQuery);
-  }, [searchResultMap, searchQuery]);
 
   // Check if the URL contains a searchQuery parameter
   const searchParamsCheckedRef = useRef(false);
@@ -80,25 +64,25 @@ export default function DocentDashboardClientLayout({
       });
     });
     return;
-    if (searchQuery) {
-      setInitSearchQuery(searchQuery);
-      dispatch(setHasInitSearchQuery(true));
-      console.log('Found searchQuery in URL:', searchQuery);
+    // if (searchQuery) {
+    //   setInitSearchQuery(searchQuery);
+    //   dispatch(setHasInitSearchQuery(true));
+    //   console.log('Found searchQuery in URL:', searchQuery);
 
-      // Create a new URLSearchParams object without the searchQuery
-      const newSearchParams = new URLSearchParams(searchParams.toString());
-      newSearchParams.delete('searchQuery');
+    //   // Create a new URLSearchParams object without the searchQuery
+    //   const newSearchParams = new URLSearchParams(searchParams.toString());
+    //   newSearchParams.delete('searchQuery');
 
-      // Update the URL without adding to history
-      router.replace(
-        `${window.location.pathname}?${newSearchParams.toString()}`
-      );
-    } else {
-      dispatch(setHasInitSearchQuery(false));
-      console.log('No searchQuery found in URL');
-    }
+    //   // Update the URL without adding to history
+    //   router.replace(
+    //     `${window.location.pathname}?${newSearchParams.toString()}`
+    //   );
+    // } else {
+    //   dispatch(setHasInitSearchQuery(false));
+    //   console.log('No searchQuery found in URL');
+    // }
 
-    searchParamsCheckedRef.current = true;
+    // searchParamsCheckedRef.current = true;
   }, [searchParams, dispatch]);
 
   // If the URL comes with an searchQuery, we need to request the search

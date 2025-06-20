@@ -9,6 +9,8 @@ import {
   Share2,
   Sparkles,
   XOctagon,
+  EyeOff,
+  Square,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -27,6 +29,7 @@ import {
   computeSearch,
   getExistingClusters,
   requestClusters,
+  setActiveSearchTaskId,
   setSearchQueryTextboxValue,
 } from '../store/searchSlice';
 import { RootState } from '../store/store';
@@ -78,6 +81,7 @@ const SearchArea = () => {
     loadingProgress,
     searchesWithStats,
     searchQueryTextboxValue,
+    activeSearchTaskId,
   } = useSelector((state: RootState) => state.search);
   const { diffLoadingProgress } = useSelector((state: RootState) => state.diff);
 
@@ -121,6 +125,16 @@ const SearchArea = () => {
       dispatch(clearSearch());
     }
   }, [curSearchQuery, dispatch]);
+
+  const handleStopSearch = useCallback(() => {
+    if (activeSearchTaskId) {
+      apiRestClient.post(`/${activeSearchTaskId}/cancel_compute_search`).then(() => {
+        handleClearSearch();
+      });
+    } else {
+      handleClearSearch();
+    }
+  }, [handleClearSearch, activeSearchTaskId]);
 
   /**
    * Requesting searches and clusters
@@ -409,10 +423,19 @@ const SearchArea = () => {
                     </button>
                     <button
                       onClick={() => handleClearSearch()}
-                      className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                      className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
+                      title="Clear display (search continues in background)"
                     >
-                      <RefreshCw className="h-3 w-3 mr" />
-                      Clear
+                      <EyeOff className="h-3 w-3" />
+                      Run in background
+                    </button>
+                    <button
+                      onClick={() => handleStopSearch()}
+                      className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                      title="Stop search and clear results"
+                    >
+                      <Square className="h-3 w-3" />
+                      Stop
                     </button>
                   </div>
                 </div>
