@@ -373,14 +373,19 @@ export const addBaseFilters = createAsyncThunk(
         };
 
     // Remove duplicate primitive filters
-    const seenKeyPaths = new Set<string>();
+    const seenFilterKeys = new Set<string>();
     newBaseFilter.filters = newBaseFilter.filters.reduceRight((acc, filter) => {
       if (filter.type === 'primitive') {
-        const keyPath = (filter as PrimitiveFilter).key_path?.join('.') || '';
-        if (seenKeyPaths.has(keyPath)) {
+        const primitiveFilter = filter as PrimitiveFilter;
+        const keyPath = primitiveFilter.key_path?.join('.') || '';
+        const value = primitiveFilter.value;
+        const op = primitiveFilter.op;
+        const filterKey = `${keyPath}:${value}:${op}`;
+        
+        if (seenFilterKeys.has(filterKey)) {
           return acc;
         }
-        seenKeyPaths.add(keyPath);
+        seenFilterKeys.add(filterKey);
       }
       return [filter, ...acc];
     }, [] as FrameFilter[]);
