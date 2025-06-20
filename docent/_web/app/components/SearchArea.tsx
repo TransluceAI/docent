@@ -286,7 +286,7 @@ const SearchArea = () => {
   const handleShare = async (searchQuery: string) => {
     const response = await apiRestClient.post(`/${frameGridId}/copy_own_filter`);
     navigator.clipboard
-      .writeText(`${window.location.href}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`)
+      .writeText(`${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`)
       .then(() => {
         toast({
           title: 'Search URL copied',
