@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from docent._db_service.schemas.auth_models import User
 
+
 class ViewContext(BaseModel):
     fg_id: str
     view_id: str

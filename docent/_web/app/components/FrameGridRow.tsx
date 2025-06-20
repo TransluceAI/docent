@@ -4,7 +4,6 @@ import {
   CalendarIcon,
   CheckIcon,
   ClipboardCopyIcon,
-  ExternalLinkIcon,
   Layers,
   Pencil,
   Trash2,
@@ -226,7 +225,7 @@ export default function FrameGridRow({
           </div>
         ) : (
           <div className="flex items-center justify-end space-x-1">
-            <Button
+            {/* <Button
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-gray-400 group-hover:text-blue-500"
@@ -237,7 +236,7 @@ export default function FrameGridRow({
               title="Open frame grid"
             >
               <ExternalLinkIcon className="h-3.5 w-3.5" />
-            </Button>
+            </Button> */}
             <Button
               variant="ghost"
               size="icon"

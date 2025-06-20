@@ -27,6 +27,7 @@ interface BinEditorProps {
   bin: FrameFilter;
   marginalJudgments?: Judgment[];
   loading?: boolean;
+  dimId: string;
 }
 
 function countTotalAttributes(judgments: Judgment[]): number {
@@ -120,6 +121,7 @@ export default function BinEditor({
   bin,
   marginalJudgments,
   loading,
+  dimId,
 }: BinEditorProps) {
   const dispatch = useAppDispatch();
 
@@ -247,7 +249,7 @@ export default function BinEditor({
           size="icon"
           variant="ghost"
           className="h-5 w-5 text-gray-500"
-          onClick={() => dispatch(deleteFilter(bin.id))}
+          onClick={() => dispatch(deleteFilter({ filterId: bin.id, dimId }))}
           disabled={loading}
         >
           <Trash2 className="h-3 w-3" />

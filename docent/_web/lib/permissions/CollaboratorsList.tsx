@@ -14,7 +14,7 @@ import {
 } from './collabSlice';
 import { Button } from '@/components/ui/button';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
-import { useHasFramegridWritePermission } from './hooks';
+import { useHasFramegridAdminPermission, useHasFramegridWritePermission } from './hooks';
 
 // Types matching ShareViewPopover
 
@@ -50,6 +50,7 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [removeCollaborator] = useRemoveCollaboratorMutation();
   const hasWritePermission = useHasFramegridWritePermission()
+  const hasAdminPermission = useHasFramegridAdminPermission()
   const onPermissionChange = (newPermission: PermissionLevel) => {
     upsertCollaborator({
       subject_id: collaborator.subject_id,
@@ -114,7 +115,7 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
           onChange={(newPermission) => onPermissionChange(newPermission)}
         />
         <Button variant="ghost" size="sm"
-        disabled={!hasWritePermission}
+        disabled={!hasWritePermission || (collaborator.permission_level === 'admin' && !hasAdminPermission)}
          onClick={() => removeCollaborator({
           subject_id: collaborator.subject_id,
           subject_type: collaborator.subject_type,

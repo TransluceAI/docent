@@ -76,9 +76,11 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
       framegrid_id: framegridId,
       permission_level: inviteePermissionLevel,
     });
+    handleClearSelectedInvitee();
+    setSearchValue('');
   };
   if (!hasWritePermission) {
-    return <div className="text-sm text-muted-foreground">You don't have permission to add or edit collaborators.</div>
+    return <div className="text-sm text-muted-foreground">You do not have permission to add or edit collaborators.</div>
   }
 
   return (
@@ -172,7 +174,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-x-2">
+        <Button variant="outline" size="sm" className="gap-x-2" disabled={!hasWritePermission}>
           <Share2 size={16} /> Share view
         </Button>
       </PopoverTrigger>
@@ -206,7 +208,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
 
           {/* Section 3: Collaborators */}
           <div className="space-y-3 pt-2 border-t">
-      
+
             <CollaboratorsList framegridId={framegridId} />
           </div>
         </div>

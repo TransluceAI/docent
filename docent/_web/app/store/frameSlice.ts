@@ -320,7 +320,10 @@ export const deleteDimension = createAsyncThunk(
 
 export const deleteFilter = createAsyncThunk(
   'frame/deleteFilter',
-  async (filterId: string, { dispatch, getState }) => {
+  async (
+    { filterId, dimId }: { filterId: string; dimId: string },
+    { dispatch, getState }
+  ) => {
     const state = getState() as { frame: FrameState };
     const frameGridId = state.frame.frameGridId;
 
@@ -337,7 +340,7 @@ export const deleteFilter = createAsyncThunk(
 
     try {
       await apiRestClient.delete(
-        `/${frameGridId}/filter?filter_id=${filterId}`
+        `/${frameGridId}/filter?filter_id=${filterId}&dim_id=${dimId}`
       );
     } catch (error) {
       dispatch(

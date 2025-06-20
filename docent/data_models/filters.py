@@ -244,10 +244,11 @@ class PrimitiveFilter(BaseFrameFilter):
                 sqla_value = sqla_value.as_string()
             elif isinstance(self.value, bool):
                 sqla_value = sqla_value.as_boolean()
-            elif isinstance(self.value, int):
-                sqla_value = sqla_value.as_integer()
-            else:
+            elif isinstance(self.value, float) or isinstance(self.value, int):
+                # if self.value is an int, we may still need to do sql comparisons with floats
                 sqla_value = sqla_value.as_float()
+            else:
+                raise ValueError(f"Unsupported value type: {type(self.value)}")
 
         if self.op == "==":
             return sqla_value == self.value

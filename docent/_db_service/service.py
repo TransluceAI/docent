@@ -936,11 +936,14 @@ class DBService:
         return await self._populate_dims_with_filters(sqla_dims, include_bins)
 
     async def get_view_dims(
-        self, ctx: ViewContext, include_bins: bool = True
+        self, ctx: ViewContext, include_bins: bool = True, keep_dim_ids: list[str] | None = None
     ) -> list[FrameDimension]:
         # Get dimensions matching the requested IDs
         async with self.session() as session:
-            query = select(SQLAFrameDimension).where(SQLAFrameDimension.view_id == ctx.view_id)
+            query = select(SQLAFrameDimension).where(
+                (SQLAFrameDimension.view_id == ctx.view_id)
+                | (SQLAFrameDimension.id.in_(keep_dim_ids or []))
+            )
             result = await session.execute(query)
             sqla_dims = result.scalars().all()
 
@@ -1135,12 +1138,14 @@ class DBService:
             )
             result = await session.execute(query)
 
-        latest_jobs = {query.id: job for job, query in await self.list_search_jobs_and_queries()}
+        latest_jobs: dict[str, SQLASearchQuery] = {
+            query.id: job for job, query in await self.list_search_jobs_and_queries()
+        }
 
         # Return search queries with judgment counts
         counts = {query: count for query, count in result.all()}
         num_total = await self.count_base_agent_runs(ctx)
-        return [
+        searches = [
             {
                 "search_id": search_id,
                 "search_query": search_query,
@@ -1150,6 +1155,8 @@ class DBService:
             }
             for search_id, search_query in search_ids_and_queries
         ]
+        searches.sort(key=lambda x: x["job"].created_at, reverse=True)
+        return searches
 
     async def _get_agent_runs_without_search_results(
         self, ctx: ViewContext, search_query: str
@@ -1165,7 +1172,7 @@ class DBService:
         ctx: ViewContext,
         search_query: str,
     ) -> list[SearchResult]:
-        return await self._get_search_results(ctx, search_query)
+        return await self._get_search_results(ctx, search_query, ensure_fresh=False)
 
     async def _get_search_results(
         self,
@@ -1805,7 +1812,7 @@ class DBService:
         ensure_fresh: bool = True,
         publish_dim_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> dict[str, dict[str, list[Judgment]]]:
-        dims_dict = {d.id: d for d in await self.get_view_dims(ctx)}
+        dims_dict = {d.id: d for d in await self.get_view_dims(ctx, keep_dim_ids=keep_dim_ids)}
         dim_ids = keep_dim_ids or list(dims_dict.keys())
         return dict(
             zip(

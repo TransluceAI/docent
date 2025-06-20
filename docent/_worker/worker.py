@@ -54,7 +54,9 @@ async def compute_search(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str
     async def run():
         nonlocal canceled
         try:
-            async with db.advisory_lock(view_ctx.fg_id, action_id="mutation"):
+            async with db.advisory_lock(
+                view_ctx.fg_id + "__search__" + query.search_query, action_id="mutation"
+            ):
                 await db.compute_search(view_ctx, query.search_query, _search_result_callback)
         except:
             canceled = True

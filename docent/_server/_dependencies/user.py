@@ -44,7 +44,7 @@ async def get_user_anonymous_ok(request: Request, db: DBService = Depends(get_db
     return user
 
 
-async def get_default_view_ctx(fg_id: str,
-                                db: DBService = Depends(get_db),
-                                user: User = Depends(get_user_anonymous_ok)):
+async def get_default_view_ctx(
+    fg_id: str, db: DBService = Depends(get_db), user: User = Depends(get_user_anonymous_ok)
+):
     return await db.get_default_view_ctx(fg_id, user)
