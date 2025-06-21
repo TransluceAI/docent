@@ -644,6 +644,10 @@ class DBService:
                 # Set as inner dimension
                 view.inner_dim_id = sqla_dim.id
                 await session.flush()
+            await self.cluster_metadata_dim(
+                ViewContext(fg_id=fg_id, view_id=view.id, base_filter=None, user=user),
+                sqla_dim.id,
+            )
 
             # Create ACL entry for the user
             await self.set_acl_permission(

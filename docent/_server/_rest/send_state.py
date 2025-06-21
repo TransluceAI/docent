@@ -165,7 +165,7 @@ async def _publish_homepage_marginals(
     # Get all required marginals once
     keep_dim_ids = [dim_id for dim_id in [inner_dim_id, outer_dim_id] if dim_id is not None]
     marginals = await db.get_marginals(ctx, keep_dim_ids=keep_dim_ids)
-    # Marginalize using cached marginals; prevents multile duplicate requests
+    # Marginalize using cached marginals; prevents multiple duplicate requests
     comb_marginals = await db.marginalize(
         ctx,
         keep_dim_ids,
