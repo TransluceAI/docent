@@ -22,6 +22,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { navToAgentRun } from '@/lib/nav';
 import { renderTextWithCitations } from '@/lib/renderCitations';
+import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 
 interface BinEditorProps {
   bin: FrameFilter;
@@ -138,6 +139,8 @@ export default function BinEditor({
   const hasJudgments = marginalJudgments && marginalJudgments.length > 0;
   const matchCount = hasJudgments ? countTotalAttributes(marginalJudgments) : 0;
 
+  const hasWritePermission = useHasFramegridWritePermission();
+
   if (isEditing) {
     return (
       <div className="flex items-center gap-2">
@@ -236,12 +239,14 @@ export default function BinEditor({
         <div className="flex-1 text-xs text-gray-700 ml-1">{bin.name}</div>
 
         {/* Action buttons on the right */}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-5 w-5 text-gray-500"
-          onClick={() => setIsEditing(true)}
-          disabled={loading}
+        {hasWritePermission && (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5 text-gray-500"
+              onClick={() => setIsEditing(true)}
+              disabled={loading}
         >
           <Pencil className="h-3 w-3" />
         </Button>
@@ -252,8 +257,10 @@ export default function BinEditor({
           onClick={() => dispatch(deleteFilter({ filterId: bin.id, dimId }))}
           disabled={loading}
         >
-          <Trash2 className="h-3 w-3" />
-        </Button>
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </>
+        )}
       </div>
       {isExpanded && marginalJudgments && (
         <div className="pl-4">
