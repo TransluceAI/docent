@@ -7,7 +7,6 @@ from docent._db_service.contexts import ViewContext
 from docent._db_service.service import DBService, MarginalizationResult
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import (
-    publish_framegrid_update,
     publish_to_broker,
     publish_view_update,
 )
@@ -73,8 +72,9 @@ def _format_bin_combination(bin_combination: tuple[tuple[str, str], ...]) -> str
 
 
 async def publish_dims(db: DBService, ctx: ViewContext):
-    await publish_framegrid_update(
+    await publish_view_update(
         ctx.fg_id,
+        ctx.view_id,
         {
             "action": "dimensions",
             "payload": await db.get_view_dims(ctx),
@@ -98,8 +98,11 @@ async def publish_marginals(
         publish_dim_callback=_publish_dim_callback,
     )
 
-    await publish_framegrid_update(
+    # Marginals depend on the current view's base filter and therefore must be
+    # view-local.  Broadcasting them framegrid-wide led to cross-view leakage.
+    await publish_view_update(
         ctx.fg_id,
+        ctx.view_id,
         {
             "action": "marginals",
             "payload": marginals,
@@ -162,7 +165,7 @@ async def _publish_homepage_marginals(
     # Get all required marginals once
     keep_dim_ids = [dim_id for dim_id in [inner_dim_id, outer_dim_id] if dim_id is not None]
     marginals = await db.get_marginals(ctx, keep_dim_ids=keep_dim_ids)
-    # Marginalize using cached marginals; prevents multile duplicate requests
+    # Marginalize using cached marginals; prevents multiple duplicate requests
     comb_marginals = await db.marginalize(
         ctx,
         keep_dim_ids,

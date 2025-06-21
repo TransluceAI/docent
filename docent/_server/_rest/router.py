@@ -21,7 +21,12 @@ from docent._db_service.schemas.auth_models import (
     User,
 )
 from docent._db_service.schemas.collab_models import FramegridCollaborator
-from docent._db_service.schemas.tables import SQLADiffAttribute
+from docent._db_service.schemas.tables import (
+    SQLAAccessControlEntry,
+    SQLADiffAttribute,
+    SQLAFilter,
+    SQLAFrameDimension,
+)
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
@@ -50,6 +55,7 @@ from docent._server._dependencies.permissions import (
     require_view_permission,
 )
 from docent._server._dependencies.user import (
+    get_authenticated_user,
     get_default_view_ctx,
     get_user_anonymous_ok,
 )
@@ -256,12 +262,20 @@ async def raw_query(request: RawQueryRequest, db: DBService = Depends(get_db)):
 
 
 @user_router.get("/framegrids")
-async def get_framegrids(db: DBService = Depends(get_db)):
+async def get_framegrids(
+    user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)
+):
     sqla_fgs = await db.get_fgs()
     return [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
         for obj in sqla_fgs
+        if await db.has_permission(
+            user,
+            resource_type=ResourceType.FRAME_GRID,
+            resource_id=obj.id,
+            permission=Permission.READ,
+        )
     ]
 
 
@@ -274,7 +288,7 @@ class CreateFrameGridRequest(BaseModel):
 @user_router.post("/create")
 async def create_fg(
     request: CreateFrameGridRequest = CreateFrameGridRequest(),
-    user: User = Depends(get_user_anonymous_ok),
+    user: User = Depends(get_authenticated_user),
     db: DBService = Depends(get_db),
 ):
     fg_id = await db.create_fg(
@@ -456,6 +470,9 @@ async def post_base_filter(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
+    logger.critical(
+        f"post_base_filter for fg_id: {fg_id} and user, view id: {ctx.view_id}, user.email={ctx.user.email if ctx.user else 'None'}"
+    )
     async with db.advisory_lock(fg_id, action_id="mutation"):
         if request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
@@ -466,6 +483,85 @@ async def post_base_filter(
         await publish_homepage_state(db, new_ctx)
 
         return request.filter.id if request.filter else None
+
+
+@user_router.post("/{fg_id}/copy_own_filter")
+async def copy_own_filter(
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    current_filter = ctx.base_filter
+    new_filter_id = None
+    if current_filter is not None:
+        new_filter_id = str(uuid4())
+        new_filter = current_filter.model_copy(update={"id": new_filter_id})
+        async with db.session() as session:
+            sqla_filter = SQLAFilter.from_filter(new_filter, ctx)
+            session.add(sqla_filter)
+            logger.info(f"Added filter {new_filter.id} to view {ctx.view_id}")
+    return {"filter_id": new_filter_id, "view_id": ctx.view_id}
+
+
+class ApplyExistingFilterRequest(BaseModel):
+    filter_id: str | None
+    search_query: str
+    view_id: str
+
+
+@user_router.post("/{fg_id}/apply_existing_filter")
+async def apply_existing_filter(
+    request: ApplyExistingFilterRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    dim_id = None
+    async with db.session() as session:
+        new_ctx = await db.clear_view_base_filter(ctx)
+        query = select(SQLAFrameDimension).where(
+            SQLAFrameDimension.view_id == request.view_id,
+            SQLAFrameDimension.name == request.search_query,
+        )
+        result = await session.execute(query)
+        sqla_dim = result.scalars().all()
+        if len(sqla_dim) > 0:
+            dim_id = sqla_dim[0].id
+        if request.filter_id is not None:
+            query = select(SQLAFilter).where(SQLAFilter.id.in_([request.filter_id]))
+            result = await session.execute(query)
+            sqla_filters = result.scalars().all()
+            if len(sqla_filters) == 0:
+                raise HTTPException(status_code=404, detail=f"Filter {request.filter_id} not found")
+            existing_filter = parse_filter_dict(sqla_filters[0].filter_json)
+            assert isinstance(existing_filter, ComplexFilter)
+            new_filter = existing_filter.model_copy(update={"id": str(uuid4())})
+            new_ctx = await db.set_view_base_filter(new_ctx, new_filter)
+    await publish_homepage_state(db, new_ctx)
+    return dim_id
+
+
+@user_router.get("/{fg_id}/get_existing_search_results")
+async def get_existing_search_results(
+    search_query: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    results = await db.get_search_results(ctx, search_query)
+
+    # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
+    data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
+    for result in results:
+        data_dict.setdefault(result.agent_run_id, {}).setdefault(result.search_query, []).append(
+            SearchResultWithCitations.from_search_result(result)
+        )
+
+    return StreamedSearchResult(
+        data_dict=data_dict,
+        num_agent_runs_done=len(data_dict.keys()),
+        num_agent_runs_total=len(data_dict.keys()),
+    )
 
 
 @user_router.get("/{fg_id}/base_filter")
@@ -586,8 +682,9 @@ async def get_user_permissions(
     )
 
 
-class FramegridCollaboratorsResponse(BaseModel):
-    collaborators: list[FramegridCollaborator]
+@user_router.get("/organizations/{org_id}/users")
+async def get_org_users(org_id: str, db: DBService = Depends(get_db)):
+    return [u for u in await db.get_users() if not u.is_anonymous]
 
 
 @user_router.get("/framegrids/{fg_id}/collaborators")
@@ -597,15 +694,116 @@ async def get_framegrid_collaborators(
     # You need READ permissions to see other people's permissions
     _: None = Depends(require_fg_permission(Permission.READ)),
 ):
-    return FramegridCollaboratorsResponse(
-        collaborators=[
-            FramegridCollaborator.from_sqla_acl(acl)
-            for acl in await db.get_acl_entries(
-                resource_id=fg_id,
-                resource_type=ResourceType.FRAME_GRID,
-            )
-        ]
+    return [
+        FramegridCollaborator.from_sqla_acl(acl)
+        for acl in await db.get_acl_entries(
+            resource_id=fg_id,
+            resource_type=ResourceType.FRAME_GRID,
+        )
+    ]
+
+
+from pydantic import model_validator
+
+
+class UpsertCollaboratorRequest(BaseModel):
+    subject_id: str | None = None
+    subject_type: SubjectType
+    framegrid_id: str
+    permission_level: Permission
+
+    @model_validator(mode="after")
+    def validate_user_or_organization(self):
+        if self.subject_type == SubjectType.USER and self.subject_id is None:
+            raise ValueError("subject_id must be provided for user")
+        if self.subject_type == SubjectType.ORGANIZATION and self.subject_id is None:
+            raise ValueError("subject_id must be provided for organization")
+        return self
+
+
+@user_router.put("/framegrids/{fg_id}/collaborators/upsert")
+async def upsert_collaborator(
+    fg_id: str,
+    request: UpsertCollaboratorRequest,
+    user: User = Depends(get_user_anonymous_ok),
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_fg_permission(Permission.WRITE)),
+):
+    allowed = await db.has_permission(
+        user=user,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+        permission=request.permission_level,
     )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Cannot set permissions higher than your own")
+    collaborator = await db.set_acl_permission(
+        subject_type=request.subject_type,
+        subject_id=request.subject_id,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+        permission=request.permission_level,
+    )
+
+    return collaborator
+
+
+class RemoveCollaboratorRequest(BaseModel):
+    subject_id: str
+    subject_type: SubjectType
+    framegrid_id: str
+
+
+@user_router.delete("/framegrids/{fg_id}/collaborators/delete")
+async def remove_collaborator(
+    fg_id: str,
+    request: RemoveCollaboratorRequest,
+    db: DBService = Depends(get_db),
+    user: User = Depends(get_user_anonymous_ok),
+    _: None = Depends(require_fg_permission(Permission.WRITE)),
+):
+    async with db.session() as session:
+        # Build the delete query with the provided filters
+        query = select(SQLAAccessControlEntry).where(SQLAAccessControlEntry.fg_id == fg_id)
+
+        # Handle subject filtering based on SubjectType
+        if request.subject_type == SubjectType.USER:
+            query = query.where(SQLAAccessControlEntry.user_id == request.subject_id)
+        elif request.subject_type == SubjectType.ORGANIZATION:
+            query = query.where(SQLAAccessControlEntry.organization_id == request.subject_id)
+        elif request.subject_type == SubjectType.PUBLIC:
+            query = query.where(SQLAAccessControlEntry.is_public)
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported subject type: {request.subject_type}"
+            )
+
+        # Execute the query
+        result = await session.execute(query)
+        acl_entry = result.scalar_one_or_none()
+
+        if acl_entry is None:
+            raise HTTPException(
+                status_code=400, detail=f"Collaborator {request.subject_id} not found"
+            )
+        allowed = await db.has_permission(
+            user=user,
+            resource_type=ResourceType.FRAME_GRID,
+            resource_id=fg_id,
+            permission=Permission(acl_entry.permission),
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=403, detail="Cannot delete collaborator with higher permissions"
+            )
+
+    await db.clear_acl_permission(
+        subject_type=request.subject_type,
+        subject_id=request.subject_id,
+        resource_type=ResourceType.FRAME_GRID,
+        resource_id=fg_id,
+    )
+    return {"status": "success"}
 
 
 class ShareViewRequest(BaseModel):
@@ -892,12 +1090,11 @@ async def get_existing_clusters(
     dim_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
+    _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    # Publish latest marginals in case there was an update
     await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
 
-    await publish_dims(db, ctx)
+    # await publish_dims(db, ctx)
     return
 
 
@@ -955,7 +1152,9 @@ async def listen_cluster_dimension(
         raise ValueError(f"Dimension {dim_id} not found")
 
     async def event_stream():
-        async with db.advisory_lock(fg_id, action_id="mutation"):
+        async with db.advisory_lock(
+            fg_id + "__cluster__" + str(dim.search_query), action_id="mutation"
+        ):
             try:
                 # Send new dim state indicating that clusters are being loaded
                 await db.set_dim_loading_state(dim_id, loading_clusters=True)

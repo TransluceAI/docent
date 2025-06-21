@@ -6,10 +6,17 @@ const config: Config = {
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     'break-anywhere': 'overflow-wrap: break-anywhere',
     extend: {
+
+      width: {
+        'sm': '400px',
+        'md': '600px',
+        'lg': '800px',
+      },
       fontFamily: {
         sans: ['var(--font-open-sans)'],
         mono: ['var(--font-jetbrains-mono)'],
@@ -78,6 +85,8 @@ const config: Config = {
         },
       },
       fontSize: {
+        '3xs': '0.5rem',
+        '2xs': '0.625rem',
         xxs: ['0.625rem', { lineHeight: '0.875rem' }], // This is equivalent to 10px with a line-height of 14px
         // xs: ['0.825rem', { lineHeight: '1.1rem' }], // Custom text-sm definition (changed from default 0.875rem)
       },

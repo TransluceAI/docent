@@ -9,6 +9,8 @@ import {
   Share2,
   Sparkles,
   XOctagon,
+  EyeOff,
+  Square,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -35,6 +37,8 @@ import { RootState } from '../store/store';
 import BinEditor from './BinEditor';
 import { ProgressBar } from './ProgressBar';
 import { requestDiffs } from '../store/diffSlice';
+import { apiRestClient } from '../services/apiService';
+import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 import { setGraphData } from '../store/experimentViewerSlice';
 
 // Preset search queries with custom icons
@@ -77,6 +81,7 @@ const SearchArea = () => {
     loadingProgress,
     searchesWithStats,
     searchQueryTextboxValue,
+    activeSearchTaskId,
   } = useSelector((state: RootState) => state.search);
   const { diffLoadingProgress } = useSelector((state: RootState) => state.diff);
 
@@ -90,13 +95,13 @@ const SearchArea = () => {
 
   useEffect(() => {
     if (activeDim && activeDim.bins && activeDim.bins.length > 0) {
-      if (marginals == null && activeClusterTaskId == null) {
+      if (activeClusterTaskId == null) {
         // if we have bins for a search result and no ongoing clustering task, then we've already
         // computed the marginals in an earlier query and just need to request them
         dispatch(getExistingClusters({ dimensionId: activeDim.id }));
       }
     }
-  }, [activeDim, marginals, dispatch, activeClusterTaskId]);
+  }, [activeDim, dispatch, activeClusterTaskId]);
 
   /**
    * Local state for UI components
@@ -123,6 +128,16 @@ const SearchArea = () => {
       dispatch(clearSearch());
     }
   }, [curSearchQuery, dispatch]);
+
+  const handleStopSearch = useCallback(() => {
+    if (activeSearchTaskId) {
+      apiRestClient.post(`/${activeSearchTaskId}/cancel_compute_search`).then(() => {
+        handleClearSearch();
+      });
+    } else {
+      handleClearSearch();
+    }
+  }, [handleClearSearch, activeSearchTaskId]);
 
   /**
    * Requesting searches and clusters
@@ -238,6 +253,7 @@ const SearchArea = () => {
     setDiffsAttribute(null);
   };
 
+  const hasWritePermission = useHasFramegridWritePermission();
   const handleExecuteSqlQuery = async () => {
     if (!sqlQuery.trim()) {
       toast({
@@ -266,9 +282,10 @@ const SearchArea = () => {
   /**
    * Handle share button
    */
-  const handleShare = (searchQuery: string) => {
+  const handleShare = async (searchQuery: string) => {
+    const response = await apiRestClient.post(`/${frameGridId}/copy_own_filter`);
     navigator.clipboard
-      .writeText(`${window.location.href}?searchQuery=${searchQuery}`)
+      .writeText(`${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`)
       .then(() => {
         toast({
           title: 'Search URL copied',
@@ -286,6 +303,10 @@ const SearchArea = () => {
   };
 
   return (
+    // <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
+    //   <div className="space-y-4">
+    //     <TranscriptFilterControls />
+    //     <div className="border-t" />
     <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar">
       {/* <DebugReduxState sliceName="search" />
       <DebugReduxState sliceName="diff" /> */}
@@ -314,6 +335,7 @@ const SearchArea = () => {
                       onChange={(e) => setExperimentId1(e.target.value)}
                       placeholder="e.g. experiment-1"
                       className="h-8 text-xs bg-white font-mono text-gray-600"
+                      disabled={!hasWritePermission}
                     />
                   </div>
                   <div className="space-y-1">
@@ -323,6 +345,7 @@ const SearchArea = () => {
                       onChange={(e) => setExperimentId2(e.target.value)}
                       placeholder="e.g. experiment-2"
                       className="h-8 text-xs bg-white font-mono text-gray-600"
+                      disabled={!hasWritePermission}
                     />
                   </div>
                 </div>
@@ -330,7 +353,7 @@ const SearchArea = () => {
                   size="sm"
                   className="text-xs w-full"
                   onClick={handleRequestDiffs}
-                  disabled={!experimentId1 || !experimentId2}
+                  disabled={!experimentId1 || !experimentId2 || !hasWritePermission}
                 >
                   Compare Experiments
                 </Button>
@@ -449,7 +472,7 @@ const SearchArea = () => {
           <div className="border rounded-md bg-gray-50 p-2 space-y-1">
             <div className="flex items-center justify-between text-xs">
               <div className="text-gray-600">Search query</div>
-              {loadingProgress && !loadingSearchQuery && (
+              {curSearchQuery && loadingProgress && !loadingSearchQuery && (
                 <div className="text-gray-400">
                   {loadingProgress[0]} searches finished
                   {loadingProgress[1] - loadingProgress[0] > 0 && (
@@ -476,20 +499,42 @@ const SearchArea = () => {
                   </div>
                   <div className="flex flex-col xl:flex-row ml-2 space-y-1 xl:space-y-0 xl:space-x-1">
                     <button
-                      onClick={() => handleShare(curSearchQuery)}
-                      className="inline-flex items-center gap-x-1 text-xs bg-blue-50 text-blue-500 border border-blue-100 px-1.5 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+                      onClick={async () => await handleShare(curSearchQuery)}
+                      className="inline-flex items-center gap-x-1 text-xs bg-blue-50 text-blue-500 border border-blue-100 px-1.5 py-0.5 rounded-md disabled:opacity-50 hover:bg-blue-100 transition-colors"
                       title="Share this search"
+                      disabled={!hasWritePermission}
                     >
                       <Share2 className="h-3 w-3" />
                       Share
                     </button>
+                    {loadingSearchQuery ?
+                    <>
+                      <button
+                        onClick={() => handleClearSearch()}
+                        className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
+                        title="Clear display (search continues in background)"
+                      >
+                        <EyeOff className="h-3 w-3" />
+                        Run in background
+                      </button>
+                      <button
+                        onClick={() => handleStopSearch()}
+                        className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                        title="Stop search and clear results"
+                      >
+                        <Square className="h-3 w-3" />
+                        Stop
+                      </button>
+                    </> :
                     <button
-                      onClick={() => handleClearSearch()}
+                      onClick={() => handleStopSearch()}
                       className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                      title="Stop search and clear results"
                     >
                       <RefreshCw className="h-3 w-3 mr" />
                       Clear
                     </button>
+                    }
                   </div>
                 </div>
 
@@ -508,7 +553,7 @@ const SearchArea = () => {
                   className="text-xs w-full"
                   onClick={handleRequestClusters}
                   disabled={
-                    !frameGridId ||
+                    !frameGridId || !hasWritePermission ||
                     // Already loading clusters or marginals
                     (activeDim &&
                       (activeDim.loading_clusters ||
@@ -580,6 +625,7 @@ const SearchArea = () => {
                         key={bin.id}
                         bin={bin}
                         loading={activeDim.loading_marginals || false}
+                        dimId={activeDim.id}
                         marginalJudgments={
                           marginals?.[activeDim.id]?.[bin.id] || undefined
                         }
@@ -599,7 +645,8 @@ const SearchArea = () => {
                         onClick={() => handleSelectPreset(preset.query)}
                         onMouseEnter={() => handlePresetHover(preset.query)}
                         onMouseLeave={handlePresetLeave}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 disabled:opacity-50 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                        disabled={!hasWritePermission}
                       >
                         <IconComponent className="h-3 w-3 text-blue-500" />
                         {preset.label}
@@ -624,6 +671,7 @@ const SearchArea = () => {
                           handleSearch(searchQueryTextboxValue);
                         }
                       }}
+                      disabled={!hasWritePermission}
                     />
                     <div className="flex items-center justify-end p-2">
                       <Button
@@ -641,7 +689,7 @@ const SearchArea = () => {
                 </div>
 
                 {/* Search History Section - Updated with consistent colors */}
-                {searchesWithStats && searchesWithStats.length > 0 && (
+                {searchesWithStats && searchesWithStats.length > 0 && hasWritePermission && (
                   <div className="max-h-[20rem] overflow-y-auto pr-1">
                     <div className="flex justify-between items-center mb-1">
                       <div className="text-xs font-medium text-gray-500">
@@ -700,16 +748,6 @@ const SearchArea = () => {
                                   {Math.round(completionPercentage)}% computed
                                 </span>
                               </div>
-                              <button
-                                className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleShare(search.search_query);
-                                }}
-                                title="Share this search"
-                              >
-                                <Share2 className="h-3 w-3" />
-                              </button>
                               <button
                                 className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
                                 onClick={(e) => {

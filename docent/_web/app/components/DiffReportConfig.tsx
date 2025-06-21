@@ -4,10 +4,12 @@ import { requestDiffClusters } from '../store/diffSlice';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
+import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 
 export function DiffReportConfig() {
   const dispatch = useAppDispatch();
   const diffsReport = useAppSelector((state) => state.diff.diffsReport);
+  const hasWritePermission = useHasFramegridWritePermission()
 
   const onProposeClustersClick = async () => {
     if (!diffsReport) {
@@ -24,7 +26,7 @@ export function DiffReportConfig() {
       description: 'Please wait for the clusters to be proposed',
     });
   };
-
+  
   if (!diffsReport) {
     return <div>Config waiting for diffs report to load...</div>;
   }
@@ -47,6 +49,7 @@ export function DiffReportConfig() {
           size="sm"
           className="text-xs w-full"
           onClick={onProposeClustersClick}
+          disabled={!hasWritePermission}
         >
           <Sparkles className="h-3 w-3 mr-2" />
           Find themes

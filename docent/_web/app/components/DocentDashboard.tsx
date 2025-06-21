@@ -25,8 +25,8 @@ import {
 } from '@/components/ui/tooltip';
 import { toast } from '@/hooks/use-toast';
 
-import { FrameGridsTable } from '../components/FrameGridsTable';
-import { UserProfile } from '../components/auth/UserProfile';
+import { FrameGridsTable } from './FrameGridsTable';
+import { UserProfile } from './auth/UserProfile';
 import { apiRestClient } from '../services/apiService';
 import socketService from '../services/socketService';
 import {
@@ -40,7 +40,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
 import { useRequireUserContext } from '../contexts/UserContext';
 
-export default function HomePage() {
+export default function DocentDashboard() {
   // User is guaranteed to be present in authenticated pages
   const { user } = useRequireUserContext();
 
@@ -70,7 +70,7 @@ export default function HomePage() {
     dispatch(cancelCurrentSearch());
     dispatch(cancelCurrentClusterRequest());
     // TODO(mengk): call thunks to cancel the transcript requests too
-  }, [dispatch]);
+  }, [dispatch, frameGridId]);
 
   const handleCreateFrameGrid = async () => {
     setIsCreatingGrid(true);

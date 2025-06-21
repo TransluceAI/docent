@@ -1,6 +1,5 @@
 import { cookies, headers } from 'next/headers';
 import DocentDashboardClientLayout from './client-layout';
-import { PermissionsProvider } from '../../contexts/PermissionsContext';
 import { serverPermissionsService } from '../../services/permissionsService';
 import { PERMISSION_LEVELS } from '@/lib/permissions/types';
 
@@ -44,9 +43,7 @@ export default async function DocentDashboardLayout({
     }
 
     return (
-      <PermissionsProvider frameGridId={fgId} permissions={permissions}>
-        <DocentDashboardClientLayout>{children}</DocentDashboardClientLayout>
-      </PermissionsProvider>
+      <DocentDashboardClientLayout>{children}</DocentDashboardClientLayout>
     );
   } catch (error) {
     console.error('Failed to fetch permissions:', error);

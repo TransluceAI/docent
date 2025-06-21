@@ -86,7 +86,7 @@ export default function TableArea() {
     const allValues =
       dimIdsToFilterIds[innerDimId]?.map((id) => ({
         id,
-        value: filtersMap[id].value,
+        value: filtersMap[id]?.value,
       })) || [];
     return allValues.slice(0, MAX_DIMENSION_VALUES);
   }, [innerDimId, filtersMap, dimIdsToFilterIds]);

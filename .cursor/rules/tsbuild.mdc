@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+To check for typescript errors, run the following
+
+cd docent/_web && npx tsc --noEmit || cd ../..

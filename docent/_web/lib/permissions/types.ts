@@ -7,3 +7,4 @@ export const PERMISSION_LEVELS = {
 };
 
 export type PermissionLevel = 'read' | 'write' | 'admin' | 'none';
+export type SubjectType = "user" | "organization" | "public";

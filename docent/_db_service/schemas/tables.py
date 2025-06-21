@@ -1,8 +1,8 @@
 import enum
 import json
 from datetime import UTC, datetime
-from uuid import uuid4
 from typing import Literal
+from uuid import uuid4
 
 from pydantic_core import to_jsonable_python
 from sqlalchemy import (
@@ -22,12 +22,11 @@ from sqlalchemy.schema import UniqueConstraint
 
 from docent._ai_tools.search import SearchResult
 from docent._db_service.contexts import ViewContext
-from docent._db_service.schemas.auth_models import Permission, User, Organization
+from docent._db_service.schemas.auth_models import Organization, Permission, User
 from docent._db_service.schemas.base import SQLABase
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.filters import FrameDimension, FrameFilter, Judgment, parse_filter_dict
 from docent.data_models.transcript import Transcript
-
 
 TABLE_FRAME_GRID = "frame_grids"
 TABLE_AGENT_RUN = "agent_runs"
@@ -173,6 +172,12 @@ class SQLAFrameGrid(SQLABase):
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
 
+    views: Mapped[list["SQLAView"]] = relationship(
+        "SQLAView",
+        back_populates="framegrid",
+        cascade="all, delete-orphan",
+    )
+
 
 class SQLAFrameDimension(SQLABase):
     __tablename__ = TABLE_FRAME_DIMENSION
@@ -239,7 +244,11 @@ class SQLAView(SQLABase):
         String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
     )
 
+    # Owner of this view. Combined with fg_id must be unique.
+    user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
+
     name = mapped_column(Text, nullable=True)
+    # Deprecated now that we have one view per (user, framegrid). Retained for backward-compat.
     is_default = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     base_filter_id = mapped_column(String(36), ForeignKey(f"{TABLE_FILTER}.id"), nullable=True)
@@ -248,6 +257,28 @@ class SQLAView(SQLABase):
     )
     outer_dim_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"), nullable=True
+    )
+
+    user: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
+    framegrid: Mapped["SQLAFrameGrid"] = relationship(
+        "SQLAFrameGrid",
+        back_populates="views",
+    )
+
+    acl_entries: Mapped[list["SQLAAccessControlEntry"]] = relationship(
+        "SQLAAccessControlEntry",
+        back_populates="view",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fg_id",
+            "user_id",
+            name="uq_view_fg_user",
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
 
@@ -519,14 +550,14 @@ class SQLAUser(SQLABase):
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
     is_anonymous = mapped_column(Boolean, nullable=False, default=False, index=True)
-    
+
     organizations: Mapped[list["SQLAOrganization"]] = relationship(
         "SQLAOrganization",
         secondary=TABLE_USER_ORGANIZATION,
         back_populates="users",
         lazy="selectin",
     )
-    
+
     @classmethod
     def from_user(cls, user: User) -> "SQLAUser":
         return cls(
@@ -543,6 +574,7 @@ class SQLAUser(SQLABase):
             is_anonymous=self.is_anonymous,
         )
 
+
 class SQLAOrganization(SQLABase):
     __tablename__ = TABLE_ORGANIZATION
 
@@ -555,6 +587,7 @@ class SQLAOrganization(SQLABase):
         secondary=TABLE_USER_ORGANIZATION,
         back_populates="organizations",
     )
+
     def to_organization(self) -> Organization:
         return Organization(
             id=self.id,
@@ -600,15 +633,26 @@ class SQLAAccessControlEntry(SQLABase):
 
     # Which resource the permission is for: exactly one must be set
     fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=True, index=True
+        String(36),
+        ForeignKey(f"{TABLE_FRAME_GRID}.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
-    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=True, index=True)
+    view_id = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_VIEW}.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
 
     # Permission
     permission = mapped_column(Text, nullable=False, index=True)
     user: Mapped["SQLAUser"] = relationship("SQLAUser", backref="access_control_entries")
-    organization: Mapped["SQLAOrganization"] = relationship("SQLAOrganization", backref="access_control_entries")
-    
+    organization: Mapped["SQLAOrganization"] = relationship(
+        "SQLAOrganization", backref="access_control_entries"
+    )
+    view: Mapped["SQLAView"] = relationship("SQLAView", back_populates="acl_entries")
+
     def __repr__(self):
         return f"SQLAAccessControlEntry(id={self.id}, subject={self.subject()}, permission={self.permission})"
 
@@ -643,4 +687,3 @@ class SQLAAccessControlEntry(SQLABase):
             name="uq_access_control_entry_combination",
         ),
     )
-

@@ -73,6 +73,12 @@ export default function DimensionSelector({
     selectedOuterMetadataKey &&
     selectedOuterMetadataKey !== 'None';
 
+  const filteredAgentRunMetadataFields = useMemo(() => {
+    return agentRunMetadataFields
+      .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
+      // .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
+  }, [agentRunMetadataFields]);
+
   return (
     <div
       className={`flex flex-col lg:flex-row items-start sm:items-center gap-2 ${className || ''}`}
@@ -91,9 +97,7 @@ export default function DimensionSelector({
               <SelectItem value="None" className="text-xs">
                 None
               </SelectItem>
-              {agentRunMetadataFields
-                .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
-                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
+              {filteredAgentRunMetadataFields
                 .map((field) => (
                   <SelectItem
                     key={field.name}
@@ -132,9 +136,7 @@ export default function DimensionSelector({
                   None
                 </SelectItem>
               )}
-              {agentRunMetadataFields
-                .filter((field) => field.name.startsWith('metadata.')) // FIXME(mengk): FIX THIS HACK!!!
-                .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
+              {filteredAgentRunMetadataFields
                 .map((field) => (
                   <SelectItem
                     key={field.name}

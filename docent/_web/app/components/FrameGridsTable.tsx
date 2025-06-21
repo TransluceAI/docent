@@ -1,20 +1,8 @@
 'use client';
 
-import {
-  CalendarIcon,
-  CheckIcon,
-  ClipboardCopyIcon,
-  ExternalLinkIcon,
-  Layers,
-  Loader2,
-  Pencil,
-  Trash2,
-  XIcon,
-} from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Layers, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { BASE_DOCENT_PATH } from '@/app/constants';
 import { FrameGrid } from '@/app/types/frameTypes';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,20 +13,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 
-import { deleteFrameGrid, fetchFrameGrids, updateFrameGrid } from '../store/frameSlice';
+import { deleteFrameGrid, fetchFrameGrids } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
+
+import FrameGridRow from './FrameGridRow';
 
 interface FrameGridsTableProps {
   frameGrids?: FrameGrid[];
@@ -49,77 +35,13 @@ export function FrameGridsTable({
   frameGrids,
   isLoading,
 }: FrameGridsTableProps) {
-  const router = useRouter();
   const dispatch = useAppDispatch();
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
-  // Delete dialog state
+  // Delete dialog state – kept here so multiple rows can reuse shared dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingGrid, setDeletingGrid] = useState<FrameGrid | null>(null);
 
-  // Inline editing state
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-
-  const handleOpenFrameGrid = (gridId: string) => {
-    // Don't navigate if we're currently editing
-    if (editingRowId) return;
-    router.push(`${BASE_DOCENT_PATH}/${gridId}`);
-  };
-
-  const handleCopyId = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    navigator.clipboard
-      .writeText(id)
-      .then(() => {
-        toast({
-          title: 'FrameGrid ID Copied',
-          description: `Copied ${id} to clipboard`,
-        });
-      })
-      .catch((err) => {
-        console.error('Failed to copy: ', err);
-        toast({
-          variant: 'destructive',
-          description: 'Failed to copy ID',
-        });
-      });
-  };
-
-  const startEditing = (e: React.MouseEvent, grid: FrameGrid) => {
-    e.stopPropagation();
-    setEditingRowId(grid.id);
-    setEditName(grid.name || '');
-    setEditDescription(grid.description || '');
-  };
-
-  const cancelEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingRowId(null);
-  };
-
-  const handleUpdateFrameGrid = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!editingRowId) return;
-
-    dispatch(
-      updateFrameGrid({
-        fg_id: editingRowId,
-        name: editName,
-        description: editDescription,
-      })
-    );
-
-    setEditingRowId(null);
-    toast({
-      title: 'Frame Grid Updated',
-      description: 'The frame grid has been updated successfully',
-    });
-  };
-
-  const openDeleteDialog = (e: React.MouseEvent, grid: FrameGrid) => {
-    e.stopPropagation();
+  const openDeleteDialog = (grid: FrameGrid) => {
     setDeletingGrid(grid);
     setIsDeleteDialogOpen(true);
   };
@@ -131,15 +53,6 @@ export function FrameGridsTable({
       dispatch(fetchFrameGrids());
     });
     setIsDeleteDialogOpen(false);
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
   };
 
   if (isLoading || !frameGrids) {
@@ -191,159 +104,11 @@ export function FrameGridsTable({
         </TableHeader>
         <TableBody>
           {frameGrids.map((grid) => (
-            <TableRow
+            <FrameGridRow
               key={grid.id}
-              className={cn(
-                'transition-colors',
-                editingRowId === grid.id ? 'bg-blue-50' : '',
-                hoveredRowId === grid.id && editingRowId !== grid.id
-                  ? 'bg-gray-50'
-                  : '',
-                editingRowId !== grid.id ? 'cursor-pointer' : ''
-              )}
-              onMouseEnter={() => setHoveredRowId(grid.id)}
-              onMouseLeave={() => setHoveredRowId(null)}
-              onClick={() => handleOpenFrameGrid(grid.id)}
-            >
-              <TableCell className="font-medium py-2">
-                <div className="flex items-center">
-                  <Layers className="h-3.5 w-3.5 text-gray-400 mr-1.5" />
-                  <span className="font-mono text-gray-600 text-xs">
-                    {grid.id.split('-')[0]}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 ml-1"
-                    onClick={(e) => handleCopyId(e, grid.id)}
-                    title="Copy full ID"
-                  >
-                    <ClipboardCopyIcon
-                      className={cn(
-                        'h-3 w-3',
-                        hoveredRowId === grid.id
-                          ? 'text-blue-500'
-                          : 'text-gray-400'
-                      )}
-                    />
-                  </Button>
-                </div>
-              </TableCell>
-              <TableCell className="py-2">
-                {editingRowId === grid.id ? (
-                  <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="Enter grid name"
-                    className="h-7 text-xs py-0 px-2"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="text-gray-900 text-xs">
-                    {grid.name || (
-                      <span className="italic text-gray-400">Unnamed Grid</span>
-                    )}
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="py-2">
-                {editingRowId === grid.id ? (
-                  <Input
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    placeholder="Enter description"
-                    className="h-7 text-xs py-0 px-2"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="text-xs text-gray-500">
-                    {grid.description || (
-                      <span className="italic text-gray-400">
-                        No description provided
-                      </span>
-                    )}
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="text-xs py-2">
-                <div className="flex items-center text-gray-500">
-                  <CalendarIcon className="h-3 w-3 mr-1 text-gray-400" />
-                  {formatDate(grid.created_at)}
-                </div>
-              </TableCell>
-              <TableCell className="py-2 text-right">
-                {editingRowId === grid.id ? (
-                  <div className="flex items-center justify-end space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-green-500"
-                      onClick={handleUpdateFrameGrid}
-                      title="Save changes"
-                    >
-                      <CheckIcon className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-gray-500"
-                      onClick={cancelEditing}
-                      title="Cancel editing"
-                    >
-                      <XIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-end space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-7 w-7',
-                        hoveredRowId === grid.id
-                          ? 'text-blue-500'
-                          : 'text-gray-400'
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenFrameGrid(grid.id);
-                      }}
-                      title="Open frame grid"
-                    >
-                      <ExternalLinkIcon className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-7 w-7',
-                        hoveredRowId === grid.id
-                          ? 'text-blue-500'
-                          : 'text-gray-400'
-                      )}
-                      onClick={(e) => startEditing(e, grid)}
-                      title="Edit frame grid"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-7 w-7',
-                        hoveredRowId === grid.id
-                          ? 'text-red-500'
-                          : 'text-gray-400'
-                      )}
-                      onClick={(e) => openDeleteDialog(e, grid)}
-                      title="Delete frame grid"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </TableCell>
-            </TableRow>
+              framegrid={grid}
+              onDelete={openDeleteDialog}
+            />
           ))}
         </TableBody>
       </Table>
