@@ -1,159 +1,370 @@
-# Quickstart (self-host)
+# Quickstart
 
-We don't offer a hosted version of Docent yet, but plan to soon. Luckily, self-hosting is easy and free. For larger organizations, we provide white-glove hosting services; please [reach out](mailto:kevin@transluce.org) if you're interested.
+Before starting, navigate to [docent.transluce.org](https://docent.transluce.org) and sign up for an account. Feel free to explore some sample agent runs in the dashboard.
 
-### 1. Clone the repo and configure `.env`
-
+To ingest your own agent runs, install the Python SDK:
 ```bash
-git clone https://github.com/TransluceAI/docent.git
-cd docent
-cp .env.template .env
+pip install docent
 ```
 
-You should now have a `.env` file at the project root. See [here for details on how to fill it in](./concepts/configuration/environment_variables.md).
+Then create a new Python script that instantiates a client object:
+```python
+import os
+from docent import DocentClient
 
-### 2. Start the backend server and frontend UI
+client = DocentClient(
+    email=os.getenv("DOCENT_EMAIL"),        # is default and can be omitted
+    password=os.getenv("DOCENT_PASSWORD"),  # is default and can be omitted
+)
+```
 
-Docker Compose is the easiest way to get started, but you may want a manual installation to support faster development loops (e.g., for hot reloading).
+You can think of each frame grid as a collection of agent runs. Let's create a fresh one:
 
-=== "Docker Compose (recommended)"
+```python
+fg_id = client.create_framegrid(
+    name="sample framegrid",
+    description="example that comes with the Docent repo",
+)
+```
 
-    First ensure [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) are installed. Then run:
+Now we're ready to ingest some logs!
 
-    === "As non-root"
-        ```bash
-        DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
-        ```
-
-    === "As root"
-        ```bash
-        # Note that `sudo` strips environment variables, so you have to set them *inside* the command.
-        sudo DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
-        ```
-
-    Cold build + start should take a few minutes. Once finished, you can run
-
-    === "As non-root"
-        ```bash
-        docker ps
-        ```
-
-    === "As root"
-        ```bash
-        sudo docker ps
-        ```
-
-    to check that the four following containers are running:
-    ```bash
-    CONTAINER ID   IMAGE             COMMAND                  CREATED          STATUS          PORTS                                         NAMES
-    b8bba5b86251   docent-backend    "bash -c 'bash /app/…"   34 seconds ago   Up 33 seconds   0.0.0.0:8889->8889/tcp, [::]:8889->8889/tcp   docent_backend
-    0cfc73d80407   docent-frontend   "docent web --build …"   34 seconds ago   Up 33 seconds   0.0.0.0:3001->3001/tcp, [::]:3001->3001/tcp   docent_frontend
-    c80f4302db12   postgres:15       "docker-entrypoint.s…"   34 seconds ago   Up 33 seconds   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   docent_postgres
-    f9d86be37643   redis:alpine      "docker-entrypoint.s…"   34 seconds ago   Up 33 seconds   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp   docent_redis
-    ```
-
-    To shut Docent down, either press `Ctrl+C` in the terminal or run:
-
-    === "As non-root"
-        ```bash
-        docker compose down
-        ```
-
-    === "As root"
-        ```bash
-        sudo docker compose down
-        ```
+=== "Simple example"
 
     !!! note
-        If you make changes to the codebase, you'll need to stop the containers, then rebuild by **keeping the `--build` argument**. If `--build` is omitted, your changes will not be reflected.
+        To directly run the code in this section, see [`examples/ingest_simple.ipynb`](https://github.com/TransluceAI/docent/blob/main/examples/ingest_simple.ipynb).
 
-=== "Manual"
+    Say we have three simple agent runs.
 
-    If you don't already have Postgres and Redis installed, you can start them with Docker:
+    ```python
+    transcript_1 = [
+        {
+            "role": "user",
+            "content": "What's the weather like in New York today?"
+        },
+        {
+            "role": "assistant",
+            "content": "The weather in New York today is mostly sunny with a high of 75°F (24°C)."
+        }
+    ]
+    metadata_1 = {"model": "gpt-3.5-turbo", "agent_scaffold": "foo", "hallucinated": True}
+    transcript_2 = [
+        {
+            "role": "user",
+            "content": "What's the weather like in San Francisco today?"
+        },
+        {
+            "role": "assistant",
+            "content": "The weather in San Francisco today is mostly cloudy with a high of 65°F (18°C)."
+        }
+    ]
+    metadata_2 = {"model": "gpt-3.5-turbo", "agent_scaffold": "foo", "hallucinated": True}
+    transcript_3 = [
+        {
+            "role": "user",
+            "content": "What's the weather like in Paris today?"
+        },
+        {
+            "role": "assistant",
+            "content": "I'm sorry, I don't know because I don't have access to weather tools."
+        }
+    ]
+    metadata_3 = {"model": "gpt-3.5-turbo", "agent_scaffold": "bar", "hallucinated": False}
 
-    === "As non-root"
-        ```bash
-        docker compose -f docker-compose-db.yml up --build
-        ```
+    transcripts = [transcript_1, transcript_2, transcript_3]
+    metadata = [metadata_1, metadata_2, metadata_3]
+    ```
 
-    === "As root"
-        ```bash
-        sudo docker compose -f docker-compose-db.yml up --build
-        ```
+    We need to convert each input into an [`AgentRun`](../concepts/data_models/agent_run.md) object, which holds [`Transcript`][docent.data_models.transcript.Transcript] objects where each message needs to be a [`ChatMessage`](../concepts/data_models/chat_messages.md). We could construct the messages manually, but it's easier to use the [`parse_chat_message`][docent.data_models.chat.message.parse_chat_message] function, since the raw dicts already conform to the expected schema.
 
-    after which Postgres and Redis will be available at the addresses set in [`.env`](./concepts/configuration/environment_variables.md). To set up your own databases, visit the official docs for [Postgres](https://www.postgresql.org/download/) and [Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/).
+    ```python
+    from docent.data_models.chat import parse_chat_message
+    from docent.data_models import Transcript
 
-    Once your databases are up, run:
+    parsed_transcripts = [
+        Transcript(messages=[parse_chat_message(msg) for msg in transcript])
+        for transcript in transcripts
+    ]
+    ```
 
-    === "uv"
-        ```bash
-        uv sync
-        ```
+    We also need to convert the metadata into a list of [`BaseAgentRunMetadata`](../concepts/data_models/metadata.md) objects. Let's subclass the base class to add some additional metadata.
 
-    === "pip"
-        ```bash
-        pip install -e .
-        ```
+    ```python
+    from pydantic import Field
+    from docent.data_models import BaseAgentRunMetadata
 
-    to install the relevant server packages, then
+    class MyMetadata(BaseAgentRunMetadata):
+        model: str = Field(description="LLM API model used to generate the transcript")
+        agent_scaffold: str = Field(description="Agent scaffold in which the agent was run")
+    ```
 
-    === "Prod"
-        ```bash
-        docent server --port 8889 --workers 4
-        ```
+    Now we can create the [`AgentRun`](../concepts/data_models/agent_run.md) objects.
 
-    === "Dev (with autoreload)"
-        ```bash
-        docent server --port 8889 --reload
-        ```
+    ```python
+    from docent.data_models import AgentRun
 
-    to run the server, then
+    agent_runs = [
+        AgentRun(
+            transcripts={"default": t},
+            metadata=MyMetadata(
+                model=m["model"],
+                agent_scaffold=m["agent_scaffold"],
+                scores={"hallucinated": m["hallucinated"]},
+                default_score_key="hallucinated",
+            )
+        )
+        for t, m in zip(parsed_transcripts, metadata)
+    ]
+    ```
 
-    === "Prod"
-        ```bash
-        docent web --build --port 3001 --backend-url http://localhost:8889
-        ```
+=== "$\tau$-Bench"
 
-    === "Dev (with autoreload)"
-        ```bash
-        docent web --port 3001 --backend-url http://localhost:8889
-        ```
+    !!! note
+        To directly run the code in this section, see [`examples/ingest_tau_bench.ipynb`](https://github.com/TransluceAI/docent/blob/main/examples/ingest_tau_bench.ipynb).
 
-    to run the frontend. You may need to [install Node.js](https://nodejs.org/en/download/) first.
+    For a more complex case that involves tool calls, we've provided a log file at `examples/tb_airline.json`, generated by running Sonnet 3.5 (new) on *one* task from the $\tau$-bench-airline dataset.
 
-Finally, check that you can access the Docent UI at [`http://localhost:3001`](http://localhost:3001).
+    To inspect the log, we can load it as a dictionary.
 
-### 3. Install the Python SDK
+    ```python
+    import json
+    with open("tb_airline.json", "r") as f:
+        tb_log = json.load(f)
+    print(tb_log)
+    ```
 
-In order to load transcripts into Docent, you'll need to install the Docent Python SDK locally.
+    First, we need to define a metadata class. In addition to the [required `run_id`, `scores`, and `default_score_key` fields](../concepts/data_models/metadata.md), we'll add a few additional fields:
 
-=== "Docker Compose (recommended)"
+    ```python
+    from typing import Any
+    from docent.data_models import BaseAgentRunMetadata
+    from pydantic import Field
 
-    Install the repo into your local Python environment:
+    class TauBenchMetadata(BaseAgentRunMetadata):
+        benchmark_id: str = Field(
+            description="The benchmark that the task belongs to", default="tau_bench"
+        )
+        task_id: str = Field(description="The task within the benchmark that the agent is solving")
+        model: str = Field(description="The LLM used by the agent")
+        additional_metadata: dict[str, Any] = Field(description="Additional metadata about the task")
+        scoring_metadata: dict[str, Any] | None = Field(
+            description="Additional metadata about the scoring process"
+        )
+    ```
 
-    === "uv"
-        ```bash
-        # Create a new venv for Docent
-        uv sync
+    Next, we write a function that parses the dict into an [`AgentRun`](../concepts/data_models/agent_run.md) object, complete with `TauBenchMetadata`. Most of the effort is in converting the raw tool calls into the expected format.
 
-        # Or install into an existing uv venv
-        uv pip install -e .
-        ```
+    ```python
+    from docent.data_models import AgentRun, Transcript
+    from docent.data_models.chat import ChatMessage, ToolCall, parse_chat_message
 
-    === "pip"
-        ```bash
-        pip install -e .
-        ```
+    def load_tau_bench_log(data: dict[str, Any]) -> list[AgentRun]:
+        traj, info, reward, task_id = data["traj"], data["info"], data["reward"], data["task_id"]
 
-=== "Manual"
+        messages: list[ChatMessage] = []
+        for msg in traj:
+            # Extract raw message data
+            role = msg.get("role")
+            content = msg.get("content", "")
+            raw_tool_calls = msg.get("tool_calls")
+            tool_call_id = msg.get("tool_call_id")
 
-    Since you installed the repo locally as part of the manual installation in [Step 2](#2-start-the-backend-server-and-frontend-ui), you can skip this step. If this isn't the case, click the "Docker Compose" tab above.
+            # Create a message data dictionary
+            message_data = {
+                "role": role,
+                "content": content,
+            }
 
-To verify the installation, run this command, after which you should see no output:
+            # For tool messages, include the tool name
+            if role == "tool":
+                message_data["name"] = msg.get("name")
+                message_data["tool_call_id"] = tool_call_id
 
-```bash
-python -c "import docent"
+            # For assistant messages, include tool calls if present
+            if role == "assistant" and raw_tool_calls:
+                # Convert tool calls to the expected format
+                parsed_tool_calls: list[ToolCall] = []
+                for tc in raw_tool_calls:
+                    tool_call = ToolCall(
+                        id=tc.get("id"),
+                        function=tc.get("function", {}).get("name"),
+                        arguments=tc.get("function", {}).get("arguments", {}),
+                        type="function",
+                        parse_error=None,
+                    )
+                    parsed_tool_calls.append(tool_call)
+
+                message_data["tool_calls"] = parsed_tool_calls
+
+            # Parse the message into the appropriate type
+            chat_message = parse_chat_message(message_data)
+            messages.append(chat_message)
+
+        # Extract metadata from the sample
+        task_id = info["task"]["user_id"]
+        scores = {"reward": round(reward, 3)}
+        default_score_key = "reward"
+
+        # Build metadata
+        metadata = TauBenchMetadata(
+            benchmark_id=task_id,
+            task_id=task_id,
+            model="sonnet-35-new",
+            scores=scores,
+            default_score_key=default_score_key,
+            additional_metadata=info,
+            scoring_metadata=info["reward_info"],
+        )
+
+        # Create the transcript and wrap in AgentRun
+        transcript = Transcript(
+            messages=messages,
+            metadata=metadata,
+        )
+        agent_run = AgentRun(
+            transcripts={"default": transcript},
+            metadata=metadata,
+        )
+
+        return agent_run
+    ```
+
+    Let's just load the single run in, and print its string representation.
+
+    ```python
+    agent_runs = [load_tau_bench_log(tb_log)]
+    print(agent_runs[0].text)
+    ```
+
+=== "Inspect AI logs"
+
+    !!! note
+        To directly run the code in this section, see [`examples/ingest_inspect.ipynb`](https://github.com/TransluceAI/docent/blob/main/examples/ingest_inspect.ipynb).
+
+    Our [`ChatMessage`](../concepts/data_models/chat_messages.md) schema is compatible with Inspect AI's format (as of `inspect-ai==0.3.93`), which means you can directly use the [`parse_chat_message`][docent.data_models.chat.message.parse_chat_message] function to parse Inspect messages.
+
+    We've provided a sample Inspect log file at `examples/log.eval`, generated by running GPT-4o on a subset of the Intercode CTF benchmark.
+
+    Inspect provides a library function to read the log; we can convert it to a dictionary for easier viewing.
+
+    ```python
+    from inspect_ai.log import read_eval_log
+    from pydantic_core import to_jsonable_python
+
+    ctf_log = read_eval_log("log.eval")
+    ctf_log_dict = to_jsonable_python(ctf_log)
+    print(ctf_log_dict)
+    ```
+
+    Now we define a metadata class with some fields relevant to the CTF task.
+
+    ```python
+    from typing import Any
+    from docent.data_models import BaseAgentRunMetadata
+    from pydantic import Field
+
+    class InspectAgentRunMetadata(BaseAgentRunMetadata):
+        task_id: str = Field(
+            description="The ID of the 'benchmark' or 'set of evals' that the transcript belongs to"
+        )
+
+        # Identification of this particular run
+        sample_id: str = Field(
+            description="The specific task inside of the `task_id` benchmark that the transcript was run on"
+        )
+        epoch_id: int = Field(
+            description="Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run."
+        )
+
+        # Parameters for the run
+        model: str = Field(description="The model that was used to generate the transcript")
+
+        # Outcome
+        scoring_metadata: dict[str, Any] | None = Field(
+            description="Additional metadata about the scoring process"
+        )
+
+        # Inspect metadata
+        additional_metadata: dict[str, Any] | None = Field(
+            description="Additional metadata about the transcript"
+        )
+    ```
+
+    Now we can write a function that takes the Inspect log and converts it into an [`AgentRun`](../concepts/data_models/agent_run.md) object.
+
+    ```python
+    from inspect_ai.log import EvalLog
+    from docent.data_models import AgentRun, Transcript
+    from docent.data_models.chat import parse_chat_message
+
+    def load_inspect_log(log: EvalLog) -> list[AgentRun]:
+        if log.samples is None:
+            return []
+
+        agent_runs: list[AgentRun] = []
+
+        for s in log.samples:
+            # Extract sample_id from the sample ID
+            sample_id = s.id
+            epoch_id = s.epoch
+
+            # Gather scores
+            scores: dict[str, int | float | bool] = {}
+            default_score_key: str | None = None
+
+            # Evaluate correctness (for this CTF benchmark)
+            if s.scores and "includes" in s.scores:
+                scores["correct"] = s.scores["includes"].value == "C"
+                default_score_key = "correct"
+
+            # Set metadata
+            metadata = InspectAgentRunMetadata(
+                task_id=log.eval.task,
+                sample_id=str(sample_id),
+                epoch_id=epoch_id,
+                model=log.eval.model,
+                scores=scores,
+                default_score_key=default_score_key,
+                additional_metadata=s.metadata,
+                scoring_metadata=s.scores,
+            )
+
+            # Create transcript
+            agent_runs.append(
+                AgentRun(
+                    transcripts={
+                        "default": Transcript(
+                            messages=[parse_chat_message(m.model_dump()) for m in s.messages]
+                        )
+                    },
+                    metadata=metadata,
+                )
+            )
+
+        return agent_runs
+    ```
+
+    Let's check on our loaded run:
+
+    ```python
+    agent_runs = load_inspect_log(ctf_log)
+    print(agent_runs[0].text)
+    ```
+
+
+We can finally ingest the agent run and watch the UI update:
+
+```python
+client.add_agent_runs(fg_id, agent_runs)
 ```
 
+If you navigate to the frontend URL printed by `client.create_framegrid(...)`, you should see the run available for viewing.
 
-You're all set! Check out some of our [tutorials](./tutorials/ingesting_agent_runs.md) to get started.
+### Tips and tricks
+
+#### Including sufficient context
+
+Docent can only catch issues that are evident from the context it has about your evaluation. For example:
+
+- If you're looking to catch issues with solution labels, you should provide the exact label in the metadata, not just the agent's score.
+- For software engineering tasks, if you want to know *why* agents failed, you should include information about what tests were run and their traceback/execution logs.
