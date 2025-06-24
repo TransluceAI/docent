@@ -42,6 +42,7 @@ import { requestDiffs } from '../store/diffSlice';
 import { apiRestClient } from '../services/apiService';
 import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 import { setGraphData } from '../store/experimentViewerSlice';
+import { copyToClipboard } from '@/lib/utils';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -290,24 +291,22 @@ const SearchArea = () => {
     const response = await apiRestClient.post(
       `/${frameGridId}/copy_own_filter`
     );
-    navigator.clipboard
-      .writeText(
-        `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`
-      )
-      .then(() => {
-        toast({
-          title: 'Search URL copied',
-          description: 'Copied a shareable link to the clipboard',
-          variant: 'default',
-        });
-      })
-      .catch(() => {
-        toast({
-          title: 'Failed to copy',
-          description: 'Could not copy to clipboard',
-          variant: 'destructive',
-        });
+    const success = await copyToClipboard(
+      `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`
+    );
+    if (success) {
+      toast({
+        title: 'Search URL copied',
+        description: 'Copied a shareable link to the clipboard',
+        variant: 'default',
       });
+    } else {
+      toast({
+        title: 'Failed to copy',
+        description: 'Could not copy to clipboard',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

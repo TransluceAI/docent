@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 
 import { updateFrameGrid } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
@@ -55,22 +55,21 @@ export default function FrameGridRow({
     router.push(`${BASE_DOCENT_PATH}/${framegrid.id}`);
   };
 
-  const copyId = (e: React.MouseEvent) => {
+  const copyId = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard
-      .writeText(framegrid.id)
-      .then(() => {
-        toast({
-          title: 'FrameGrid ID Copied',
-          description: `Copied ${framegrid.id} to clipboard`,
-        });
-      })
-      .catch(() => {
-        toast({
-          variant: 'destructive',
-          description: 'Failed to copy ID',
-        });
+    const success = await copyToClipboard(framegrid.id);
+    if (success) {
+      toast({
+        title: 'FrameGrid ID Copied',
+        description: `Copied ${framegrid.id} to clipboard`,
       });
+    } else {
+      toast({
+        title: 'Failed to copy',
+        description: 'Could not copy to clipboard',
+        variant: 'destructive',
+      });
+    }
   };
 
   const startEditing = (e: React.MouseEvent) => {

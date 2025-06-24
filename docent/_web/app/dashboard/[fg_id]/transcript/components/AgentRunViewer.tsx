@@ -28,6 +28,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from '@/hooks/use-toast';
 
 import MetadataDialog from './MetadataDialog';
+import { copyToClipboard } from '@/lib/utils';
 
 // Export interface for use in other components
 export interface AgentRunViewerHandle {
@@ -469,7 +470,7 @@ const AttributeDisplay: React.FC<{
 
   console.log('relevantAttributes', relevantAttributes);
 
-  const handleShareAttribute = () => {
+  const handleShareAttribute = async () => {
     if (!curSearchQuery) {
       toast({
         title: 'Error',
@@ -482,22 +483,20 @@ const AttributeDisplay: React.FC<{
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('searchQuery', curSearchQuery);
 
-    navigator.clipboard
-      .writeText(currentUrl.toString())
-      .then(() => {
-        toast({
-          title: 'Search URL copied',
-          description: 'Copied a shareable link to the clipboard',
-          variant: 'default',
-        });
-      })
-      .catch(() => {
-        toast({
-          title: 'Failed to copy',
-          description: 'Could not copy to clipboard',
-          variant: 'destructive',
-        });
+    const success = await copyToClipboard(currentUrl.toString());
+    if (success) {
+      toast({
+        title: 'Search URL copied',
+        description: 'Copied a shareable link to the clipboard',
+        variant: 'default',
       });
+    } else {
+      toast({
+        title: 'Failed to copy',
+        description: 'Could not copy to clipboard',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Render the attribute section with exact same styling as InnerCard.tsx
