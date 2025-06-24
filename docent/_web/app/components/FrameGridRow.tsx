@@ -134,7 +134,7 @@ export default function FrameGridRow({
       )}
     >
       {/* ID */}
-      <TableCell className="font-medium py-2">
+      <TableCell className="font-medium py-3">
         <div className="flex items-center">
           <Layers className="h-3.5 w-3.5 text-gray-400 mr-1.5" />
           <span className="font-mono text-gray-600 text-xs">
@@ -238,11 +238,11 @@ export default function FrameGridRow({
               <ExternalLinkIcon className="h-3.5 w-3.5" />
             </Button> */}
             {hasWritePermission ? (
-              <>
+              <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-gray-400 group-hover:text-blue-500"
+                  className="h-auto w-auto text-gray-400 group-hover:text-blue-500 p-0"
                   onClick={startEditing}
                   disabled={!hasWritePermission}
                   title="Edit frame grid"
@@ -252,14 +252,14 @@ export default function FrameGridRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-gray-400 group-hover:text-red-500"
+                  className="h-auto w-auto text-gray-400 group-hover:text-red-500 p-0"
                   disabled={!hasAdminPermission}
                   onClick={triggerDelete}
                   title="Delete frame grid"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
-              </>
+              </div>
             ) : (
               <div className="text-gray-400 text-xs">Read only</div>
             )}
