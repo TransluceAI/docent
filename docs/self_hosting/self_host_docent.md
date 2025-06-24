@@ -23,7 +23,7 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
     First ensure [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) are installed. Then run:
 
     !!! note
-        Make sure `DOCENT_SERVER_HOST` is set to the correct domain if you're not using `localhost`.
+        Make sure `DOCENT_SERVER_HOST` is set to the correct domain if you're not using `localhost`. Make sure to **prefix it correctly** with `http://` or `https://`.
 
     === "As non-root"
         ```bash

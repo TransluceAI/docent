@@ -5,12 +5,14 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install Node.js, npm, and git
-RUN apt-get update && \
-    apt-get install -y nodejs npm git && \
-    rm -rf /var/lib/apt/lists/*
+# Install git (needed if pip install pulls git repositories)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # Install uv - it's way faster than pip
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Install nvm and Node 22
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+RUN . "$HOME/.nvm/nvm.sh" && nvm install 22
 
 # Copy the cli and web code
 COPY cli/ cli/
