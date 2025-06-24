@@ -22,15 +22,18 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
 
     First ensure [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) are installed. Then run:
 
+    !!! note
+        Make sure `DOCENT_SERVER_HOST` is set to the correct domain if you're not using `localhost`.
+
     === "As non-root"
         ```bash
-        DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
+        DOCENT_SERVER_HOST=http://localhost DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
         ```
 
     === "As root"
         ```bash
         # Note that `sudo` strips environment variables, so you have to set them *inside* the command.
-        sudo DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
+        sudo DOCENT_SERVER_HOST=http://localhost DOCENT_SERVER_PORT=8889 DOCENT_WEB_PORT=3001 docker compose up --build
         ```
 
     Cold build + start should take a few minutes. Once finished, you can run

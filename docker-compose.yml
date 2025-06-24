@@ -46,7 +46,7 @@ services:
       - "${DOCENT_WEB_PORT:-3000}:${DOCENT_WEB_PORT:-3000}"
     depends_on:
       - backend
-    command: docent web --build --no-install --port ${DOCENT_WEB_PORT:-3000} --backend-url http://localhost:${DOCENT_SERVER_PORT:-8888}
+    command: docent web --build --no-install --port ${DOCENT_WEB_PORT:-3000} --backend-url ${DOCENT_SERVER_HOST:-http://localhost}:${DOCENT_SERVER_PORT:-8888}
     restart: unless-stopped
 
 volumes:
