@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/popover';
 import { Share2, UserPlus } from 'lucide-react';
 import CollaboratorsList from './CollaboratorsList';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   useGetCollaboratorsQuery,
   useGetOrgUsersQuery,

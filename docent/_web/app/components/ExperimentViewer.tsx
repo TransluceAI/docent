@@ -24,17 +24,11 @@ import AgentRunCard from './AgentRunCard';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
   setExperimentViewerScrollPosition,
-  setChartType,
 } from '../store/experimentViewerSlice';
 import { getAgentRunMetadata } from '../store/frameSlice';
 import TableArea from './TableArea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
+
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 // Constants for magic numbers
