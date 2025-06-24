@@ -1,3 +1,5 @@
+'use client';
+
 import { CircleX, RefreshCw } from 'lucide-react';
 import {
   PrimitiveFilter,
