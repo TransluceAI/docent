@@ -165,7 +165,7 @@ class SQLAFrameGrid(SQLABase):
 
     # User who created this frame grid
     created_by = mapped_column(
-        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=True, index=True
+        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
     )
 
     created_at = mapped_column(
