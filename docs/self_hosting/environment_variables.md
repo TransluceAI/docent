@@ -28,9 +28,11 @@ We have provided reasonable defaults in `.env.template`, but you're welcome to c
 
 * `DOCENT_REDIS_HOST`: Redis host
 * `DOCENT_REDIS_PORT`: Redis port
+* `DOCENT_REDIS_USER`: Redis username (optional)
+* `DOCENT_REDIS_PASSWORD`: Redis password (optional)
 
 ## CORS
 
-* `DOCENT_CORS_ORIGINS`: Comma-separated list of allowed frontend origins for CORS
+* `DOCENT_CORS_ORIGINS`: CSV list of allowed frontend origins (optional)
     * Leave empty/unset for development (defaults to `localhost:*`)
     * Example for multiple domains: `DOCENT_CORS_ORIGINS=https://app.yourdomain.com,https://admin.yourdomain.com`
