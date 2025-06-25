@@ -171,7 +171,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
           <Button
             variant="outline"
             size="sm"
-            className="gap-x-2 h-7"
+            className="gap-x-2 h-7 px-2"
             disabled={!hasWritePermission}
           >
             <Share2 size={14} /> Share view

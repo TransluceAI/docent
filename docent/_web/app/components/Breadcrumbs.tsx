@@ -126,7 +126,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
         <Button
           variant="outline"
           size="sm"
-          className="gap-x-2 h-7 cursor-default"
+          className="gap-x-2 h-7 cursor-default px-2"
         >
           <div
             className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
