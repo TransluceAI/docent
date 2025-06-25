@@ -49,7 +49,7 @@ from docent._server._broker.redis_client import (
     enqueue_search_job,
     publish_to_broker,
 )
-from docent._server._dependencies.database import get_db
+from docent._server._dependencies.database import get_db, require_fg_exists
 from docent._server._dependencies.permissions import (
     require_fg_permission,
     require_view_permission,
@@ -410,7 +410,7 @@ async def join(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    if not await db.exists(fg_id):
+    if not await db.fg_exists(fg_id):
         raise HTTPException(status_code=404, detail=f"Frame grid with ID {fg_id} not found")
 
     return {"fg_id": fg_id, "view_id": ctx.view_id}
@@ -652,7 +652,7 @@ class UserPermissionsResponse(BaseModel):
 
 @user_router.get("/{fg_id}/permissions")
 async def get_user_permissions(
-    fg_id: str,
+    fg_id: str = Depends(require_fg_exists),
     user: User = Depends(get_user_anonymous_ok),
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),

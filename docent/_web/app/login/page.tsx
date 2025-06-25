@@ -18,6 +18,7 @@ function LoginPageContent() {
   const { setUser } = useUserContext();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get('email') || '';
+  const redirectParam = searchParams.get('redirect') || '';
 
   // Form state
   const [email, setEmail] = useState(emailParam);
@@ -46,13 +47,9 @@ function LoginPageContent() {
       // Set user in context immediately to prevent race condition
       setUser(userData);
 
-      toast({
-        title: 'Success',
-        description: 'Welcome back!',
-      });
-
-      // Redirect to dashboard after successful login
-      router.push('/dashboard');
+      // Force a full page navigation to ensure cookie is processed
+      const redirectUrl = redirectParam || '/dashboard';
+      window.location.href = redirectUrl;
     } catch (error: any) {
       console.error('Failed to log in:', error);
 
@@ -128,7 +125,12 @@ function LoginPageContent() {
           <div className="text-center">
             <Button
               variant="ghost"
-              onClick={() => router.push('/signup')}
+              onClick={() => {
+                const signupUrl = redirectParam
+                  ? `/signup?redirect=${encodeURIComponent(redirectParam)}`
+                  : '/signup';
+                router.push(signupUrl);
+              }}
               className="text-sm"
             >
               Don&apos;t have an account? Sign up

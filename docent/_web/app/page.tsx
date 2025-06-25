@@ -11,8 +11,8 @@ import { getUser } from './services/dal';
 export default async function LandingPage() {
   const user = await getUser();
 
-  if (user) {
-    // User is authenticated, redirect to dashboard
+  if (user && !user.is_anonymous) {
+    // User is authenticated and not anonymous, redirect to dashboard
     redirect('/dashboard');
   } else {
     // User is not authenticated, redirect to login

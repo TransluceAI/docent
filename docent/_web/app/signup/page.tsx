@@ -1,8 +1,8 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,9 +13,11 @@ import { toast } from '@/hooks/use-toast';
 import { signup } from '../services/authService';
 import { useUserContext } from '../contexts/UserContext';
 
-const SignupPage = () => {
+function SignupPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { setUser } = useUserContext();
+  const redirectParam = searchParams.get('redirect') || '';
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -38,13 +40,9 @@ const SignupPage = () => {
       // Set user in context immediately to prevent race condition
       setUser(userData);
 
-      toast({
-        title: 'Welcome to Docent!',
-        description: 'Your account has been created successfully.',
-      });
-
-      // Redirect to dashboard after successful signup
-      router.push('/dashboard');
+      // Force a full page navigation to ensure cookie is processed
+      const redirectUrl = redirectParam || '/dashboard';
+      window.location.href = redirectUrl;
     } catch (error: any) {
       console.error('Failed to sign up:', error);
 
@@ -123,7 +121,12 @@ const SignupPage = () => {
           <div className="text-center">
             <Button
               variant="ghost"
-              onClick={() => router.push('/login')}
+              onClick={() => {
+                const loginUrl = redirectParam
+                  ? `/login?redirect=${encodeURIComponent(redirectParam)}`
+                  : '/login';
+                router.push(loginUrl);
+              }}
               className="text-sm"
             >
               Already have an account? Sign in
@@ -132,6 +135,14 @@ const SignupPage = () => {
         </div>
       </div>
     </ScrollArea>
+  );
+}
+
+const SignupPage = () => {
+  return (
+    <Suspense>
+      <SignupPageContent />
+    </Suspense>
   );
 };
 

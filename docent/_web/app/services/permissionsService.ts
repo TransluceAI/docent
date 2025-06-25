@@ -2,6 +2,20 @@ import { PermissionLevel } from '@/lib/permissions/types';
 import { apiRestClient } from './apiService';
 import { INTERNAL_BASE_URL } from '@/app/constants';
 
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
 export interface UserPermissions {
   framegrid_permissions: Record<string, PermissionLevel>;
   view_permissions: Record<string, PermissionLevel>;
@@ -33,7 +47,15 @@ export const serverPermissionsService = {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch permissions: ${response.statusText}`);
+      if (response.status === 403) {
+        throw new ForbiddenError(
+          `You don't have permission to access this framegrid`
+        );
+      } else if (response.status === 404) {
+        throw new NotFoundError(`Framegrid ${frameGridId} does not exist`);
+      } else {
+        throw new Error(`Failed to fetch permissions: ${response.statusText}`);
+      }
     }
 
     return response.json();

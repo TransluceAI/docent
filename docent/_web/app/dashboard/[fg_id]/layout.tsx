@@ -1,6 +1,13 @@
 import { cookies, headers } from 'next/headers';
-import DocentDashboardClientLayout from './client-layout';
-import { serverPermissionsService } from '../../services/permissionsService';
+import DocentDashboardClientLayout, {
+  NotFoundPage,
+  PermissionDeniedPage,
+} from './client-layout';
+import {
+  ForbiddenError,
+  NotFoundError,
+  serverPermissionsService,
+} from '../../services/permissionsService';
 import { PERMISSION_LEVELS } from '@/lib/permissions/types';
 
 export default async function DocentDashboardLayout({
@@ -46,22 +53,10 @@ export default async function DocentDashboardLayout({
       <DocentDashboardClientLayout>{children}</DocentDashboardClientLayout>
     );
   } catch (error) {
-    console.error('Failed to fetch permissions:', error);
-    return <PermissionDeniedPage />;
+    if (error instanceof NotFoundError) {
+      return <NotFoundPage />;
+    } else if (error instanceof ForbiddenError) {
+      return <PermissionDeniedPage />;
+    }
   }
-}
-
-function PermissionDeniedPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-base font-semibold text-gray-900 mb-2">
-          Access Denied
-        </h1>
-        <p className="text-gray-600 text-sm">
-          You don&apos;t have permission to view this resource
-        </p>
-      </div>
-    </div>
-  );
 }

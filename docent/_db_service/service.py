@@ -371,7 +371,7 @@ class DBService:
             )
         logger.info(f"Updated FrameGrid {fg_id} with values: {values_to_update}")
 
-    async def exists(self, fg_id: str) -> bool:
+    async def fg_exists(self, fg_id: str) -> bool:
         async with self.session() as session:
             result = await session.execute(select(exists().where(SQLAFrameGrid.id == fg_id)))
             return result.scalar_one()
