@@ -136,26 +136,14 @@ resource "aws_instance" "app" {
   key_name                    = var.key_name
   associate_public_ip_address = true
 
-  tags = { Name = "tf-demo-app" }
-}
-
-# EBS volume for additional storage
-resource "aws_ebs_volume" "app_storage" {
-  availability_zone = aws_instance.app.availability_zone
-  size              = var.ebs_volume_size
-  type              = var.ebs_volume_type
-  encrypted         = var.ebs_encrypted
-
-  tags = {
-    Name = "tf-demo-app-storage"
+  root_block_device {
+    volume_size = var.root_volume_size
+    volume_type = var.root_volume_type
+    encrypted   = var.root_volume_encrypted
+    delete_on_termination = true
   }
-}
 
-# Attach EBS volume to EC2 instance
-resource "aws_volume_attachment" "app_storage_attachment" {
-  device_name = "/dev/sdf"
-  volume_id   = aws_ebs_volume.app_storage.id
-  instance_id = aws_instance.app.id
+  tags = { Name = "tf-demo-app" }
 }
 
 ############################

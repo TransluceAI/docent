@@ -16,20 +16,20 @@ variable "instance_type" {
   default     = "m5.8xlarge"
 }
 
-variable "ebs_volume_size" {
-  description = "Size of the EBS volume in GiB"
+variable "root_volume_size" {
+  description = "Size of the root EBS volume in GiB"
   type        = number
-  default     = 100
+  default     = 200
 }
 
-variable "ebs_volume_type" {
-  description = "Type of EBS volume (gp3, gp2, io1, io2, st1, sc1)"
+variable "root_volume_type" {
+  description = "Type of root EBS volume (gp3, gp2, io1, io2)"
   type        = string
   default     = "gp3"
 }
 
-variable "ebs_encrypted" {
-  description = "Whether to encrypt the EBS volume"
+variable "root_volume_encrypted" {
+  description = "Whether to encrypt the root EBS volume"
   type        = bool
   default     = true
 }
