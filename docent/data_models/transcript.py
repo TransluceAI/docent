@@ -3,7 +3,7 @@ from typing import Any
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, field_serializer, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_serializer
 
 from docent._llm_util.util import (
     get_token_count,
@@ -94,26 +94,26 @@ class Transcript(BaseModel):
         """
         return metadata.model_dump(strip_internal_fields=False)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
-        """Validates that metadata is an instance of BaseMetadata, not a dict or other type.
+    # @model_validator(mode="before")
+    # @classmethod
+    # def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
+    #     """Validates that metadata is an instance of BaseMetadata, not a dict or other type.
 
-        This prevents issues with field descriptions being lost during dict conversion.
+    #     This prevents issues with field descriptions being lost during dict conversion.
 
-        Raises:
-            ValueError: If metadata is not an instance of BaseMetadata.
+    #     Raises:
+    #         ValueError: If metadata is not an instance of BaseMetadata.
 
-        Returns:
-            dict[str, Any] | Any: The validated data.
-        """
-        if isinstance(data, dict) and "metadata" in data:
-            metadata_value = data["metadata"]
-            if metadata_value is not None and not isinstance(metadata_value, BaseMetadata):
-                raise ValueError(
-                    f"metadata must be an instance of BaseMetadata, got {type(metadata_value).__name__}"
-                )
-        return data
+    #     Returns:
+    #         dict[str, Any] | Any: The validated data.
+    #     """
+    #     if isinstance(data, dict) and "metadata" in data:
+    #         metadata_value = data["metadata"]
+    #         if metadata_value is not None and not isinstance(metadata_value, BaseMetadata):
+    #             raise ValueError(
+    #                 f"metadata must be an instance of BaseMetadata, got {type(metadata_value).__name__}"
+    #             )
+    #     return data
 
     @property
     def units_of_action(self) -> list[list[int]]:

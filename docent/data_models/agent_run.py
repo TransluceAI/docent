@@ -48,26 +48,26 @@ class AgentRun(BaseModel):
         """
         return metadata.model_dump(strip_internal_fields=False)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
-        """Validates that metadata is an instance of BaseAgentRunMetadata, not a dict or other type.
+    # @model_validator(mode="before")
+    # @classmethod
+    # def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
+    #     """Validates that metadata is an instance of BaseAgentRunMetadata, not a dict or other type.
 
-        This prevents issues with field descriptions being lost during dict conversion.
+    #     This prevents issues with field descriptions being lost during dict conversion.
 
-        Raises:
-            ValueError: If metadata is not an instance of BaseAgentRunMetadata.
+    #     Raises:
+    #         ValueError: If metadata is not an instance of BaseAgentRunMetadata.
 
-        Returns:
-            dict[str, Any] | Any: The validated data.
-        """
-        if isinstance(data, dict) and "metadata" in data:
-            metadata_value = data["metadata"]
-            if metadata_value is not None and not isinstance(metadata_value, BaseAgentRunMetadata):
-                raise ValueError(
-                    f"metadata must be an instance of BaseAgentRunMetadata, got {type(metadata_value).__name__}"
-                )
-        return data
+    #     Returns:
+    #         dict[str, Any] | Any: The validated data.
+    #     """
+    #     if isinstance(data, dict) and "metadata" in data:
+    #         metadata_value = data["metadata"]
+    #         if metadata_value is not None and not isinstance(metadata_value, BaseAgentRunMetadata):
+    #             raise ValueError(
+    #                 f"metadata must be an instance of BaseAgentRunMetadata, got {type(metadata_value).__name__}"
+    #             )
+    #     return data
 
     @model_validator(mode="after")
     def _validate_transcripts_not_empty(self):

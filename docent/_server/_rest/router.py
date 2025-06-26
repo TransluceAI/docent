@@ -401,6 +401,7 @@ async def post_agent_runs(
     fg_id: str,
     request: PostAgentRunsRequest,
     db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
     async with db.advisory_lock(fg_id, action_id="mutation"):
@@ -411,7 +412,6 @@ async def post_agent_runs(
             await publish_homepage_state(db, ctx)
 
     # Track analytics - we need to get the user from the context
-    ctx = await get_default_view_ctx(fg_id, db)
     await track_endpoint_with_user(db, Endpoints.POST_AGENT_RUNS, ctx.user, fg_id)
 
 
