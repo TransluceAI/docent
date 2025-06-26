@@ -80,5 +80,5 @@ async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: An
     print("enqueued", queue_name, func_name, args, kwargs, j)
 
 
-async def enqueue_search_job(view_ctx: ViewContext, job_id: str, write_allowed: bool):
-    await _enqueue_job("compute_search_queue", "compute_search", view_ctx, job_id, write_allowed)
+async def enqueue_search_job(view_ctx: ViewContext, job_id: str, read_only: bool):
+    await _enqueue_job("compute_search_queue", "compute_search", view_ctx, job_id, read_only)

@@ -6,12 +6,15 @@ import React, { useEffect, Suspense, useRef } from 'react';
 import Breadcrumbs from '../../components/Breadcrumbs';
 import ResponsiveCheck from '../../components/ResponsiveCheck';
 import {
-  getDimensions,
   initSession,
   setHasInitSearchQuery,
 } from '../../store/frameSlice';
 import { useAppDispatch } from '../../store/hooks';
-import { handleSearchUpdate, setSearchQuery } from '@/app/store/searchSlice';
+import {
+  handleSearchUpdate,
+  requestClusters,
+  setSearchQuery,
+} from '@/app/store/searchSlice';
 import { apiRestClient } from '@/app/services/apiService';
 import { Button } from '@/components/ui/button';
 import { useUserContext } from '@/app/contexts/UserContext';
@@ -69,7 +72,13 @@ export default function DocentDashboardClientLayout({
           .then((response) => {
             dispatch(handleSearchUpdate(response.data));
             if (shouldLoadClusters) {
-              dispatch(getDimensions([shouldLoadClusters]));
+              dispatch(
+                requestClusters({
+                  searchQuery: searchQuery,
+                  feedback: '',
+                  readOnly: true,
+                })
+              );
             }
           });
       });

@@ -491,61 +491,16 @@ class PostBaseFilterRequest(BaseModel):
 @user_router.post("/{fg_id}/base_filter")
 async def post_base_filter(
     fg_id: str,
-    request: Request,  # Add raw request to see the body
+    request: PostBaseFilterRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    # Log the raw request body to see what's being sent
-    try:
-        body = await request.body()
-        body_str = body.decode("utf-8")
-        logger.info(f"post_base_filter: raw request body: {body_str}")
-    except Exception as e:
-        logger.error(f"post_base_filter: error reading request body: {e}")
-
-    # Now parse the request properly
-    try:
-        request_data = await request.json()
-        logger.info(f"post_base_filter: parsed request data: {request_data}")
-
-        # Validate the filter structure
-        if request_data.get("filter"):
-            filter_data = request_data["filter"]
-            logger.info(f"post_base_filter: filter data: {filter_data}")
-            logger.info(f"post_base_filter: filter type: {filter_data.get('type')}")
-            logger.info(f"post_base_filter: filter id: {filter_data.get('id')}")
-            logger.info(f"post_base_filter: filter filters: {filter_data.get('filters')}")
-
-            # Check if required fields are missing
-            if filter_data.get("type") == "complex":
-                if "op" not in filter_data:
-                    logger.error("post_base_filter: missing 'op' field in complex filter")
-                if "filters" not in filter_data:
-                    logger.error("post_base_filter: missing 'filters' field in complex filter")
-                if "id" not in filter_data:
-                    logger.error("post_base_filter: missing 'id' field in complex filter")
-
-        # Create the proper request object
-        post_request = PostBaseFilterRequest(**request_data)
-    except Exception as e:
-        logger.error(f"post_base_filter: error parsing request: {e}")
-        raise HTTPException(status_code=422, detail=f"Invalid request format: {str(e)}")
-
-    logger.info(f"post_base_filter: received request for fg_id={fg_id}")
-    logger.info(f"post_base_filter: request.filter={post_request.filter}")
-    if post_request.filter:
-        logger.info(f"post_base_filter: filter.id={post_request.filter.id}")
-        logger.info(f"post_base_filter: filter.type={post_request.filter.type}")
-        logger.info(
-            f"post_base_filter: filter.filters={post_request.filter.filters if hasattr(post_request.filter, 'filters') else 'N/A'}"
-        )
-
     async with db.advisory_lock(fg_id, action_id="mutation"):
-        if post_request.filter is None:
+        if request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
         else:
-            new_ctx = await db.set_view_base_filter(ctx, post_request.filter)
+            new_ctx = await db.set_view_base_filter(ctx, request.filter)
 
         # Publish the updated state
         await publish_homepage_state(db, new_ctx)
@@ -1032,7 +987,7 @@ async def start_compute_search(
             resource_id=fg_id,
             permission=Permission.WRITE,
         )
-        await enqueue_search_job(ctx, job_id, write_allowed)
+        await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.START_COMPUTE_SEARCH, ctx.user, fg_id)
@@ -1148,7 +1103,7 @@ async def resume_compute_search(
             resource_id=query.fg_id,
             permission=Permission.WRITE,
         )
-        await enqueue_search_job(ctx, job_id, write_allowed)
+        await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.RESUME_COMPUTE_SEARCH, ctx.user, query.fg_id)
@@ -1165,14 +1120,14 @@ async def search_jobs(
 ):
     jobs = await db.list_search_jobs_and_queries()
     for job in jobs:
-        print("-", job)
+        logger.info(f"- {job}")
     return [[job.dict(), query.dict()] for job, query in jobs]
 
 
 class ClusterSearchResultsRequest(BaseModel):
     search_query: str
     feedback: str | None
-    only_load_existing_clusters: bool | None
+    read_only: bool = False
 
 
 @user_router.post("/{fg_id}/start_cluster_search_results")
@@ -1181,16 +1136,29 @@ async def start_cluster_search_results(
     request: ClusterSearchResultsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    user: User = Depends(get_user_anonymous_ok),
+    _: None = Depends(require_fg_permission(Permission.READ)),
 ):
     """Start clustering search results directly."""
+
+    # If not read_only, check if the user has write permission
+    if not request.read_only:
+        write_allowed = await db.has_permission(
+            user=user,
+            resource_type=ResourceType.FRAME_GRID,
+            resource_id=fg_id,
+            permission=Permission.WRITE,
+        )
+        if not write_allowed:
+            raise HTTPException(status_code=403, detail="User does not have write permission")
+
     job_id = await db.add_job(
         "cluster_search_results",
         {
             "fg_id": fg_id,
             "search_query": request.search_query,
             "feedback": request.feedback,
-            "only_load_existing_clusters": request.only_load_existing_clusters,
+            "read_only": request.read_only,
         },
     )
 
@@ -1206,7 +1174,7 @@ async def listen_cluster_search_results(
     job_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
+    _: None = Depends(require_view_permission(Permission.READ)),
 ):
     """Start clustering search results in the background.
 
@@ -1217,17 +1185,14 @@ async def listen_cluster_search_results(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
     job = job.job_json
-    fg_id, search_query, feedback, only_load_existing_clusters = (
+    fg_id, search_query, feedback, read_only = (
         job["fg_id"],
         job["search_query"],
         job.get("feedback"),
-        job.get("only_load_existing_clusters"),
-    )
-    print(
-        f"listen_cluster_search_results: {fg_id}, {search_query}, {feedback}, {only_load_existing_clusters}"
+        job.get("read_only"),
     )
 
-    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+    send_stream, recv_stream = anyio.create_memory_object_stream[list[dict[str, Any]]](
         max_buffer_size=100_000
     )
 
@@ -1235,82 +1200,79 @@ async def listen_cluster_search_results(
         async with db.advisory_lock(
             fg_id + "__cluster_search__" + search_query, action_id="mutation"
         ):
-            try:
-                async with anyio.create_task_group() as tg:
-                    done = False
-                    existing_clusters: list[dict[str, Any]] | None = None
+            async with anyio.create_task_group() as tg:
+                done = False
+                existing_clusters: list[dict[str, Any]] | None = None
 
-                    if feedback is not None and feedback != "":
-                        # record existing clusters for re-clustering
-                        existing_clusters = await db.get_existing_search_clusters(ctx, search_query)
-                        # delete existing clusters, so we don't send the old ones
-                        await db.clear_search_result_clusters(ctx, search_query)
+                if feedback is not None and feedback != "":
+                    # record existing clusters for re-clustering
+                    existing_clusters = await db.get_existing_search_clusters(ctx, search_query)
+                    # delete existing clusters, so we don't send the old ones
+                    await db.clear_search_result_clusters(ctx, search_query)
 
-                    async def _f():
-                        nonlocal done
-                        if not only_load_existing_clusters:
-                            await db.cluster_search_results(
-                                ctx, search_query, feedback, existing_clusters
-                            )
-                            # Wait for the last assignments to be sent
-                            await anyio.sleep(2)
+                async def _f():
+                    nonlocal done
 
-                        done = True
+                    await db.cluster_search_results(ctx, search_query, feedback, existing_clusters)
+                    # Wait for the last assignments to be sent
+                    await anyio.sleep(1)
 
+                    done = True
+
+                # Only compute new clusters if not read_only
+                if not read_only:
                     tg.start_soon(_f)
 
-                    already_sent_search_result_assignments: set[str] = set()
-                    while True:
-                        # Read search results from the DB that have not been sent yet
-                        async with db.session() as session:
-                            result = await session.execute(
-                                select(SQLASearchResultCluster, SQLASearchResult, SQLASearchCluster)
-                                .join(
-                                    SQLASearchResult,
-                                    SQLASearchResultCluster.search_result_id == SQLASearchResult.id,
-                                )
-                                .join(
-                                    SQLASearchCluster,
-                                    SQLASearchResultCluster.cluster_id == SQLASearchCluster.id,
-                                )
-                                .where(
-                                    SQLASearchCluster.fg_id == ctx.fg_id,
-                                    SQLASearchCluster.search_query == search_query,
-                                    SQLASearchResultCluster.id.notin_(
-                                        already_sent_search_result_assignments
-                                    ),
-                                )
+                already_sent_search_result_assignments: set[str] = set()
+                while True:
+                    # Read search results from the DB that have not been sent yet
+                    async with db.session() as session:
+                        result = await session.execute(
+                            select(SQLASearchResultCluster, SQLASearchResult, SQLASearchCluster)
+                            .join(
+                                SQLASearchResult,
+                                SQLASearchResultCluster.search_result_id == SQLASearchResult.id,
                             )
-                            search_results_assignments = result.all()
+                            .join(
+                                SQLASearchCluster,
+                                SQLASearchResultCluster.cluster_id == SQLASearchCluster.id,
+                            )
+                            .where(
+                                SQLASearchCluster.fg_id == ctx.fg_id,
+                                SQLASearchCluster.search_query == search_query,
+                                SQLASearchResultCluster.id.notin_(
+                                    already_sent_search_result_assignments
+                                ),
+                            )
+                        )
+                        search_results_assignments = result.all()
 
-                        if len(search_results_assignments) > 0:
-                            # Form json payload with the list of assignments not already sent
-                            payload: list[dict[str, Any]] = []
-                            for assignment, search_result, cluster in search_results_assignments:
-                                if assignment.id not in already_sent_search_result_assignments:
-                                    payload.append(
-                                        {
-                                            "search_result_cluster_id": assignment.id,
-                                            "search_result_id": assignment.search_result_id,
-                                            "cluster_id": assignment.cluster_id,
-                                            "centroid": cluster.centroid,
-                                            "value": search_result.value,
-                                            "decision": assignment.decision,
-                                        }
-                                    )
-                                    already_sent_search_result_assignments.add(assignment.id)
-                            logger.info(f"Sending {len(payload)} search result assignments")
-                            await send_stream.send(payload)
+                    if len(search_results_assignments) > 0:
+                        # Form json payload with the list of assignments not already sent
+                        payload: list[dict[str, Any]] = []
+                        for assignment, search_result, cluster in search_results_assignments:
+                            if assignment.id not in already_sent_search_result_assignments:
+                                payload.append(
+                                    {
+                                        "search_result_cluster_id": assignment.id,
+                                        "search_result_id": assignment.search_result_id,
+                                        "cluster_id": assignment.cluster_id,
+                                        "centroid": cluster.centroid,
+                                        "value": search_result.value,
+                                        "decision": assignment.decision,
+                                    }
+                                )
+                                already_sent_search_result_assignments.add(assignment.id)
 
-                        if done:
-                            break
+                        await send_stream.send(payload)
 
-                        await anyio.sleep(1)
+                    # Check done here to help avoid final payload being dropped
+                    if done:
+                        break
 
-                    await send_stream.aclose()
+                    await anyio.sleep(1)
 
-            except anyio.get_cancelled_exc_class():
-                logger.info("Cluster search results task cancelled")
+                await send_stream.aclose()
 
     return StreamingResponse(sse_event_stream(execute, recv_stream), media_type="text/event-stream")
 
@@ -1628,7 +1590,6 @@ async def get_diffs_report(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     report = await db.get_diffs_report(diffs_report_id)
-    print(report)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.GET_DIFFS_REPORT, ctx.user, ctx.fg_id)
@@ -1682,8 +1643,6 @@ async def start_compute_diffs(
             "diffs_report_id": report.id,
         },
     )
-
-    logger.info("New Diff Report", report.id)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.START_COMPUTE_DIFFS, ctx.user, fg_id)
@@ -1793,7 +1752,6 @@ async def listen_compute_diffs(
             await send_stream.send(init_data)
 
             # Compute diffs
-            print("COMPUTING DIFFS", experiment_id_1, experiment_id_2)
             await db.compute_diffs(ctx, diffs_report.id, _ws_diff_streaming_callback)
 
             # Final refresh of state
@@ -1821,7 +1779,6 @@ async def compute_diff_clusters(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
-    print("hello world")
     diffs_report = await db.get_diffs_report(request.diffs_report_id)
     claims = [c.to_pydantic() for diff in diffs_report.diffs for c in diff.claims]
     clusters = await db.compute_diff_clusters(

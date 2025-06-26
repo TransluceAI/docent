@@ -42,7 +42,10 @@ export interface SearchState {
   curSearchQuery?: string;
   // Clustering
   activeClusterTaskId?: string;
-  clusteredSearchResults?: Record<string, StreamedSearchResultClusterAssignment[]>;
+  clusteredSearchResults?: Record<
+    string,
+    StreamedSearchResultClusterAssignment[]
+  >;
   // Parts of the lifecycle of a query
   loadingProgress?: [number, number]; // [num_done, num_total]
   loadingSearchQuery?: string;
@@ -121,7 +124,6 @@ export const computeSearch = createAsyncThunk(
       }
 
       // Start the compute search job
-      console.log('Starting compute search', searchQuery);
       const response = await apiRestClient.post(
         `/${frameGridId}/start_compute_search`,
         {
@@ -156,7 +158,13 @@ export const computeSearch = createAsyncThunk(
       );
 
       // Get existing clusters if they exist
-      dispatch(requestClusters({ searchQuery: searchQuery, feedback: '', onlyLoadExistingClusters: true }));
+      dispatch(
+        requestClusters({
+          searchQuery: searchQuery,
+          feedback: '',
+          readOnly: true,
+        })
+      );
 
       // Store the cancel function for potential cleanup
       cancelFunctionsMap[jobId] = onCancel;
@@ -179,11 +187,10 @@ export const computeSearch = createAsyncThunk(
   }
 );
 
-
 export const requestClusters = createAsyncThunk(
   'experimentViewer/requestClusters',
   async (
-    payload: { searchQuery: string; feedback?: string; onlyLoadExistingClusters?: boolean },
+    payload: { searchQuery: string; feedback?: string; readOnly?: boolean },
     { dispatch, getState }
   ) => {
     // Get the frame grid ID from the state
@@ -204,7 +211,7 @@ export const requestClusters = createAsyncThunk(
         {
           search_query: payload.searchQuery,
           feedback: payload.feedback,
-          only_load_existing_clusters: payload.onlyLoadExistingClusters,
+          read_only: payload.readOnly,
         }
       );
 
@@ -486,7 +493,7 @@ export const submitAttributeFeedback = createAsyncThunk(
     try {
       // Clear clusters when feedback is submitted
       dispatch(clearClusteredSearchResults());
-      
+
       const response = await apiRestClient.post('/submit_attribute_feedback', {
         original_query: originalQuery,
         attribute_feedback: feedback,
@@ -557,7 +564,7 @@ export const searchSlice = createSlice({
       if (!state.clusteredSearchResults) {
         state.clusteredSearchResults = {};
       }
-      
+
       // Group assignments by centroid
       for (const assignment of action.payload) {
         const centroid = assignment.centroid;

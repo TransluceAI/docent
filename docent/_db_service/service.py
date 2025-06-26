@@ -943,9 +943,9 @@ class DBService:
         ctx: ViewContext,
         search_query: str,
         search_result_callback: SearchResultStreamingCallback | None = None,
-        write_allowed: bool = True,
+        read_only: bool = False,
     ):
-        """If not write_allowed, only return existing results."""
+        """If read_only, only return existing results."""
 
         # If the callback is set, the caller is expecting all results to be streamed back
         # So, retrieve them and send them
@@ -984,7 +984,7 @@ class DBService:
                 logger.info(f"Pushed {len(to_upload)} attributes")
 
         # Early exit if we're not allowed to write
-        if not write_allowed:
+        if read_only:
             return
         # Otherwise, compute the search results
         try:
@@ -1251,23 +1251,6 @@ class DBService:
             clusters_to_assign,
             assignment_callback=record_assignment,
         )
-
-        # async with self.session() as session:
-        #     for assignment, search_result, centroid in zip(assignments, results_to_record, clusters_to_assign):
-        #         decision = assignment[0]
-        #         reason = assignment[1]
-        #         search_result_id = search_result.id
-        #         cluster_id = centroid_to_id[centroid]
-        #         search_result_cluster = SQLASearchResultCluster(
-        #             id=str(uuid4()),
-        #             search_result_id=search_result_id,
-        #             cluster_id=cluster_id,
-        #             decision=decision,
-        #             reason=reason,
-        #         )
-        #         session.add(search_result_cluster)
-        #         logger.critical(f"search_result_cluster: id: {search_result_cluster.id} search_result_id: {search_result_cluster.search_result_id} cluster_id: {search_result_cluster.cluster_id} decision: {search_result_cluster.decision} reason: {search_result_cluster.reason}")
-        #     await session.commit()
 
     async def get_existing_search_clusters(
         self, ctx: ViewContext, search_query: str

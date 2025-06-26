@@ -62,7 +62,6 @@ export const TranscriptFilterControls = () => {
     } else {
       parsedKey = metadataKey.trim();
       parsedValue = value;
-      console.log('metadataType', metadataType);
       if (metadataType === 'bool') {
         parsedValue = value === 'true';
       } else if (metadataType === 'int' || metadataType === 'float') {

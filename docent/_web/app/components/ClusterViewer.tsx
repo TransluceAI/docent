@@ -1,6 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -12,10 +11,9 @@ import {
 
 import { useAppSelector } from '../store/hooks';
 import { SearchResultWithCitations } from '../types/frameTypes';
-import { navToAgentRun } from '@/lib/nav';
-import { renderTextWithCitations } from '@/lib/renderCitations';
 import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 import { StreamedSearchResultClusterAssignment } from '../types/experimentViewerTypes';
+import { SearchResultsSection } from './AgentRunCard';
 
 interface SearchCluster {
   id: string;
@@ -36,78 +34,78 @@ interface ClusterViewerProps {
   searchQuery: string;
 }
 
-const SearchResultList: React.FC<{
-  clusterId: string;
-  searchResults: SearchResultWithCitations[];
-  searchQuery: string;
-}> = ({ clusterId, searchResults, searchQuery }) => {
-  const fgId = useAppSelector((state) => state.frame.frameGridId);
-  const router = useRouter();
+// const SearchResultList: React.FC<{
+//   clusterId: string;
+//   searchResults: SearchResultWithCitations[];
+//   searchQuery: string;
+// }> = ({ clusterId, searchResults, searchQuery }) => {
+//   const fgId = useAppSelector((state) => state.frame.frameGridId);
+//   const router = useRouter();
 
-  if (!searchResults || searchResults.length === 0) {
-    return (
-      <div className="mt-2">
-        <div className="text-xs text-gray-500 italic">
-          No search results in this cluster
-        </div>
-      </div>
-    );
-  }
+//   if (!searchResults || searchResults.length === 0) {
+//     return (
+//       <div className="mt-2">
+//         <div className="text-xs text-gray-500 italic">
+//           No search results in this cluster
+//         </div>
+//       </div>
+//     );
+//   }
 
-  return (
-    <div className="mt-2 space-y-1">
-      <div className="flex items-center mb-1">
-        <div className="h-2 w-2 rounded-full bg-blue-500 mr-1.5"></div>
-        <span className="text-xs font-medium text-blue-700">
-          Search results ({searchResults.length})
-        </span>
-      </div>
+//   return (
+//     <div className="mt-2 space-y-1">
+//       <div className="flex items-center mb-1">
+//         <div className="h-2 w-2 rounded-full bg-blue-500 mr-1.5"></div>
+//         <span className="text-xs font-medium text-blue-700">
+//           Search results ({searchResults.length})
+//         </span>
+//       </div>
 
-      {searchResults.map((searchResult, i) => {
-        return (
-          <div
-            key={i}
-            className={`group bg-blue-50 rounded-md p-1.5 text-xs text-blue-900 leading-snug mt-1 hover:bg-blue-100 transition-colors cursor-pointer border border-transparent hover:border-blue-200`}
-            onClick={(e) =>
-              navToAgentRun(
-                e,
-                router,
-                window,
-                searchResult.agent_run_id,
-                undefined,
-                undefined,
-                fgId
-              )
-            }
-          >
-            <p className="mb-0.5">
-              {renderTextWithCitations(
-                searchResult.value || '',
-                searchResult.citations || [],
-                searchResult.agent_run_id,
-                router,
-                window,
-                undefined,
-                fgId
-              )}
-            </p>
-            <div className="flex items-center gap-1 text-[10px] text-blue-600 mt-1">
-              <span className="opacity-70">
-                {searchQuery}
-                {searchResult.search_result_idx !== null && (
-                  <>, idx: {searchResult.search_result_idx}</>
-                )}
-              </span>
-              <span className="ml-1 opacity-70">
-                agent_run_id: {searchResult.agent_run_id}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
+//       {searchResults.map((searchResult, i) => {
+//         return (
+//           <div
+//             key={i}
+//             className={`group bg-blue-50 rounded-md p-1.5 text-xs text-blue-900 leading-snug mt-1 hover:bg-blue-100 transition-colors cursor-pointer border border-transparent hover:border-blue-200`}
+//             onClick={(e) =>
+//               navToAgentRun(
+//                 e,
+//                 router,
+//                 window,
+//                 searchResult.agent_run_id,
+//                 undefined,
+//                 undefined,
+//                 fgId
+//               )
+//             }
+//           >
+//             <p className="mb-0.5">
+//               {renderTextWithCitations(
+//                 searchResult.value || '',
+//                 searchResult.citations || [],
+//                 searchResult.agent_run_id,
+//                 router,
+//                 window,
+//                 undefined,
+//                 fgId
+//               )}
+//             </p>
+//             <div className="flex items-center gap-1 text-[10px] text-blue-600 mt-1">
+//               <span className="opacity-70">
+//                 {searchQuery}
+//                 {searchResult.search_result_idx !== null && (
+//                   <>, idx: {searchResult.search_result_idx}</>
+//                 )}
+//               </span>
+//               <span className="ml-1 opacity-70">
+//                 agent_run_id: {searchResult.agent_run_id}
+//               </span>
+//             </div>
+//           </div>
+//         );
+//       })}
+//     </div>
+//   );
+// };
 
 export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(
@@ -224,7 +222,6 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
   if (activeClusterTaskId && clusters.length === 0) {
     return (
       <div className="space-y-2">
-        <div className="text-sm font-semibold">Search Clusters</div>
         <div className="text-xs text-gray-500 flex items-center gap-2">
           <div className="animate-spin rounded-full h-3 w-3 border-2 border-gray-300 border-t-gray-500" />
           Clustering in progress...
@@ -234,7 +231,7 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
   }
 
   if (clusters.length === 0) {
-    return <div className="space-y-2"></div>;
+    return null;
   }
 
   return (
@@ -298,44 +295,14 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
                   {cluster.centroid}
                 </div>
               </div>
-              {/* Action buttons on the right
-              {hasWritePermission && (
-                <>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-5 w-5 text-gray-500"
-                    onClick={() => {
-                      // TODO: Implement cluster editing functionality
-                      console.log('Edit cluster:', cluster.id);
-                    }}
-                    disabled={!!activeClusterTaskId}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-5 w-5 text-gray-500"
-                    onClick={() => {
-                      // TODO: Implement cluster deletion functionality
-                      console.log('Delete cluster:', cluster.id);
-                    }}
-                    disabled={!!activeClusterTaskId}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </>
-              )} */}
             </div>
 
             {/* Expanded search results */}
             {isExpanded && hasResults && (
               <div className="pl-4">
-                <SearchResultList
-                  clusterId={cluster.id}
+                <SearchResultsSection
                   searchResults={clusterSearchResults}
-                  searchQuery={searchQuery}
+                  curSearchQuery={searchQuery}
                 />
               </div>
             )}

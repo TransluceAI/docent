@@ -90,7 +90,6 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
       {/* Replace the inline attribute section with the new component */}
       {searchResults && curSearchQuery && (
         <SearchResultsSection
-          agentRunId={agentRunId}
           curSearchQuery={curSearchQuery}
           searchResults={searchResults}
         />
@@ -188,13 +187,11 @@ const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({
 };
 
 interface SearchResultsSectionProps {
-  agentRunId: string;
   curSearchQuery: string;
   searchResults: SearchResultWithCitations[];
 }
 
-const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
-  agentRunId,
+export const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
   curSearchQuery,
   searchResults,
 }) => {
@@ -215,7 +212,6 @@ const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
       {searchResults.map((searchResult, idx) => (
         <SearchResultCard
           key={idx}
-          agentRunId={agentRunId}
           curSearchQuery={curSearchQuery}
           searchResult={searchResult}
         />
@@ -225,10 +221,9 @@ const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
 };
 
 export const SearchResultCard: React.FC<{
-  agentRunId: string;
   curSearchQuery: string;
   searchResult: SearchResultWithCitations;
-}> = ({ agentRunId, curSearchQuery, searchResult }) => {
+}> = ({ curSearchQuery, searchResult }) => {
   const router = useRouter();
   const frameGridId = useAppSelector((state) => state.frame.frameGridId);
 
@@ -236,6 +231,7 @@ export const SearchResultCard: React.FC<{
   if (!resultText) {
     return null;
   }
+  const agentRunId = searchResult.agent_run_id;
   const citations = searchResult.citations || [];
   // const currentVote = voteState?.[dataId]?.[attributeText];
 

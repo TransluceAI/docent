@@ -30,10 +30,7 @@ REDIS = ArqRedis(
 )
 
 
-async def compute_search(
-    _: dict[Any, Any], view_ctx: ViewContext, job_id: str, write_allowed: bool
-):
-
+async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool):
     db = await DBService.init()
     result = await db.get_search_job_and_query(job_id)
     if result is None:
@@ -63,7 +60,7 @@ async def compute_search(
                     view_ctx,
                     query.search_query,
                     _search_result_callback,
-                    write_allowed,
+                    read_only,
                 )
         except:
             canceled = True

@@ -129,7 +129,9 @@ const SearchArea = () => {
   );
   // Cluster feedback
   const [clusterFeedback, setClusterFeedback] = useState('');
-  const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  const showFeedbackInput = useMemo(() => {
+    return curSearchQuery && hasClusters;
+  }, [curSearchQuery, hasClusters]);
 
   const handleClearSearch = useCallback(() => {
     if (curSearchQuery) {
@@ -190,24 +192,10 @@ const SearchArea = () => {
       requestClusters({
         searchQuery: curSearchQuery,
         feedback: clusterFeedback,
-        onlyLoadExistingClusters: false,
+        readOnly: false,
       })
     );
   };
-
-  const handleCancelFeedback = () => {
-    setShowFeedbackInput(false);
-    setClusterFeedback('');
-  };
-
-  // Show feedback input if there's a search selected and no clusters yet
-  useEffect(() => {
-    if (hasClusters) {
-      setShowFeedbackInput(true);
-    } else {
-      setShowFeedbackInput(false);
-    }
-  }, [hasClusters]);
 
   /**
    * Presets in the search interface
@@ -256,492 +244,324 @@ const SearchArea = () => {
   };
 
   return (
-    // <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3">
-    //   <div className="space-y-4">
-    //     <TranscriptFilterControls />
-    //     <div className="border-t" />
-    <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar">
-      {/* <DebugReduxState sliceName="search" />
-      <DebugReduxState sliceName="diff" /> */}
-      <div className="space-y-3">
-        {/* Filtering */}
-        {/* <TranscriptFilterControls /> */}
-        {/* Comparing experiments */}
-        {/* <div className="border-t" />
-        <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Compare Experiments</div>
-            <div className="text-xs">
-              Compare results between two different experiment runs.
-            </div>
-          </div>
+    <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar space-y-3">
+      {/* Global search */}
+      <div>
+        <div className="text-sm font-semibold">Global Search</div>
+        <div className="text-xs">
+          Look for qualitative patterns, errors, or other interesting phenomena
+        </div>
+      </div>
 
-          <div className="border rounded-md bg-gray-50 p-2 space-y-2">
-            {!loadingDiffs && !diffsAttribute ? (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="text-xs text-gray-600">Experiment 1</div>
-                    <Input
-                      value={experimentId1}
-                      onChange={(e) => setExperimentId1(e.target.value)}
-                      placeholder="e.g. experiment-1"
-                      className="h-8 text-xs bg-white font-mono text-gray-600"
-                      disabled={!hasWritePermission}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-gray-600">Experiment 2</div>
-                    <Input
-                      value={experimentId2}
-                      onChange={(e) => setExperimentId2(e.target.value)}
-                      placeholder="e.g. experiment-2"
-                      className="h-8 text-xs bg-white font-mono text-gray-600"
-                      disabled={!hasWritePermission}
-                    />
-                  </div>
+      <div className="border rounded-sm bg-gray-50 p-2 space-y-1">
+        <div className="flex items-center justify-between text-xs">
+          <div className="text-gray-600">Search query</div>
+          {curSearchQuery && loadingProgress && !loadingSearchQuery && (
+            <div className="text-gray-400">
+              {loadingProgress[0]} searches finished
+              {loadingProgress[1] - loadingProgress[0] > 0 && (
+                <>
+                  , {loadingProgress[1] - loadingProgress[0]} had API issues{' '}
+                  <span
+                    className="cursor-pointer text-indigo-500 hover:text-indigo-600"
+                    onClick={() => handleSearch(curSearchQuery)}
+                  >
+                    (retry)
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        {curSearchQuery ? (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <div className="flex-1">
+                <div className="px-2 py-1 bg-indigo-50 border border-indigo-100 rounded text-xs font-mono whitespace-pre-wrap text-indigo-800">
+                  {curSearchQuery}
                 </div>
-                <Button
-                  size="sm"
-                  className="text-xs w-full"
-                  onClick={handleRequestDiffs}
-                  disabled={!experimentId1 || !experimentId2 || !hasWritePermission}
+              </div>
+              <div className="flex flex-col xl:flex-row ml-2 space-y-1 xl:space-y-0 xl:space-x-1">
+                <button
+                  onClick={async () => await handleShare(curSearchQuery)}
+                  className="inline-flex items-center gap-x-1 text-xs bg-blue-50 text-blue-500 border border-blue-100 px-1.5 py-0.5 rounded-md disabled:opacity-50 hover:bg-blue-100 transition-colors"
+                  title="Share this search"
+                  disabled={!hasWritePermission}
                 >
-                  Compare Experiments
-                </Button>
-              </>
-            ) : loadingDiffs ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-600">Loading diffs...</div>
+                  <Share2 className="h-3 w-3" />
+                  Share
+                </button>
+                {loadingSearchQuery ? (
+                  <>
+                    <button
+                      onClick={() => handleClearSearch()}
+                      className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
+                      title="Clear display (search continues in background)"
+                    >
+                      <EyeOff className="h-3 w-3" />
+                      Run in background
+                    </button>
+                    <button
+                      onClick={() => handleStopSearch()}
+                      className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                      title="Stop search and clear results"
+                    >
+                      <Square className="h-3 w-3" />
+                      Stop
+                    </button>
+                  </>
+                ) : (
                   <button
-                    onClick={handleCancelDiffs}
+                    onClick={() => handleStopSearch()}
                     className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
+                    title="Stop search and clear results"
                   >
                     <RefreshCw className="h-3 w-3 mr" />
                     Clear
                   </button>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-1.5">
-                  <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
-                </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-600">
-                    Comparison between experiments
-                    <span className="font-mono whitespace-pre-wrap text-indigo-800">
-                      &nbsp;{experimentId1}&nbsp;
-                    </span>
-                    and
-                    <span className="font-mono whitespace-pre-wrap text-indigo-800">
-                      &nbsp;{experimentId2}&nbsp;
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCancelDiffs}
-                      className="text-xs"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </div>
-                {diffLoadingProgress &&
-                  diffLoadingProgress[0] !== diffLoadingProgress[1] && (
-                    <ProgressBar
-                      current={diffLoadingProgress[0]}
-                      total={diffLoadingProgress[1]}
-                    />
-                  )}
-              </div>
-            )}
-          </div>
-        </div> */}
-        {/* <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Base Filtering</div>
-            <div className="text-xs">
-              Restrict analysis to a subset of agent runs
             </div>
-          </div>
-          <TranscriptFilterControls />
-        </div> */}
-        {/* SQL */}
-        {/* <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">SQL Query</div>
-            <div className="text-xs">
-              Run custom SQL queries against the transcript data.
-            </div>
-          </div>
 
-          <div className="border rounded-md bg-gray-50 p-2 space-y-2">
-            <div className="space-y-1">
-              <div className="text-xs text-gray-600">SQL Query</div>
-              <Textarea
-                value={sqlQuery}
-                onChange={(e) => setSqlQuery(e.target.value)}
-                placeholder="SELECT * FROM transcripts WHERE..."
-                className="h-24 text-xs bg-white font-mono text-gray-600 resize-none"
-                disabled={loadingSqlQuery}
-              />
-            </div>
+            {/* Progress bar for updates */}
+            {loadingSearchQuery &&
+              loadingSearchQuery === curSearchQuery &&
+              loadingProgress && (
+                <ProgressBar
+                  current={loadingProgress[0]}
+                  total={loadingProgress[1]}
+                />
+              )}
+
+            {/* Cluster button */}
             <Button
               size="sm"
+              variant="outline"
               className="text-xs w-full"
-              onClick={handleExecuteSqlQuery}
-              disabled={loadingSqlQuery || !sqlQuery.trim()}
+              onClick={handleRequestClusters}
+              disabled={
+                !frameGridId ||
+                !hasWritePermission ||
+                // Already loading clusters or bins
+                (activeSearchQuery &&
+                  (activeSearchQuery.loading_clusters ||
+                    activeSearchQuery.loading_bins)) ||
+                // Already clustering
+                activeClusterTaskId !== undefined ||
+                // Loading a search currently
+                loadingSearchQuery !== undefined ||
+                // Disable when clusters are shown or processing clusters
+                shouldDisableClusterButton
+                // Disable button when feedback input is visible
+                // showFeedbackInput
+              }
             >
-              {loadingSqlQuery ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                  Executing...
-                </>
+              {activeSearchQuery && activeSearchQuery.loading_clusters ? (
+                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
               ) : (
-                'Execute Query'
+                <Sparkles className="h-3 w-3 mr-2" />
               )}
+              {activeSearchQuery &&
+              activeSearchQuery.bins &&
+              activeSearchQuery.bins.length > 0
+                ? 'Re-cluster with feedback'
+                : 'Cluster matching results'}
             </Button>
-          </div>
-        </div> */}
-        {/* Global search */}
-        <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Global Search</div>
-            <div className="text-xs">
-              Look for qualitative patterns, errors, or other interesting
-              phenomena
-            </div>
-          </div>
 
-          <div className="border rounded-md bg-gray-50 p-2 space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <div className="text-gray-600">Search query</div>
-              {curSearchQuery && loadingProgress && !loadingSearchQuery && (
-                <div className="text-gray-400">
-                  {loadingProgress[0]} searches finished
-                  {loadingProgress[1] - loadingProgress[0] > 0 && (
-                    <>
-                      , {loadingProgress[1] - loadingProgress[0]} had API issues{' '}
-                      <span
-                        className="cursor-pointer text-indigo-500 hover:text-indigo-600"
-                        onClick={() => handleSearch(curSearchQuery)}
-                      >
-                        (retry)
-                      </span>
-                    </>
-                  )}
+            {/* Feedback input for re-clustering - only show when requested */}
+            {showFeedbackInput && (
+              <div className="space-y-0.5">
+                <div className="text-xs text-gray-600 mb-0.5">
+                  Feedback for re-clustering
                 </div>
-              )}
-            </div>
-            {curSearchQuery ? (
-              <div className="space-y-2">
-                <div className="flex items-center">
-                  <div className="flex-1">
-                    <div className="px-2 py-1 bg-indigo-50 border border-indigo-100 rounded text-xs font-mono whitespace-pre-wrap text-indigo-800">
-                      {curSearchQuery}
-                    </div>
-                  </div>
-                  <div className="flex flex-col xl:flex-row ml-2 space-y-1 xl:space-y-0 xl:space-x-1">
-                    <button
-                      onClick={async () => await handleShare(curSearchQuery)}
-                      className="inline-flex items-center gap-x-1 text-xs bg-blue-50 text-blue-500 border border-blue-100 px-1.5 py-0.5 rounded-md disabled:opacity-50 hover:bg-blue-100 transition-colors"
-                      title="Share this search"
-                      disabled={!hasWritePermission}
-                    >
-                      <Share2 className="h-3 w-3" />
-                      Share
-                    </button>
-                    {loadingSearchQuery ? (
-                      <>
-                        <button
-                          onClick={() => handleClearSearch()}
-                          className="inline-flex items-center gap-x-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors"
-                          title="Clear display (search continues in background)"
-                        >
-                          <EyeOff className="h-3 w-3" />
-                          Run in background
-                        </button>
-                        <button
-                          onClick={() => handleStopSearch()}
-                          className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
-                          title="Stop search and clear results"
-                        >
-                          <Square className="h-3 w-3" />
-                          Stop
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => handleStopSearch()}
-                        className="inline-flex items-center gap-x-1 text-xs bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded-md hover:bg-red-100 transition-colors"
-                        title="Stop search and clear results"
-                      >
-                        <RefreshCw className="h-3 w-3 mr" />
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress bar for updates */}
-                {loadingSearchQuery &&
-                  loadingSearchQuery === curSearchQuery &&
-                  loadingProgress && (
-                    <ProgressBar
-                      current={loadingProgress[0]}
-                      total={loadingProgress[1]}
-                    />
-                  )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs w-full"
-                  onClick={handleRequestClusters}
-                  disabled={
-                    !frameGridId ||
-                    !hasWritePermission ||
-                    // Already loading clusters or bins
-                    (activeSearchQuery &&
-                      (activeSearchQuery.loading_clusters ||
-                        activeSearchQuery.loading_bins)) ||
-                    // Already clustering
-                    activeClusterTaskId !== undefined ||
-                    // Loading a search currently
-                    loadingSearchQuery !== undefined ||
-                    // Disable when clusters are shown or processing clusters
-                    shouldDisableClusterButton
-                    // Disable button when feedback input is visible
-                    // showFeedbackInput
-                  }
-                >
-                  {activeSearchQuery && activeSearchQuery.loading_clusters ? (
-                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3 w-3 mr-2" />
-                  )}
-                  {activeSearchQuery &&
-                  activeSearchQuery.bins &&
-                  activeSearchQuery.bins.length > 0
-                    ? 'Re-cluster with feedback'
-                    : 'Cluster matching results'}
-                </Button>
-
-                {/* Feedback input for re-clustering - only show when requested */}
-                {showFeedbackInput && (
-                  <div className="mt-1.5 space-y-0.5">
-                    <div className="text-xs text-gray-600 mb-0.5">
-                      Feedback for re-clustering
-                    </div>
-                    <div className="flex space-x-1 items-center">
-                      <Input
-                        autoFocus
-                        value={clusterFeedback}
-                        onChange={(e) => setClusterFeedback(e.target.value)}
-                        placeholder="Describe how clusters should be improved..."
-                        className="text-xs bg-white font-mono text-gray-600 flex-1 h-7"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleRequestClusters();
-                          }
-                        }}
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => handleRequestClusters()}
-                        className="text-xs h-7 px-2"
-                      >
-                        Submit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCancelFeedback}
-                        className="text-xs h-7 px-2"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Display search result clusters if they exist */}
-                {curSearchQuery && (
-                  <div className="space-y-2 mt-3">
-                    <ClusterViewer searchQuery={curSearchQuery} />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {PRESET_QUERIES.map((preset) => {
-                    const IconComponent = preset.icon;
-                    return (
-                      <button
-                        key={preset.id}
-                        onClick={() => handleSelectPreset(preset.query)}
-                        onMouseEnter={() => handlePresetHover(preset.query)}
-                        onMouseLeave={handlePresetLeave}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 disabled:opacity-50 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                        disabled={!hasWritePermission}
-                      >
-                        <IconComponent className="h-3 w-3 text-blue-500" />
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
-                  <fieldset>
-                    <Textarea
-                      className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
-                      placeholder={placeholderText}
-                      value={isPresetHovered ? '' : searchQueryTextboxValue}
-                      onChange={(e) =>
-                        dispatch(setSearchQueryTextboxValue(e.target.value))
+                <div className="flex space-x-1 items-center">
+                  <Input
+                    autoFocus
+                    value={clusterFeedback}
+                    onChange={(e) => setClusterFeedback(e.target.value)}
+                    placeholder="Describe how clusters should be improved..."
+                    className="text-xs bg-white font-mono text-gray-600 flex-1 h-7"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleRequestClusters();
                       }
-                      onKeyDown={(
-                        e: React.KeyboardEvent<HTMLTextAreaElement>
-                      ) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSearch(searchQueryTextboxValue);
-                        }
-                      }}
-                      disabled={!hasWritePermission}
-                    />
-                    <div className="flex items-center justify-end p-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="gap-1 h-8 text-xs"
-                        onClick={() => handleSearch(searchQueryTextboxValue)}
-                        disabled={!searchQueryTextboxValue?.trim()}
-                      >
-                        Search
-                        <CornerDownLeft className="size-3" />
-                      </Button>
-                    </div>
-                  </fieldset>
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleRequestClusters()}
+                    className="text-xs h-7 px-2"
+                  >
+                    Submit
+                  </Button>
                 </div>
+              </div>
+            )}
 
-                {/* Search History Section - Updated with consistent colors */}
-                {searchesWithStats && searchesWithStats.length > 0 && (
-                  <div className="max-h-[20rem] overflow-y-auto pr-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="text-xs font-medium text-gray-500">
-                        Saved Searches
+            {/* Display search result clusters if they exist */}
+            {curSearchQuery && <ClusterViewer searchQuery={curSearchQuery} />}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_QUERIES.map((preset) => {
+                const IconComponent = preset.icon;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleSelectPreset(preset.query)}
+                    onMouseEnter={() => handlePresetHover(preset.query)}
+                    onMouseLeave={handlePresetLeave}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 disabled:opacity-50 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                    disabled={!hasWritePermission}
+                  >
+                    <IconComponent className="h-3 w-3 text-blue-500" />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
+              <fieldset>
+                <Textarea
+                  className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
+                  placeholder={placeholderText}
+                  value={isPresetHovered ? '' : searchQueryTextboxValue}
+                  onChange={(e) =>
+                    dispatch(setSearchQueryTextboxValue(e.target.value))
+                  }
+                  onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSearch(searchQueryTextboxValue);
+                    }
+                  }}
+                  disabled={!hasWritePermission}
+                />
+                <div className="flex items-center justify-end p-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1 h-8 text-xs"
+                    onClick={() => handleSearch(searchQueryTextboxValue)}
+                    disabled={!searchQueryTextboxValue?.trim()}
+                  >
+                    Search
+                    <CornerDownLeft className="size-3" />
+                  </Button>
+                </div>
+              </fieldset>
+            </div>
+
+            {/* Search History Section - Updated with consistent colors */}
+            {searchesWithStats && searchesWithStats.length > 0 && (
+              <div className="max-h-[20rem] overflow-y-auto pr-1">
+                <div className="flex justify-between items-center mb-1">
+                  <div className="text-xs font-medium text-gray-500">
+                    Saved Searches
+                  </div>
+                </div>
+                {searchesWithStats.map((search, index) => {
+                  const completionPercentage =
+                    search.num_total > 0
+                      ? Math.min(
+                          (search.num_judgments_computed / search.num_total) *
+                            100,
+                          100
+                        )
+                      : 0;
+                  const isComplete = completionPercentage === 100;
+                  // Extract first 8 characters of UUID for display
+                  const shortDimId = search.search_id.split('-')[0];
+
+                  return (
+                    <div
+                      key={index}
+                      className="group mb-1 border border-gray-100 rounded hover:border-indigo-300 hover:bg-indigo-50 transition-all"
+                    >
+                      <div className="flex items-center py-1.5 px-2 text-xs bg-white">
+                        <code
+                          className="px-1 bg-gray-50 border border-gray-100 rounded text-[10px] text-gray-500 mr-2 flex-shrink-0"
+                          title={search.search_id}
+                        >
+                          {shortDimId}
+                        </code>
+                        <div
+                          className="font-mono text-gray-800 truncate flex-1 cursor-pointer"
+                          title={search.search_query}
+                          onClick={() => {
+                            handleSearch(search.search_query);
+                          }}
+                        >
+                          {search.search_query}
+                        </div>
+                        <div className="flex items-center ml-2 space-x-1.5 flex-shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="relative w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0"
+                              title={`${search.num_judgments_computed} of ${search.num_total} processed`}
+                            >
+                              <div
+                                className={`absolute top-0 left-0 h-full ${isComplete ? 'bg-indigo-500' : 'bg-blue-500'}`}
+                                style={{
+                                  width: `${completionPercentage}%`,
+                                }}
+                              ></div>
+                            </div>
+                            <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                              {Math.round(completionPercentage)}% computed
+                            </span>
+                          </div>
+                          {hasWritePermission && (
+                            <>
+                              <button
+                                className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dispatch(
+                                    setSearchQueryTextboxValue(
+                                      search.search_query
+                                    )
+                                  );
+                                  dispatch(clearSearch());
+                                }}
+                                title="Edit this search query"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  await dispatch(deleteSearch(search.search_id))
+                                    .unwrap()
+                                    .then(() => {
+                                      toast({
+                                        title: 'Deleted saved search',
+                                        description:
+                                          'Your saved search has been deleted successfully',
+                                        variant: 'default',
+                                      });
+                                    });
+                                }}
+                                title="Delete this saved search"
+                              >
+                                <XOctagon className="h-3 w-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    {searchesWithStats.map((search, index) => {
-                      const completionPercentage =
-                        search.num_total > 0
-                          ? Math.min(
-                              (search.num_judgments_computed /
-                                search.num_total) *
-                                100,
-                              100
-                            )
-                          : 0;
-                      const isComplete = completionPercentage === 100;
-                      // Extract first 8 characters of UUID for display
-                      const shortDimId = search.search_id.split('-')[0];
-
-                      return (
-                        <div
-                          key={index}
-                          className="group mb-1 border border-gray-100 rounded hover:border-indigo-300 hover:bg-indigo-50 transition-all"
-                        >
-                          <div className="flex items-center py-1.5 px-2 text-xs bg-white">
-                            <code
-                              className="px-1 bg-gray-50 border border-gray-100 rounded text-[10px] text-gray-500 mr-2 flex-shrink-0"
-                              title={search.search_id}
-                            >
-                              {shortDimId}
-                            </code>
-                            <div
-                              className="font-mono text-gray-800 truncate flex-1 cursor-pointer"
-                              title={search.search_query}
-                              onClick={() => {
-                                handleSearch(search.search_query);
-                              }}
-                            >
-                              {search.search_query}
-                            </div>
-                            <div className="flex items-center ml-2 space-x-1.5 flex-shrink-0">
-                              <div className="flex items-center gap-1.5">
-                                <div
-                                  className="relative w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0"
-                                  title={`${search.num_judgments_computed} of ${search.num_total} processed`}
-                                >
-                                  <div
-                                    className={`absolute top-0 left-0 h-full ${isComplete ? 'bg-indigo-500' : 'bg-blue-500'}`}
-                                    style={{
-                                      width: `${completionPercentage}%`,
-                                    }}
-                                  ></div>
-                                </div>
-                                <span className="text-[9px] text-gray-500 whitespace-nowrap">
-                                  {Math.round(completionPercentage)}% computed
-                                </span>
-                              </div>
-                              {hasWritePermission && (
-                                <>
-                                  <button
-                                    className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      dispatch(
-                                        setSearchQueryTextboxValue(
-                                          search.search_query
-                                        )
-                                      );
-                                      dispatch(clearSearch());
-                                    }}
-                                    title="Edit this search query"
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      await dispatch(
-                                        deleteSearch(search.search_id)
-                                      )
-                                        .unwrap()
-                                        .then(() => {
-                                          toast({
-                                            title: 'Deleted saved search',
-                                            description:
-                                              'Your saved search has been deleted successfully',
-                                            variant: 'default',
-                                          });
-                                        });
-                                    }}
-                                    title="Delete this saved search"
-                                  >
-                                    <XOctagon className="h-3 w-3" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
+                  );
+                })}
+              </div>
             )}
-          </div>
-        </div>
-        {/* Paired search */}
-        {/* <div className="space-y-2">
+          </>
+        )}
+      </div>
+      {/* Paired search */}
+      {/* <div className="space-y-2">
           <div>
             <div className="text-sm font-semibold">Paired Search</div>
             <div className="text-xs">
@@ -750,7 +570,6 @@ const SearchArea = () => {
           </div>
           Not implemented yet
         </div> */}
-      </div>
     </Card>
   );
 };
