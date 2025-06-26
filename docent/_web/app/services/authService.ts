@@ -6,22 +6,24 @@ import { apiRestClient } from './apiService';
  */
 export class AuthService {
   /**
-   * Login user with email
+   * Login user with email and password
    */
   static async login(
-    email: string
+    email: string,
+    password: string
   ): Promise<{ id: string; email: string; is_anonymous: boolean }> {
-    const response = await apiRestClient.post('/login', { email });
+    const response = await apiRestClient.post('/login', { email, password });
     return response.data;
   }
 
   /**
-   * Signup new user with email
+   * Signup new user with email and password
    */
   static async signup(
-    email: string
+    email: string,
+    password: string
   ): Promise<{ id: string; email: string; is_anonymous: boolean }> {
-    const response = await apiRestClient.post('/signup', { email });
+    const response = await apiRestClient.post('/signup', { email, password });
     return response.data;
   }
 

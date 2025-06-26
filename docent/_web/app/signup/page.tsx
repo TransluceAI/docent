@@ -19,23 +19,15 @@ function SignupPageContent() {
   const { setUser } = useUserContext();
   const redirectParam = searchParams.get('redirect') || '';
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid email address',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      const userData = await signup(email.trim()); // Pure API call
+      const userData = await signup(email.trim(), password.trim()); // Pure API call
 
       // Set user in context immediately to prevent race condition
       setUser(userData);
@@ -82,7 +74,7 @@ function SignupPageContent() {
               Create your Docent account
             </h1>
             <p className="text-sm text-gray-600">
-              Enter your email address to get started
+              Enter your email and password to get started
             </p>
           </div>
 
@@ -101,10 +93,23 @@ function SignupPageContent() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
             <Button
               type="submit"
               className="w-full"
-              disabled={isSubmitting || !email.trim()}
+              disabled={isSubmitting || !email.trim() || !password.trim()}
             >
               {isSubmitting ? (
                 <>

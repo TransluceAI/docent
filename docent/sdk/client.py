@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 import requests
@@ -19,17 +20,39 @@ class DocentClient:
         server_url: URL of the Docent API server.
         web_url: URL of the Docent web UI.
         email: Email address for authentication.
+        password: Password for authentication.
     """
 
-    def __init__(self, server_url: str, web_url: str, email: str | None = None):
+    def __init__(
+        self, server_url: str, web_url: str, email: str | None = None, password: str | None = None
+    ):
         self._server_url = server_url.rstrip("/") + "/rest"
         self._web_url = web_url.rstrip("/")
-        self._email = email
+
+        self._email = email or os.getenv("DOCENT_EMAIL")
+        if self._email is None:
+            raise ValueError(
+                "Email address must be provided through keyword argument or DOCENT_EMAIL environment variable"
+            )
+
+        self._password = password or os.getenv("DOCENT_PASSWORD")
+        if self._password is None:
+            raise ValueError(
+                "Password must be provided through keyword argument or DOCENT_PASSWORD environment variable"
+            )
 
         # Use requests.Session for connection pooling and persistent headers
         self._session = requests.Session()
-        if email:
-            self._session.headers.update({"Authorization": f"Bearer {self._email}"})
+        self._login()
+
+    def _login(self):
+        """Login with email/password to establish session."""
+        login_url = f"{self._server_url}/login"
+        response = self._session.post(
+            login_url, json={"email": self._email, "password": self._password}
+        )
+        response.raise_for_status()
+        logger.info(f"Successfully logged in as {self._email}")
 
     def create_framegrid(
         self,

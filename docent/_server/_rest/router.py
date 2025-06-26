@@ -97,6 +97,7 @@ class UserCreateRequest(BaseModel):
     """Request model for creating a new user."""
 
     email: str
+    password: str
 
     class Config:
         extra = "forbid"
@@ -127,7 +128,7 @@ async def signup(request: UserCreateRequest, response: Response, db: DBService =
             detail="A user with this email address already exists. Please use the login page.",
         )
 
-    user = await db.create_user(request.email)
+    user = await db.create_user(request.email, request.password)
 
     # Create a session for the new user
     await create_user_session(user.id, response)
@@ -140,6 +141,7 @@ async def signup(request: UserCreateRequest, response: Response, db: DBService =
 
 class LoginRequest(BaseModel):
     email: str
+    password: str
 
 
 @public_router.post("/login")
@@ -148,17 +150,17 @@ async def login(request: LoginRequest, response: Response, db: DBService = Depen
     User login endpoint. Authenticates a user and creates a session.
 
     Args:
-        request: LoginRequest containing email
+        request: LoginRequest containing email and password
         response: FastAPI Response object to set cookies
         db: Database service dependency
 
     Returns:
         UserResponse with user_id and email
     """
-    user = await db.get_user_by_email(request.email)
+    user = await db.verify_user_password(request.email, request.password)
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Create a new session
     await create_user_session(user.id, response)

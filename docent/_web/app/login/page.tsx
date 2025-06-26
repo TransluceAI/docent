@@ -22,6 +22,7 @@ function LoginPageContent() {
 
   // Form state
   const [email, setEmail] = useState(emailParam);
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -31,18 +32,9 @@ function LoginPageContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid email address',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      const userData = await login(email.trim()); // Pure API call
+      const userData = await login(email.trim(), password.trim()); // Pure API call
 
       // Set user in context immediately to prevent race condition
       setUser(userData);
@@ -86,7 +78,7 @@ function LoginPageContent() {
               Sign in to Docent
             </h1>
             <p className="text-sm text-gray-600">
-              Enter your email address to sign in
+              Enter your email and password to sign in
             </p>
           </div>
 
@@ -100,6 +92,19 @@ function LoginPageContent() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email address"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
                 disabled={isSubmitting}
                 required
               />

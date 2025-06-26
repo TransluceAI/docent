@@ -18,7 +18,18 @@ from typing import (
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import URL, ColumnElement, delete, distinct, exists, func, select, text, update
+from passlib.context import CryptContext
+from sqlalchemy import (
+    URL,
+    ColumnElement,
+    delete,
+    distinct,
+    exists,
+    func,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -33,7 +44,11 @@ from docent._ai_tools.clustering.cluster_diffs import cluster_diff_claims, searc
 from docent._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
 from docent._ai_tools.diffs.llm_diff_summaries import compute_transcript_diff
 from docent._ai_tools.diffs.models import Claim, SQLADiffsReport, TranscriptDiff
-from docent._ai_tools.search import SearchResult, SearchResultStreamingCallback, execute_search
+from docent._ai_tools.search import (
+    SearchResult,
+    SearchResultStreamingCallback,
+    execute_search,
+)
 from docent._ai_tools.search_paired import (
     SearchPairedResultStreamingCallback,
     execute_search_paired,
@@ -73,6 +88,7 @@ logger = get_logger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 class _NotGiven:
@@ -1479,12 +1495,13 @@ class DBService:
 
             return [user.to_user() for user in sqla_users]
 
-    async def create_user(self, email: str) -> User:
+    async def create_user(self, email: str, password: str) -> User:
         """
         Create a new user. Raises an error if a user with the given email already exists.
 
         Args:
             email: The email address of the user
+            password: The password for the user
 
         Returns:
             The User object
@@ -1497,6 +1514,8 @@ class DBService:
         user_id = str(uuid4())
         sqla_user = SQLAUser(id=user_id, email=email)
         sqla_user.is_anonymous = False
+
+        sqla_user.password_hash = pwd_context.hash(password)
 
         async with self.session() as session:
             session.add(sqla_user)
@@ -1544,6 +1563,29 @@ class DBService:
                 return None
 
             return sqla_user.to_user()
+
+    async def verify_user_password(self, email: str, password: str) -> User | None:
+        """
+        Verify a user's password and return the user if successful.
+
+        Args:
+            email: The email address of the user
+            password: The password to verify
+
+        Returns:
+            The User object if password is correct, None otherwise
+        """
+        async with self.session() as session:
+            # Get the user with password fields
+            result = await session.execute(select(SQLAUser).where(SQLAUser.email == email))
+            sqla_user = result.scalar_one_or_none()
+            if not sqla_user:
+                return None
+
+            if pwd_context.verify(password, sqla_user.password_hash):
+                return sqla_user.to_user()
+
+            return None
 
     async def create_session(self, user_id: str, expires_in_days: int = 30) -> str:
         """

@@ -457,6 +457,7 @@ class SQLAUser(SQLABase):
 
     id = mapped_column(String(36), primary_key=True)
     email = mapped_column(String(255), nullable=False, unique=True, index=True)
+    password_hash = mapped_column(String(255), nullable=False)
     created_at = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )

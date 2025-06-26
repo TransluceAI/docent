@@ -43,7 +43,7 @@ dependencies = [
     "mkdocstrings-python>=1.16.10",
     # Uncategorized
     "arq>=0.26.3",
-    "tqdm>=4.66.0",
+    "passlib[argon2]>=1.7.4",
 ]
 
 [project.scripts]
