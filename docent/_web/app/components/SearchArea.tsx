@@ -186,12 +186,6 @@ const SearchArea = () => {
     // Clear existing clusters when new clustering is requested
     dispatch(clearClusteredSearchResults());
 
-    // If clusters exist and feedback is not being shown yet, show the feedback input
-    if (curSearchQuery && !showFeedbackInput) {
-      setShowFeedbackInput(true);
-      return;
-    }
-
     dispatch(
       requestClusters({
         searchQuery: curSearchQuery,
@@ -199,8 +193,6 @@ const SearchArea = () => {
         onlyLoadExistingClusters: false,
       })
     );
-    // Clear feedback after sending and hide the input
-    setShowFeedbackInput(false);
   };
 
   const handleCancelFeedback = () => {
@@ -210,10 +202,12 @@ const SearchArea = () => {
 
   // Show feedback input if there's a search selected and no clusters yet
   useEffect(() => {
-    if (curSearchQuery && !showFeedbackInput) {
+    if (hasClusters) {
       setShowFeedbackInput(true);
+    } else {
+      setShowFeedbackInput(false);
     }
-  }, [curSearchQuery, showFeedbackInput]);
+  }, [hasClusters]);
 
   /**
    * Presets in the search interface
