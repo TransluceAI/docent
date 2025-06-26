@@ -210,3 +210,16 @@ class BaseAgentRunMetadata(BaseMetadata):
         if self.default_score_key is None:
             return None
         return self.scores.get(self.default_score_key)
+
+
+class FrameDimension(BaseModel):
+    """A dimension for organizing agent runs."""
+
+    id: str
+    name: str
+    search_query: str | None = None
+    metadata_key: str | None = None
+    maintain_mece: bool | None = None
+    loading_clusters: bool = False
+    loading_bins: bool = False
+    binIds: list[dict[str, Any]] | None = None

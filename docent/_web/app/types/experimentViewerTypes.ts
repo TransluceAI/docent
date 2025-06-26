@@ -1,8 +1,6 @@
 import { TranscriptDiff } from '../store/diffSlice';
 import {
   SearchResultWithCitations,
-  FrameDimension,
-  FrameFilter,
   MetadataType,
 } from './frameTypes';
 
@@ -32,19 +30,21 @@ export interface StreamedSearchResult {
   num_agent_runs_total: number;
 }
 
+export interface StreamedSearchResultClusterAssignment {
+  search_result_cluster_id: string;
+  search_result_id: string;
+  cluster_id: string;
+  centroid: string;
+  decision: boolean;
+  value: string;
+}
+
 export interface TaskStats {
   [scoreKey: string]: {
     mean: number | null;
     ci: number | null;
     n: number;
   };
-}
-
-export interface MarginalizationResult {
-  marginals: Record<string, any>;
-  dim_ids_to_filter_ids: Record<string, string[]>;
-  dims_dict: Record<string, FrameDimension>;
-  filters_dict: Record<string, FrameFilter>;
 }
 
 export type OrganizationMethod = 'experiment' | 'sample';

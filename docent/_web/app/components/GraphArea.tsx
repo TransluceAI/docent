@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, X } from 'lucide-react';
 import { useAppSelector } from '../store/hooks';
 import Graph, { GraphDatum } from './Graph';
+import { Plus, X } from 'lucide-react';
 
 interface Tab {
   id: string;
@@ -106,59 +106,145 @@ export function GraphAreaWithTabs() {
 
 export default function GraphArea() {
   // experimentViewer slice
-  const statMarginals = useAppSelector(
-    (state) => state.experimentViewer.statMarginals
-  );
-  const filtersMap = useAppSelector(
-    (state) => state.experimentViewer.filtersMap
-  );
+  const binStats = useAppSelector((state) => state.experimentViewer.binStats);
   const chartType = useAppSelector((state) => state.experimentViewer.chartType);
 
   // frame slice
-  const innerDimId = useAppSelector((state) => state.frame.innerDimId);
-  const outerDimId = useAppSelector((state) => state.frame.outerDimId);
+  const innerBinKey = useAppSelector((state) => state.frame.innerBinKey);
+  const outerBinKey = useAppSelector((state) => state.frame.outerBinKey);
   const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
-
-  const innerDimName = innerDimId
-    ? dimensionsMap?.[innerDimId]?.name || innerDimId
-    : innerDimId || '';
 
   const graphData = useMemo(() => {
     const result: GraphDatum[] = [];
 
-    for (const [k, v] of Object.entries(statMarginals ?? {})) {
-      const parts = k.split('|');
-      if (parts.length > 2) {
-        console.error('Expected at most 2 parts, got', parts.length);
-        continue;
-      }
+    if (!binStats) {
+      return result;
+    }
 
-      // const curDatum: GraphDatum = { value: Object.values(v)[0].n ?? 0 };
-      const curDatum: GraphDatum = { value: Object.values(v)[0].mean ?? 0 };
-      for (const loc of parts) {
-        const [dimId, filterId] = loc.split(',');
-        const dimName = dimensionsMap?.[dimId]?.name || dimId;
-        const filterName = filtersMap?.[filterId]?.name || filterId;
-        curDatum[dimName] = filterName;
-      }
+    // Get unique outer and inner dimension values with their IDs - matching ExperimentViewer logic
+    const outerValuesWithIds: Array<{ id: string; value: string }> = [];
+    const innerValuesWithIds: Array<{ id: string; value: string }> = [];
 
-      result.push(curDatum);
+    if (outerBinKey) {
+      const values = new Set<string>();
+      Object.keys(binStats).forEach((key) => {
+        const parts = key.split('|');
+        parts.forEach((part) => {
+          if (part.includes(',')) {
+            const [dim, value] = part.split(',', 2);
+            if (dim === outerBinKey) {
+              values.add(value);
+            }
+          }
+        });
+      });
+      outerValuesWithIds.push(
+        ...Array.from(values).map((value) => ({ id: value, value }))
+      );
+    }
+
+    if (innerBinKey) {
+      const values = new Set<string>();
+      Object.keys(binStats).forEach((key) => {
+        const parts = key.split('|');
+        parts.forEach((part) => {
+          if (part.includes(',')) {
+            const [dim, value] = part.split(',', 2);
+            if (dim === innerBinKey) {
+              values.add(value);
+            }
+          }
+        });
+      });
+      innerValuesWithIds.push(
+        ...Array.from(values).map((value) => ({ id: value, value }))
+      );
+    }
+
+    // Helper to safely get bin key name
+    const getBinKeyName = (binKeyId: string | undefined) => {
+      if (!binKeyId || !dimensionsMap) {
+        return 'Unknown';
+      }
+      return dimensionsMap[binKeyId]?.name ?? 'Unknown';
+    };
+
+    // Create graph data based on the available dimensions
+    const hasOuter = outerValuesWithIds.length > 0;
+    const hasInner = innerValuesWithIds.length > 0;
+
+    if (hasOuter && hasInner) {
+      // 2D case: create data for each combination
+      outerValuesWithIds.forEach(({ id: outerId, value: outerValue }) => {
+        innerValuesWithIds.forEach(({ id: innerId, value: innerValue }) => {
+          const key = `${innerBinKey},${innerId}|${outerBinKey},${outerId}`;
+          const stats = binStats[key];
+
+          if (stats) {
+            const scoreKey =
+              Object.keys(stats).find((k) =>
+                k.toLowerCase().includes('default')
+              ) || Object.keys(stats)[0];
+            const score = stats[scoreKey]?.mean ?? 0;
+
+            result.push({
+              value: score,
+              [getBinKeyName(outerBinKey)]: outerValue,
+              [getBinKeyName(innerBinKey)]: innerValue,
+            });
+          }
+        });
+      });
+    } else if (hasOuter || hasInner) {
+      // 1D case: use available dimension
+      const valuesWithIds = hasOuter ? outerValuesWithIds : innerValuesWithIds;
+      const dimId = hasOuter ? outerBinKey : innerBinKey;
+
+      valuesWithIds.forEach(({ id, value }) => {
+        const key = `${dimId},${id}`;
+        const stats = binStats[key];
+
+        if (stats) {
+          const scoreKey =
+            Object.keys(stats).find((k) =>
+              k.toLowerCase().includes('default')
+            ) || Object.keys(stats)[0];
+          const score = stats[scoreKey]?.mean ?? 0;
+
+          result.push({
+            value: score,
+            [getBinKeyName(dimId)]: value,
+          });
+        }
+      });
     }
 
     return result;
-  }, [statMarginals, innerDimId, outerDimId, dimensionsMap, filtersMap]);
+  }, [binStats, innerBinKey, outerBinKey, dimensionsMap]);
+
+  // Determine the x-axis key based on available dimensions
+  const xKey = useMemo(() => {
+    if (outerBinKey && dimensionsMap?.[outerBinKey]?.name) {
+      return dimensionsMap[outerBinKey].name;
+    }
+    if (innerBinKey && dimensionsMap?.[innerBinKey]?.name) {
+      return dimensionsMap[innerBinKey].name;
+    }
+    return 'Unknown';
+  }, [innerBinKey, outerBinKey, dimensionsMap]);
+
+  if (!graphData.length || !binStats) {
+    return null;
+  }
 
   return (
-    graphData.length > 0 &&
-    innerDimId && (
-      <div className="h-2/5 flex flex-col border rounded-md overflow-hidden">
-        <Graph
-          data={graphData}
-          type={chartType === 'line' ? 'line' : 'bar'}
-          xKey={innerDimName}
-          yKey="value"
-        />
-      </div>
-    )
+    <div className="h-2/5 flex flex-col border rounded-md overflow-hidden">
+      <Graph
+        data={graphData}
+        type={chartType === 'line' ? 'line' : 'bar'}
+        xKey={xKey}
+        yKey="value"
+      />
+    </div>
   );
 }

@@ -24,26 +24,21 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 
-import { addSearchDimension, deleteSearch } from '../store/frameSlice';
+import { deleteSearch } from '../store/frameSlice';
 import { useAppDispatch } from '../store/hooks';
 import {
   clearSearch,
+  clearClusteredSearchResults,
   computeSearch,
-  executeRawQuery,
-  getExistingClusters,
   requestClusters,
   setSearchQueryTextboxValue,
 } from '../store/searchSlice';
 import { RootState } from '../store/store';
 
-import BinEditor from './BinEditor';
+import ClusterViewer from './ClusterViewer';
 import { ProgressBar } from './ProgressBar';
-import { requestDiffs } from '../store/diffSlice';
 import { apiRestClient } from '../services/apiService';
-import {
-  useHasFramegridWritePermission,
-} from '@/lib/permissions/hooks';
-import { setGraphData } from '../store/experimentViewerSlice';
+import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
 import { copyToClipboard } from '@/lib/utils';
 
 // Preset search queries with custom icons
@@ -76,7 +71,7 @@ const SearchArea = () => {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const { frameGridId, marginals, dimensionsMap } = useSelector(
+  const { frameGridId, dimensionsMap } = useSelector(
     (state: RootState) => state.frame
   );
   const {
@@ -87,26 +82,42 @@ const SearchArea = () => {
     searchesWithStats,
     searchQueryTextboxValue,
     activeSearchTaskId,
+    clusteredSearchResults,
   } = useSelector((state: RootState) => state.search);
-  const { diffLoadingProgress } = useSelector((state: RootState) => state.diff);
 
-  // Pull out the dimension associated with the current search query
-  const activeDim = useMemo(() => {
+  // Pull out the search query associated with the current search query
+  const activeSearchQuery = useMemo(() => {
     if (!curSearchQuery || !dimensionsMap) return undefined;
     return Object.values(dimensionsMap).find(
       (dim) => dim.search_query === curSearchQuery
     );
   }, [dimensionsMap, curSearchQuery]);
 
+  // State variables to control cluster button behavior
+  const hasClusters = useMemo(() => {
+    return (
+      clusteredSearchResults && Object.keys(clusteredSearchResults).length > 0
+    );
+  }, [clusteredSearchResults]);
+
+  const isProcessingClusters = useMemo(() => {
+    return !!activeClusterTaskId;
+  }, [activeClusterTaskId]);
+
+  const shouldDisableClusterButton = useMemo(() => {
+    return hasClusters || isProcessingClusters;
+  }, [hasClusters, isProcessingClusters]);
+
   useEffect(() => {
-    if (activeDim && activeDim.bins && activeDim.bins.length > 0) {
-      if (activeClusterTaskId == null) {
-        // if we have bins for a search result and no ongoing clustering task, then we've already
-        // computed the marginals in an earlier query and just need to request them
-        dispatch(getExistingClusters({ dimensionId: activeDim.id }));
-      }
+    if (activeSearchQuery && activeClusterTaskId == null) {
+      dispatch(
+        requestClusters({
+          searchQuery: activeSearchQuery.search_query || activeSearchQuery.id,
+          feedback: '',
+        })
+      );
     }
-  }, [activeDim, dispatch, activeClusterTaskId]);
+  }, [activeSearchQuery, dispatch, activeClusterTaskId]);
 
   /**
    * Local state for UI components
@@ -119,17 +130,11 @@ const SearchArea = () => {
   // Cluster feedback
   const [clusterFeedback, setClusterFeedback] = useState('');
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
-  const [experimentId1, setExperimentId1] = useState('');
-  const [experimentId2, setExperimentId2] = useState('');
-  const [loadingDiffs, setLoadingDiffs] = useState(false);
-  const [diffsAttribute, setDiffsAttribute] = useState<string | null>(null);
-  // SQL query state
-  const [sqlQuery, setSqlQuery] = useState('');
-  const [loadingSqlQuery, setLoadingSqlQuery] = useState(false);
 
   const handleClearSearch = useCallback(() => {
     if (curSearchQuery) {
       dispatch(setSearchQueryTextboxValue(curSearchQuery || ''));
+      setClusterFeedback('');
       dispatch(clearSearch());
     }
   }, [curSearchQuery, dispatch]);
@@ -169,34 +174,30 @@ const SearchArea = () => {
   };
 
   const handleRequestClusters = async () => {
-    let dimId: string;
-    if (!activeDim) {
-      if (!curSearchQuery) {
-        toast({
-          title: 'Could not cluster data',
-          description: 'Could not find curSearchQuery',
-          variant: 'destructive',
-        });
-        return;
-      }
-      dimId = await dispatch(addSearchDimension(curSearchQuery)).unwrap();
-    } else {
-      dimId = activeDim.id;
+    if (!curSearchQuery) {
+      toast({
+        title: 'Could not cluster data',
+        description: 'Could not find curSearchQuery',
+        variant: 'destructive',
+      });
+      return;
     }
 
-    // If bins exist and feedback is not being shown yet, show the feedback input
-    if (
-      activeDim &&
-      activeDim.bins &&
-      activeDim.bins.length > 0 &&
-      !showFeedbackInput
-    ) {
+    // Clear existing clusters when new clustering is requested
+    dispatch(clearClusteredSearchResults());
+
+    // If clusters exist and feedback is not being shown yet, show the feedback input
+    if (curSearchQuery && !showFeedbackInput) {
       setShowFeedbackInput(true);
       return;
     }
-    // Use the context's requestClusters function
+
     dispatch(
-      requestClusters({ dimensionId: dimId, feedback: clusterFeedback })
+      requestClusters({
+        searchQuery: curSearchQuery,
+        feedback: clusterFeedback,
+        onlyLoadExistingClusters: false,
+      })
     );
     // Clear feedback after sending and hide the input
     setShowFeedbackInput(false);
@@ -206,6 +207,13 @@ const SearchArea = () => {
     setShowFeedbackInput(false);
     setClusterFeedback('');
   };
+
+  // Show feedback input if there's a search selected and no clusters yet
+  useEffect(() => {
+    if (curSearchQuery && !showFeedbackInput) {
+      setShowFeedbackInput(true);
+    }
+  }, [curSearchQuery, showFeedbackInput]);
 
   /**
    * Presets in the search interface
@@ -228,73 +236,15 @@ const SearchArea = () => {
     setPlaceholderText(DEFAULT_PLACEHOLDER_TEXT);
   };
 
-  const handleRequestDiffs = async () => {
-    if (!experimentId1 || !experimentId2) {
-      toast({
-        title: 'Missing experiment IDs',
-        description: 'Please enter both experiment IDs',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setLoadingDiffs(true);
-    const { payload: diffsReportId } = await dispatch(
-      requestDiffs({
-        experimentId1,
-        experimentId2,
-      })
-    );
-
-    setLoadingDiffs(false);
-    // Set the diffs attribute to enable clustering
-    setDiffsAttribute('diffs');
-    // Navigate to the diff reports page
-    router.push(
-      `/dashboard/${frameGridId}/diffs_reports?diffsReportId=${diffsReportId}`
-    );
-  };
-
-  const handleCancelDiffs = () => {
-    setLoadingDiffs(false);
-    setDiffsAttribute(null);
-  };
-
   const hasWritePermission = useHasFramegridWritePermission();
-  const handleExecuteSqlQuery = async () => {
-    if (!sqlQuery.trim()) {
-      toast({
-        title: 'Missing SQL query',
-        description: 'Please enter a SQL query',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setLoadingSqlQuery(true);
-    try {
-      const result = await dispatch(
-        executeRawQuery({ query: sqlQuery.trim() })
-      ).unwrap();
-      console.log('SQL Query Results:', result);
-      dispatch(setGraphData(result));
-    } catch (error) {
-      // Error handling is already done in the thunk
-      console.error('SQL Query Error:', error);
-    } finally {
-      setLoadingSqlQuery(false);
-    }
-  };
 
   /**
    * Handle share button
    */
   const handleShare = async (searchQuery: string) => {
-    const response = await apiRestClient.post(
-      `/${frameGridId}/copy_own_filter`
-    );
+    const response = await apiRestClient.post(`/${frameGridId}/clone_own_view`);
     const success = await copyToClipboard(
-      `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&filterId=${response.data.filter_id}&searchQuery=${searchQuery}`
+      `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&searchQuery=${encodeURIComponent(searchQuery)}`
     );
     if (success) {
       toast({
@@ -560,24 +510,28 @@ const SearchArea = () => {
                   disabled={
                     !frameGridId ||
                     !hasWritePermission ||
-                    // Already loading clusters or marginals
-                    (activeDim &&
-                      (activeDim.loading_clusters ||
-                        activeDim.loading_marginals)) ||
+                    // Already loading clusters or bins
+                    (activeSearchQuery &&
+                      (activeSearchQuery.loading_clusters ||
+                        activeSearchQuery.loading_bins)) ||
                     // Already clustering
                     activeClusterTaskId !== undefined ||
                     // Loading a search currently
                     loadingSearchQuery !== undefined ||
+                    // Disable when clusters are shown or processing clusters
+                    shouldDisableClusterButton
                     // Disable button when feedback input is visible
-                    showFeedbackInput
+                    // showFeedbackInput
                   }
                 >
-                  {activeDim && activeDim.loading_clusters ? (
+                  {activeSearchQuery && activeSearchQuery.loading_clusters ? (
                     <Loader2 className="h-3 w-3 mr-2 animate-spin" />
                   ) : (
                     <Sparkles className="h-3 w-3 mr-2" />
                   )}
-                  {activeDim && activeDim.bins && activeDim.bins.length > 0
+                  {activeSearchQuery &&
+                  activeSearchQuery.bins &&
+                  activeSearchQuery.bins.length > 0
                     ? 'Re-cluster with feedback'
                     : 'Cluster matching results'}
                 </Button>
@@ -603,7 +557,7 @@ const SearchArea = () => {
                       />
                       <Button
                         size="sm"
-                        onClick={handleRequestClusters}
+                        onClick={() => handleRequestClusters()}
                         className="text-xs h-7 px-2"
                       >
                         Submit
@@ -620,23 +574,10 @@ const SearchArea = () => {
                   </div>
                 )}
 
-                {/* Display bins if they exist */}
-                {activeDim && activeDim.bins && activeDim.bins.length > 0 && (
+                {/* Display search result clusters if they exist */}
+                {curSearchQuery && (
                   <div className="space-y-2 mt-3">
-                    <div className="text-xs text-gray-600 font-medium">
-                      Clusters
-                    </div>
-                    {activeDim.bins.map((bin) => (
-                      <BinEditor
-                        key={bin.id}
-                        bin={bin}
-                        loading={activeDim.loading_marginals || false}
-                        dimId={activeDim.id}
-                        marginalJudgments={
-                          marginals?.[activeDim.id]?.[bin.id] || undefined
-                        }
-                      />
-                    ))}
+                    <ClusterViewer searchQuery={curSearchQuery} />
                   </div>
                 )}
               </div>

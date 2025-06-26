@@ -14,22 +14,19 @@ import React, {
 } from 'react';
 
 import { Card } from '@/components/ui/card';
-import GraphArea from './GraphArea';
 
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 import DimensionSelector from './DimensionSelector';
-
-import AgentRunCard from './AgentRunCard';
-import { useDebounce } from '@/hooks/use-debounce';
-import {
-  setExperimentViewerScrollPosition,
-} from '../store/experimentViewerSlice';
-import { getAgentRunMetadata } from '../store/frameSlice';
+import GraphArea from './GraphArea';
 import TableArea from './TableArea';
+import AgentRunCard from './AgentRunCard';
 
-
+import { getAgentRunMetadata } from '../store/frameSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
+
+import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
+import { useDebounce } from '@/hooks/use-debounce';
 
 // Constants for magic numbers
 const PAGINATION_LIMIT = 100;
@@ -37,41 +34,35 @@ const PAGINATION_LIMIT = 100;
 export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
 
-  // Frame state
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
-  const innerDimId = useAppSelector((state) => state.frame.innerDimId);
-  const outerDimId = useAppSelector((state) => state.frame.outerDimId);
-
-  // Search state
-  const loadingSearchQuery = useAppSelector(
-    (state) => state.search.loadingSearchQuery
-  );
-  const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const searchResultMap = useAppSelector(
-    (state) => state.search.searchResultMap
+  // Get all state at the top level
+  const { innerBinKey, outerBinKey, frameGridId } = useAppSelector(
+    (state) => state.frame
   );
 
-  // EV state
-  const experimentViewerScrollPosition = useAppSelector(
-    (state) => state.experimentViewer.experimentViewerScrollPosition
-  );
-  const chartType = useAppSelector((state) => state.experimentViewer.chartType);
-  const rawStatMarginals = useAppSelector(
-    (state) => state.experimentViewer.statMarginals
-  );
-  const rawIdMarginals = useAppSelector(
-    (state) => state.experimentViewer.idMarginals
-  );
+  const {
+    loadingSearchQuery,
+    curSearchQuery,
+    searchResultMap: attributeMap,
+  } = useAppSelector((state) => state.search);
+
+  const {
+    experimentViewerScrollPosition,
+    binStats: rawBinStats,
+    agentRunIds: rawAgentRunIds,
+    chartType,
+  } = useAppSelector((state) => state.experimentViewer);
 
   /**
    * Scrolling
    */
-
   const scrolledOnceRef = useRef(false);
   const [scrollPosition, setScrollPosition] = useState<number | undefined>(
     undefined
   );
   const debouncedScrollPosition = useDebounce(scrollPosition, 100);
+
+  // Track which agent run IDs have already been fetched to prevent duplicate calls
+  const fetchedAgentRunIdsRef = useRef<Set<string>>(new Set());
 
   // Use debouncing to prevent too many updates
   useEffect(() => {
@@ -100,135 +91,72 @@ export default function ExperimentViewer() {
     [experimentViewerScrollPosition]
   );
 
-  // Create a function to get the marginal key - safe to use even if data is null
-  const getMarginalKey = useCallback(
-    (innerId: string | null, outerId: string | null) => {
-      if (innerId !== null && outerId !== null) {
-        return `${innerDimId},${innerId}|${outerDimId},${outerId}`;
-      } else if (innerId !== null) {
-        return `${innerDimId},${innerId}`;
-      } else if (outerId !== null) {
-        return `${outerDimId},${outerId}`;
-      } else {
-        return '';
+  // Filter agent run IDs to ones that have the attribute query
+  const agentRunIds = useMemo(() => {
+    if (!rawAgentRunIds) return rawAgentRunIds;
+    if (!curSearchQuery) return rawAgentRunIds;
+
+    // Filter agent runs to ones that have the attributes
+    const filteredAgentRuns = rawAgentRunIds.filter((agentRunId) => {
+      if (curSearchQuery) {
+        const attrs = attributeMap?.[agentRunId]?.[curSearchQuery];
+        return attrs && attrs.length && attrs[0].value !== null;
       }
-    },
-    [innerDimId, outerDimId]
-  );
-
-  // Filter to IDs to ones that have the attribute query
-  const idMarginals = useMemo(() => {
-    if (!rawIdMarginals) return rawIdMarginals;
-    if (!curSearchQuery) return rawIdMarginals;
-
-    // Filter the keys and their datapoints based on attribute query
-    const filtered = Object.entries(rawIdMarginals).reduce(
-      (result, [key, datapointsList]) => {
-        // Filter datapoints to ones that have the attributes
-        const filteredAgentRuns = datapointsList.filter((datapointId) => {
-          if (curSearchQuery) {
-            const attrs = searchResultMap?.[datapointId]?.[curSearchQuery];
-            return attrs && attrs.length && attrs[0].value !== null;
-          }
-          return true;
-        });
-
-        // Only include keys that have at least one datapoint after filtering
-        if (filteredAgentRuns.length > 0) {
-          result[key] = filteredAgentRuns;
-        }
-
-        return result;
-      },
-      {} as typeof rawIdMarginals
-    );
-
-    return filtered;
-  }, [rawIdMarginals, curSearchQuery, searchResultMap]);
-
-  // Only keep stat marginals that have datapoints, after filtering by attribute query
-  const statMarginals = useMemo(() => {
-    if (!rawStatMarginals) return rawStatMarginals;
-    if (!curSearchQuery) return rawStatMarginals;
-    return Object.fromEntries(
-      Object.entries(rawStatMarginals).filter(([key, _]) => {
-        return idMarginals && key in idMarginals;
-      })
-    );
-  }, [rawStatMarginals, curSearchQuery, idMarginals]);
-
-  // FLAT LIST: Collect all agent runs (datapoint IDs) from idMarginals
-  const allAgentRunEntries: [string, string[]][] = useMemo(() => {
-    if (!idMarginals) return [];
-    return Object.entries(idMarginals);
-  }, [idMarginals]);
-
-  // Flatten agent run entries for pagination
-  const flatAgentRuns = useMemo(() => {
-    const result: { agentRunId: string; marginalKey: string }[] = [];
-    allAgentRunEntries.forEach(([marginalKey, agentRunIds]) => {
-      agentRunIds.forEach((agentRunId) => {
-        result.push({ agentRunId, marginalKey });
-      });
+      return true;
     });
-    return result;
-  }, [allAgentRunEntries]);
+
+    return filteredAgentRuns;
+  }, [rawAgentRunIds, curSearchQuery, attributeMap]);
 
   // Add pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = PAGINATION_LIMIT; // Use constant instead of hardcoded value
 
-  // Calculate pagination values (memoized)
-  const totalPages = useMemo(
-    () => Math.ceil(flatAgentRuns.length / itemsPerPage),
-    [flatAgentRuns.length, itemsPerPage]
-  );
-  const startIndex = useMemo(
-    () => (currentPage - 1) * itemsPerPage,
-    [currentPage, itemsPerPage]
-  );
-  const endIndex = useMemo(
-    () => Math.min(startIndex + itemsPerPage, flatAgentRuns.length),
-    [startIndex, itemsPerPage, flatAgentRuns.length]
+  // Calculate pagination values
+  const totalPages = Math.ceil((agentRunIds?.length || 0) / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(
+    startIndex + itemsPerPage,
+    agentRunIds?.length || 0
   );
   const currentPageItems = useMemo(
-    () => flatAgentRuns.slice(startIndex, endIndex),
-    [flatAgentRuns, startIndex, endIndex]
+    () => agentRunIds?.slice(startIndex, endIndex) || [],
+    [agentRunIds, startIndex, endIndex]
   );
 
   // When the page changes, request metadata for the new page
   useEffect(() => {
-    if (!frameGridId) return;
-    dispatch(
-      getAgentRunMetadata(currentPageItems.map(({ agentRunId }) => agentRunId))
+    if (!frameGridId || !currentPageItems.length) return;
+
+    // Only fetch metadata for agent run IDs that haven't been fetched before
+    const agentRunIdsToFetch = currentPageItems.filter(
+      (id) => id && !fetchedAgentRunIdsRef.current.has(id)
     );
+
+    if (agentRunIdsToFetch.length === 0) return;
+
+    // Mark these IDs as fetched
+    agentRunIdsToFetch.forEach((id) => fetchedAgentRunIdsRef.current.add(id));
+
+    dispatch(getAgentRunMetadata(agentRunIdsToFetch));
   }, [currentPageItems, dispatch, frameGridId]);
+
+  // Clear fetched IDs when the overall agent run list changes
+  useEffect(() => {
+    fetchedAgentRunIdsRef.current.clear();
+  }, [agentRunIds]);
 
   // Pagination controls
   const goToPage = useCallback(
     (page: number) => {
       setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-
-      // Recompute in this function so we can figure out which IDs to request metadata for
-      // TODO(mengk): refactor this.
-      const startIndex = (currentPage - 1) * itemsPerPage;
-      const endIndex = Math.min(
-        startIndex + itemsPerPage,
-        flatAgentRuns.length
-      );
-      const currentPageItems = flatAgentRuns.slice(startIndex, endIndex);
-
-      dispatch(
-        getAgentRunMetadata(
-          currentPageItems.map(({ agentRunId }) => agentRunId)
-        )
-      );
     },
-    [currentPage, dispatch, flatAgentRuns, itemsPerPage, totalPages]
+    [totalPages]
   );
 
   // If data isn't available, show a loading spinner
-  if (!statMarginals || !idMarginals) {
+  // But if both dimensions are None, we don't need stats, so we can show the agent run list
+  if (!rawBinStats && (outerBinKey || innerBinKey)) {
     return (
       <Card className="h-full flex-1 p-3">
         <div className="flex-1 flex flex-col items-center justify-center space-y-2 h-full">
@@ -254,7 +182,7 @@ export default function ExperimentViewer() {
           {/* <div className="flex items-center space-x-1">
             <span className="text-xs text-gray-500">Chart:</span>
             <Select
-              value={chartType || 'bar'}
+              value={chartType || 'table'}
               onValueChange={(value: 'bar' | 'line' | 'table') =>
                 dispatch(setChartType(value))
               }
@@ -277,14 +205,23 @@ export default function ExperimentViewer() {
           </div> */}
         </div>
       </div>
-      {chartType === 'table' && <TableArea />}
-      {(chartType === 'bar' || chartType === 'line') && <GraphArea />}
+
+      {/* Dimension scores table or graph - conditional based on chart type */}
+      {(() => {
+        if (chartType === 'table') {
+          return <TableArea />;
+        }
+        if (chartType === 'bar' || chartType === 'line') {
+          return <GraphArea />;
+        }
+        return null;
+      })()}
 
       {/* Agent run list */}
       <div>
         <div className="text-sm font-semibold">Agent Run List</div>
         <div className="text-xs">
-          {flatAgentRuns.length} agent runs matching the current view
+          {agentRunIds?.length || 0} agent runs matching the current view
         </div>
       </div>
       <TranscriptFilterControls />
@@ -292,10 +229,10 @@ export default function ExperimentViewer() {
         className="flex-1 space-y-1 custom-scrollbar min-w-0 overflow-y-auto"
         ref={containerRef}
       >
-        {currentPageItems.map(({ agentRunId }) => (
+        {currentPageItems.map((agentRunId) => (
           <AgentRunCard key={agentRunId} agentRunId={agentRunId} />
         ))}
-        {flatAgentRuns.length === 0 && (
+        {(agentRunIds?.length || 0) === 0 && (
           <div className="text-xs text-gray-500 min-h-[24px]">
             {loadingSearchQuery ? (
               <div className="flex items-center space-x-2">
@@ -345,7 +282,7 @@ export default function ExperimentViewer() {
           </button>
         </div>
         <div className="text-[11px] text-gray-500">
-          {startIndex + 1}-{endIndex} of {flatAgentRuns.length}
+          {startIndex + 1}-{endIndex} of {agentRunIds?.length || 0}
         </div>
       </div>
     </Card>

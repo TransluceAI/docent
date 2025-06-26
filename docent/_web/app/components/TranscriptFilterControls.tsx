@@ -62,6 +62,7 @@ export const TranscriptFilterControls = () => {
     } else {
       parsedKey = metadataKey.trim();
       parsedValue = value;
+      console.log('metadataType', metadataType);
       if (metadataType === 'bool') {
         parsedValue = value === 'true';
       } else if (metadataType === 'int' || metadataType === 'float') {
@@ -84,6 +85,7 @@ export const TranscriptFilterControls = () => {
           op: metadataOp,
           id: uuid4(),
           name: null,
+          supports_sql: true,
         } as PrimitiveFilter)
       );
     }

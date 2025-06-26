@@ -1,111 +1,48 @@
-from typing import Any, Awaitable, Callable, cast
+from typing import Any
 
-import anyio
+from sqlalchemy import text
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._db_service.contexts import ViewContext
-from docent._db_service.service import DBService, MarginalizationResult
+from docent._db_service.schemas.tables import SQLAAgentRun
+from docent._db_service.service import DBService
 from docent._log_util import get_logger
 from docent._server._broker.redis_client import (
     publish_to_broker,
     publish_view_update,
 )
-from docent.data_models.metadata import BaseAgentRunMetadata
+from docent.data_models.metadata import FrameDimension
 
 logger = get_logger(__name__)
 
 
-async def _ids_map_fn(ids: list[str], _: Any):
-    return ids
+async def publish_binnable_keys(db: DBService, ctx: ViewContext):
+    """Publish keys that can be set as the io bin keys"""
 
+    bin_keys = await db.get_binnable_keys(ctx)
 
-async def _stats_map_fn(_: Any, metadata: list[BaseAgentRunMetadata]):
-    """Calculate mean score with 95% confidence interval for each score key.
+    # Convert to FrameDimension objects
+    dimensions = [
+        FrameDimension(
+            id=key,
+            name=key,
+            search_query=None,
+            metadata_key=key,
+            maintain_mece=None,
+            loading_clusters=False,
+            loading_bins=False,
+            binIds=None,
+        )
+        for key in sorted(bin_keys)
+    ]
 
-    Returns:
-        Dict containing statistics for each score key.
-        Each key has mean score, confidence interval half-width, and sample size.
-        Returns None if there are no matching indices.
-    """
-    if not metadata:
-        return {"mean": None, "ci": None, "n": 0}
-
-    # First pass: collect all available score keys and their values
-    all_outcomes: dict[str, list[float | None]] = {}
-    for m in metadata:
-        for score_key, score_value in m.scores.items():
-            cur_list = all_outcomes.setdefault(score_key, [])
-            cur_list.append(float(score_value) if score_value is not None else None)
-
-    # Calculate statistics for each score key
-    results: dict[str, dict[str, float | None]] = {}
-    for score_key, outcomes in all_outcomes.items():
-        if outcomes and any(outcome is None for outcome in outcomes):
-            results[score_key] = {"mean": None, "ci": None, "n": len(outcomes)}
-            continue
-
-        # Calculate mean
-        outcomes = cast(list[float], outcomes)
-        n = len(outcomes)
-        mean = sum(outcomes) / n
-
-        # Calculate 95% CI using normal approximation
-        # z-score for 95% CI is 1.96
-        if n > 1:  # Need at least 2 samples for std
-            std = (sum((x - mean) ** 2 for x in outcomes) / (n - 1)) ** 0.5
-            ci = 1.96 * std / (n**0.5)
-        else:
-            # With 1 sample, we can't calculate CI
-            ci = 0
-
-        results[score_key] = {"mean": mean, "ci": ci, "n": n}
-
-    # The frontend expects some aggregate data, otherwise it won't show the sample/experiment.
-    if not results:
-        results["default"] = {"mean": None, "ci": None, "n": len(metadata)}
-
-    return results
-
-
-def _format_bin_combination(bin_combination: tuple[tuple[str, str], ...]) -> str:
-    return "|".join(",".join(pair) for pair in bin_combination)
-
-
-async def publish_dims(db: DBService, ctx: ViewContext):
+    # Publish to frontend
     await publish_view_update(
         ctx.fg_id,
         ctx.view_id,
         {
             "action": "dimensions",
-            "payload": await db.get_view_dims(ctx),
-        },
-    )
-
-
-async def publish_marginals(
-    db: DBService,
-    ctx: ViewContext,
-    dim_ids: list[str] | None = None,
-    ensure_fresh: bool = True,
-):
-    async def _publish_dim_callback(_: Any):
-        await publish_dims(db, ctx)
-
-    marginals = await db.get_marginals(
-        ctx,
-        keep_dim_ids=dim_ids,
-        ensure_fresh=ensure_fresh,
-        publish_dim_callback=_publish_dim_callback,
-    )
-
-    # Marginals depend on the current view's base filter and therefore must be
-    # view-local.  Broadcasting them framegrid-wide led to cross-view leakage.
-    await publish_view_update(
-        ctx.fg_id,
-        ctx.view_id,
-        {
-            "action": "marginals",
-            "payload": marginals,
+            "payload": dimensions,
         },
     )
 
@@ -121,12 +58,9 @@ async def publish_base_filter(db: DBService, ctx: ViewContext):
     )
 
 
-async def publish_io_dims(db: DBService, ctx: ViewContext):
-    io_dims = await db.get_io_dims(ctx)
-    assert (
-        io_dims is not None
-    ), f"No inner or outer dimension specified for fg_id={ctx.fg_id}, view_id={ctx.view_id}"
-    inner_dim_id, outer_dim_id = io_dims
+async def publish_io_bin_keys(db: DBService, ctx: ViewContext):
+    io_dims = await db.get_io_bin_keys(ctx)
+    inner_bin_key, outer_bin_key = io_dims if io_dims is not None else (None, None)
 
     await publish_view_update(
         ctx.fg_id,
@@ -134,11 +68,13 @@ async def publish_io_dims(db: DBService, ctx: ViewContext):
         {
             "action": "io_dims_updated",
             "payload": {
-                "inner_dim_id": inner_dim_id,
-                "outer_dim_id": outer_dim_id,
+                "inner_bin_key": inner_bin_key,
+                "outer_bin_key": outer_bin_key,
             },
         },
     )
+
+    return inner_bin_key, outer_bin_key
 
 
 async def publish_searches(db: DBService, ctx: ViewContext):
@@ -152,95 +88,177 @@ async def publish_searches(db: DBService, ctx: ViewContext):
     )
 
 
-async def _publish_homepage_marginals(
+async def publish_bin_stats_and_agent_runs(
     db: DBService,
     ctx: ViewContext,
-    inner_dim_id: str | None,
-    outer_dim_id: str | None,
+    inner_bin_key: str | None,
+    outer_bin_key: str | None,
 ):
-    # Gather base data, as this is needed for map functions
-    metadata_with_ids = await db.get_metadata_with_ids(ctx)
-    metadata_dict = {id: md for id, md in metadata_with_ids}
+    """Publish homepage binStats and agentRunIds"""
 
-    # Get all required marginals once
-    keep_dim_ids = [dim_id for dim_id in [inner_dim_id, outer_dim_id] if dim_id is not None]
-    marginals = await db.get_marginals(ctx, keep_dim_ids=keep_dim_ids)
-    # Marginalize using cached marginals; prevents multiple duplicate requests
-    comb_marginals = await db.marginalize(
-        ctx,
-        keep_dim_ids,
-        return_dims_and_filters=True,
-        _marginals=marginals,
-    )
-    outer_marginals = (
-        await db.marginalize(
-            ctx,
-            [outer_dim_id],
-            _marginals=marginals,
-        )
-        if outer_dim_id
-        else None
-    )
+    # Get all agent run IDs for this view
+    all_agent_run_ids = await db.get_agent_run_ids(ctx)
 
-    async def _apply_fn(
-        marginal: MarginalizationResult,
-        map_fn: Callable[[list[str], list[BaseAgentRunMetadata]], Awaitable[Any]],
-    ):
-        to_send = dict(marginal)
-        to_send["marginals"] = {
-            _format_bin_combination(bin_combination): await map_fn(
-                [j.agent_run_id for j in judgments],
-                [metadata_dict[j.agent_run_id] for j in judgments],
-            )
-            for bin_combination, judgments in marginal["marginals"].items()
+    # If no bin keys are set, we still need to publish agent run IDs for the frontend
+    # if no agent runs, we publish empty binStats and agentRunIds
+    if (inner_bin_key is None and outer_bin_key is None) or len(all_agent_run_ids) == 0:
+        payload: dict[str, Any] = {
+            "request_type": "comb_stats",
+            "result": {
+                "binStats": {},
+                "agentRunIds": all_agent_run_ids,
+            },
         }
-        return to_send
+        await publish_view_update(
+            ctx.fg_id,
+            ctx.view_id,
+            {
+                "action": "specific_bins",
+                "payload": payload,
+            },
+        )
 
-    # Apply map functions to get processed marginals
-    comb_stat_marginals = await _apply_fn(comb_marginals, _stats_map_fn)
-    comb_ids_marginals = await _apply_fn(comb_marginals, _ids_map_fn)
-    outer_stat_marginals = (
-        await _apply_fn(outer_marginals, _stats_map_fn) if outer_marginals else None
+        return
+
+    # Get the bin keys that are set
+    bin_keys = [bin_key for bin_key in [inner_bin_key, outer_bin_key] if bin_key is not None]
+
+    # Build the WHERE clause for the base filter
+    # Convert the SQLAlchemy where clause to a string representation
+    base_where = ctx.get_base_where_clause(SQLAAgentRun)
+
+    from sqlalchemy.dialects import postgresql
+
+    compiled_where = base_where.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
     )
+    where_clause = str(compiled_where)
 
-    # Send all processed marginals at once
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(
-            publish_view_update,
-            ctx.fg_id,
-            ctx.view_id,
-            {
-                "action": "specific_marginals",
-                "payload": {
-                    "request_type": "comb_stats",
-                    "result": comb_stat_marginals,
-                },
-            },
+    # Build the SQL query to compute statistics directly
+    async with db.session() as session:
+        # Build the GROUP BY clause based on the number of bins
+        if len(bin_keys) == 1:
+            # 1D case: group by single dimension
+            dim_key = bin_keys[0]
+            group_by_clause = f"metadata_json->>'{dim_key}'"
+            # Format bin key as dim_key,value
+            bin_key_format = f"CONCAT('{dim_key},', metadata_json->>'{dim_key}')"
+        elif len(bin_keys) == 2:
+            # 2D case: group by both bins
+            inner_key, outer_key = bin_keys
+            group_by_clause = f"metadata_json->>'{inner_key}', metadata_json->>'{outer_key}'"
+            # Format bin key as inner_key,inner_value|outer_key,outer_value
+            bin_key_format = f"CONCAT('{inner_key},', metadata_json->>'{inner_key}', '|{outer_key},', metadata_json->>'{outer_key}')"
+        else:
+            logger.error(
+                f"_publish_homepage_bins_optimized: unexpected number of bin keys: {len(bin_keys)}"
+            )
+            return
+
+        # Create the query that computes statistics
+        query = f"""
+        WITH bin_groups AS (
+            SELECT
+                {bin_key_format} as bin_key,
+                COUNT(*) as n
+            FROM agent_runs
+            WHERE {where_clause}
+            GROUP BY {group_by_clause}
+        ),
+        score_stats AS (
+            SELECT
+                {bin_key_format} as bin_key,
+                scores.key as score_key,
+                COUNT(*) as n,
+                AVG(
+                    CASE
+                        WHEN scores.value ~ '^[0-9]+\\.?[0-9]*$' THEN scores.value::float
+                        WHEN LOWER(scores.value) IN ('true', 'false') THEN
+                            CASE WHEN LOWER(scores.value) = 'true' THEN 1.0 ELSE 0.0 END
+                        ELSE NULL
+                    END
+                ) as mean,
+                STDDEV(
+                    CASE
+                        WHEN scores.value ~ '^[0-9]+\\.?[0-9]*$' THEN scores.value::float
+                        WHEN LOWER(scores.value) IN ('true', 'false') THEN
+                            CASE WHEN LOWER(scores.value) = 'true' THEN 1.0 ELSE 0.0 END
+                        ELSE NULL
+                    END
+                ) as stddev
+            FROM agent_runs
+            CROSS JOIN LATERAL jsonb_each_text(metadata_json->'scores') as scores(key, value)
+            WHERE {where_clause}
+            AND metadata_json->'scores' IS NOT NULL
+            AND metadata_json->'scores' != 'null'::jsonb
+            AND (
+                -- Handle numeric values
+                scores.value ~ '^[0-9]+\\.?[0-9]*$'
+                OR
+                -- Handle boolean values (convert to 0/1)
+                LOWER(scores.value) IN ('true', 'false')
+            )
+            GROUP BY {group_by_clause}, scores.key
         )
-        tg.start_soon(
-            publish_view_update,
-            ctx.fg_id,
-            ctx.view_id,
-            {
-                "action": "specific_marginals",
-                "payload": {
-                    "request_type": "comb_ids",
-                    "result": comb_ids_marginals,
-                },
-            },
-        )
-        tg.start_soon(
-            publish_view_update,
-            ctx.fg_id,
-            ctx.view_id,
-            {
-                "action": "specific_marginals",
-                "payload": {
-                    "request_type": "outer_stats",
-                    "result": outer_stat_marginals,
-                },
-            },
-        )
+        SELECT
+            bg.bin_key,
+            COALESCE(ss.score_key, 'default') as score_key,
+            COALESCE(ss.n, bg.n) as n,
+            ss.mean,
+            CASE
+                WHEN COALESCE(ss.n, bg.n) > 1 AND ss.stddev IS NOT NULL THEN 1.96 * ss.stddev / SQRT(COALESCE(ss.n, bg.n))
+                ELSE 0
+            END as ci
+        FROM bin_groups bg
+        LEFT JOIN score_stats ss ON bg.bin_key = ss.bin_key
+        ORDER BY bg.bin_key, score_key
+        """
+
+        # Execute the query
+        result = await session.execute(text(query))
+
+        # Process the results
+        processed_stats = {}
+        row_count = 0
+
+        for row in result:
+            row_count += 1
+            bin_key = row.bin_key
+            score_key = row.score_key
+            n = row.n
+            mean = row.mean
+            ci = row.ci
+
+            logger.debug(
+                f"_publish_homepage_bins_optimized: processing row {row_count}: bin={bin_key}, score={score_key}, n={n}, mean={mean}, ci={ci}"
+            )
+
+            if bin_key not in processed_stats:
+                processed_stats[bin_key] = {}
+
+            processed_stats[bin_key][score_key] = {
+                "mean": float(mean) if mean is not None else None,
+                "ci": float(ci) if ci is not None else None,
+                "n": int(n) if n is not None else 0,
+            }
+
+    # Publish the state with both agent run IDs and bin statistics
+    payload = {
+        "request_type": "comb_stats",
+        "result": {
+            "binStats": processed_stats,  # Statistics for table/graph
+            "agentRunIds": all_agent_run_ids,  # Agent run IDs for the list
+        },
+    }
+
+    await publish_view_update(
+        ctx.fg_id,
+        ctx.view_id,
+        {
+            "action": "specific_bins",
+            "payload": payload,
+        },
+    )
 
 
 async def publish_framegrids(db: DBService):
@@ -263,12 +281,18 @@ async def publish_framegrids(db: DBService):
 
 async def publish_homepage_state(db: DBService, ctx: ViewContext):
     """Publish homepage state for a specific view. Always requires ViewProvider since base filters are view-scoped."""
-    io_dims = await db.get_io_dims(ctx)
-    assert io_dims is not None, f"View {ctx.view_id} has no inner or outer dimension specified"
-    inner_dim_id, outer_dim_id = io_dims
 
+    # Publish base filter
     await publish_base_filter(db, ctx)
-    await publish_dims(db, ctx)
-    await publish_io_dims(db, ctx)
-    await _publish_homepage_marginals(db, ctx, inner_dim_id, outer_dim_id)
+
+    # Publish dimensions
+    await publish_binnable_keys(db, ctx)
+
+    # Publish current bin keys
+    inner_bin_key, outer_bin_key = await publish_io_bin_keys(db, ctx)
+
+    # Publish bin stats and agent runs
+    await publish_bin_stats_and_agent_runs(db, ctx, inner_bin_key, outer_bin_key)
+
+    # Publish searches
     await publish_searches(db, ctx)

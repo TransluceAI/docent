@@ -26,23 +26,26 @@ export default function DimensionSelector({
   const dispatch = useAppDispatch();
 
   // Frame slice
-  const innerDimId = useAppSelector((state) => state.frame.innerDimId);
-  const outerDimId = useAppSelector((state) => state.frame.outerDimId);
+  const innerBinKey = useAppSelector((state) => state.frame.innerBinKey);
+  const outerBinKey = useAppSelector((state) => state.frame.outerBinKey);
   const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
   const agentRunMetadataFields =
     useAppSelector((state) => state.frame.agentRunMetadataFields) || [];
 
-  const selectedInnerMetadataKey = useMemo(() => {
-    return innerDimId && dimensionsMap?.[innerDimId]?.metadata_key;
-  }, [dimensionsMap, innerDimId]);
+  // In the new system, innerBinKey and outerBinKey are metadata keys directly
+  const innerDim = useMemo(() => {
+    if (!innerBinKey) return null;
+    return innerBinKey;
+  }, [innerBinKey]);
 
-  const selectedOuterMetadataKey = useMemo(() => {
-    return outerDimId && dimensionsMap?.[outerDimId]?.metadata_key;
-  }, [dimensionsMap, outerDimId]);
+  const outerDim = useMemo(() => {
+    if (!outerBinKey) return null;
+    return outerBinKey;
+  }, [outerBinKey]);
 
   const handleInnerDimChange = (value: string) => {
     if (value === 'None') {
-      dispatch(setIODims({ innerDimId: undefined, outerDimId }));
+      dispatch(setIODims({ innerBinKey: undefined, outerBinKey }));
     } else {
       dispatch(setIODimByMetadataKey({ metadataKey: value, type: 'inner' }));
     }
@@ -50,28 +53,28 @@ export default function DimensionSelector({
 
   const handleOuterDimChange = (value: string) => {
     if (value === 'None') {
-      dispatch(setIODims({ innerDimId, outerDimId: undefined }));
+      dispatch(setIODims({ innerBinKey, outerBinKey: undefined }));
     } else {
       dispatch(setIODimByMetadataKey({ metadataKey: value, type: 'outer' }));
     }
   };
 
   const handleSwapDimensions = () => {
-    if (innerDimId && outerDimId) {
+    if (innerBinKey && outerBinKey) {
       // Swap the dimensions using a single dispatch
       dispatch(
         setIODims({
-          innerDimId: outerDimId,
-          outerDimId: innerDimId,
+          innerBinKey: outerBinKey,
+          outerBinKey: innerBinKey,
         })
       );
     }
   };
 
   const showSwapButton =
-    selectedInnerMetadataKey &&
-    selectedOuterMetadataKey &&
-    selectedOuterMetadataKey !== 'None';
+    innerDim &&
+    outerDim &&
+    outerDim !== 'None';
 
   const filteredAgentRunMetadataFields = useMemo(() => {
     return agentRunMetadataFields
@@ -87,7 +90,7 @@ export default function DimensionSelector({
         <div className="flex items-center space-x-1">
           <span className="text-xs text-gray-500">Outer:</span>
           <Select
-            value={selectedOuterMetadataKey || 'None'}
+            value={outerDim || 'None'}
             onValueChange={handleOuterDimChange}
           >
             <SelectTrigger className="h-6 max-w-24 text-xs border-gray-200 bg-transparent hover:bg-gray-50 px-2 font-normal">
@@ -124,18 +127,16 @@ export default function DimensionSelector({
 
           <span className="text-xs text-gray-500">Inner:</span>
           <Select
-            value={selectedInnerMetadataKey || 'None'}
+            value={innerDim || 'None'}
             onValueChange={handleInnerDimChange}
           >
             <SelectTrigger className="h-6 max-w-24 text-xs border-gray-200 bg-transparent hover:bg-gray-50 px-2 font-normal">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {agentRunMetadataFields.length === 0 && (
-                <SelectItem value="None" className="text-xs">
-                  None
-                </SelectItem>
-              )}
+              <SelectItem value="None" className="text-xs">
+                None
+              </SelectItem>
               {filteredAgentRunMetadataFields
                 .map((field) => (
                   <SelectItem

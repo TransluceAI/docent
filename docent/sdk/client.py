@@ -4,7 +4,7 @@ import requests
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import FrameDimension, FrameFilter
+from docent.data_models.filters import FrameFilter
 
 logger = get_logger(__name__)
 
@@ -71,71 +71,55 @@ class DocentClient:
 
         logger.info(f"Successfully created FrameGrid with id='{fg_id}'")
 
-        # Set the default MECE dimension that is used to group the homepage
-        default_dim = FrameDimension(name="run_id", metadata_key="run_id", maintain_mece=True)
-        self.add_dimension(fg_id, default_dim)
-        self.set_io_dims(fg_id, default_dim.id, None)
-
         logger.info(f"FrameGrid creation complete. Frontend available at: {self._web_url}/{fg_id}")
         return fg_id
 
-    def set_io_dims(self, fg_id: str, inner_dim_id: str | None, outer_dim_id: str | None):
-        """Sets inner and outer dimensions for a FrameGrid.
+    def set_io_bin_keys(self, fg_id: str, inner_bin_key: str | None, outer_bin_key: str | None):
+        """Set inner and outer bin keys for a frame grid."""
+        response = self._session.post(
+            f"{self._server_url}/{fg_id}/set_io_bin_keys",
+            json={"inner_bin_key": inner_bin_key, "outer_bin_key": outer_bin_key},
+        )
+        response.raise_for_status()
 
-        Configures which dimensions are used for inner and outer organization
-        of frames in the UI.
+    def set_inner_bin_key(self, fg_id: str, dim: str):
+        """Set the inner bin key for a frame grid."""
+        current_io_bin_keys = self.get_io_bin_keys(fg_id)
+        if current_io_bin_keys is None:
+            current_io_bin_keys = (None, None)
+        self.set_io_bin_keys(fg_id, dim, current_io_bin_keys[1])  # Set inner, keep outer
 
+    def set_outer_bin_key(self, fg_id: str, dim: str):
+        """Set the outer bin key for a frame grid."""
+        current_io_bin_keys = self.get_io_bin_keys(fg_id)
+        if current_io_bin_keys is None:
+            current_io_bin_keys = (None, None)
+        self.set_io_bin_keys(fg_id, current_io_bin_keys[0], dim)  # Keep inner, set outer
+
+    def get_io_bin_keys(self, fg_id: str) -> tuple[str | None, str | None] | None:
+        """Gets the current inner and outer bin keys for a FrameGrid.
+        
         Args:
             fg_id: ID of the FrameGrid.
-            inner_dim_id: ID of the dimension to use for inner organization, or None.
-            outer_dim_id: ID of the dimension to use for outer organization, or None.
-
+            
         Returns:
-            dict: API response data.
-
+            tuple: (inner_bin_key | None, outer_bin_key | None)
+            
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{fg_id}/io_dims"
-        payload = {"inner_dim_id": inner_dim_id, "outer_dim_id": outer_dim_id}
-        response = self._session.post(url, json=payload)
+        url = f"{self._server_url}/{fg_id}/io_bin_keys"
+        response = self._session.get(url)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        return (data.get("inner_bin_key"), data.get("outer_bin_key"))
 
-    def add_dimension(
-        self,
-        fg_id: str,
-        dim: FrameDimension,
-    ) -> dict[str, Any]:
-        """Adds a dimension to a FrameGrid.
-
-        Dimensions are used to organize and filter frames in the UI.
-
-        Args:
-            fg_id: ID of the FrameGrid.
-            dim: FrameDimension object defining the dimension to add.
-
-        Returns:
-            dict: API response data.
-
-        Raises:
-            requests.exceptions.HTTPError: If the API request fails.
-        """
-        url = f"{self._server_url}/{fg_id}/dimension"
-        payload = {
-            "dim": dim.model_dump(),
-        }
-
-        response = self._session.post(url, json=payload)
-        response.raise_for_status()
-
-        logger.info(f"Successfully added dimension '{dim.name}' to FrameGrid '{fg_id}'")
-        return response.json()
-
+    
     def add_agent_runs(self, fg_id: str, agent_runs: list[AgentRun]) -> dict[str, Any]:
         """Adds agent runs to a FrameGrid.
 
         Agent runs represent execution traces that can be visualized and analyzed.
+        This method batches the insertion in groups of 5,000 for better performance.
 
         Args:
             fg_id: ID of the FrameGrid.
@@ -147,14 +131,25 @@ class DocentClient:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
+        from tqdm import tqdm
+        
         url = f"{self._server_url}/{fg_id}/agent_runs"
-        payload = {"agent_runs": [ar.model_dump(mode="json") for ar in agent_runs]}
+        batch_size = 1000
+        total_runs = len(agent_runs)
+        
+        # Process agent runs in batches
+        with tqdm(total=total_runs, desc="Adding agent runs", unit="runs") as pbar:
+            for i in range(0, total_runs, batch_size):
+                batch = agent_runs[i:i + batch_size]
+                payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch]}
 
-        response = self._session.post(url, json=payload)
-        response.raise_for_status()
-
-        logger.info(f"Successfully added {len(agent_runs)} agent runs to FrameGrid '{fg_id}'")
-        return response.json()
+                response = self._session.post(url, json=payload)
+                response.raise_for_status()
+                
+                pbar.update(len(batch))
+        
+        logger.info(f"Successfully added {total_runs} agent runs to FrameGrid '{fg_id}'")
+        return {"status": "success", "total_runs_added": total_runs}
 
     def get_base_filter(self, fg_id: str) -> dict[str, Any] | None:
         """Retrieves the base filter for a FrameGrid.
@@ -263,29 +258,3 @@ class DocentClient:
         response.raise_for_status()
         return response.json()
 
-    def get_search_results_for_id(
-        self, fg_id: str, dim_id: str, base_data_only: bool = True
-    ) -> list[dict[str, Any]]:
-        """Retrieves search results for a specific dimension.
-
-        Gets attribute search results for frames matching a specific dimension.
-
-        Args:
-            fg_id: ID of the FrameGrid.
-            dim_id: ID of the dimension to search.
-            base_data_only: If True, returns only basic result information.
-
-        Returns:
-            list: List of dictionaries containing search result information.
-
-        Raises:
-            requests.exceptions.HTTPError: If the API request fails.
-        """
-        url = f"{self._server_url}/{fg_id}/dimension_attributes"
-        params = {
-            "dim_id": dim_id,
-            "base_data_only": base_data_only,
-        }
-        response = self._session.get(url, params=params)
-        response.raise_for_status()
-        return response.json()

@@ -6,22 +6,22 @@ import {
 
 import { apiRestClient } from '../services/apiService';
 import {
-  MarginalizationResult,
   RegexSnippet,
   TaskStats,
   TranscriptDiffViewport,
 } from '../types/experimentViewerTypes';
 import { PrimitiveFilter } from '../types/frameTypes';
+import { FrameState } from './frameSlice';
+import { GraphDatum } from '../components/Graph';
 
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
-import { GraphDatum } from '../components/Graph';
 
 export interface ExperimentViewerState {
-  // Global marginalization results
-  statMarginals?: Record<string, TaskStats>;
-  idMarginals?: Record<string, string[]>;
-  outerStatMarginals?: Record<string, TaskStats>;
+  // Global binning results
+  binStats?: Record<string, TaskStats>;
+  agentRunIds?: string[];
+  outerBinStats?: Record<string, TaskStats>;
   dimIdsToFilterIds?: Record<string, string[]>;
   filtersMap?: Record<string, PrimitiveFilter>;
   // UI state of the viewer
@@ -36,68 +36,43 @@ export interface ExperimentViewerState {
   regexSnippets?: Record<string, RegexSnippet[]>;
   // Graph state
   graphData?: GraphDatum[];
+  innerBinKey?: string;
+  outerBinKey?: string;
 }
 
 const initialState: ExperimentViewerState = {
   chartType: 'table',
 };
 
-// Create a thunk that accesses both slices
-export const setStatMarginalsAndFilters = createAsyncThunk(
-  'experimentViewer/setStatMarginalsAndFilters',
-  async (marginalizationResult: MarginalizationResult, { dispatch }) => {
-    dispatch(setStatMarginals(marginalizationResult));
-    dispatch(setDimIdsToFilterIds(marginalizationResult.dim_ids_to_filter_ids));
-    dispatch(
-      setFiltersMap(
-        marginalizationResult.filters_dict as Record<string, PrimitiveFilter>
-      )
-    );
-  }
-);
-
 // Thunk to set inner and outer dimension IDs
 export const setIODims = createAsyncThunk(
   'experimentViewer/setIODims',
   async (
     {
-      innerDimId,
-      outerDimId,
+      innerBinKey,
+      outerBinKey,
     }: {
-      innerDimId?: string;
-      outerDimId?: string;
+      innerBinKey?: string;
+      outerBinKey?: string;
     },
     { dispatch, getState }
   ) => {
-    const state = getState() as RootState;
+    const state = getState() as { frame: FrameState };
     const frameGridId = state.frame.frameGridId;
 
     if (!frameGridId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No frame grid ID available',
-          variant: 'destructive',
-        })
-      );
       throw new Error('No frame grid ID available');
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/io_dims`, {
-        inner_dim_id: innerDimId,
-        outer_dim_id: outerDimId,
+      await apiRestClient.post(`/${frameGridId}/set_io_bin_keys`, {
+        inner_bin_key: innerBinKey,
+        outer_bin_key: outerBinKey,
       });
 
-      return { innerDimId, outerDimId };
+      return { innerBinKey, outerBinKey };
     } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error setting dimensions',
-          description: 'Failed to set inner/outer dimensions',
-          variant: 'destructive',
-        })
-      );
+      console.error('Error setting IO dims:', error);
       throw error;
     }
   }
@@ -130,7 +105,7 @@ export const setIODimByMetadataKey = createAsyncThunk(
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/io_dims_with_metadata_key`, {
+      await apiRestClient.post(`/${frameGridId}/io_bin_key_with_metadata_key`, {
         metadata_key: metadataKey,
         type: type,
       });
@@ -153,17 +128,38 @@ export const experimentViewerSlice = createSlice({
   name: 'experimentViewer',
   initialState,
   reducers: {
-    setStatMarginals: (state, action: PayloadAction<MarginalizationResult>) => {
-      state.statMarginals = action.payload.marginals;
+    setAgentRunIds: (state, action: PayloadAction<string[]>) => {
+      state.agentRunIds = action.payload;
     },
-    setOuterStatMarginals: (
-      state,
-      action: PayloadAction<MarginalizationResult>
-    ) => {
-      state.outerStatMarginals = action.payload.marginals;
+    setBinStats: (state, action: PayloadAction<any>) => {
+      let stats: Record<string, TaskStats> = {};
+      if (action.payload && typeof action.payload === 'object') {
+        if (
+          'binStats' in action.payload &&
+          typeof action.payload.binStats === 'object'
+        ) {
+          // The backend now sends computed statistics in the format: {bin_key: {score_key: {mean, ci, n}}}
+          stats = action.payload.binStats;
+        } else {
+          stats = action.payload;
+        }
+      }
+      state.binStats = stats;
     },
-    setIdMarginals: (state, action: PayloadAction<MarginalizationResult>) => {
-      state.idMarginals = action.payload.marginals;
+    setOuterBinStats: (state, action: PayloadAction<any>) => {
+      let stats: Record<string, TaskStats> = {};
+      if (action.payload && typeof action.payload === 'object') {
+        if (
+          'binIds' in action.payload &&
+          typeof action.payload.binIds === 'object'
+        ) {
+          // Extract stats from the binIds field
+          stats = action.payload.binIds;
+        } else {
+          stats = action.payload;
+        }
+      }
+      state.outerBinStats = typeof stats === 'object' ? stats : {};
     },
     setDimIdsToFilterIds: (
       state,
@@ -218,9 +214,9 @@ export const experimentViewerSlice = createSlice({
 });
 
 export const {
-  setStatMarginals,
-  setIdMarginals,
-  setOuterStatMarginals,
+  setAgentRunIds,
+  setBinStats,
+  setOuterBinStats,
   setChartType,
   setExperimentViewerScrollPosition,
   setSelectedDiffTranscript,

@@ -23,8 +23,9 @@ from docent._db_service.schemas.collab_models import FramegridCollaborator
 from docent._db_service.schemas.tables import (
     Endpoints,
     SQLAAccessControlEntry,
-    SQLAFilter,
-    SQLAFrameDimension,
+    SQLASearchCluster,
+    SQLASearchResult,
+    SQLASearchResultCluster,
 )
 from docent._db_service.service import DBService
 from docent._llm_util.data_models.llm_output import LLMOutput
@@ -60,10 +61,8 @@ from docent._server._dependencies.user import (
     get_user_anonymous_ok,
 )
 from docent._server._rest.send_state import (
-    publish_dims,
     publish_framegrids,
     publish_homepage_state,
-    publish_marginals,
     publish_searches,
 )
 from docent._server.util import sse_event_stream
@@ -74,11 +73,8 @@ from docent.data_models.citation import (
 )
 from docent.data_models.filters import (
     ComplexFilter,
-    FrameDimension,
-    FrameFilter,
     parse_filter_dict,
 )
-from docent.data_models.regex import RegexSnippet, get_regex_snippets
 
 logger = get_logger(__name__)
 
@@ -257,9 +253,9 @@ async def logout(request: Request, response: Response):
 #     query: str
 
 
-# @user_router.post("/raw_query")
-# async def raw_query(request: RawQueryRequest, db: DBService = Depends(get_db)):
-#     return await db.run_raw_query(request.query)
+# # @user_router.post("/raw_query")
+# # async def raw_query(request: RawQueryRequest, db: DBService = Depends(get_db)):
+# #     return await db.run_raw_query(request.query)
 
 
 #############
@@ -271,11 +267,17 @@ async def logout(request: Request, response: Response):
 async def get_framegrids(
     user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)
 ):
-    sqla_fgs = await db.get_fgs(user)  # Filters to only framegrids the user has access to
+    sqla_fgs = await db.get_fgs(user)  # Filter to only the user's framegrids
     return [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
         for obj in sqla_fgs
+        if await db.has_permission(
+            user,
+            resource_type=ResourceType.FRAME_GRID,
+            resource_id=obj.id,
+            permission=Permission.READ,
+        )
     ]
 
 
@@ -437,12 +439,12 @@ async def join(
 
 
 class SetIODimsRequest(BaseModel):
-    inner_dim_id: str | None = None
-    outer_dim_id: str | None = None
+    inner_bin_key: str | None = None
+    outer_bin_key: str | None = None
 
 
-@user_router.post("/{fg_id}/io_dims")
-async def set_io_dims_endpoint(
+@user_router.post("/{fg_id}/set_io_bin_keys")
+async def set_io_bin_keys(
     fg_id: str,
     request: SetIODimsRequest,
     db: DBService = Depends(get_db),
@@ -450,7 +452,7 @@ async def set_io_dims_endpoint(
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
     async with db.advisory_lock(fg_id, action_id="mutation"):
-        await db.set_io_dims(ctx, request.inner_dim_id, request.outer_dim_id)
+        await db.set_io_bin_keys(ctx, request.inner_bin_key, request.outer_bin_key)
         await publish_homepage_state(db, ctx)
 
     # Track analytics
@@ -462,8 +464,8 @@ class SetIODimWithMetadataKeyRequest(BaseModel):
     type: Literal["inner", "outer"]
 
 
-@user_router.post("/{fg_id}/io_dims_with_metadata_key")
-async def set_io_dim_with_metadata_key_endpoint(
+@user_router.post("/{fg_id}/io_bin_key_with_metadata_key")
+async def set_io_bin_key_with_metadata_key_endpoint(
     fg_id: str,
     request: SetIODimWithMetadataKeyRequest,
     db: DBService = Depends(get_db),
@@ -471,7 +473,7 @@ async def set_io_dim_with_metadata_key_endpoint(
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
     async with db.advisory_lock(fg_id, action_id="mutation"):
-        await db.set_io_dim_with_metadata_key(ctx, request.metadata_key, request.type)
+        await db.set_io_bin_key_with_metadata_key(ctx, request.metadata_key, request.type)
         await publish_homepage_state(db, ctx)
 
     # Track analytics
@@ -487,91 +489,108 @@ class PostBaseFilterRequest(BaseModel):
 @user_router.post("/{fg_id}/base_filter")
 async def post_base_filter(
     fg_id: str,
-    request: PostBaseFilterRequest,
+    request: Request,  # Add raw request to see the body
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    logger.critical(
-        f"post_base_filter for fg_id: {fg_id} and user, view id: {ctx.view_id}, user.email={ctx.user.email if ctx.user else 'None'}"
-    )
+    # Log the raw request body to see what's being sent
+    try:
+        body = await request.body()
+        body_str = body.decode("utf-8")
+        logger.info(f"post_base_filter: raw request body: {body_str}")
+    except Exception as e:
+        logger.error(f"post_base_filter: error reading request body: {e}")
+
+    # Now parse the request properly
+    try:
+        request_data = await request.json()
+        logger.info(f"post_base_filter: parsed request data: {request_data}")
+
+        # Validate the filter structure
+        if request_data.get("filter"):
+            filter_data = request_data["filter"]
+            logger.info(f"post_base_filter: filter data: {filter_data}")
+            logger.info(f"post_base_filter: filter type: {filter_data.get('type')}")
+            logger.info(f"post_base_filter: filter id: {filter_data.get('id')}")
+            logger.info(f"post_base_filter: filter filters: {filter_data.get('filters')}")
+
+            # Check if required fields are missing
+            if filter_data.get("type") == "complex":
+                if "op" not in filter_data:
+                    logger.error("post_base_filter: missing 'op' field in complex filter")
+                if "filters" not in filter_data:
+                    logger.error("post_base_filter: missing 'filters' field in complex filter")
+                if "id" not in filter_data:
+                    logger.error("post_base_filter: missing 'id' field in complex filter")
+
+        # Create the proper request object
+        post_request = PostBaseFilterRequest(**request_data)
+    except Exception as e:
+        logger.error(f"post_base_filter: error parsing request: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid request format: {str(e)}")
+
+    logger.info(f"post_base_filter: received request for fg_id={fg_id}")
+    logger.info(f"post_base_filter: request.filter={post_request.filter}")
+    if post_request.filter:
+        logger.info(f"post_base_filter: filter.id={post_request.filter.id}")
+        logger.info(f"post_base_filter: filter.type={post_request.filter.type}")
+        logger.info(
+            f"post_base_filter: filter.filters={post_request.filter.filters if hasattr(post_request.filter, 'filters') else 'N/A'}"
+        )
+
     async with db.advisory_lock(fg_id, action_id="mutation"):
-        if request.filter is None:
+        if post_request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
         else:
-            new_ctx = await db.set_view_base_filter(ctx, request.filter)
+            new_ctx = await db.set_view_base_filter(ctx, post_request.filter)
 
-        # Use the updated context
+        # Publish the updated state
         await publish_homepage_state(db, new_ctx)
 
-        # Track analytics
-        await track_endpoint_with_user(db, Endpoints.POST_BASE_FILTER, ctx.user, fg_id)
+    # Track analytics
+    await track_endpoint_with_user(db, Endpoints.POST_BASE_FILTER, ctx.user, fg_id)
 
-        return request.filter.id if request.filter else None
+    return {"status": "ok"}
 
 
-@user_router.post("/{fg_id}/copy_own_filter")
-async def copy_own_filter(
+@user_router.post("/{fg_id}/clone_own_view")
+async def clone_own_view(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    current_filter = ctx.base_filter
-    new_filter_id = None
-    if current_filter is not None:
-        new_filter_id = str(uuid4())
-        new_filter = current_filter.model_copy(update={"id": new_filter_id})
-        async with db.session() as session:
-            sqla_filter = SQLAFilter.from_filter(new_filter, ctx)
-            session.add(sqla_filter)
-            logger.info(f"Added filter {new_filter.id} to view {ctx.view_id}")
+    new_view_id = await db.clone_view_for_sharing(ctx)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.COPY_OWN_FILTER, ctx.user, ctx.fg_id)
 
-    return {"filter_id": new_filter_id, "view_id": ctx.view_id}
+    return {"view_id": new_view_id}
 
 
 class ApplyExistingFilterRequest(BaseModel):
-    filter_id: str | None
     search_query: str
     view_id: str
 
 
-@user_router.post("/{fg_id}/apply_existing_filter")
-async def apply_existing_filter(
+@user_router.post("/{fg_id}/apply_existing_view")
+async def apply_existing_view(
     request: ApplyExistingFilterRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    dim_id = None
-    async with db.session() as session:
-        new_ctx = await db.clear_view_base_filter(ctx)
-        query = select(SQLAFrameDimension).where(
-            SQLAFrameDimension.view_id == request.view_id,
-            SQLAFrameDimension.name == request.search_query,
-        )
-        result = await session.execute(query)
-        sqla_dim = result.scalars().all()
-        if len(sqla_dim) > 0:
-            dim_id = sqla_dim[0].id
-        if request.filter_id is not None:
-            query = select(SQLAFilter).where(SQLAFilter.id.in_([request.filter_id]))
-            result = await session.execute(query)
-            sqla_filters = result.scalars().all()
-            if len(sqla_filters) == 0:
-                raise HTTPException(status_code=404, detail=f"Filter {request.filter_id} not found")
-            existing_filter = parse_filter_dict(sqla_filters[0].filter_json)
-            assert isinstance(existing_filter, ComplexFilter)
-            new_filter = existing_filter.model_copy(update={"id": str(uuid4())})
-            new_ctx = await db.set_view_base_filter(new_ctx, new_filter)
-    await publish_homepage_state(db, new_ctx)
+    existing_view = await db.get_view(request.view_id)
+    ctx = await db.set_view_base_filter(ctx, existing_view.base_filter)
+    await db.set_io_bin_keys(ctx, existing_view.inner_bin_key, existing_view.outer_bin_key)
+    await publish_homepage_state(db, ctx)
 
     # Track analytics
     await track_endpoint_with_user(db, Endpoints.APPLY_EXISTING_FILTER, ctx.user, ctx.fg_id)
 
-    return dim_id
+    # Get the existing search query; tells frontend whether to load clusters
+    existing_search_query = await db.get_search_query_by_query(ctx.fg_id, request.search_query)
+    return existing_search_query is not None
 
 
 @user_router.get("/{fg_id}/get_existing_search_results")
@@ -600,60 +619,52 @@ async def get_existing_search_results(
     )
 
 
-# @user_router.get("/{fg_id}/base_filter")
-# async def get_base_filter_endpoint(
+# class GetRegexSnippetsRequest(BaseModel):
+#     filter_id: str
+#     agent_run_ids: list[str]
+
+
+# @user_router.post("/{fg_id}/get_regex_snippets")
+# async def get_regex_snippets_endpoint(
+#     request: GetRegexSnippetsRequest,
+#     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
 #     _: None = Depends(require_view_permission(Permission.READ)),
-# ):
-#     return ctx.base_filter
+# ) -> dict[str, list[RegexSnippet]]:
+#     filter_id = request.filter_id
 
+#     # Get filter object
+#     filter = await db.get_filter(filter_id)
+#     if filter is None:
+#         raise ValueError(f"Filter {filter_id} is not found")
 
-class GetRegexSnippetsRequest(BaseModel):
-    filter_id: str
-    agent_run_ids: list[str]
+#     # Collect all patterns from the filter
+#     patterns: list[str] = []
+#     if filter.type == "primitive" and filter.op == "~*":
+#         patterns.append(str(filter.value))
+#     elif filter.type == "complex":
 
+#         # Recursively search for all primitive filters
+#         def _search(f: FrameFilter):
+#             if f.type == "primitive" and f.op == "~*":
+#                 patterns.append(str(f.value))
+#             elif f.type == "complex":
+#                 for child in f.filters:
+#                     _search(child)
 
-@user_router.post("/{fg_id}/get_regex_snippets")
-async def get_regex_snippets_endpoint(
-    request: GetRegexSnippetsRequest,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-) -> dict[str, list[RegexSnippet]]:
-    filter_id = request.filter_id
+#         _search(filter)
 
-    # Get filter object
-    filter = await db.get_filter(filter_id)
-    if filter is None:
-        raise ValueError(f"Filter {filter_id} is not found")
+#     if not patterns:
+#         return {}
 
-    # Collect all patterns from the filter
-    patterns: list[str] = []
-    if filter.type == "primitive" and filter.op == "~*":
-        patterns.append(str(filter.value))
-    elif filter.type == "complex":
+#     agent_runs = await db.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
 
-        # Recursively search for all primitive filters
-        def _search(f: FrameFilter):
-            if f.type == "primitive" and f.op == "~*":
-                patterns.append(str(f.value))
-            elif f.type == "complex":
-                for child in f.filters:
-                    _search(child)
+#     # Track analytics
+#     await track_endpoint_with_user(db, Endpoints.GET_REGEX_SNIPPETS_ENDPOINT, ctx.user, ctx.fg_id)
 
-        _search(filter)
-
-    if not patterns:
-        return {}
-
-    agent_runs = await db.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
-
-    # Track analytics
-    await track_endpoint_with_user(db, Endpoints.GET_REGEX_SNIPPETS_ENDPOINT, ctx.user, ctx.fg_id)
-
-    return {
-        d.id: [item for p in patterns for item in get_regex_snippets(d.text, p)] for d in agent_runs
-    }
+#     return {
+#         d.id: [item for p in patterns for item in get_regex_snippets(d.text, p)] for d in agent_runs
+#     }
 
 
 @user_router.get("/{fg_id}/state")
@@ -691,6 +702,19 @@ async def delete_search(
     return {"status": "success", "search_query_id": search_query_id}
 
 
+@user_router.get("/users/by-email/{email}")
+async def get_user_by_email(email: str, db: DBService = Depends(get_db)):
+    """
+    Get a user by their email address.
+    Args:
+        email: The email address to search for
+        db: Database service dependency
+    Returns:
+        User object if found, None otherwise
+    """
+    return await db.get_user_by_email(email)
+
+
 class UserPermissionsResponse(BaseModel):
     framegrid_permissions: dict[str, str | None]
     view_permissions: dict[str, str | None]
@@ -725,21 +749,6 @@ async def get_user_permissions(
 @user_router.get("/organizations/{org_id}/users")
 async def get_org_users(org_id: str, db: DBService = Depends(get_db)):
     return [u for u in await db.get_users() if not u.is_anonymous]
-
-
-@user_router.get("/users/by-email/{email}")
-async def get_user_by_email(email: str, db: DBService = Depends(get_db)):
-    """
-    Get a user by their email address.
-
-    Args:
-        email: The email address to search for
-        db: Database service dependency
-
-    Returns:
-        User object if found, None otherwise
-    """
-    return await db.get_user_by_email(email)
 
 
 @user_router.get("/framegrids/{fg_id}/collaborators")
@@ -875,125 +884,111 @@ class ShareViewRequest(BaseModel):
 ##################################
 
 
-class PostDimensionRequest(BaseModel):
-    dim: FrameDimension
+# class PostDimensionRequest(BaseModel):
+#     dim: str
 
 
-@user_router.post("/{fg_id}/dimension")
-async def post_dimension(
-    request: PostDimensionRequest,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    await db.upsert_dim(ctx, request.dim)
+# @user_router.post("/{fg_id}/dimension")
+# async def post_dimension(
+#     fg_id: str,
+#     request: PostDimensionRequest,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.WRITE)),
+# ):
+#     await publish_binnable_keys(db, ctx)
+#     await publish_searches(db, ctx)
 
-    await publish_dims(db, ctx)
-    await publish_searches(db, ctx)
+#     # Track analytics
+#     await track_endpoint_with_user(db, Endpoints.POST_DIMENSION, ctx.user, ctx.fg_id)
 
-    # Track analytics
-    await track_endpoint_with_user(db, Endpoints.POST_DIMENSION, ctx.user, ctx.fg_id)
-
-    return request.dim.id
-
-
-class GetDimensionsRequest(BaseModel):
-    dim_ids: list[str] | None = None
+#     return request.dim
 
 
-@user_router.post("/{fg_id}/get_dimensions")
-async def get_dimensions(
-    request: GetDimensionsRequest,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    if request.dim_ids is None:
-        return await db.get_view_dims(ctx)
-    else:
-        return await db.get_dims(request.dim_ids)
+# class GetDimensionsRequest(BaseModel):
+#     dim_ids: list[str] | None = None
 
 
-@user_router.delete("/{fg_id}/dimension")
-async def delete_dimension(
-    fg_id: str,
-    dim_id: str,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
-        await db.delete_dimension(dim_id)
-        await publish_dims(db, ctx)
-
-        # TODO: This is a framegrid-wide operation that affects all views.
-        # We should either:
-        # 1. Make publish_attribute_searches framegrid-wide (not view-specific), OR
-        # 2. Publish to all views in this framegrid
-        # For now, using the authenticated user's ViewProvider.
-        await publish_searches(db, ctx)
+# @user_router.post("/{fg_id}/get_dimensions")
+# async def get_dimensions(
+#     request: GetDimensionsRequest,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.READ)),
+# ):
+#     if request.dim_ids is None:
+#         return await db.get_binnable_keys(ctx)
+#     else:
+#         raise ValueError("dim_ids are not supported")
 
 
-@user_router.delete("/{fg_id}/filter")
-async def delete_filter(
-    fg_id: str,
-    dim_id: str,
-    filter_id: str,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
-        await db.delete_filter(filter_id)
-        await publish_dims(db, ctx)
-        await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=True)
+# @user_router.delete("/{fg_id}/dimension")
+# async def delete_dimension(
+#     fg_id: str,
+#     dim_id: str,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.WRITE)),
+# ):
+#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#         await db.delete_dimension(dim_id)
+#         await publish_binnable_keys(db, ctx)
 
-    # Track analytics
-    await track_endpoint_with_user(db, Endpoints.DELETE_FILTER, ctx.user, fg_id)
-
-
-class PostFilterRequest(BaseModel):
-    dim_id: str | None = None
-    filter_id: str
-    new_predicate: str
+#         # TODO: This is a framegrid-wide operation that affects all views.
+#         # We should either:
+#         # 1. Make publish_attribute_searches framegrid-wide (not view-specific), OR
+#         # 2. Publish to all views in this framegrid
+#         # For now, using the authenticated user's ViewProvider.
+#         await publish_searches(db, ctx)
 
 
-@user_router.post("/{fg_id}/filter")
-async def post_filter(
-    fg_id: str,
-    request: PostFilterRequest,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
-        old_filter = await db.get_filter(request.filter_id)
-        if old_filter is None:
-            raise ValueError(f"Filter {request.filter_id} not found")
+# @user_router.delete("/{fg_id}/filter")
+# async def delete_filter(
+#     fg_id: str,
+#     dim_id: str,
+#     filter_id: str,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.WRITE)),
+# ):
+#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#         await db.delete_filter(filter_id)
 
-        # Push filter (takes care of clearing related judgments)
-        new_filter = old_filter.model_copy(
-            update={"name": request.new_predicate, "predicate": request.new_predicate}
-        )
-        await db.set_filter(request.filter_id, new_filter)
+#     # Track analytics
+#     await track_endpoint_with_user(db, Endpoints.DELETE_FILTER, ctx.user, fg_id)
 
-        # If the filter is part of a dimension, we need to publish the marginals for that dimension
-        if request.dim_id:
-            # Publish the initial marginals (without recompute) which should be empty for the new filter
-            # Otherwise the frontend will show the old filter's marginals
-            await publish_marginals(
-                db,
-                ctx,
-                dim_ids=[request.dim_id],
-                ensure_fresh=False,
-            )
-            await publish_dims(db, ctx)
-            await publish_marginals(db, ctx, dim_ids=[request.dim_id], ensure_fresh=True)
 
-    # Track analytics
-    await track_endpoint_with_user(db, Endpoints.POST_FILTER, ctx.user, fg_id)
+# class PostFilterRequest(BaseModel):
+#     dim_id: str | None = None
+#     filter_id: str
+#     new_predicate: str
 
-    return new_filter.id
+
+# @user_router.post("/{fg_id}/filter")
+# async def post_filter(
+#     fg_id: str,
+#     request: PostFilterRequest,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.WRITE)),
+# ):
+#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#         old_filter = await db.get_filter(request.filter_id)
+#         if old_filter is None:
+#             raise ValueError(f"Filter {request.filter_id} not found")
+
+#         # Push filter (takes care of clearing related judgments)
+#         new_filter = old_filter.model_copy(
+#             update={"name": request.new_predicate, "predicate": request.new_predicate}
+#         )
+
+#         if request.dim_id:
+#             raise ValueError("dim_ids are not supported")
+
+#     # Track analytics
+#     await track_endpoint_with_user(db, Endpoints.POST_FILTER, ctx.user, fg_id)
+
+#     return new_filter.id
 
 
 ###################################
@@ -1159,20 +1154,7 @@ async def resume_compute_search(
     return job_id
 
 
-@user_router.get("/{fg_id}/get_existing_clusters")
-async def get_existing_clusters(
-    dim_id: str,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
-
-    # Track analytics
-    await track_endpoint_with_user(db, Endpoints.GET_EXISTING_CLUSTERS, ctx.user, ctx.fg_id)
-
-    # await publish_dims(db, ctx)
-    return
+# await track_endpoint_with_user(db, Endpoints.GET_EXISTING_CLUSTERS, ctx.user, ctx.fg_id)
 
 
 @user_router.get("/search_jobs")
@@ -1185,25 +1167,28 @@ async def search_jobs(
     return [[job.dict(), query.dict()] for job, query in jobs]
 
 
-class ClusterDimensionRequest(BaseModel):
-    dim_id: str
+class ClusterSearchResultsRequest(BaseModel):
+    search_query: str
     feedback: str | None
+    only_load_existing_clusters: bool | None
 
 
-@user_router.post("/{fg_id}/start_cluster_dimension")
-async def start_cluster_dimension(
+@user_router.post("/{fg_id}/start_cluster_search_results")
+async def start_cluster_search_results(
     fg_id: str,
-    request: ClusterDimensionRequest,
+    request: ClusterSearchResultsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_fg_permission(Permission.WRITE)),
 ):
+    """Start clustering search results directly."""
     job_id = await db.add_job(
-        "cluster_dimension",
+        "cluster_search_results",
         {
             "fg_id": fg_id,
-            "dim_id": request.dim_id,
+            "search_query": request.search_query,
             "feedback": request.feedback,
+            "only_load_existing_clusters": request.only_load_existing_clusters,
         },
     )
 
@@ -1213,82 +1198,119 @@ async def start_cluster_dimension(
     return job_id
 
 
-@user_router.get("/{fg_id}/listen_cluster_dimension")
-async def listen_cluster_dimension(
+@user_router.get("/{fg_id}/listen_cluster_search_results")
+async def listen_cluster_search_results(
     fg_id: str,
     job_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    """[Setter] Create clusters for a dimension."""
+    """Start clustering search results in the background.
+
+    Send cluster assignments to the client as they are computed.
+    """
     # Retrieve job arguments
     job = await db.get_job(job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
     job = job.job_json
-    fg_id, dim_id, feedback = job["fg_id"], job["dim_id"], job.get("feedback")
+    fg_id, search_query, feedback, only_load_existing_clusters = (
+        job["fg_id"],
+        job["search_query"],
+        job.get("feedback"),
+        job.get("only_load_existing_clusters"),
+    )
+    print(
+        f"listen_cluster_search_results: {fg_id}, {search_query}, {feedback}, {only_load_existing_clusters}"
+    )
 
-    dim = await db.get_dim(dim_id)
-    if dim is None:
-        raise ValueError(f"Dimension {dim_id} not found")
+    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+        max_buffer_size=100_000
+    )
 
-    async def event_stream():
+    async def execute():
         async with db.advisory_lock(
-            fg_id + "__cluster__" + str(dim.search_query), action_id="mutation"
+            fg_id + "__cluster_search__" + search_query, action_id="mutation"
         ):
             try:
-                # Send new dim state indicating that clusters are being loaded
-                await db.set_dim_loading_state(dim_id, loading_clusters=True)
-                await publish_dims(db, ctx)
-
-                # TODO(mengk): assert that all agent_runs have the associated attribute
-                # This should be guaranteed by the frontend, but just make sure.
-
-                await db.cluster_search_results(ctx, dim_id, feedback)
-
-                # Upload loading state and send updated bins
-                await db.set_dim_loading_state(
-                    dim_id, loading_clusters=False, loading_marginals=True
-                )
-                await publish_dims(db, ctx)
-
-                # Compute marginals while sending them to the client
                 async with anyio.create_task_group() as tg:
-                    is_done = False
+                    done = False
+                    existing_clusters: list[dict[str, Any]] | None = None
 
-                    async def _run():
-                        nonlocal is_done
-                        await publish_marginals(
-                            db, ctx, dim_ids=[dim_id], ensure_fresh=True
-                        )  # `ensure_fresh=True` will force computation of the filters
-                        is_done = True
+                    if feedback is not None and feedback != "":
+                        # record existing clusters for re-clustering
+                        existing_clusters = await db.get_existing_search_clusters(ctx, search_query)
+                        # delete existing clusters, so we don't send the old ones
+                        await db.clear_search_result_clusters(ctx, search_query)
 
-                    # Compute state in the background
-                    tg.start_soon(_run)
+                    async def _f():
+                        nonlocal done
+                        if not only_load_existing_clusters:
+                            await db.cluster_search_results(
+                                ctx, search_query, feedback, existing_clusters
+                            )
+                            # Wait for the last assignments to be sent
+                            await anyio.sleep(2)
 
-                    # At the same time, poll to send state
-                    while not is_done:
-                        await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
+                        done = True
+
+                    tg.start_soon(_f)
+
+                    already_sent_search_result_assignments: set[str] = set()
+                    while True:
+                        # Read search results from the DB that have not been sent yet
+                        async with db.session() as session:
+                            result = await session.execute(
+                                select(SQLASearchResultCluster, SQLASearchResult, SQLASearchCluster)
+                                .join(
+                                    SQLASearchResult,
+                                    SQLASearchResultCluster.search_result_id == SQLASearchResult.id,
+                                )
+                                .join(
+                                    SQLASearchCluster,
+                                    SQLASearchResultCluster.cluster_id == SQLASearchCluster.id,
+                                )
+                                .where(
+                                    SQLASearchCluster.fg_id == ctx.fg_id,
+                                    SQLASearchCluster.search_query == search_query,
+                                    SQLASearchResultCluster.id.notin_(
+                                        already_sent_search_result_assignments
+                                    ),
+                                )
+                            )
+                            search_results_assignments = result.all()
+
+                        if len(search_results_assignments) > 0:
+                            # Form json payload with the list of assignments not already sent
+                            payload: list[dict[str, Any]] = []
+                            for assignment, search_result, cluster in search_results_assignments:
+                                if assignment.id not in already_sent_search_result_assignments:
+                                    payload.append(
+                                        {
+                                            "search_result_cluster_id": assignment.id,
+                                            "search_result_id": assignment.search_result_id,
+                                            "cluster_id": assignment.cluster_id,
+                                            "centroid": cluster.centroid,
+                                            "value": search_result.value,
+                                            "decision": assignment.decision,
+                                        }
+                                    )
+                                    already_sent_search_result_assignments.add(assignment.id)
+                            logger.info(f"Sending {len(payload)} search result assignments")
+                            await send_stream.send(payload)
+
+                        if done:
+                            break
+
                         await anyio.sleep(1)
 
-                yield "data: [DONE]\n\n"
+                    await send_stream.aclose()
 
             except anyio.get_cancelled_exc_class():
-                logger.info("Cluster dimension task cancelled")
+                logger.info("Cluster search results task cancelled")
 
-            finally:
-                with anyio.CancelScope(shield=True):
-                    # Publish latest marginals in case there was an update
-                    await publish_marginals(db, ctx, dim_ids=[dim_id], ensure_fresh=False)
-
-                    # Update loading state to show current state
-                    await db.set_dim_loading_state(
-                        dim_id, loading_clusters=False, loading_marginals=False
-                    )
-                    await publish_dims(db, ctx)
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(sse_event_stream(execute, recv_stream), media_type="text/event-stream")
 
 
 #######################

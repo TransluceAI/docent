@@ -1,5 +1,6 @@
 import enum
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
@@ -11,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -21,13 +23,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from docent._ai_tools.search import SearchResult
-from docent._db_service.contexts import ViewContext
 from docent._db_service.schemas.auth_models import Organization, Permission, User
 from docent._db_service.schemas.base import SQLABase
+from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import FrameDimension, FrameFilter, Judgment, parse_filter_dict
+from docent.data_models.filters import ComplexFilter, parse_filter_dict
 from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
 from docent.data_models.transcript import Transcript
+
+logger = get_logger(__name__)
 
 TABLE_FRAME_GRID = "frame_grids"
 TABLE_AGENT_RUN = "agent_runs"
@@ -48,6 +52,8 @@ TABLE_USER_ROLE = "user_roles"
 TABLE_ACCESS_CONTROL_ENTRY = "access_control_entries"
 TABLE_ORGANIZATION = "organizations"
 TABLE_USER_ORGANIZATION = "user_organizations"
+TABLE_SEARCH_CLUSTER = "search_clusters"
+TABLE_SEARCH_RESULT_CLUSTER = "search_result_clusters"
 TABLE_ANALYTICS_EVENT = "analytics_events"
 
 
@@ -83,6 +89,10 @@ class SQLAAgentRun(SQLABase):
 
     # This column is *only* used for regex search; it needs to be preprocessed to remove invalid characters
     text_for_search = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("idx_agent_runs_metadata_json_gin", "metadata_json", postgresql_using="gin"),
+    )
 
     @classmethod
     def from_agent_run(cls, agent_run: AgentRun, fg_id: str) -> "SQLAAgentRun":
@@ -181,63 +191,6 @@ class SQLAFrameGrid(SQLABase):
     )
 
 
-class SQLAFrameDimension(SQLABase):
-    __tablename__ = TABLE_FRAME_DIMENSION
-
-    id = mapped_column(String(36), primary_key=True)
-    name = mapped_column(Text)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
-    )
-    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
-
-    # For dimensions that cluster search query results
-    search_query = mapped_column(Text, index=True)
-
-    # For metadata dimensions
-    metadata_key = mapped_column(Text, index=True)
-    maintain_mece = mapped_column(Boolean, index=True)
-
-    # Loading state
-    loading_clusters = mapped_column(Boolean, nullable=False)
-    loading_marginals = mapped_column(Boolean, nullable=False)
-
-    @classmethod
-    def from_frame_dimension(cls, dimension: FrameDimension, ctx: ViewContext):
-        """Convert a FrameDimension object to a SQLAFrameDimension object for database storage."""
-        sqla_dimension = cls(
-            id=dimension.id,
-            name=dimension.name,
-            fg_id=ctx.fg_id,
-            view_id=ctx.view_id,
-            search_query=dimension.search_query,
-            metadata_key=dimension.metadata_key,
-            maintain_mece=dimension.maintain_mece,
-            loading_clusters=dimension.loading_clusters,
-            loading_marginals=dimension.loading_marginals,
-        )
-
-        # Add filters if they exist
-        filters: list[SQLAFilter] = []
-        if dimension.bins:
-            for filter_obj in dimension.bins:
-                filters.append(SQLAFilter.from_filter(filter_obj, ctx, dimension.id))
-
-        return sqla_dimension, filters
-
-    def to_frame_dimension(self, filters: list[FrameFilter] | None) -> FrameDimension:
-        return FrameDimension(
-            id=self.id,
-            name=self.name,
-            bins=filters,
-            search_query=self.search_query,
-            metadata_key=self.metadata_key,
-            maintain_mece=self.maintain_mece,
-            loading_clusters=self.loading_clusters,
-            loading_marginals=self.loading_marginals,
-        )
-
-
 class SQLAView(SQLABase):
     __tablename__ = TABLE_VIEW
 
@@ -245,19 +198,17 @@ class SQLAView(SQLABase):
     fg_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
     )
-
-    # Owner of this view. Combined with fg_id must be unique.
+    # Owner of this view. Combined with fg_id must be unique (for non-sharing rows).
     user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
-
     name = mapped_column(Text, nullable=True)
 
-    base_filter_id = mapped_column(String(36), ForeignKey(f"{TABLE_FILTER}.id"), nullable=True)
-    inner_dim_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"), nullable=True
-    )
-    outer_dim_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"), nullable=True
-    )
+    base_filter_dict = mapped_column(JSONB, nullable=True)
+    # These keys reference metadata fields
+    # TOOD(mengk,gregor): can we get explicit FK relations?
+    inner_bin_key = mapped_column(Text, nullable=True)
+    outer_bin_key = mapped_column(Text, nullable=True)
+
+    for_sharing = mapped_column(Boolean, nullable=False, default=False)
 
     user: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
     framegrid: Mapped["SQLAFrameGrid"] = relationship(
@@ -272,116 +223,73 @@ class SQLAView(SQLABase):
         passive_deletes=True,
     )
 
+    # Enforce that the combination of fg_id and user_id is unique for non-sharing views
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "idx_view_fg_user_unique_non_sharing",
             "fg_id",
             "user_id",
-            name="uq_view_fg_user",
-            postgresql_nulls_not_distinct=True,
+            unique=True,
+            postgresql_where="for_sharing = false",
         ),
     )
 
-
-class SQLAFilter(SQLABase):
-    __tablename__ = TABLE_FILTER
-
-    id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
-    )
-    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
-
-    # Which dimension the filter "belongs" to (supports the relationships below)
-    dimension_id = mapped_column(String(36), ForeignKey(f"{TABLE_FRAME_DIMENSION}.id"), index=True)
-
-    # Serialized filter
-    filter_json = mapped_column(JSONB, nullable=False)
-
-    # Metadata that we want to index
-    filter_type = mapped_column(Text, nullable=False, index=True)
-    supports_sql = mapped_column(Boolean, nullable=False, index=True)
-
-    @classmethod
-    def from_filter(
-        cls,
-        filter: FrameFilter,
-        ctx: ViewContext,
-        dim_id: str | None = None,
-    ):
-        return cls(
-            id=filter.id,
-            fg_id=ctx.fg_id,
-            view_id=ctx.view_id,
-            dimension_id=dim_id,
-            filter_json=filter.model_dump(),
-            filter_type=filter.type,
-            supports_sql=filter.supports_sql,
-        )
-
-    def to_filter(self):
-        return parse_filter_dict(self.filter_json)
+    @property
+    def base_filter(self) -> ComplexFilter | None:
+        if self.base_filter_dict is None:
+            return None
+        result = parse_filter_dict(deepcopy(self.base_filter_dict))
+        assert isinstance(result, ComplexFilter)
+        return result
 
 
-class SQLAJudgment(SQLABase):
-    __tablename__ = TABLE_JUDGMENT
+class SQLASearchCluster(SQLABase):
+    __tablename__ = TABLE_SEARCH_CLUSTER
 
     id = mapped_column(String(36), primary_key=True)
     fg_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
     )
+    centroid = mapped_column(Text, nullable=False)
+    search_query = mapped_column(Text, nullable=False, index=True)
 
-    # Metadata on the location of the judgment
-    filter_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FILTER}.id"), nullable=False, index=True
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
-    agent_run_id = mapped_column(
-        String(36),
-        ForeignKey(f"{TABLE_AGENT_RUN}.id"),
-        nullable=False,
-        index=True,
-    )
-    search_query = mapped_column(Text, index=True)
-    search_result_idx = mapped_column(Integer, index=True)
 
-    # The judgment result
-    matches = mapped_column(Boolean, nullable=False, index=True)
-    reason = mapped_column(Text)
+    # Relationship to search results through junction table
+    search_result_clusters = relationship("SQLASearchResultCluster", back_populates="cluster")
+
+
+class SQLASearchResultCluster(SQLABase):
+    """Junction table for many-to-many relationship between search results and clusters."""
+
+    __tablename__ = TABLE_SEARCH_RESULT_CLUSTER
+
+    id = mapped_column(String(36), primary_key=True)
+    search_result_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_SEARCH_RESULTS}.id"), nullable=False, index=True
+    )
+    cluster_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_SEARCH_CLUSTER}.id"), nullable=False, index=True
+    )
+    decision = mapped_column(Boolean, nullable=False)
+    reason = mapped_column(Text, nullable=False)
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    # Relationships
+    search_result = relationship("SQLASearchResult", back_populates="cluster_assignments")
+    cluster = relationship("SQLASearchCluster", back_populates="search_result_clusters")
 
     __table_args__ = (
         UniqueConstraint(
-            "fg_id",
-            "filter_id",
-            "agent_run_id",
-            "search_query",
-            "search_result_idx",
-            name="uq_judgment_key_combination",
-            postgresql_nulls_not_distinct=True,
+            "search_result_id",
+            "cluster_id",
+            name="uq_search_result_cluster",
         ),
     )
-
-    @classmethod
-    def from_judgment(cls, judgment: Judgment, fg_id: str) -> "SQLAJudgment":
-        return cls(
-            id=judgment.id,
-            fg_id=fg_id,
-            agent_run_id=judgment.agent_run_id,
-            filter_id=judgment.filter_id,
-            search_query=judgment.search_query,
-            search_result_idx=judgment.search_result_idx,
-            matches=judgment.matches,
-            reason=judgment.reason,
-        )
-
-    def to_judgment(self) -> Judgment:
-        return Judgment(
-            id=self.id,
-            agent_run_id=self.agent_run_id,
-            filter_id=self.filter_id,
-            search_query=self.search_query,
-            search_result_idx=self.search_result_idx,
-            matches=self.matches,
-            reason=self.reason,
-        )
 
 
 class SQLASearchResult(SQLABase):
@@ -402,6 +310,9 @@ class SQLASearchResult(SQLABase):
     # Null indicates no values for this (datapoint, search_query) pair
     # If there are any non-null values, value should never be null
     value = mapped_column(Text)
+
+    # Relationship to clusters through junction table
+    cluster_assignments = relationship("SQLASearchResultCluster", back_populates="search_result")
 
     __table_args__ = (
         UniqueConstraint(

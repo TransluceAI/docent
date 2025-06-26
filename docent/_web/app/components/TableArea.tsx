@@ -63,45 +63,101 @@ const getFilterTitle = (
 export default function TableArea() {
   const dispatch = useAppDispatch();
 
-  const { statMarginals, filtersMap, dimIdsToFilterIds } = useAppSelector(
+  const { binStats: rawBinStats } = useAppSelector(
     (state) => state.experimentViewer
   );
 
-  const { innerDimId, outerDimId, dimensionsMap } = useAppSelector(
+  const { innerBinKey, outerBinKey, dimensionsMap } = useAppSelector(
     (state) => state.frame
   );
 
-  // Get unique outer and inner dimension values with their IDs
+  // Get unique outer and inner dimension values with their IDs - matching ExperimentViewer logic
   const outerValuesWithIds = useMemo(() => {
-    if (!outerDimId || !filtersMap || !dimIdsToFilterIds) return [];
-    const allValues =
-      dimIdsToFilterIds[outerDimId]?.map((id) => ({
-        id,
-        value: filtersMap[id].value,
-      })) || [];
-    return allValues.slice(0, MAX_DIMENSION_VALUES);
-  }, [outerDimId, filtersMap, dimIdsToFilterIds]);
+    if (!outerBinKey || !rawBinStats) {
+      return [];
+    }
+    
+    // Extract dimension values from the bin keys
+    const values = new Set<string>();
+    Object.keys(rawBinStats).forEach(key => {
+      const parts = key.split('|');
+      parts.forEach(part => {
+        if (part.includes(',')) {
+          const [dim, value] = part.split(',', 2);
+          if (dim === outerBinKey) {
+            values.add(value);
+          }
+        }
+      });
+    });
+    
+    const result = Array.from(values).map(value => ({
+      id: value,
+      value: value
+    }));
+    return result.slice(0, MAX_DIMENSION_VALUES);
+  }, [outerBinKey, rawBinStats]);
 
   const innerValuesWithIds = useMemo(() => {
-    if (!innerDimId || !filtersMap || !dimIdsToFilterIds) return [];
-    const allValues =
-      dimIdsToFilterIds[innerDimId]?.map((id) => ({
-        id,
-        value: filtersMap[id]?.value,
-      })) || [];
-    return allValues.slice(0, MAX_DIMENSION_VALUES);
-  }, [innerDimId, filtersMap, dimIdsToFilterIds]);
+    if (!innerBinKey || !rawBinStats) {
+      return [];
+    }
+    
+    // Extract dimension values from the bin keys
+    const values = new Set<string>();
+    Object.keys(rawBinStats).forEach(key => {
+      const parts = key.split('|');
+      parts.forEach(part => {
+        if (part.includes(',')) {
+          const [dim, value] = part.split(',', 2);
+          if (dim === innerBinKey) {
+            values.add(value);
+          }
+        }
+      });
+    });
+    
+    const result = Array.from(values).map(value => ({
+      id: value,
+      value: value
+    }));
+    return result.slice(0, MAX_DIMENSION_VALUES);
+  }, [innerBinKey, rawBinStats]);
 
   // Get total counts for UI indicators
   const totalOuterValues = useMemo(() => {
-    if (!outerDimId || !filtersMap || !dimIdsToFilterIds) return 0;
-    return dimIdsToFilterIds[outerDimId]?.length || 0;
-  }, [outerDimId, filtersMap, dimIdsToFilterIds]);
+    if (!outerBinKey || !rawBinStats) return 0;
+    const values = new Set<string>();
+    Object.keys(rawBinStats).forEach(key => {
+      const parts = key.split('|');
+      parts.forEach(part => {
+        if (part.includes(',')) {
+          const [dim, value] = part.split(',', 2);
+          if (dim === outerBinKey) {
+            values.add(value);
+          }
+        }
+      });
+    });
+    return values.size;
+  }, [outerBinKey, rawBinStats]);
 
   const totalInnerValues = useMemo(() => {
-    if (!innerDimId || !filtersMap || !dimIdsToFilterIds) return 0;
-    return dimIdsToFilterIds[innerDimId]?.length || 0;
-  }, [innerDimId, filtersMap, dimIdsToFilterIds]);
+    if (!innerBinKey || !rawBinStats) return 0;
+    const values = new Set<string>();
+    Object.keys(rawBinStats).forEach(key => {
+      const parts = key.split('|');
+      parts.forEach(part => {
+        if (part.includes(',')) {
+          const [dim, value] = part.split(',', 2);
+          if (dim === innerBinKey) {
+            values.add(value);
+          }
+        }
+      });
+    });
+    return values.size;
+  }, [innerBinKey, rawBinStats]);
 
   // Helper to safely get dimension name
   const getDimensionName = (dimId: string | undefined) => {
@@ -121,16 +177,16 @@ export default function TableArea() {
         rows: outerValuesWithIds,
         cols: innerValuesWithIds,
         is2D: true,
-        rowDimId: outerDimId,
-        colDimId: innerDimId,
-        rowName: getDimensionName(outerDimId),
-        colName: getDimensionName(innerDimId),
+        rowDimId: outerBinKey,
+        colDimId: innerBinKey,
+        rowName: getDimensionName(outerBinKey),
+        colName: getDimensionName(innerBinKey),
       };
     }
 
     // 1D case: use available dimension as rows, "Score" as column
     const availableValues = hasOuter ? outerValuesWithIds : innerValuesWithIds;
-    const availableDimId = hasOuter ? outerDimId : innerDimId;
+    const availableDimId = hasOuter ? outerBinKey : innerBinKey;
 
     return {
       rows: availableValues,
@@ -144,14 +200,14 @@ export default function TableArea() {
   }, [
     outerValuesWithIds,
     innerValuesWithIds,
-    outerDimId,
-    innerDimId,
+    outerBinKey,
+    innerBinKey,
     getDimensionName,
   ]);
 
   // Calculate average scores for each dimension combination or single dimension
   const dimensionScores = useMemo(() => {
-    if (!statMarginals) return {};
+    if (!rawBinStats) return {};
     if (!outerValuesWithIds.length && !innerValuesWithIds.length) return {};
 
     // 2D case: both dimensions present
@@ -166,8 +222,8 @@ export default function TableArea() {
       outerValuesWithIds.forEach(({ id: outerId, value: outerValue }) => {
         scores[outerValue] = {};
         innerValuesWithIds.forEach(({ id: innerId, value: innerValue }) => {
-          const key = `${innerDimId},${innerId}|${outerDimId},${outerId}`;
-          const stats = statMarginals[key];
+          const key = `${innerBinKey},${innerId}|${outerBinKey},${outerId}`;
+          const stats = rawBinStats[key];
           scores[outerValue][innerValue] = getScoreFromStats(stats);
         });
       });
@@ -178,7 +234,7 @@ export default function TableArea() {
     const availableValues = outerValuesWithIds.length
       ? outerValuesWithIds
       : innerValuesWithIds;
-    const availableDimId = outerValuesWithIds.length ? outerDimId : innerDimId;
+    const availableDimId = outerValuesWithIds.length ? outerBinKey : innerBinKey;
 
     const scores: Record<
       string,
@@ -186,17 +242,17 @@ export default function TableArea() {
     > = {};
     availableValues.forEach(({ id, value }) => {
       const key = `${availableDimId},${id}`;
-      const stats = statMarginals[key];
+      const stats = rawBinStats[key];
       scores[value] = getScoreFromStats(stats);
     });
 
     return scores;
   }, [
-    statMarginals,
+    rawBinStats,
     outerValuesWithIds,
     innerValuesWithIds,
-    innerDimId,
-    outerDimId,
+    innerBinKey,
+    outerBinKey,
   ]);
 
   // Helper function to create filters
@@ -210,17 +266,18 @@ export default function TableArea() {
       op: '==',
       id: uuid4(),
       name: null,
+      supports_sql: true,
     }),
     [dimensionsMap]
   );
 
-  if (!tableData || !statMarginals) {
+  if (!tableData || !rawBinStats) {
     return null;
   }
 
   return (
     <>
-      <div className="max-h-[40%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
+      <div className="h-auto max-h-[40%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-white z-10">
             <tr>
@@ -398,3 +455,6 @@ export default function TableArea() {
     </>
   );
 }
+
+
+

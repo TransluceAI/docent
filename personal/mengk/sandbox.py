@@ -1,26 +1,6 @@
 # autoflake: skip_file
 # pyright: ignore
 
-
-# %%
-
-from docent.data_models.citation import (
-    parse_citations_multi_run,
-    parse_citations_single_run,
-)
-
-text = "This is a test [R1T1B1-R1T1B2], [T1B1] and [T1B2, T1B3]"
-
-parse_citations_multi_run(text)
-
-
-# %%
-
-parse_citations_single_run(text)
-
-# %%
-
-
 # %%
 
 import IPython
@@ -33,6 +13,28 @@ IPython.get_ipython().run_line_magic("autoreload", "2")
 from docent._db_service.service import DBService
 
 db = await DBService.init()
+
+# %%
+
+user = await db.get_user_by_email("mengk@mit.edu")
+assert user is not None
+user
+
+
+# %%
+
+fgs = await db.get_fgs()
+fg_id = [fg.id for fg in fgs if fg.name == "oai"][0]
+ctx = await db.get_default_view_ctx(fg_id, user)
+print(ctx)
+runs = await db.get_agent_runs(ctx)
+len(runs)
+
+# %%
+
+
+query = "cases where the agent acted in a strange or unexpected way"
+await db.cluster_search_results_direct(ctx, query)
 
 
 # %%

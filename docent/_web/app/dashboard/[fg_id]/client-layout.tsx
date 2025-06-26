@@ -32,7 +32,6 @@ export default function DocentDashboardClientLayout({
       return;
     }
     fetchRef.current = true;
-    console.log(`Starting eval with ID from URL: ${fgId}`);
     dispatch(initSession(fgId));
   }, [fgId, dispatch]);
 
@@ -48,7 +47,6 @@ export default function DocentDashboardClientLayout({
     searchParamsCheckedRef.current = true;
 
     const searchQuery = searchParams.get('searchQuery');
-    const filterId = searchParams.get('filterId');
     const viewId = searchParams.get('viewId');
     if (searchQuery === null || viewId === null) {
       dispatch(setHasInitSearchQuery(false));
@@ -56,13 +54,12 @@ export default function DocentDashboardClientLayout({
     }
     dispatch(setHasInitSearchQuery(true));
     apiRestClient
-      .post(`/${fgId}/apply_existing_filter`, {
-        filter_id: filterId === 'null' ? null : filterId,
+      .post(`/${fgId}/apply_existing_view`, {
         search_query: searchQuery,
         view_id: viewId,
       })
       .then((response) => {
-        const dimId = response.data;
+        const shouldLoadClusters = response.data;
         dispatch(setSearchQuery(searchQuery));
         dispatch(setHasInitSearchQuery(true));
         apiRestClient
@@ -71,8 +68,8 @@ export default function DocentDashboardClientLayout({
           )
           .then((response) => {
             dispatch(handleSearchUpdate(response.data));
-            if (dimId) {
-              dispatch(getDimensions([dimId]));
+            if (shouldLoadClusters) {
+              dispatch(getDimensions([shouldLoadClusters]));
             }
           });
       });

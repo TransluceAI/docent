@@ -4,10 +4,9 @@ from docent.data_models.filters import (
     AgentRunIdFilter,
     BaseFrameFilter,
     ComplexFilter,
-    FrameDimension,
     SearchResultPredicateFilter,
 )
-from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
+from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata, FrameDimension
 from docent.data_models.regex import RegexSnippet
 from docent.data_models.transcript import Transcript
 

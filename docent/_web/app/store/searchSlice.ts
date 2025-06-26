@@ -1,6 +1,7 @@
 import {
   AttributeFeedback,
   StreamedSearchResult,
+  StreamedSearchResultClusterAssignment,
 } from '../types/experimentViewerTypes';
 import {
   createSlice,
@@ -41,6 +42,7 @@ export interface SearchState {
   curSearchQuery?: string;
   // Clustering
   activeClusterTaskId?: string;
+  clusteredSearchResults?: Record<string, StreamedSearchResultClusterAssignment[]>;
   // Parts of the lifecycle of a query
   loadingProgress?: [number, number]; // [num_done, num_total]
   loadingSearchQuery?: string;
@@ -104,6 +106,9 @@ export const computeSearch = createAsyncThunk(
       // Cancel any existing task
       await dispatch(cancelCurrentSearch());
 
+      // Clear previous search results clusters
+      dispatch(clearClusteredSearchResults());
+
       // Set the UI loading state
       dispatch(setLoadingProgress([0, 0]));
       dispatch(setLoadingSearchQuery(searchQuery));
@@ -149,6 +154,10 @@ export const computeSearch = createAsyncThunk(
           );
         }
       );
+
+      // Get existing clusters if they exist
+      dispatch(requestClusters({ searchQuery: searchQuery, feedback: '', onlyLoadExistingClusters: true }));
+
       // Store the cancel function for potential cleanup
       cancelFunctionsMap[jobId] = onCancel;
     } catch (error) {
@@ -170,28 +179,11 @@ export const computeSearch = createAsyncThunk(
   }
 );
 
-export const getExistingClusters = createAsyncThunk(
-  'experimentViewer/getExistingClusters',
-  async (payload: { dimensionId: string }, { dispatch, getState }) => {
-    const state = getState() as { frame: { frameGridId?: string } };
-    const frameGridId = state.frame.frameGridId;
-
-    if (!frameGridId) {
-      throw new Error('No frame grid ID available');
-    }
-
-    const response = await apiRestClient.get(
-      `/${frameGridId}/get_existing_clusters?dim_id=${payload.dimensionId}`
-    );
-
-    return response.data;
-  }
-);
 
 export const requestClusters = createAsyncThunk(
   'experimentViewer/requestClusters',
   async (
-    payload: { dimensionId: string; feedback?: string },
+    payload: { searchQuery: string; feedback?: string; onlyLoadExistingClusters?: boolean },
     { dispatch, getState }
   ) => {
     // Get the frame grid ID from the state
@@ -206,12 +198,13 @@ export const requestClusters = createAsyncThunk(
       // Cancel any previous cluster requests
       await dispatch(cancelCurrentClusterRequest());
 
-      // Start the cluster dimension job
+      // Start the cluster search results job
       const response = await apiRestClient.post(
-        `/${frameGridId}/start_cluster_dimension`,
+        `/${frameGridId}/start_cluster_search_results`,
         {
-          dim_id: payload.dimensionId,
+          search_query: payload.searchQuery,
           feedback: payload.feedback,
+          only_load_existing_clusters: payload.onlyLoadExistingClusters,
         }
       );
 
@@ -220,10 +213,11 @@ export const requestClusters = createAsyncThunk(
 
       // Set up event source to listen for streaming updates using sseService
       const { onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/listen_cluster_dimension?job_id=${jobId}`,
-        () => {
-          // Handle any cluster updates if needed
-          // Currently the backend doesn't send progress updates for clustering
+        `/rest/${frameGridId}/listen_cluster_search_results?job_id=${jobId}`,
+        (data: StreamedSearchResultClusterAssignment[]) => {
+          // As we get lists of assignments, we need to show them in the ClusterViewerUI
+          // We need to update the state with the new assignments
+          dispatch(updateClusteredSearchResults(data));
         },
         () => {
           dispatch(setActiveClusterTaskId(undefined));
@@ -247,7 +241,7 @@ export const requestClusters = createAsyncThunk(
       dispatch(
         setToastNotification({
           title: 'Error requesting clusters',
-          description: 'Failed to cluster dimension',
+          description: 'Failed to cluster search results',
           variant: 'destructive',
         })
       );
@@ -262,6 +256,7 @@ export const clearSearch = createAsyncThunk(
     dispatch(setSearchQuery(undefined));
     dispatch(cancelCurrentSearch());
     dispatch(clearSearchResultMap());
+    dispatch(clearClusteredSearchResults());
   }
 );
 
@@ -362,14 +357,15 @@ export const addBaseFilters = createAsyncThunk(
     const newBaseFilter: ComplexFilter = state.frame.baseFilter
       ? {
           ...state.frame.baseFilter,
-          filters: [...state.frame.baseFilter.filters, ...filters]
+          filters: [...state.frame.baseFilter.filters, ...filters],
         }
-      : { 
-          filters: [...filters], 
-          type: 'complex', 
-          op: 'and', 
-          id: uuid4(), 
-          name: null 
+      : {
+          filters: [...filters],
+          type: 'complex',
+          op: 'and',
+          id: uuid4(),
+          name: null,
+          supports_sql: true,
         };
 
     // Remove duplicate primitive filters
@@ -381,7 +377,7 @@ export const addBaseFilters = createAsyncThunk(
         const value = primitiveFilter.value;
         const op = primitiveFilter.op;
         const filterKey = `${keyPath}:${value}:${op}`;
-        
+
         if (seenFilterKeys.has(filterKey)) {
           return acc;
         }
@@ -439,6 +435,7 @@ export const cancelCurrentClusterRequest = createAsyncThunk(
   async (_, { getState, dispatch }) => {
     const state = getState() as RootState;
     const { activeClusterTaskId } = state.search;
+    dispatch(clearClusteredSearchResults());
 
     if (activeClusterTaskId) {
       // If there's an active cancel function, call it
@@ -487,6 +484,9 @@ export const submitAttributeFeedback = createAsyncThunk(
     { dispatch }
   ) => {
     try {
+      // Clear clusters when feedback is submitted
+      dispatch(clearClusteredSearchResults());
+      
       const response = await apiRestClient.post('/submit_attribute_feedback', {
         original_query: originalQuery,
         attribute_feedback: feedback,
@@ -527,10 +527,50 @@ export const executeRawQuery = createAsyncThunk(
   }
 );
 
+export const getExistingClusters = createAsyncThunk(
+  'experimentViewer/getExistingClusters',
+  async (payload: { dimensionId: string }, { dispatch, getState }) => {
+    const state = getState() as { frame: { frameGridId?: string } };
+    const frameGridId = state.frame.frameGridId;
+
+    if (!frameGridId) {
+      throw new Error('No frame grid ID available');
+    }
+
+    const response = await apiRestClient.get(
+      `/${frameGridId}/get_existing_clusters?dim_id=${payload.dimensionId}`
+    );
+
+    return response.data;
+  }
+);
+
 export const searchSlice = createSlice({
   name: 'search',
   initialState,
   reducers: {
+    updateClusteredSearchResults: (
+      state,
+      action: PayloadAction<StreamedSearchResultClusterAssignment[]>
+    ) => {
+      // Initialize the clustered results if it doesn't exist
+      if (!state.clusteredSearchResults) {
+        state.clusteredSearchResults = {};
+      }
+      
+      // Group assignments by centroid
+      for (const assignment of action.payload) {
+        const centroid = assignment.centroid;
+        if (!state.clusteredSearchResults[centroid]) {
+          state.clusteredSearchResults[centroid] = [];
+        }
+        state.clusteredSearchResults[centroid].push(assignment);
+      }
+    },
+    clearClusteredSearchResults: (state) => {
+      state.clusteredSearchResults = {};
+      state.activeClusterTaskId = undefined;
+    },
     setActiveClusterTaskId: (
       state,
       action: PayloadAction<string | undefined>
@@ -643,11 +683,13 @@ export const searchSlice = createSlice({
 });
 
 export const {
+  updateClusteredSearchResults,
   setActiveClusterTaskId,
   handleSearchUpdate,
   setLoadingSearchQuery,
   setActiveSearchTaskId,
   clearSearchResultMap,
+  clearClusteredSearchResults,
   // voteOnAttribute,
   // clearVoteState,
   setSearchQueryTextboxValue,

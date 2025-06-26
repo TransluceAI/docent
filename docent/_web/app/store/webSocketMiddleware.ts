@@ -2,19 +2,18 @@ import type { Middleware } from '@reduxjs/toolkit';
 
 import socketService from '../services/socketService';
 
-import { setSearchesWithStats } from './searchSlice';
+import { setSearchesWithStats, handleSearchUpdate } from './searchSlice';
 import {
-  setOuterStatMarginals,
-  setIdMarginals,
-  setStatMarginalsAndFilters,
+  setOuterBinStats,
+  setAgentRunIds,
+  setBinStats,
 } from './experimentViewerSlice';
 import {
   setBaseFilter,
-  setMarginals,
   setAgentRunMetadataFields,
   updateAgentRunMetadata,
-  setInnerDimId,
-  setOuterDimId,
+  setInnerBinKey,
+  setOuterBinKey,
   setDimensions,
   setFrameGrids,
 } from './frameSlice';
@@ -34,9 +33,8 @@ import {
 export const createWebSocketMiddleware = (): Middleware => {
   return (store) => {
     // Set up a listener for WebSocket messages
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       const data = JSON.parse(event.data);
-      console.log('(ws)', data);
 
       // Handle different types of messages from the server
       const dispatch = store.dispatch as AppDispatch;
@@ -60,20 +58,17 @@ export const createWebSocketMiddleware = (): Middleware => {
         case 'datapoint_metadata':
           dispatch(updateAgentRunMetadata(data.payload.metadata));
           break;
-        case 'marginals':
-          dispatch(setMarginals(data.payload));
-          break;
-
-        case 'specific_marginals':
+        case 'specific_bins':
           if (data.payload.request_type === 'comb_stats') {
-            dispatch(setStatMarginalsAndFilters(data.payload.result));
-          } else if (data.payload.request_type === 'comb_ids') {
-            dispatch(setIdMarginals(data.payload.result));
+            dispatch(setBinStats(data.payload.result));
+            dispatch(setAgentRunIds(data.payload.result?.agentRunIds || []));
+          } else if (data.payload.request_type === 'agent_runs') {
+            dispatch(setAgentRunIds(data.payload.result?.agentRunIds || []));
           } else if (
             data.payload.request_type === 'outer_stats' &&
             data.payload.result
           ) {
-            dispatch(setOuterStatMarginals(data.payload.result));
+            dispatch(setOuterBinStats(data.payload.result));
           }
           break;
         case 'datapoint':
@@ -85,9 +80,16 @@ export const createWebSocketMiddleware = (): Middleware => {
         case 'searches':
           dispatch(setSearchesWithStats(data.payload));
           break;
+        case 'search_results_updated':
+          dispatch(handleSearchUpdate({
+            data_dict: data.data_dict,
+            num_agent_runs_done: Object.keys(data.data_dict || {}).length,
+            num_agent_runs_total: Object.keys(data.data_dict || {}).length,
+          }));
+          break;
         case 'io_dims_updated':
-          dispatch(setInnerDimId(data.payload.inner_dim_id));
-          dispatch(setOuterDimId(data.payload.outer_dim_id));
+          dispatch(setInnerBinKey(data.payload.inner_bin_key));
+          dispatch(setOuterBinKey(data.payload.outer_bin_key));
           break;
         case 'summarize_transcript_update':
           if (data.payload.type === 'solution') {

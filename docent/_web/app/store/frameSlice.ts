@@ -10,8 +10,9 @@ import { TranscriptMetadataField as AgentRunMetadataField } from '../types/exper
 import {
   ComplexFilter,
   FrameDimension,
+  FrameFilter,
   FrameGrid,
-  Marginals,
+  Bins,
 } from '../types/frameTypes';
 import { BaseAgentRunMetadata } from '../types/transcriptTypes';
 
@@ -27,15 +28,16 @@ export interface FrameState {
   isLoadingFrameGrids: boolean;
   // FrameGrid state
   dimensionsMap?: Record<string, FrameDimension>;
+  filtersMap?: Record<string, FrameFilter>;
   baseFilter?: ComplexFilter;
   // Metadata
   agentRunMetadataFields?: AgentRunMetadataField[];
   agentRunMetadata?: Record<string, Record<string, BaseAgentRunMetadata>>;
   // Global variables
   frameGridId?: string;
-  innerDimId?: string;
-  outerDimId?: string;
-  marginals?: Marginals;
+  innerBinKey?: string;
+  outerBinKey?: string;
+  bins?: Bins;
 }
 
 const initialState: FrameState = {
@@ -247,115 +249,6 @@ export const getDimensions = createAsyncThunk(
   }
 );
 
-export const addSearchDimension = createAsyncThunk(
-  'frame/addSearchDimension',
-  async (searchQuery: string, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
-
-    if (!frameGridId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No frame grid ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No frame grid ID available');
-    }
-
-    try {
-      const response = await apiRestClient.post(`/${frameGridId}/dimension`, {
-        dim: {
-          name: searchQuery,
-          search_query: searchQuery,
-        },
-      });
-      return response.data; // ID of the posted dimension
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error adding dimension',
-          description: 'Failed to add attribute dimension',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
-
-export const deleteDimension = createAsyncThunk(
-  'frame/deleteDimension',
-  async (dimensionId: string, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
-
-    if (!frameGridId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No frame grid ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No frame grid ID available');
-    }
-
-    try {
-      await apiRestClient.delete(
-        `/${frameGridId}/dimension?dim_id=${dimensionId}`
-      );
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error deleting dimension',
-          description: 'Failed to delete dimension',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
-
-export const deleteFilter = createAsyncThunk(
-  'frame/deleteFilter',
-  async (
-    { filterId, dimId }: { filterId: string; dimId: string },
-    { dispatch, getState }
-  ) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
-
-    if (!frameGridId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No frame grid ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No frame grid ID available');
-    }
-
-    try {
-      await apiRestClient.delete(
-        `/${frameGridId}/filter?filter_id=${filterId}&dim_id=${dimId}`
-      );
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error deleting filter',
-          description: 'Failed to delete filter',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
-
 export const deleteSearch = createAsyncThunk(
   'frame/deleteSearch',
   async (searchQueryId: string, { dispatch, getState }) => {
@@ -486,8 +379,8 @@ export const frameSlice = createSlice({
   name: 'frame',
   initialState,
   reducers: {
-    setMarginals: (state, action: PayloadAction<Marginals>) => {
-      state.marginals = action.payload;
+    setBins: (state, action: PayloadAction<Bins>) => {
+      state.bins = action.payload;
     },
     setDimensions: (state, action: PayloadAction<FrameDimension[]>) => {
       state.dimensionsMap = action.payload.reduce(
@@ -524,11 +417,11 @@ export const frameSlice = createSlice({
     setFrameGridId: (state, action: PayloadAction<string | undefined>) => {
       state.frameGridId = action.payload;
     },
-    setInnerDimId: (state, action: PayloadAction<string | undefined>) => {
-      state.innerDimId = action.payload;
+    setInnerBinKey: (state, action: PayloadAction<string | undefined>) => {
+      state.innerBinKey = action.payload;
     },
-    setOuterDimId: (state, action: PayloadAction<string | undefined>) => {
-      state.outerDimId = action.payload;
+    setOuterBinKey: (state, action: PayloadAction<string | undefined>) => {
+      state.outerBinKey = action.payload;
     },
     setFrameGrids: (state, action: PayloadAction<FrameGrid[]>) => {
       state.frameGrids = action.payload;
@@ -544,14 +437,14 @@ export const frameSlice = createSlice({
 });
 
 export const {
-  setMarginals,
+  setBins,
   setDimensions,
   setBaseFilter,
   setAgentRunMetadataFields,
   updateAgentRunMetadata,
   setFrameGridId,
-  setInnerDimId,
-  setOuterDimId,
+  setInnerBinKey,
+  setOuterBinKey,
   setFrameGrids,
   setIsLoadingFrameGrids,
   setHasInitSearchQuery,
