@@ -389,7 +389,7 @@ async def get_agent_run_metadata(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     data = await db.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
-    return {d.id: d.metadata for d in data}
+    return {d.id: d.metadata.model_dump(strip_internal_fields=True) for d in data}
 
 
 class PostAgentRunsRequest(BaseModel):

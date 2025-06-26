@@ -3,7 +3,12 @@ from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, Field, SerializeAsAny, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_serializer,
+    model_validator,
+)
 
 from docent._llm_util.util import get_token_count, group_messages_into_ranges
 from docent.data_models.metadata import BaseAgentRunMetadata
@@ -34,7 +39,35 @@ class AgentRun(BaseModel):
     description: str | None = None
 
     transcripts: dict[str, Transcript]
-    metadata: SerializeAsAny[BaseAgentRunMetadata]
+    metadata: BaseAgentRunMetadata
+
+    @field_serializer("metadata")
+    def serialize_metadata(self, metadata: BaseAgentRunMetadata, _info: Any) -> dict[str, Any]:
+        """
+        Custom serializer for the metadata field so the internal fields are explicitly preserved.
+        """
+        return metadata.model_dump(strip_internal_fields=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
+        """Validates that metadata is an instance of BaseAgentRunMetadata, not a dict or other type.
+
+        This prevents issues with field descriptions being lost during dict conversion.
+
+        Raises:
+            ValueError: If metadata is not an instance of BaseAgentRunMetadata.
+
+        Returns:
+            dict[str, Any] | Any: The validated data.
+        """
+        if isinstance(data, dict) and "metadata" in data:
+            metadata_value = data["metadata"]
+            if metadata_value is not None and not isinstance(metadata_value, BaseAgentRunMetadata):
+                raise ValueError(
+                    f"metadata must be an instance of BaseAgentRunMetadata, got {type(metadata_value).__name__}"
+                )
+        return data
 
     @model_validator(mode="after")
     def _validate_transcripts_not_empty(self):
@@ -71,6 +104,11 @@ class AgentRun(BaseModel):
             metadata_obj["name"] = self.name
         if self.description is not None:
             metadata_obj["description"] = self.description
+        # Add the field descriptions if they exist
+        metadata_obj = {
+            (f"{k} ({d})" if (d := self.metadata.get_field_description(k)) is not None else k): v
+            for k, v in metadata_obj.items()
+        }
 
         yaml_width = float("inf")
         transcripts_str = (
@@ -94,8 +132,11 @@ class AgentRun(BaseModel):
             )
             for msg_range in ranges:
                 if msg_range.include_metadata:
+                    cur_transcript_str = "\n\n".join(
+                        transcript_strs[msg_range.start : msg_range.end]
+                    )
                     results.append(
-                        f"Here is a partial agent run for analysis purposes only:\n{"\n\n".join(transcript_strs[msg_range.start:msg_range.end])}"
+                        f"Here is a partial agent run for analysis purposes only:\n{cur_transcript_str}"
                         f"{metadata_str}"
                     )
                 else:

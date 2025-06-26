@@ -1,9 +1,16 @@
-import json
 import traceback
 import uuid
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from docent._log_util import get_logger
 
@@ -83,26 +90,24 @@ class BaseMetadata(BaseModel):
         if fd is not None:
             self._field_descriptions = fd
 
-    def model_dump(
-        self, *args: Any, strip_internal_fields: bool = False, **kwargs: Any
-    ) -> dict[str, Any]:
-        """Overrides model_dump to include field descriptions.
-
-        Args:
-            *args: Additional arguments to pass to the parent method.
-            **kwargs: Additional keyword arguments to pass to the parent method.
-
-        Returns:
-            dict: Dictionary representation of the model with field descriptions included.
-        """
-        data = super().model_dump(*args, **kwargs)
+    @model_serializer(mode="wrap")
+    def _serialize_model(self, handler: SerializerFunctionWrapHandler):
+        # Call the default serializer
+        data = handler(self)
 
         # Dump the field descriptions
         if self._field_descriptions is None:
             self._field_descriptions = self._compute_field_descriptions()
         data["_field_descriptions"] = self._field_descriptions
 
-        # Remove internal fields if requested1
+        return data
+
+    def model_dump(
+        self, *args: Any, strip_internal_fields: bool = False, **kwargs: Any
+    ) -> dict[str, Any]:
+        data = super().model_dump(*args, **kwargs)
+
+        # Remove internal fields if requested
         if strip_internal_fields:
             for field in self._internal_basemetadata_fields:
                 if field in data:
@@ -110,37 +115,15 @@ class BaseMetadata(BaseModel):
 
         return data
 
-    def model_dump_json(
-        self, *args: Any, strip_internal_fields: bool = False, **kwargs: Any
-    ) -> str:
-        """Converts the model to a JSON string.
-        Uses the overridden `model_dump` to include field descriptions.
-
-        Args:
-            *args: Additional arguments to pass to model_dump.
-            **kwargs: Additional keyword arguments to pass to json.dumps.
-
-        Returns:
-            str: JSON string representation of the model.
-        """
-        return json.dumps(
-            self.model_dump(*args, strip_internal_fields=strip_internal_fields, **kwargs),
-            **kwargs,
-        )
-
-    def get(self, key: str, default_value: Any = None, raise_if_missing: bool = False) -> Any:
+    def get(self, key: str, default_value: Any = None) -> Any:
         """Gets a value from the metadata by key.
 
         Args:
             key: The key to look up in the metadata.
             default_value: Value to return if the key is not found. Defaults to None.
-            raise_if_missing: If True, raise an error when the key is missing. Defaults to False.
 
         Returns:
             Any: The value associated with the key, or the default value if not found.
-
-        Raises:
-            ValueError: If the key is not found and raise_if_missing is True.
         """
         # Check if the field exists in the model's fields
         if key in self.__class__.model_fields or (
@@ -149,11 +132,7 @@ class BaseMetadata(BaseModel):
             # Field exists, return its value (even if None)
             return getattr(self, key)
 
-        if raise_if_missing:
-            raise ValueError(f"Field '{key}' not found in {self.__class__.__name__}")
-        else:
-            logger.warning(f"Field '{key}' not found in {self.__class__.__name__}")
-
+        logger.warning(f"Field '{key}' not found in {self.__class__.__name__}")
         return default_value
 
     def get_field_description(self, field_name: str) -> str | None:
@@ -165,16 +144,17 @@ class BaseMetadata(BaseModel):
         Returns:
             str or None: The description string if the field is defined in the model schema
                 and has a description, otherwise None.
-
-        Raises:
-            KeyError: If the field name is not found in the model.
         """
         if self._field_descriptions is None:
             self._field_descriptions = self._compute_field_descriptions()
 
-        if field_name not in self._field_descriptions:
-            raise KeyError(f"Field '{field_name}' not found in {self.__class__.__name__}")
-        return self._field_descriptions[field_name]
+        if field_name in self._field_descriptions:
+            return self._field_descriptions[field_name]
+
+        logger.warning(
+            f"Field description for '{field_name}' not found in {self.__class__.__name__}"
+        )
+        return None
 
     def get_all_field_descriptions(self) -> dict[str, str | None]:
         """Gets descriptions for all fields defined in the model schema.

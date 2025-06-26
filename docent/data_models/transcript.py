@@ -3,7 +3,7 @@ from typing import Any
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, SerializeAsAny
+from pydantic import BaseModel, Field, PrivateAttr, field_serializer, model_validator
 
 from docent._llm_util.util import (
     get_token_count,
@@ -83,9 +83,37 @@ class Transcript(BaseModel):
     description: str | None = None
 
     messages: list[ChatMessage]
-    metadata: SerializeAsAny[BaseMetadata] = Field(default_factory=BaseMetadata)
+    metadata: BaseMetadata = Field(default_factory=BaseMetadata)
 
     _units_of_action: list[list[int]] | None = PrivateAttr(default=None)
+
+    @field_serializer("metadata")
+    def serialize_metadata(self, metadata: BaseMetadata, _info: Any) -> dict[str, Any]:
+        """
+        Custom serializer for the metadata field so the internal fields are explicitly preserved.
+        """
+        return metadata.model_dump(strip_internal_fields=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_metadata_type(cls, data: dict[str, Any] | Any) -> dict[str, Any] | Any:
+        """Validates that metadata is an instance of BaseMetadata, not a dict or other type.
+
+        This prevents issues with field descriptions being lost during dict conversion.
+
+        Raises:
+            ValueError: If metadata is not an instance of BaseMetadata.
+
+        Returns:
+            dict[str, Any] | Any: The validated data.
+        """
+        if isinstance(data, dict) and "metadata" in data:
+            metadata_value = data["metadata"]
+            if metadata_value is not None and not isinstance(metadata_value, BaseMetadata):
+                raise ValueError(
+                    f"metadata must be an instance of BaseMetadata, got {type(metadata_value).__name__}"
+                )
+        return data
 
     @property
     def units_of_action(self) -> list[list[int]]:
@@ -278,6 +306,12 @@ class Transcript(BaseModel):
 
         # Gather metadata
         metadata_obj = self.metadata.model_dump(strip_internal_fields=True)
+        # Add the field descriptions if they exist
+        metadata_obj = {
+            (f"{k} ({d})" if (d := self.metadata.get_field_description(k)) is not None else k): v
+            for k, v in metadata_obj.items()
+        }
+
         yaml_width = float("inf")
         block_str = f"<blocks>\n{blocks_str}\n</blocks>\n"
         metadata_str = f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"
@@ -295,10 +329,8 @@ class Transcript(BaseModel):
             )
             for msg_range in ranges:
                 if msg_range.include_metadata:
-                    results.append(
-                        f"<blocks>\n{"\n".join(au_blocks[msg_range.start:msg_range.end])}\n</blocks>\n"
-                        f"{metadata_str}"
-                    )
+                    cur_au_blocks = "\n".join(au_blocks[msg_range.start : msg_range.end])
+                    results.append(f"<blocks>\n{cur_au_blocks}\n</blocks>\n" f"{metadata_str}")
                 else:
                     assert (
                         msg_range.end == msg_range.start + 1

@@ -61,15 +61,23 @@ GROUP BY sample_id, model;
 # %%
 
 
-await db.get_users()
+users = await db.get_users()
+user = users[0]
 
 
 # %%
 
 fgs = await db.get_fgs()
 fgs
-fg_id = [fg.id for fg in fgs if fg.name == "swe"][0]
-ctx = await db.get_default_view_ctx(fg_id)
+fg_id = [fg.id for fg in fgs if fg.name][0]
+ctx = await db.get_default_view_ctx(fg_id, user)
+
+
+# %%
+
+
+run = await db.get_any_agent_run(ctx)
+print(run.text)
 
 
 # %%
