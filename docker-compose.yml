@@ -34,7 +34,7 @@ services:
     #   - ${SSH_AUTH_SOCK}:/ssh-agent
     # environment:
     #   - SSH_AUTH_SOCK=/ssh-agent
-    command: bash -c "bash /app/scripts/adjust_env_in_docker.sh && docent server --port ${DOCENT_SERVER_PORT:-8888} --workers 8"
+    command: bash -c "bash /app/scripts/adjust_env_in_docker.sh && docent_core server --port ${DOCENT_SERVER_PORT:-8888} --workers 8"
     restart: unless-stopped
 
   frontend:
@@ -46,7 +46,7 @@ services:
       - "${DOCENT_WEB_PORT:-3000}:${DOCENT_WEB_PORT:-3000}"
     depends_on:
       - backend
-    command: docent web --build --no-install --port ${DOCENT_WEB_PORT:-3000} --backend-url ${DOCENT_HOST:-http://localhost}:${DOCENT_SERVER_PORT:-8888} --internal-backend-url http://backend:${DOCENT_SERVER_PORT:-8888}
+    command: docent_core web --build --no-install --port ${DOCENT_WEB_PORT:-3000} --backend-url ${DOCENT_HOST:-http://localhost}:${DOCENT_SERVER_PORT:-8888} --internal-backend-url http://backend:${DOCENT_SERVER_PORT:-8888}
     restart: unless-stopped
 
 volumes:

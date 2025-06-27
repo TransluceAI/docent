@@ -18,7 +18,7 @@ def server(
     ),
 ):
     # `cd` to the server directory; this is where we run uvicorn from (helps for autoreload)
-    file_path = Path(__file__).parent.parent.parent.absolute() / "docent"
+    file_path = Path(__file__).parent.absolute()
     os.chdir(file_path)
 
     # Run the server with appropriate arguments
