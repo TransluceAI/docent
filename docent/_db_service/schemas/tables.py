@@ -320,7 +320,9 @@ class SQLASearchResult(SQLABase):
     agent_run_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
     )
-    search_query = mapped_column(Text, nullable=False, index=True)
+    search_query = mapped_column(
+        Text, nullable=False, index=True
+    )  # TODO(mengk): FK to the search query table
     search_result_idx = mapped_column(Integer, index=True)
 
     # Null indicates no values for this (datapoint, search_query) pair

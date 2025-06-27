@@ -4,6 +4,7 @@ from typing import Any
 
 import anyio
 import redis.asyncio as redis
+from anyio.abc import TaskGroup
 from arq import ArqRedis
 from arq.connections import RedisSettings
 from arq.worker import run_worker
@@ -69,16 +70,17 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
         finally:
             with anyio.CancelScope(shield=True):
                 if canceled:
-                    print(f"job {job_id} canceled")
+                    logger.highlight(f"Job {job_id} canceled", color="red")
                     await db.set_job_status(job_id, JobStatus.CANCELED)
                 else:
-                    print(f"job {job_id} completed")
+                    logger.highlight(f"Job {job_id} finished", color="green")
                     await db.set_job_status(job_id, JobStatus.COMPLETED)
 
                 await publish_searches(db, view_ctx)
                 await REDIS.delete(f"results_{job_id}")
 
-    async def await_commands():
+    async def await_commands(tg: TaskGroup):
+        nonlocal canceled
         q = f"commands_{job_id}"
 
         while True:
@@ -89,19 +91,13 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
                 case "cancel":
                     # The search task may internally prevent cancellation requests from bubbling all
                     # the way up, so explicitly note down the cancellation if we do it ourselves.
-                    nonlocal canceled
                     canceled = True
 
-                    run_task.cancel()
+                    tg.cancel_scope.cancel()
 
-    run_task = asyncio.create_task(run())
-    commands_task = asyncio.create_task(await_commands())
-
-    _, pending = await asyncio.wait([run_task, commands_task], return_when=asyncio.FIRST_COMPLETED)  # type: ignore
-    for task in pending:
-        task.cancel()
-
-    logger.info(f"worker finishing job {job_id}")
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run)
+        tg.start_soon(await_commands, tg)
 
 
 async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
@@ -131,6 +127,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
     await db.set_job_status(job_id, JobStatus.RUNNING)
 
     # Track completion states
+    errored = False
     embedding_completed = False
     indexing_completed = False
 
@@ -148,45 +145,40 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         )
 
     async def _poll_indexing_status():
-        nonlocal indexing_completed
+        nonlocal embedding_completed, indexing_completed
 
         """Poll and report indexing progress after embeddings complete"""
-        try:
-            # Wait for embeddings to complete before starting to poll
-            while not embedding_completed:
-                await asyncio.sleep(2)
+        # Wait for embeddings to complete before starting to poll
+        while not embedding_completed:
+            await asyncio.sleep(1)
 
-            # Now start polling for indexing progress
-            while not indexing_completed:
-                await asyncio.sleep(3)
+        # Now start polling for indexing progress
+        while not indexing_completed:
+            await asyncio.sleep(1)
 
-                phase, percent = await db.get_indexing_progress(view_ctx.fg_id)
-                if phase is None:
-                    continue
+            phase, percent = await db.get_indexing_progress(view_ctx.fg_id)
+            if phase is None:
+                continue
 
-                progress_data = {
-                    "indexing_phase": phase,
-                    "embedding_progress": 100,
-                    "indexing_progress": percent or 0,
-                }
+            progress_data = {
+                "indexing_phase": phase,
+                "embedding_progress": 100,
+                "indexing_progress": percent or 0,
+            }
 
-                # Send via websocket instead of Redis stream
-                await publish_framegrid_update(
-                    view_ctx.fg_id, {"action": "embedding_progress", "payload": progress_data}
-                )
+            # Send via websocket instead of Redis stream
+            await publish_framegrid_update(
+                view_ctx.fg_id, {"action": "embedding_progress", "payload": progress_data}
+            )
 
-                # If indexing is complete (100%), we can stop polling
-                if percent is not None and percent >= 100:
-                    indexing_completed = True
-                    break
-
-        except Exception as e:
-            logger.error(f"Error polling indexing status for job {job_id}: {e}")
-            # Don't re-raise here, let the main task handle failures
+            # If indexing is complete (100%), we can stop polling
+            if percent is not None and percent >= 100:
+                indexing_completed = True
+                break
 
     async def run():
         """Main embedding computation logic"""
-        nonlocal embedding_completed, indexing_completed
+        nonlocal embedding_completed, indexing_completed, errored
 
         try:
             async with db.advisory_lock(view_ctx.fg_id, action_id="compute_embeddings"):
@@ -195,7 +187,10 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                 embedding_completed = True
                 logger.info(f"Embeddings computation completed for job {job_id}")
 
-            if should_index:
+                if not should_index:
+                    indexing_completed = True
+                    return
+
                 # Report that we're starting indexing
                 progress_data = {
                     "indexing_phase": "starting",
@@ -211,53 +206,29 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                 await db.compute_ivfflat_index(view_ctx)
                 indexing_completed = True
                 logger.info(f"Indexing completed for job {job_id}")
-            else:
-                # No indexing needed
-                indexing_completed = True
 
         except Exception as e:
             logger.error(f"Error computing embeddings for job {job_id}: {e}")
+            errored = True
             raise
 
         finally:
             with anyio.CancelScope(shield=True):
-                await db.set_job_status(job_id, JobStatus.COMPLETED)
-                # Send completion message via websocket
-                await publish_framegrid_update(
-                    view_ctx.fg_id, {"action": "embedding_complete", "payload": {}}
-                )
+                if errored:
+                    logger.highlight(f"Job {job_id} canceled", color="red")
+                    await db.set_job_status(job_id, JobStatus.CANCELED)
+                else:
+                    logger.highlight(f"Job {job_id} finished", color="green")
+                    await db.set_job_status(job_id, JobStatus.COMPLETED)
+                    # Send completion message via websocket
+                    await publish_framegrid_update(
+                        view_ctx.fg_id, {"action": "embedding_complete", "payload": {}}
+                    )
 
-    # Create main computation task
-    run_task = asyncio.create_task(run())
-
-    # Create indexing poll task only if needed
-    indexing_poll_task = None
-    if should_index:
-        indexing_poll_task = asyncio.create_task(_poll_indexing_status())
-
-    try:
-        # Wait for the main computation to complete
-        await run_task
-
-        # Wait for indexing poll task if it exists
-        if indexing_poll_task:
-            try:
-                await indexing_poll_task
-            except asyncio.CancelledError:
-                pass
-
-    except Exception as e:
-        logger.error(f"Error in embedding job {job_id}: {e}")
-        # Cancel indexing poll task if it exists and is still running
-        if indexing_poll_task and not indexing_poll_task.done():
-            indexing_poll_task.cancel()
-            try:
-                await indexing_poll_task
-            except asyncio.CancelledError:
-                pass
-        raise
-    finally:
-        logger.info(f"Worker finishing embedding job {job_id}")
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run)
+        if should_index:
+            tg.start_soon(_poll_indexing_status)
 
 
 def run():

@@ -110,7 +110,8 @@ export const computeSearch = createAsyncThunk(
     {
       searchQuery,
       maxResults,
-    }: { searchQuery: string; maxResults: number | null },
+      bringToTop,
+    }: { searchQuery: string; maxResults: number | null; bringToTop: boolean },
     { dispatch, getState }
   ) => {
     try {
@@ -122,12 +123,14 @@ export const computeSearch = createAsyncThunk(
       // Clear previous search results clusters
       dispatch(clearClusteredSearchResults());
 
-      // Set the UI loading state
-      dispatch(setLoadingProgress([0, 0]));
-      dispatch(setLoadingSearchQuery(searchQuery));
-      dispatch(setSearchQuery(searchQuery));
-      dispatch(setCurrentSearchHitCount(0));
-      dispatch(setPaused(false));
+      if (bringToTop) {
+        // Set the UI loading state
+        dispatch(setLoadingProgress([0, 0]));
+        dispatch(setLoadingSearchQuery(searchQuery));
+        dispatch(setSearchQuery(searchQuery));
+        dispatch(setCurrentSearchHitCount(0));
+        dispatch(setPaused(false));
+      }
 
       // Send the request via REST API
       const frameGridId = state.frame.frameGridId;

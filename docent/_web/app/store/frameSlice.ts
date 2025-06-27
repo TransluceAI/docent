@@ -17,6 +17,7 @@ import {
 import { BaseAgentRunMetadata } from '../types/transcriptTypes';
 
 import { setToastNotification } from './toastSlice';
+import { Job } from './searchSlice';
 
 export interface FrameState {
   // Jank state necessary to auto-scroll correctly:
@@ -251,7 +252,7 @@ export const getDimensions = createAsyncThunk(
 
 export const deleteSearch = createAsyncThunk(
   'frame/deleteSearch',
-  async (searchQueryId: string, { dispatch, getState }) => {
+  async ({ searchQueryId, job }: { searchQueryId: string; job: Job }, { dispatch, getState }) => {
     const state = getState() as { frame: FrameState };
     const frameGridId = state.frame.frameGridId;
 
@@ -267,6 +268,10 @@ export const deleteSearch = createAsyncThunk(
     }
 
     try {
+      if (job.status === "running") {
+        await apiRestClient.post(`/${job.id}/cancel_compute_search`);
+      }
+      console.log("deleting search", searchQueryId, job);
       await apiRestClient.delete(
         `/${frameGridId}/search?search_query_id=${searchQueryId}`
       );

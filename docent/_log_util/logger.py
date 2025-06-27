@@ -98,7 +98,7 @@ class LoggerAdapter(logging.LoggerAdapter[logging.Logger]):
         self,
         msg: object,
         *args: Any,
-        color: Literal["magenta", "cyan", "yellow", "red"] = "magenta",
+        color: Literal["magenta", "cyan", "yellow", "red", "green"] = "magenta",
         **kwargs: Any,
     ) -> None:
         """

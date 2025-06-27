@@ -1081,7 +1081,7 @@ async def listen_compute_search(
                     # Check if we've reached max_results
                     if max_results is not None and num_results >= max_results:
                         q = f"commands_{job_id}"
-                        await REDIS.rpush(q, "cancel")
+                        await REDIS.rpush(q, "cancel")  # type: ignore
 
                     if num_done + num_errors == num_total:
                         return

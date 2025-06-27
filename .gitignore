@@ -189,3 +189,4 @@ cython_debug/
 
 # personal
 personal/caden/*
+inspect_evals

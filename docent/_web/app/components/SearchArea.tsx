@@ -14,6 +14,8 @@ import {
   Play,
   EyeOff,
   Square,
+  Pause,
+  Check,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -87,8 +89,7 @@ const SearchArea = () => {
     clusteredSearchResults,
     paused,
   } = useSelector((state: RootState) => state.search);
-  const { embeddingProgress, isListening: isListeningToEmbeddings } =
-    useSelector((state: RootState) => state.embed);
+
 
   // Pull out the search query associated with the current search query
   const activeSearchQuery = useMemo(() => {
@@ -152,10 +153,13 @@ const SearchArea = () => {
     }
   }, [curSearchQuery, dispatch]);
 
-  const handleStopSearch = useCallback(() => {
-    if (activeSearchTaskId) {
+  const handleStopSearch = useCallback((job_id: string = "") => {
+    const idToDelete = job_id !== "" ? job_id : activeSearchTaskId;
+
+
+    if (idToDelete) {
       apiRestClient
-        .post(`/${activeSearchTaskId}/cancel_compute_search`)
+        .post(`/${idToDelete}/cancel_compute_search`)
         .then(() => {
           dispatch(setPaused(true));
         });
@@ -197,6 +201,28 @@ const SearchArea = () => {
       computeSearch({
         searchQuery: trimmedQuery,
         maxResults: currentMaxResults,
+        bringToTop: true,
+      })
+    );
+  };
+
+  const resumeSearchFromHistory = async (query?: string) => {
+    if (!query?.trim()) {
+      toast({
+        title: 'Missing search query',
+        description: 'Please enter a search query',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Search
+    const trimmedQuery = query.trim();
+    dispatch(
+      computeSearch({
+        searchQuery: trimmedQuery,
+        maxResults: null,
+        bringToTop: false,
       })
     );
   };
@@ -246,25 +272,6 @@ const SearchArea = () => {
 
   const hasWritePermission = useHasFramegridWritePermission();
 
-  // Check for embeddings on component mount and enqueue job if needed
-  useEffect(() => {
-    const checkAndComputeEmbeddings = async () => {
-      if (!frameGridId || !hasWritePermission) return;
-
-      const hasEmbeddingsResponse = await apiRestClient.post(
-        `/${frameGridId}/fg_has_embeddings`
-      );
-      const hasEmbeddings = hasEmbeddingsResponse.data;
-
-      if (!hasEmbeddings) {
-        // Enqueue embedding job if embeddings don't exist
-        await apiRestClient.post(`/${frameGridId}/compute_embeddings`);
-      }
-    };
-
-    checkAndComputeEmbeddings();
-  }, [frameGridId, hasWritePermission]);
-
   const handleMaxResultsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (value === '') {
@@ -301,38 +308,6 @@ const SearchArea = () => {
 
   return (
     <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar space-y-3">
-      {/* Embedding Progress */}
-      {embeddingProgress && isListeningToEmbeddings && (
-        <div className="border rounded-sm bg-yellow-50 border-yellow-200 p-2 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-medium text-yellow-800">
-              Computing Embeddings
-            </div>
-            <div className="text-xs text-yellow-700">
-              {embeddingProgress.indexing_phase}
-            </div>
-          </div>
-          <div className="space-y-1">
-            <ProgressBar
-              current={embeddingProgress.embedding_progress}
-              total={100}
-            />
-          </div>
-          {embeddingProgress.indexing_phase !== 'not_required' &&
-            embeddingProgress.indexing_progress > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-yellow-700">
-                  <span>Indexing Progress</span>
-                  <span>{embeddingProgress.indexing_progress}%</span>
-                </div>
-                <ProgressBar
-                  current={embeddingProgress.indexing_progress}
-                  total={100}
-                />
-              </div>
-            )}
-        </div>
-      )}
 
       {/* Global search */}
       <div className="space-y-2">
@@ -464,8 +439,8 @@ const SearchArea = () => {
                   <Sparkles className="h-3 w-3 mr-2" />
                 )}
                 {activeSearchQuery &&
-                activeSearchQuery.bins &&
-                activeSearchQuery.bins.length > 0
+                  activeSearchQuery.bins &&
+                  activeSearchQuery.bins.length > 0
                   ? 'Re-cluster with feedback'
                   : 'Cluster matching results'}
               </Button>
@@ -581,14 +556,45 @@ const SearchArea = () => {
                     const completionPercentage =
                       search.num_total > 0
                         ? Math.min(
-                            (search.num_judgments_computed / search.num_total) *
-                              100,
-                            100
-                          )
+                          (search.num_judgments_computed / search.num_total) *
+                          100,
+                          100
+                        )
                         : 0;
                     const isComplete = completionPercentage === 100;
                     // Extract first 8 characters of UUID for display
                     const shortDimId = search.search_id.split('-')[0];
+
+                    const statusButton = {
+                      "running": (
+                        <button
+                          onClick={() => handleStopSearch(search.job.id)}
+                          className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
+                          title="Pause search"
+                        >
+                          <Pause className="h-3 w-3" />
+                        </button>
+                      ),
+                      "pending": (
+                        <button disabled className="rounded p-0.5 text-blue-400  transition-colors">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        </button>
+                      ),
+                      "completed": (
+                        <button disabled className="rounded p-0.5 text-green-400  transition-colors">
+                          <Check className="h-3 w-3" />
+                        </button>
+                      ),
+                      "canceled": (
+                        <button
+                          onClick={() => resumeSearchFromHistory(search.search_query)}
+                          className="hover:bg-green-50 rounded p-0.5 text-green-400 hover:text-green-600 transition-colors"
+                          title="Resume search"
+                        >
+                          <Play className="h-3 w-3" />
+                        </button>
+                      )
+                    }
 
                     return (
                       <div
@@ -612,7 +618,7 @@ const SearchArea = () => {
                             {search.search_query}
                           </div>
                           <div className="flex items-center ml-2 space-x-1.5 flex-shrink-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 border-r pr-2">
                               <div
                                 className="relative w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0"
                                 title={`${search.num_judgments_computed} of ${search.num_total} processed`}
@@ -630,6 +636,33 @@ const SearchArea = () => {
                             </div>
                             {hasWritePermission && (
                               <>
+                                {
+
+                                  statusButton[search.job.status as keyof typeof statusButton]
+                                  // isPaused ? (
+                                  //   <button
+                                  //     onClick={() => resumeSearchFromHistory(search.search_query)}
+                                  //     className="hover:bg-green-50 rounded p-0.5 text-green-400 hover:text-green-600 transition-colors"
+                                  //     title="Resume search"
+                                  //   >
+                                  //     <Play className="h-3 w-3" />
+                                  //   </button>
+                                  // ) : (
+                                  //   isCompleted ? (
+                                  //     <button disabled className="rounded p-0.5 text-green-400  transition-colors">
+                                  //       <Check className="h-3 w-3" />
+                                  //     </button>
+                                  //   ) : (
+                                  //     <button
+                                  //       onClick={() => handleStopSearch(search.job.id)}
+                                  //       className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
+                                  //       title="Pause search"
+                                  //     >
+                                  //       <Pause className="h-3 w-3" />
+                                  //     </button>
+                                  //   )
+                                  // )
+                                }
                                 <button
                                   className="hover:bg-indigo-50 rounded p-0.5 text-indigo-400 hover:text-indigo-600 transition-colors"
                                   onClick={(e) => {
@@ -650,7 +683,7 @@ const SearchArea = () => {
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     await dispatch(
-                                      deleteSearch(search.search_id)
+                                      deleteSearch({ searchQueryId: search.search_id, job: search.job })
                                     )
                                       .unwrap()
                                       .then(() => {

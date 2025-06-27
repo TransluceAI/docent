@@ -1,5 +1,6 @@
 import asyncio
 import re
+from time import perf_counter
 from typing import Protocol, cast
 from uuid import uuid4
 
@@ -161,6 +162,8 @@ async def execute_search(
 
     TODO(vincent, mengk): i believe this code can be simplified by using a stateful callback.
     """
+    start_tokenize = perf_counter()
+    logger.critical("start search tokenization")
     ids = [ar.id for ar in agent_runs]
     texts = [ar.text for ar in agent_runs]
 
@@ -169,6 +172,7 @@ async def execute_search(
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
+    logger.critical("end tokenize, FIX THIS, maybe cache", perf_counter() - start_tokenize)
     llm_callback = (
         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
         if search_result_callback is not None

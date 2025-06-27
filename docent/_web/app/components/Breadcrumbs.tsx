@@ -24,10 +24,9 @@ import {
 import { RootState } from '../store/store';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
+import EmbeddingsPopover from './EmbeddingsPopover';
 
-interface BreadcrumbsProps {}
-
-const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
+const Breadcrumbs: React.FC = () => {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -123,6 +122,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = () => {
 
       <div className="flex items-center gap-x-2">
         {fgId && <ShareViewPopover framegridId={fgId} />}
+        <EmbeddingsPopover />
         <Button
           variant="outline"
           size="sm"

@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from time import perf_counter
 from typing import (
     Any,
     AsyncIterator,
@@ -887,13 +886,22 @@ class DBService:
         """
         # Delete search
         async with self.session() as session:
+            # TODO(mengk): this is a hack!!!!!!
+            # Remove this once we do the FK relationship
+
+            # Get the search query
+            search_query = await session.execute(
+                select(SQLASearchQuery.search_query).where(SQLASearchQuery.id == search_query_id)
+            )
+            search_query = search_query.scalar_one()
+
             # Queries
             await session.execute(
                 delete(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
             )
             # Results
             await session.execute(
-                delete(SQLASearchResult).where(SQLASearchQuery.id == search_query_id)
+                delete(SQLASearchResult).where(SQLASearchResult.search_query == search_query)
             )
 
     async def get_searches_with_result_counts(self, ctx: ViewContext) -> list[dict[str, Any]]:
@@ -1039,10 +1047,7 @@ class DBService:
         if read_only:
             return
         # Otherwise, compute the search results
-        try:
-            await execute_search(agent_runs, search_query, search_result_callback=_results_callback)
-        except anyio.get_cancelled_exc_class():
-            logger.info("Attribute computation cancelled")
+        await execute_search(agent_runs, search_query, search_result_callback=_results_callback)
 
     ##############
     # Embeddings #
@@ -1059,7 +1064,6 @@ class DBService:
         Returns the original agent runs if reranking fails or embeddings are loading.
         """
 
-        start_time = perf_counter()
         try:
             query_embeddings, _ = await get_chunked_openai_embeddings_async([search_query])
         except Exception as e:
@@ -1068,6 +1072,23 @@ class DBService:
 
         query_embedding = query_embeddings[0]
         async with self.session() as session:
+            count_query = (
+                select(func.count(SQLATranscriptEmbedding.id))
+                .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
+                .where(
+                    SQLATranscriptEmbedding.fg_id == ctx.fg_id,
+                    ctx.get_base_where_clause(SQLAAgentRun),
+                    ~exists().where(
+                        SQLASearchResult.agent_run_id == SQLAAgentRun.id,
+                        SQLASearchResult.search_query == search_query,
+                    ),
+                )
+            )
+
+            # Execute count query to get the actual number of embeddings to process
+            count_result = await session.execute(count_query)
+            embedding_count = count_result.scalar_one()
+
             query = (
                 select(
                     SQLATranscriptEmbedding.agent_run_id,
@@ -1082,7 +1103,7 @@ class DBService:
                     ),
                 )
                 .order_by(SQLATranscriptEmbedding.embedding.cosine_distance(query_embedding))
-                .limit(len(agent_runs))
+                .limit(embedding_count)
             )
 
             # Execute the actual query
@@ -1092,23 +1113,15 @@ class DBService:
 
         # Create a mapping of ID to AgentRun for quick lookup
         id_to_agent_run = {ar.id: ar for ar in agent_runs}
+        ordered_agent_run_ids = list(dict.fromkeys(ordered_agent_run_ids))
+        reranked_agent_runs = [id_to_agent_run[ar_id] for ar_id in ordered_agent_run_ids]
 
-        # Reorder the agent runs to match the vector similarity ordering
-        added_agent_run_ids = set[str]()  # Keep track of what we already added to avoid duplication
-        reranked_agent_runs: list[AgentRun] = []
-        for agent_run_id in ordered_agent_run_ids:
-            if agent_run_id in id_to_agent_run and agent_run_id not in added_agent_run_ids:
-                reranked_agent_runs.append(id_to_agent_run[agent_run_id])
-                added_agent_run_ids.add(agent_run_id)
+        if len(reranked_agent_runs) != len(agent_runs):
+            logger.critical(
+                f"Reranked {len(reranked_agent_runs)} agent runs, but expected {len(agent_runs)}"
+            )
 
-        logger.info(
-            f"Reranked to {len(reranked_agent_runs)} agent runs in {perf_counter() - start_time:.2f}s"
-        )
-
-        # We might not get all agent runs back in the embeddings, so add extra ones back
-        # FIXME(caden,mengk): why can't we get all the agent runs back?
-        remaining_agent_runs = [ar for ar in agent_runs if ar.id not in added_agent_run_ids]
-        reranked_agent_runs.extend(remaining_agent_runs)
+        logger.info(f"Reranked to {len(reranked_agent_runs)}")
 
         return reranked_agent_runs
 
