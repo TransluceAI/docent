@@ -85,7 +85,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
         )}
       </div>
 
-      <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} />
+      {/* <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} /> */}
 
       {/* Replace the inline attribute section with the new component */}
       {searchResults && curSearchQuery && (
@@ -98,93 +98,93 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
   );
 }
 
-const RegexSnippetsSection: React.FC<{
-  regexSnippets?: RegexSnippet[];
-}> = ({ regexSnippets }) => {
-  if (!regexSnippets || regexSnippets.length === 0) {
-    return null;
-  }
+// const RegexSnippetsSection: React.FC<{
+//   regexSnippets?: RegexSnippet[];
+// }> = ({ regexSnippets }) => {
+//   if (!regexSnippets || regexSnippets.length === 0) {
+//     return null;
+//   }
 
-  return (
-    <div className="border-indigo-100 border-t pt-1 mt-1 space-y-1">
-      <div className="flex items-center">
-        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-        <span className="text-xs font-medium text-indigo-700">
-          Regex matches
-        </span>
-      </div>
+//   return (
+//     <div className="border-indigo-100 border-t pt-1 mt-1 space-y-1">
+//       <div className="flex items-center">
+//         <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+//         <span className="text-xs font-medium text-indigo-700">
+//           Regex matches
+//         </span>
+//       </div>
 
-      {regexSnippets?.map((snippetData, index) => (
-        <HighlightedSnippet key={index} snippetData={snippetData} />
-      ))}
-    </div>
-  );
-};
+//       {regexSnippets?.map((snippetData, index) => (
+//         <HighlightedSnippet key={index} snippetData={snippetData} />
+//       ))}
+//     </div>
+//   );
+// };
 
-const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({
-  snippetData,
-}) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  try {
-    // Defensive coding to handle missing or malformed data
-    if (!snippetData || typeof snippetData !== 'object') {
-      return (
-        <p className="text-xs text-red-600">Error: Invalid snippet data</p>
-      );
-    }
+// const HighlightedSnippet: React.FC<{ snippetData: RegexSnippet }> = ({
+//   snippetData,
+// }) => {
+//   const [isExpanded, setIsExpanded] = useState(false);
+//   try {
+//     // Defensive coding to handle missing or malformed data
+//     if (!snippetData || typeof snippetData !== 'object') {
+//       return (
+//         <p className="text-xs text-red-600">Error: Invalid snippet data</p>
+//       );
+//     }
 
-    const { snippet, match_start, match_end } = snippetData;
+//     const { snippet, match_start, match_end } = snippetData;
 
-    // Check if we have all required properties with valid types
-    if (
-      typeof snippet !== 'string' ||
-      typeof match_start !== 'number' ||
-      typeof match_end !== 'number'
-    ) {
-      return (
-        <p className="text-xs text-red-600">Error: Invalid snippet format</p>
-      );
-    }
+//     // Check if we have all required properties with valid types
+//     if (
+//       typeof snippet !== 'string' ||
+//       typeof match_start !== 'number' ||
+//       typeof match_end !== 'number'
+//     ) {
+//       return (
+//         <p className="text-xs text-red-600">Error: Invalid snippet format</p>
+//       );
+//     }
 
-    // Verify match positions are within bounds
-    if (
-      match_start < 0 ||
-      match_end > snippet.length ||
-      match_start >= match_end
-    ) {
-      return <p className="text-xs">{snippet}</p>;
-    }
+//     // Verify match positions are within bounds
+//     if (
+//       match_start < 0 ||
+//       match_end > snippet.length ||
+//       match_start >= match_end
+//     ) {
+//       return <p className="text-xs">{snippet}</p>;
+//     }
 
-    const before = snippet.substring(0, match_start);
-    const matched = snippet.substring(match_start, match_end);
-    const after = snippet.substring(match_end);
+//     const before = snippet.substring(0, match_start);
+//     const matched = snippet.substring(match_start, match_end);
+//     const after = snippet.substring(match_end);
 
-    return (
-      <div
-        className="bg-indigo-50 p-2 rounded-md border border-transparent hover:border-indigo-200 max-w-full cursor-pointer transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        <div
-          className={`overflow-y-auto ${isExpanded ? '' : 'max-h-20'}`}
-          style={{
-            scrollbarWidth: 'thin',
-            scrollbarColor: '#a5b3e6 #e0e7ff',
-          }}
-        >
-          <span className="text-xs text-indigo-900 break-words whitespace-pre-wrap">
-            {before}
-            <span className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded">
-              {matched}
-            </span>
-            {after}
-          </span>
-        </div>
-      </div>
-    );
-  } catch (error) {
-    return <p className="text-xs text-red-600">Error rendering snippet</p>;
-  }
-};
+//     return (
+//       <div
+//         className="bg-indigo-50 p-2 rounded-md border border-transparent hover:border-indigo-200 max-w-full cursor-pointer transition-colors"
+//         onClick={() => setIsExpanded(!isExpanded)}
+//       >
+//         <div
+//           className={`overflow-y-auto ${isExpanded ? '' : 'max-h-20'}`}
+//           style={{
+//             scrollbarWidth: 'thin',
+//             scrollbarColor: '#a5b3e6 #e0e7ff',
+//           }}
+//         >
+//           <span className="text-xs text-indigo-900 break-words whitespace-pre-wrap">
+//             {before}
+//             <span className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded">
+//               {matched}
+//             </span>
+//             {after}
+//           </span>
+//         </div>
+//       </div>
+//     );
+//   } catch (error) {
+//     return <p className="text-xs text-red-600">Error rendering snippet</p>;
+//   }
+// };
 
 interface SearchResultsSectionProps {
   curSearchQuery: string;

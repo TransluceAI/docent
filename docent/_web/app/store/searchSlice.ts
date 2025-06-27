@@ -276,7 +276,6 @@ export const requestClusters = createAsyncThunk(
 export const clearSearch = createAsyncThunk(
   'experimentViewer/clearSearch',
   async (_, { dispatch }) => {
-    console.log('clearing');
     dispatch(setSearchQuery(undefined));
     dispatch(cancelCurrentSearch());
     dispatch(clearSearchResultMap());
