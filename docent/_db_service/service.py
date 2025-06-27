@@ -1094,21 +1094,21 @@ class DBService:
         id_to_agent_run = {ar.id: ar for ar in agent_runs}
 
         # Reorder the agent runs to match the vector similarity ordering
+        added_agent_run_ids = set[str]()  # Keep track of what we already added to avoid duplication
         reranked_agent_runs: list[AgentRun] = []
         for agent_run_id in ordered_agent_run_ids:
-            if agent_run_id in id_to_agent_run:
+            if agent_run_id in id_to_agent_run and agent_run_id not in added_agent_run_ids:
                 reranked_agent_runs.append(id_to_agent_run[agent_run_id])
-
-        # Embeddings are sharded, so we add back agent runs that weren't surfaced
-        # Passing max limit breaks indexing search
-        if len(reranked_agent_runs) != len(agent_runs):
-            reranked_ids_set = set(ordered_agent_run_ids)
-            remaining_agent_runs = [ar for ar in agent_runs if ar.id not in reranked_ids_set]
-            reranked_agent_runs.extend(remaining_agent_runs)
+                added_agent_run_ids.add(agent_run_id)
 
         logger.info(
             f"Reranked to {len(reranked_agent_runs)} agent runs in {perf_counter() - start_time:.2f}s"
         )
+
+        # We might not get all agent runs back in the embeddings, so add extra ones back
+        # FIXME(caden,mengk): why can't we get all the agent runs back?
+        remaining_agent_runs = [ar for ar in agent_runs if ar.id not in added_agent_run_ids]
+        reranked_agent_runs.extend(remaining_agent_runs)
 
         return reranked_agent_runs
 
