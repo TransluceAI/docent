@@ -33,10 +33,10 @@ const EmbeddingsPopover: React.FC = () => {
     if (!frameGridId) return;
 
     try {
-      const hasEmbeddingsResponse = await apiRestClient.post(
+      // Check if all runs have embeddings
+      const hasEmbeddings = await apiRestClient.post(
         `/${frameGridId}/fg_has_embeddings`
       );
-      const hasEmbeddings = hasEmbeddingsResponse.data;
       setHasMissingEmbeddings(!hasEmbeddings);
     } catch (error) {
       console.error('Failed to check embeddings status:', error);
@@ -98,10 +98,7 @@ const EmbeddingsPopover: React.FC = () => {
           variant="outline"
           size="sm"
           className={cn(
-            'gap-2 px-2 h-7',
-            hasMissingEmbeddings
-              ? 'text-red-700  bg-red-50 hover:bg-red-100 border-red-200'
-              : 'text-gray-700  hover:bg-gray-50',
+            'gap-2 px-2 h-7 text-gray-700  hover:bg-gray-50',
             isEmbeddingInProgress &&
               'text-blue-700 hover:bg-blue-100 bg-blue-50 border-blue-200'
           )}
@@ -170,8 +167,7 @@ const EmbeddingsPopover: React.FC = () => {
                 Embeddings Missing
               </div>
               <div className="text-xs text-red-700">
-                Some runs are missing embeddings. Click the button below to
-                compute them.
+                Some runs are missing embeddings. If new agent runs are being added, embeddings will be computed automatically.
               </div>
             </div>
           ) : (
@@ -188,7 +184,7 @@ const EmbeddingsPopover: React.FC = () => {
           {/* Recompute Button */}
           <Button
             onClick={handleRecomputeEmbeddings}
-            disabled={!hasWritePermission || isLoading || isEmbeddingInProgress}
+            disabled={!hasWritePermission || isLoading || isEmbeddingInProgress || !hasMissingEmbeddings}
             className="w-full gap-2 h-7"
             size="sm"
           >

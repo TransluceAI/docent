@@ -39,6 +39,10 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import selectinload
 
+from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.filters import ComplexFilter
+from docent.data_models.transcript import Transcript
 from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
 from docent_core._ai_tools.clustering.cluster_diffs import cluster_diff_claims, search_over_diffs
 from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
@@ -85,10 +89,6 @@ from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
 from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
 from docent_core._server._broker.redis_client import enqueue_embedding_job
-from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import ComplexFilter
-from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
 
@@ -1022,7 +1022,8 @@ class DBService:
         else:
             logger.info(f"Computing results for {len(agent_runs)} agent runs")
 
-        agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
+        if await self.fg_has_embeddings(ctx.fg_id):
+            agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
 
         async def _results_callback(search_results: list[SearchResult] | None):
             if search_result_callback:
@@ -1724,7 +1725,9 @@ class DBService:
 
             return True, job_id
 
-    async def get_job(self, job_id: str) -> SQLAJob | None:
+    async def get_job(
+        self, job_id: str, _where_clause: ColumnElement[bool] | None = None
+    ) -> SQLAJob | None:
         """
         Retrieve a job specification from the database.
 
@@ -1735,7 +1738,10 @@ class DBService:
             The job specification as a dictionary, or None if not found.
         """
         async with self.session() as session:
-            result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
+            query = select(SQLAJob).where(SQLAJob.id == job_id)
+            if _where_clause is not None:
+                query = query.where(_where_clause)
+            result = await session.execute(query)
             return result.scalar_one_or_none()
 
     async def list_search_jobs_and_queries(self):
