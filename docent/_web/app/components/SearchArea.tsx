@@ -90,7 +90,6 @@ const SearchArea = () => {
     paused,
   } = useSelector((state: RootState) => state.search);
 
-
   // Pull out the search query associated with the current search query
   const activeSearchQuery = useMemo(() => {
     if (!curSearchQuery || !dimensionsMap) return undefined;
@@ -140,7 +139,7 @@ const SearchArea = () => {
   }, [curSearchQuery, hasClusters]);
 
   // Max results and paused state
-  const [maxResults, setMaxResults] = useState<number | null>(null);
+  const [maxResults, setMaxResults] = useState<number | null>(10);
   const [pausedSearchQuery, setPausedSearchQuery] = useState<string | null>(
     null
   );
@@ -153,18 +152,18 @@ const SearchArea = () => {
     }
   }, [curSearchQuery, dispatch]);
 
-  const handleStopSearch = useCallback((job_id: string = "") => {
-    const idToDelete = job_id !== "" ? job_id : activeSearchTaskId;
+  const handleStopSearch = useCallback(
+    (job_id: string = '') => {
+      const idToDelete = job_id !== '' ? job_id : activeSearchTaskId;
 
-
-    if (idToDelete) {
-      apiRestClient
-        .post(`/${idToDelete}/cancel_compute_search`)
-        .then(() => {
+      if (idToDelete) {
+        apiRestClient.post(`/${idToDelete}/cancel_compute_search`).then(() => {
           dispatch(setPaused(true));
         });
-    }
-  }, [activeSearchTaskId, dispatch]);
+      }
+    },
+    [activeSearchTaskId, dispatch]
+  );
 
   /**
    * Requesting searches and clusters
@@ -308,13 +307,12 @@ const SearchArea = () => {
 
   return (
     <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar space-y-3">
-
       {/* Global search */}
       <div className="space-y-2">
         <div>
           <div className="text-sm font-semibold">Global Search</div>
           <div className="text-xs">
-            Look for qualitative patterns, errors, or other interesting
+            Look for complex qualitative patterns, errors, or other interesting
             phenomena
           </div>
         </div>
@@ -439,8 +437,8 @@ const SearchArea = () => {
                   <Sparkles className="h-3 w-3 mr-2" />
                 )}
                 {activeSearchQuery &&
-                  activeSearchQuery.bins &&
-                  activeSearchQuery.bins.length > 0
+                activeSearchQuery.bins &&
+                activeSearchQuery.bins.length > 0
                   ? 'Re-cluster with feedback'
                   : 'Cluster matching results'}
               </Button>
@@ -500,14 +498,15 @@ const SearchArea = () => {
                   })}
                 </div>
                 <div className="flex items-center text-xs gap-2">
-                  Stop after:
+                  Stop after
                   <Input
                     value={maxResults ?? ''}
                     onChange={handleMaxResultsChange}
-                    className="text-xs bg-white shadow-none font-mono rounded-full max-w-1/4 text-gray-600 flex-1 h-6"
+                    className="text-xs bg-white shadow-none font-mono rounded-sm w-[5rem] text-gray-600 flex-1 h-6 px-1"
                     type="number"
                     min="0"
                   />
+                  hits
                 </div>
               </div>
               <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
@@ -556,17 +555,17 @@ const SearchArea = () => {
                     const completionPercentage =
                       search.num_total > 0
                         ? Math.min(
-                          (search.num_judgments_computed / search.num_total) *
-                          100,
-                          100
-                        )
+                            (search.num_judgments_computed / search.num_total) *
+                              100,
+                            100
+                          )
                         : 0;
                     const isComplete = completionPercentage === 100;
                     // Extract first 8 characters of UUID for display
                     const shortDimId = search.search_id.split('-')[0];
 
                     const statusButton = {
-                      "running": (
+                      running: (
                         <button
                           onClick={() => handleStopSearch(search.job.id)}
                           className="hover:bg-red-50 rounded p-0.5 text-red-400 hover:text-red-600 transition-colors"
@@ -575,26 +574,34 @@ const SearchArea = () => {
                           <Pause className="h-3 w-3" />
                         </button>
                       ),
-                      "pending": (
-                        <button disabled className="rounded p-0.5 text-blue-400  transition-colors">
+                      pending: (
+                        <button
+                          disabled
+                          className="rounded p-0.5 text-blue-400  transition-colors"
+                        >
                           <Loader2 className="h-3 w-3 animate-spin" />
                         </button>
                       ),
-                      "completed": (
-                        <button disabled className="rounded p-0.5 text-green-400  transition-colors">
+                      completed: (
+                        <button
+                          disabled
+                          className="rounded p-0.5 text-green-400  transition-colors"
+                        >
                           <Check className="h-3 w-3" />
                         </button>
                       ),
-                      "canceled": (
+                      canceled: (
                         <button
-                          onClick={() => resumeSearchFromHistory(search.search_query)}
+                          onClick={() =>
+                            resumeSearchFromHistory(search.search_query)
+                          }
                           className="hover:bg-green-50 rounded p-0.5 text-green-400 hover:text-green-600 transition-colors"
                           title="Resume search"
                         >
                           <Play className="h-3 w-3" />
                         </button>
-                      )
-                    }
+                      ),
+                    };
 
                     return (
                       <div
@@ -637,8 +644,10 @@ const SearchArea = () => {
                             {hasWritePermission && (
                               <>
                                 {
-
-                                  statusButton[search.job.status as keyof typeof statusButton]
+                                  statusButton[
+                                    search.job
+                                      .status as keyof typeof statusButton
+                                  ]
                                   // isPaused ? (
                                   //   <button
                                   //     onClick={() => resumeSearchFromHistory(search.search_query)}
@@ -683,7 +692,10 @@ const SearchArea = () => {
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     await dispatch(
-                                      deleteSearch({ searchQueryId: search.search_id, job: search.job })
+                                      deleteSearch({
+                                        searchQueryId: search.search_id,
+                                        job: search.job,
+                                      })
                                     )
                                       .unwrap()
                                       .then(() => {
