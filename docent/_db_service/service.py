@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import (
     Any,
     AsyncIterator,
@@ -1058,17 +1059,14 @@ class DBService:
         Returns the original agent runs if reranking fails or embeddings are loading.
         """
 
+        start_time = perf_counter()
         try:
             query_embeddings, _ = await get_chunked_openai_embeddings_async([search_query])
         except Exception as e:
             logger.warning(f"Failed to compute embeddings: {e}")
             return agent_runs
 
-        if len(query_embeddings) != 1:
-            logger.warning("Expected single embedding for search query.")
-
         query_embedding = query_embeddings[0]
-
         async with self.session() as session:
             query = (
                 select(
@@ -1108,7 +1106,9 @@ class DBService:
             remaining_agent_runs = [ar for ar in agent_runs if ar.id not in reranked_ids_set]
             reranked_agent_runs.extend(remaining_agent_runs)
 
-        logger.info(f"Reranked to {len(reranked_agent_runs)} agent runs using embeddings")
+        logger.info(
+            f"Reranked to {len(reranked_agent_runs)} agent runs in {perf_counter() - start_time:.2f}s"
+        )
 
         return reranked_agent_runs
 

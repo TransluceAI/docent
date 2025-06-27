@@ -9,9 +9,12 @@ from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.prod_llms import get_llm_completions_async
 from docent._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent._llm_util.util import MAX_TOKENS, get_token_count
+from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import Citation, parse_citations_single_run
 from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
+
+logger = get_logger(__name__)
 
 SEARCH_PROMPT = f"""
 Your task is to check for instances of a search query in some text:
@@ -204,11 +207,11 @@ async def execute_search(
     long_ids = [ids[i] for i in long_indices]
     long_texts = [agent_runs[i].to_text(100_000) for i in long_indices]
     flattened_long_texts = [text for run in long_texts for text in run]
-
     prompts = [
         SEARCH_PROMPT.format(search_query=search_query, item=item) for item in flattened_long_texts
     ]
 
+    logger.info(f"Searching over {len(prompts)} long agent runs")
     outputs = await get_llm_completions_async(
         [
             [
