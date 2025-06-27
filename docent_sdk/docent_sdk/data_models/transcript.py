@@ -304,6 +304,9 @@ class Transcript(BaseModel):
         block_str = f"<blocks>\n{blocks_str}\n</blocks>\n"
         metadata_str = f"<metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</metadata>"
 
+        if token_limit == sys.maxsize:
+            return [f"{block_str}" f"{metadata_str}"]
+
         metadata_token_count = get_token_count(metadata_str)
         block_token_count = get_token_count(block_str)
 

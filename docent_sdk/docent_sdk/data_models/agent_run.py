@@ -105,6 +105,9 @@ class AgentRun(BaseModel):
         )
         metadata_str = f"Metadata about the complete agent run:\n<agent run metadata>\n{yaml.dump(metadata_obj, width=yaml_width)}\n</agent run metadata>"
 
+        if token_limit == sys.maxsize:
+            return [f"{transcripts_str}" f"{metadata_str}"]
+
         # Compute message length; if fits, return the full transcript and metadata
         transcript_str_tokens = get_token_count(transcripts_str)
         metadata_str_tokens = get_token_count(metadata_str)

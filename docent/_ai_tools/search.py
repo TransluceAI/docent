@@ -162,17 +162,19 @@ async def execute_search(
 
     TODO(vincent, mengk): i believe this code can be simplified by using a stateful callback.
     """
-    start_tokenize = perf_counter()
     logger.critical("start search tokenization")
     ids = [ar.id for ar in agent_runs]
+    start_time = perf_counter()
     texts = [ar.text for ar in agent_runs]
+    mid_time = perf_counter()
+    logger.critical(f"time to get texts: {mid_time - start_time}")
 
     # Try to search over all short AgentRuns first, since we can stream those immediately
     short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
-    logger.critical(f"end tokenize, FIX THIS, maybe cache: {perf_counter() - start_tokenize}")
+    logger.critical(f"time to tokenize: {perf_counter() - mid_time}")
     llm_callback = (
         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
         if search_result_callback is not None
