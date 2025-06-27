@@ -1,7 +1,12 @@
 [project]
-name = "docent"
-version = "0.0.1"
+name = "docent-python"
 description = "Docent SDK"
+version = "0.1.0-alpha.1"
+authors = [
+  { name="Transluce", email="info@transluce.org" },
+]
+license = "MIT"
+license-files = ["LICENSE.md"]
 
 requires-python = ">=3.11"
 dependencies = [
@@ -21,3 +26,8 @@ packages = ["docent"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[project.urls]
+Homepage = "https://github.com/TransluceAI/docent"
+Issues = "https://github.com/TransluceAI/docent/issues"
+Docs = "https://transluce-docent.readthedocs-hosted.com/en/latest"

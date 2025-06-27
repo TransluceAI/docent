@@ -2,6 +2,7 @@
 name = "docent-core"
 version = "0.0.1"
 description = "Docent core"
+classifiers = ["Private :: Do Not Upload"]
 
 requires-python = ">=3.11"
 dependencies = [
