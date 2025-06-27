@@ -1222,6 +1222,8 @@ async def listen_cluster_search_results(
                 # Only compute new clusters if not read_only
                 if not read_only:
                     tg.start_soon(_f)
+                else:
+                    done = True
 
                 already_sent_search_result_assignments: set[str] = set()
                 while True:
