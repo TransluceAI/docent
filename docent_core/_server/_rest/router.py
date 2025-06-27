@@ -11,8 +11,18 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
+from docent._log_util.logger import get_logger
+from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
+from docent.data_models.citation import (
+    Citation,
+    parse_citations_single_run,
+)
 from docent_core._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent_core._db_service.contexts import ViewContext
+from docent_core._db_service.filters import (
+    ComplexFilter,
+    parse_filter_dict,
+)
 from docent_core._db_service.schemas.auth_models import (
     Permission,
     ResourceType,
@@ -33,8 +43,6 @@ from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent_core._server._analytics.tracker import track_endpoint_with_user
 from docent_core._server._assistant.chat import make_single_tasst_system_prompt
-
-# from docent_core._server._assistant.feedback import generate_new_queries
 from docent_core._server._assistant.summarizer import (
     HighLevelAction,
     LowLevelAction,
@@ -65,16 +73,6 @@ from docent_core._server._rest.send_state import (
     publish_searches,
 )
 from docent_core._server.util import sse_event_stream
-from docent._log_util.logger import get_logger
-from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
-from docent.data_models.citation import (
-    Citation,
-    parse_citations_single_run,
-)
-from docent.data_models.filters import (
-    ComplexFilter,
-    parse_filter_dict,
-)
 
 logger = get_logger(__name__)
 

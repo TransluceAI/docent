@@ -5,7 +5,7 @@ import requests
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import FrameFilter
+from docent_core._db_service.filters import FrameFilter
 
 logger = get_logger(__name__)
 

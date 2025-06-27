@@ -23,14 +23,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import UniqueConstraint
 
-from docent_core._ai_tools.search import SearchResult
-from docent_core._db_service.schemas.auth_models import Organization, Permission, User
-from docent_core._db_service.schemas.base import SQLABase
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import ComplexFilter, parse_filter_dict
 from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
 from docent.data_models.transcript import Transcript
+from docent_core._ai_tools.search import SearchResult
+from docent_core._db_service.filters import ComplexFilter, parse_filter_dict
+from docent_core._db_service.schemas.auth_models import Organization, Permission, User
+from docent_core._db_service.schemas.base import SQLABase
 
 logger = get_logger(__name__)
 

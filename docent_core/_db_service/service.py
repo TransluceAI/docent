@@ -39,6 +39,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import selectinload
 
+from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.transcript import Transcript
 from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
 from docent_core._ai_tools.clustering.cluster_diffs import cluster_diff_claims, search_over_diffs
 from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
@@ -54,6 +57,7 @@ from docent_core._ai_tools.search_paired import (
     execute_search_paired,
 )
 from docent_core._db_service.contexts import ViewContext
+from docent_core._db_service.filters import ComplexFilter
 from docent_core._db_service.schemas.auth_models import (
     PERMISSION_LEVELS,
     Permission,
@@ -86,10 +90,6 @@ from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
 from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
 from docent_core._server._broker.redis_client import enqueue_embedding_job
-from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun
-from docent.data_models.filters import ComplexFilter
-from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
 

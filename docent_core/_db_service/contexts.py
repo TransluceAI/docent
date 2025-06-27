@@ -4,13 +4,13 @@ from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_
 
 from docent._log_util import get_logger
-from docent.data_models.filters import ComplexFilter
+from docent_core._db_service.filters import ComplexFilter
+from docent_core._db_service.schemas.auth_models import User
 
 if TYPE_CHECKING:
     from docent_core._db_service.schemas.tables import SQLAAgentRun
 
 logger = get_logger(__name__)
-from docent_core._db_service.schemas.auth_models import User
 
 
 class ViewContext(BaseModel):

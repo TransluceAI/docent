@@ -5,11 +5,11 @@ specific agent runs based on various criteria.
 
 ### Filter Types
 
-- [`PrimitiveFilter`][docent.data_models.filters.PrimitiveFilter]: Filter agent runs by any primitive operator. These can be run in SQL.
-- [`AttributePredicateFilter`][docent.data_models.filters.AttributePredicateFilter]: Use LLMs to determine if an agent run's attributes satisfy a given natural language predicate.
-- [`AttributeExistsFilter`][docent.data_models.filters.AttributeExistsFilter]: Check if an agent run has a given attribute.
-- [`ComplexFilter`][docent.data_models.filters.ComplexFilter]: Combine filters with AND/OR. This can be run in SQL if all its filters are primitive.
-- [`AgentRunIdFilter`][docent.data_models.filters.AgentRunIdFilter]: Filter agent runs by their ID.
+- [`PrimitiveFilter`][docent_core._db_service.filters.PrimitiveFilter]: Filter agent runs by any primitive operator. These can be run in SQL.
+- [`AttributePredicateFilter`][docent_core._db_service.filters.AttributePredicateFilter]: Use LLMs to determine if an agent run's attributes satisfy a given natural language predicate.
+- [`AttributeExistsFilter`][docent_core._db_service.filters.AttributeExistsFilter]: Check if an agent run has a given attribute.
+- [`ComplexFilter`][docent_core._db_service.filters.ComplexFilter]: Combine filters with AND/OR. This can be run in SQL if all its filters are primitive.
+- [`AgentRunIdFilter`][docent_core._db_service.filters.AgentRunIdFilter]: Filter agent runs by their ID.
 
 ### Usage
 
@@ -44,6 +44,6 @@ judgments = await filter.apply(agent_runs)
 matching_runs = [ar for ar, j in zip(agent_runs, judgments) if j.matches]
 ```
 
-Filters return a list of [`Judgment`][docent.data_models.filters.Judgment] objects, which contain the agent run, metadata about where the filter was applied, and data on whether/why the filter matched.
+Filters return a list of [`Judgment`][docent_core._db_service.filters.Judgment] objects, which contain the agent run, metadata about where the filter was applied, and data on whether/why the filter matched.
 
-::: docent.data_models.filters
+::: docent_core._db_service.filters

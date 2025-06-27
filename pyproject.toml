@@ -75,7 +75,6 @@ profile = "black"
 line_length = 100
 known_first_party = [
     "docent",
-    "docent_cli",
     "docent_core"
 ]
 
