@@ -8,7 +8,7 @@ An [`AgentRun`][docent.data_models.agent_run.AgentRun] represents a complete age
 
 ### Usage
 
-`AgentRun` objects require a dictionary of [`Transcript`](./transcript.md) objects, as well as a [`BaseAgentRunMetadata`](./metadata.md) object. In the base metadata object, you must specify a `run_id`, `scores`, and a `default_score_key`.
+`AgentRun` objects require a dictionary of [`Transcript`](./transcript.md) objects, as well as a [`BaseAgentRunMetadata`](./metadata.md) object. In the base metadata object, you must specify `scores` and a `default_score_key`.
 
 ```python
 from docent.data_models import AgentRun, Transcript, BaseAgentRunMetadata
@@ -26,7 +26,6 @@ transcripts = {
 agent_run = AgentRun(
     transcripts=transcripts,
     metadata=BaseAgentRunMetadata(
-        run_id="run_1",
         scores={"correct": True, "reward": 1.0},
         default_score_key="correct",
     )

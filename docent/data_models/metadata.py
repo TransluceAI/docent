@@ -1,5 +1,4 @@
 import traceback
-import uuid
 from typing import Any, Optional
 
 from pydantic import (
@@ -184,15 +183,10 @@ class BaseAgentRunMetadata(BaseMetadata):
     """Extends BaseMetadata with fields specific to agent evaluation runs.
 
     Attributes:
-        run_id: Unique identifier for the run.
         scores: Dictionary of evaluation metrics.
         default_score_key: The primary evaluation metric key.
     """
 
-    run_id: str = Field(
-        description="The ID of the run that the transcript belongs to",
-        default_factory=lambda: str(uuid.uuid4()),
-    )
     scores: dict[str, int | float | bool | None] = Field(
         description="A dict of score_key -> score_value. Use one key for each metric you're tracking."
     )
