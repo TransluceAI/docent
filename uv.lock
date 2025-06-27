@@ -640,7 +640,7 @@ wheels = [
 ]
 
 [[package]]
-name = "docent"
+name = "docent-core"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
@@ -648,7 +648,7 @@ dependencies = [
     { name = "arq" },
     { name = "asyncpg" },
     { name = "backoff" },
-    { name = "docent-sdk" },
+    { name = "docent-python" },
     { name = "fastapi" },
     { name = "greenlet" },
     { name = "inspect-ai" },
@@ -673,6 +673,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
 ]
@@ -683,7 +684,7 @@ requires-dist = [
     { name = "arq", specifier = ">=0.26.3" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "backoff", specifier = ">=2.2.1" },
-    { name = "docent-sdk", editable = "docent_sdk" },
+    { name = "docent-python", editable = "docent" },
     { name = "fastapi", specifier = ">=0.114.1" },
     { name = "greenlet", specifier = ">=3.2.1" },
     { name = "inspect-ai", specifier = ">=0.3.93" },
@@ -708,14 +709,15 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.40" },
     { name = "torch" },
     { name = "transformers", specifier = ">=4.48.0" },
+    { name = "typer", specifier = ">=0.16.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.23.1" },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
 
 [[package]]
-name = "docent-sdk"
-version = "0.0.1"
-source = { editable = "docent_sdk" }
+name = "docent-python"
+version = "0.1.0a1"
+source = { editable = "docent" }
 dependencies = [
     { name = "logging" },
     { name = "pydantic" },

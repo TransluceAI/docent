@@ -10,7 +10,7 @@ IPython.get_ipython().run_line_magic("autoreload", "2")
 
 # %%
 
-from docent._db_service.service import DBService
+from docent_core._db_service.service import DBService
 
 db = await DBService.init()
 
@@ -106,7 +106,7 @@ await db.compute_paired_search(
 # %%%
 
 
-from docent_sdk.data_models.agent_run import AgentRun
+from docent.data_models.agent_run import AgentRun
 
 # runs_37 = [run for run in runs if run.metadata.get("model") == "anthropic/claude-3-7-sonnet-latest"]
 # runs_35 = [run for run in runs if run.metadata.get("model") == "anthropic/claude-3-5-sonnet-latest"]
@@ -133,7 +133,7 @@ for runs in paired_runs:
 # %%
 
 
-from docent._ai_tools.search_paired import execute_search_paired
+from docent_core._ai_tools.search_paired import execute_search_paired
 
 all_results = await execute_search_paired(
     paired_runs[:50],
@@ -268,7 +268,7 @@ print(run.text)
 
 # %%
 
-from docent._db_service.schemas.auth_models import Permission, ResourceType, SubjectType
+from docent_core._db_service.schemas.auth_models import Permission, ResourceType, SubjectType
 
 fg_id = fgs[1].id
 await db.set_acl_permission(

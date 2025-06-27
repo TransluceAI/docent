@@ -1,7 +1,8 @@
 [project]
-name = "docent"
+name = "docent-core"
 version = "0.0.1"
-description = "Docent"
+description = "Docent core"
+classifiers = ["Private :: Do Not Upload"]
 
 requires-python = ">=3.11"
 dependencies = [
@@ -11,6 +12,7 @@ dependencies = [
     "pyright>=1.1.0",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.26.0",
+    "typer>=0.16.0",
     # Eval harness (for easy ingestion of inspect logs)
     "inspect-ai>=0.3.93",
     # Web server
@@ -41,25 +43,25 @@ dependencies = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.14",
     "mkdocstrings-python>=1.16.10",
+    # SDK
+    "docent-python",
     # Uncategorized
     "arq>=0.26.3",
     "passlib[argon2]>=1.7.4",
-    # SDK
-    "docent_sdk",
 ]
 
 [project.scripts]
-docent = "docent_cli.main:app"
+docent_core = "docent_core.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-docent_sdk = { path = "docent_sdk", editable = true }
+docent-python = { path = "docent", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["docent", "cli/docent_cli"]
+packages = ["docent_core"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -71,13 +73,17 @@ target-version = ['py310']
 [tool.isort]
 profile = "black"
 line_length = 100
-known_first_party = "docent"
+known_first_party = [
+    "docent",
+    "docent_cli",
+    "docent_core"
+]
 
 [tool.pyright]
 include = [
-    "docent",
+    "docent_core",
     "cli/docent_cli",
-    "docent_sdk/docent_sdk"
+    "docent/docent"
 ]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

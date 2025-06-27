@@ -26,15 +26,20 @@ RUN mkdir -p "$NVM_DIR" \
     # housekeeping
     && nvm cache clear
 
-# Copy the cli and web code
-COPY cli/ cli/
-COPY docent/_web docent/_web
+# First install dependencies
+COPY pyproject.toml .
+# Annoying but we need to copy the SDK otherwise the core app which depends on it cannot build
+COPY docent docent
+RUN uv pip install --system .
+
+# Copy the application code
+COPY . .
+
+# Install the application code to get the cli which runs the webapp
+RUN uv pip install --system -e .
 
 # Run npm install while still root
-RUN cd docent/_web && npm install
-
-# Install the cli to run the webapp
-RUN uv pip install --system -e cli/
+RUN cd docent_core/_web && npm install
 
 # Create and set the docent user
 RUN groupadd -r docent && useradd -r -g docent docent

@@ -6,7 +6,7 @@
 
 from datasets import load_dataset
 
-from docent._llm_util.prod_llms import ModelOption, get_llm_completions_async
+from docent_core._llm_util.prod_llms import ModelOption, get_llm_completions_async
 
 # In[2]:
 
@@ -92,8 +92,8 @@ import asyncio
 
 from tqdm.auto import tqdm
 
-from docent._llm_util.data_models.llm_output import LLMOutput
-from docent_sdk.data_models import AgentRun, Transcript
+from docent_core._llm_util.data_models.llm_output import LLMOutput
+from docent.data_models import AgentRun, Transcript
 
 all_results: list[list[LLMOutput]] = []
 all_prompts: list[list[list[dict[str, str]]]] = []
