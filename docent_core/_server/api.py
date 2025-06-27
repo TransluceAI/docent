@@ -5,11 +5,11 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
 from docent_core._server._broker.router import broker_router
 from docent_core._server._rest.router import public_router, user_router
-from docent._log_util import get_logger
 
 logger = get_logger(__name__)
 
@@ -119,18 +119,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def lifespan(app: FastAPI):
-    import subprocess
+# def lifespan(app: FastAPI):
+#     import subprocess
 
-    worker_process = subprocess.Popen(["python", "-m", "docent_core._worker.worker"])
+#     worker_process = subprocess.Popen(["python", "-m", "docent_core._worker.worker"])
 
-    yield
-    logger.info("Shutting down...")
+#     yield
+#     logger.info("Shutting down...")
 
-    worker_process.terminate()
+#     worker_process.terminate()
 
 
-asgi_app = FastAPI(lifespan=lifespan)  # type: ignore
+asgi_app = FastAPI()  # type: ignore
 
 # Add middlewares in order (they are processed in reverse order when handling responses)
 # 1. Request logging middleware first
