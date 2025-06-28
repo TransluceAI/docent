@@ -114,7 +114,9 @@ export default function FrameGridRow({
 
   /* ------------------------------- Utilities ------------------------------- */
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    // dateString is in UTC
+    const date = new Date(dateString + 'Z');
+    // display in local time
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',

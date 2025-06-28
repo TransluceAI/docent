@@ -22,7 +22,8 @@ export const useHasFramegridPermission = (
   const framegridId =
     useAppSelector((state) => state.frame.frameGridId) || fgId;
   const { data: permissions } = useGetFramegridPermissionsQuery(
-    framegridId || ''
+    framegridId || '',
+    { skip: !framegridId }
   );
   if (!permissions || !framegridId) return false;
   return hasFramegridPermission(permissions, framegridId, permission);
