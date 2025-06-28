@@ -1,0 +1,79 @@
+import { BASE_DOCENT_PATH } from '@/app/constants';
+import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+
+export const getAgentRunUrl = (
+  fgId: string,
+  agentRunId: string,
+  transcriptIdx?: number,
+  blockIdx?: number,
+  blockIdx2?: number,
+  paired?: boolean,
+  searchQuery?: string
+) => {
+  const prefix =
+    `${BASE_DOCENT_PATH}/${fgId}/` +
+    (paired ? 'paired_transcript' : 'transcript') +
+    `/${agentRunId}`;
+  const params = new URLSearchParams();
+
+  if (transcriptIdx != undefined) {
+    params.append('transcript_idx', transcriptIdx.toString());
+  }
+
+  if (blockIdx != undefined) {
+    params.append('block_idx', blockIdx.toString());
+    if (blockIdx2 != undefined) {
+      params.append('block_idx_2', blockIdx2.toString());
+    }
+  }
+
+  if (searchQuery) {
+    params.append('searchQuery', searchQuery);
+  }
+
+  const queryString = params.toString();
+  return queryString ? `${prefix}?${queryString}` : prefix;
+};
+
+export const navToAgentRun = (
+  e: React.MouseEvent,
+  router: AppRouterInstance,
+  window: Window,
+  agentRunId: string,
+  transcriptIdx?: number,
+  blockIdx?: number,
+  frameGridId?: string,
+  searchQuery?: string
+) => {
+  e.stopPropagation();
+  if (!frameGridId) {
+    console.error('frameGridId is required');
+    return;
+  }
+
+  if (e.metaKey || e.ctrlKey || e.button === 1) {
+    // Open in new tab
+    const url = getAgentRunUrl(
+      frameGridId,
+      agentRunId,
+      transcriptIdx,
+      blockIdx,
+      undefined,
+      undefined,
+      searchQuery
+    );
+    window.open(url, '_blank');
+  } else if (e.button === 0) {
+    // Open in same tab
+    const url = getAgentRunUrl(
+      frameGridId,
+      agentRunId,
+      transcriptIdx,
+      blockIdx,
+      undefined,
+      undefined,
+      undefined // When opening in same tab, don't need to pass the search query
+    );
+    router.push(url);
+  }
+};

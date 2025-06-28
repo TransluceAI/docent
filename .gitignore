@@ -7,6 +7,11 @@
 # *.sql  (neil: disabled for ursid)
 *.gz
 
+*.tfstate
+*.tfstate.backup
+*/.terraform/
+*/*.terraform.*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -175,4 +180,12 @@ cython_debug/
 # yarn
 **/.yarn/
 **/.pnp.*
-personal/lijie/robust_latentqa/test2.ipynb
+
+# data
+*.npy
+*.csv
+*.pkl
+
+# personal
+personal/caden/*
+inspect_evals

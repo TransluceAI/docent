@@ -12,9 +12,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # First install dependencies
 COPY pyproject.toml .
+# Annoying but we need to copy the SDK otherwise the core app which depends on it cannot build
+COPY docent docent
 RUN uv pip install --system .
 
-# Copy the application code with the correct permissions
+# Copy the application code
 COPY . .
 
 # Install the project in editable mode

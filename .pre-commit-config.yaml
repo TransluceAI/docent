@@ -32,10 +32,11 @@ repos:
       - id: black
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 6.0.1
     hooks:
       - id: isort
         name: isort (python)
+        args: ["--settings-path", "."]
 
   - repo: https://github.com/PyCQA/autoflake
     rev: v2.3.1
@@ -46,18 +47,9 @@ repos:
           - --remove-unused-variables
           - --in-place
 
-  # - repo: https://github.com/RobertCraigie/pyright-python
-  #   rev: v1.1.396
-  #   hooks:
-  #     - id: pyright
-  #       files: ^(project/docent/|lib/frames/).*\.py$
-
-  # - repo: local
-  #   hooks:
-  #     - id: luce-uv-lock-all
-  #       name: luce-uv-lock-all
-  #       description: "Automatically run 'uv lock' on all project dependencies"
-  #       entry: ./lib/lucepkg/bin/luce uv lock-all
-  #       language: system
-  #       pass_filenames: false
-  #       minimum_pre_commit_version: "2.9.2"
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.396
+    hooks:
+      - id: pyright
+        files: ^(docent/|docent_core/).*\.py$
+        args: ["--pythonpath", ".venv/bin/python"]

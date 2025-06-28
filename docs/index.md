@@ -21,8 +21,7 @@ Docent provides tools to **summarize, cluster, and search** over agent transcrip
 
 Check out our tutorials to learn how to use Docent:
 
-- Start by [installing Docent](./quickstart.md)
-- Next, learn how to [ingest agent logs into Docent](./tutorials/ingesting_agent_runs.md)
+- Start by [installing Docent and ingesting agent runs](./quickstart.md)
 - Then try running [search and clustering](./tutorials/search_and_clustering.md) over your data
 
 ### Learn more about Docent

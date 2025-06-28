@@ -26,23 +26,22 @@ nav:
   - Quickstart: quickstart.md
   - Get support: support.md
   - Tutorials:
-      - tutorials/ingesting_agent_runs.md
       - tutorials/search_and_clustering.md
   - Core Concepts:
-      - Configuration:
-          - concepts/configuration/environment_variables.md
-          - concepts/configuration/llm_providers_and_calls.md
       - Data Models:
           - concepts/data_models/agent_run.md
           - concepts/data_models/transcript.md
           - concepts/data_models/metadata.md
           - concepts/data_models/chat_messages.md
-          - concepts/data_models/filters_and_dimensions.md
+          # - concepts/data_models/filters_and_dimensions.md
           - concepts/data_models/llm_output.md
-      - SDK:
-          - concepts/sdk/python_sdk.md
-      - Developers:
-          - developers/development_tips.md
+      # - Developers:
+      #     - developers/development_tips.md
+  - Hosting:
+      - self_hosting/self_host_docent.md
+      - Configuration:
+          - self_hosting/environment_variables.md
+          - self_hosting/llm_providers_and_calls.md
 
 repo_name: Docent
 repo_url: https://github.com/TransluceAI/docent

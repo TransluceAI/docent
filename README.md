@@ -22,7 +22,7 @@ To get started, check out the [quickstart guide](https://transluce-docent.readth
 
 ### Community
 
-We'll release a Slack channel for community support soon! Stay tuned.
+Coming soon!
 
 ### Roadmap
 
@@ -30,4 +30,12 @@ Reach out to kevin@transluce.org to find out! We'll be publicizing it soon.
 
 ### Changelog
 
-We'll start semantically versioning Docent soon, once we're out of private alpha.
+Coming soon!
+
+### Setting up for development
+
+- (VSCode) Open Docent via [`docent.code-workspace`](.vscode/docent.code-workspace), which sets up formatting and linting.
+- Install pre-commit hooks: `pre-commit install`.
+- Follow the [self-host guide (manual version)](https://transluce-docent.readthedocs-hosted.com/en/dev/self_hosting/self_host_docent/#__tabbed_1_2) to self-host Docent on your machine.
+- Follow the [quickstart guide](https://transluce-docent.readthedocs-hosted.com/en/dev/quickstart) to ingest some sample transcripts.
+- To view your database through a GUI, install the [DB Client](https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-database-client2) VSCode extension.

@@ -1,0 +1,26 @@
+{
+  "folders": [
+    {
+      "path": "../docent_sdk",
+      "name": "docent-sdk"
+    }
+  ],
+  "settings": {
+    "jupyter.allowUnauthorizedRemoteConnection": true,
+    "python.defaultInterpreterPath": "../docent_sdk/.venv/bin/python",
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.black-formatter",
+      "editor.formatOnSave": true,
+      "editor.rulers": [100]
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true
+    },
+    "[markdown]": {
+      "editor.formatOnSave": false
+    },
+    "eslint.enable": false,
+    "eslint.validate": ["typescript", "typescriptreact"]
+  }
+}

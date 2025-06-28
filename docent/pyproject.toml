@@ -1,0 +1,31 @@
+[project]
+name = "docent-python"
+description = "Docent SDK"
+version = "0.1.0-alpha.7"
+authors = [
+  { name="Transluce", email="info@transluce.org" },
+]
+license = "MIT"
+license-files = ["LICENSE.md"]
+
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.11.7",
+    "pyyaml>=6.0.2",
+    "tiktoken>=0.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["docent"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project.urls]
+Homepage = "https://github.com/TransluceAI/docent"
+Issues = "https://github.com/TransluceAI/docent/issues"
+Docs = "https://transluce-docent.readthedocs-hosted.com/en/latest"

@@ -1,0 +1,68 @@
+import { Citation } from '@/app/types/experimentViewerTypes';
+import { navToAgentRun } from './nav';
+import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+
+export const renderTextWithCitations = (
+  text: string,
+  citations: Citation[],
+  dataId: string,
+  router: AppRouterInstance,
+  window: Window,
+  searchQuery?: string,
+  frameGridId?: string
+) => {
+  if (!citations.length) {
+    return text;
+  }
+
+  // Sort citations by start index to process them in order
+  const sortedCitations = [...citations].sort(
+    (a, b) => a.start_idx - b.start_idx
+  );
+
+  const parts: JSX.Element[] = [];
+  let lastIndex = 0;
+
+  sortedCitations.forEach((citation, i) => {
+    // Add text before the citation
+    if (citation.start_idx > lastIndex) {
+      parts.push(
+        <span key={`text-${i}`}>
+          {text.slice(lastIndex, citation.start_idx)}
+        </span>
+      );
+    }
+
+    // Add the cited text as a clickable element
+    const citedText = text.slice(citation.start_idx, citation.end_idx);
+    parts.push(
+      <button
+        key={`citation-${i}`}
+        className="px-0.5 py-0.25 bg-indigo-200 text-indigo-800 rounded hover:bg-indigo-400 hover:text-white transition-colors font-medium"
+        onMouseDown={(e) => {
+          navToAgentRun(
+            e,
+            router,
+            window,
+            dataId,
+            citation.transcript_idx ?? undefined,
+            citation.block_idx,
+            frameGridId,
+            searchQuery
+          );
+        }}
+      >
+        {citedText}
+      </button>
+    );
+
+    lastIndex = citation.end_idx;
+  });
+
+  // Add any remaining text
+  if (lastIndex < text.length) {
+    parts.push(<span key={`text-end`}>{text.slice(lastIndex)}</span>);
+  }
+
+  return <>{parts}</>;
+};

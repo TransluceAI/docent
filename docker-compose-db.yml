@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:15
+    image: pgvector/pgvector:pg15
     container_name: docent_postgres
     environment:
       POSTGRES_USER: ${DOCENT_PG_USER:-docent_user}

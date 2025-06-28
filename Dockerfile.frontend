@@ -5,22 +5,41 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install Node.js, npm, and git
+# OS prerequisites (git, build chain, openssl headers, curl for nvm)
 RUN apt-get update && \
-    apt-get install -y nodejs npm git && \
+    apt-get install -y --no-install-recommends \
+      git build-essential libssl-dev pkg-config curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 # Install uv - it's way faster than pip
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy the cli and web code
-COPY cli/ cli/
-COPY docent/_web docent/_web
+# Install nvm and Node 22
+ENV NVM_DIR=/app/.nvm \
+    NODE_VERSION=22
+RUN mkdir -p "$NVM_DIR" \
+    && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install "$NODE_VERSION" \
+    && nvm alias default "$NODE_VERSION" \
+    # make Node binaries available to future layers & at runtime
+    && ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/"* /usr/local/bin/ \
+    # housekeeping
+    && nvm cache clear
+
+# First install dependencies
+COPY pyproject.toml .
+# Annoying but we need to copy the SDK otherwise the core app which depends on it cannot build
+COPY docent docent
+RUN uv pip install --system .
+
+# Copy the application code
+COPY . .
+
+# Install the application code to get the cli which runs the webapp
+RUN uv pip install --system -e .
 
 # Run npm install while still root
-RUN cd docent/_web && npm install
-
-# Install the cli to run the webapp
-RUN uv pip install --system -e cli/
+RUN cd docent_core/_web && npm install
 
 # Create and set the docent user
 RUN groupadd -r docent && useradd -r -g docent docent

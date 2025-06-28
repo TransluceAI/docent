@@ -4,7 +4,7 @@ This module provides base metadata classes, used with [`AgentRun`](./agent_run.m
 
 Any [`BaseMetadata`][docent.data_models.metadata.BaseMetadata] subclass **must be JSON serializable**. There is a validator that checks for compliance.
 
-[`BaseAgentRunMetadata`][docent.data_models.metadata.BaseAgentRunMetadata] is an extension of `BaseMetadata` that requires `run_id`, `scores`, and a `default_score_key`. The scoring fields are useful for tracking metrics, like task completion or reward. All `AgentRun` objects require these fields, but `Transcript` objects don't.
+[`BaseAgentRunMetadata`][docent.data_models.metadata.BaseAgentRunMetadata] is an extension of `BaseMetadata` that requires `scores`. The scoring fields are useful for tracking metrics, like task completion or reward. All `AgentRun` objects require these fields, but `Transcript` objects don't.
 
 ### Accessing metadata
 
@@ -49,9 +49,7 @@ You can then populate your custom metadata class as such:
 ```python
 metadata = RLTrainingMetadata(
     # Required fields
-    run_id="run_1",
     scores={"reward_1": 0.1, "reward_2": 0.5, "reward_3": 0.8},
-    default_score_key="reward_1",
     # Custom fields
     episode=42,
     policy_version="v1.2.3",
