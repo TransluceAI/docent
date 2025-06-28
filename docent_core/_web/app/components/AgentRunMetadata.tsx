@@ -1,6 +1,5 @@
 import { useAppSelector } from '../store/hooks';
 import { RootState } from '../store/store';
-import { cn } from '@/lib/utils';
 const formatMetadataValue = (value: any): string => {
   if (typeof value === 'object' && value !== null) {
     return JSON.stringify(value, null, 2);

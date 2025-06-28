@@ -13,7 +13,6 @@ import {
 } from '@/app/store/transcriptSlice';
 import { AgentRun, TaMessage } from '@/app/types/transcriptTypes';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
