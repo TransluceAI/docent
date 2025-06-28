@@ -470,7 +470,7 @@ const SearchArea = () => {
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-x-2 gap-y-1">
                   {PRESET_QUERIES.map((preset) => {
                     const IconComponent = preset.icon;
                     return (

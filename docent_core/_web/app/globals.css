@@ -87,6 +87,9 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-open-sans);
+
+    /* Horizontal scrollbar causes a tiny bit of vertical overflow, but don't show a vertical scrollbar */
+    overflow-y: hidden;
   }
 }
 

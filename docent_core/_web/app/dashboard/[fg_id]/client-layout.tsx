@@ -86,7 +86,7 @@ export default function DocentDashboardClientLayout({
   }, [searchParams, dispatch]);
 
   return (
-    <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-0">
+    <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-[900px]">
       <Suspense fallback={<div className="h-6">Loading breadcrumbs...</div>}>
         <Breadcrumbs />
       </Suspense>
