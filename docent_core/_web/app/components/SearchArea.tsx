@@ -109,9 +109,13 @@ const SearchArea = () => {
     return !!activeClusterTaskId;
   }, [activeClusterTaskId]);
 
+  const isLoadingSearch = useMemo(() => {
+    return loadingSearchQuery !== undefined;
+  }, [loadingSearchQuery]);
+
   const shouldDisableClusterButton = useMemo(() => {
-    return hasClusters || isProcessingClusters;
-  }, [hasClusters, isProcessingClusters]);
+    return isProcessingClusters || isLoadingSearch;
+  }, [isProcessingClusters, isLoadingSearch]);
 
   useEffect(() => {
     if (activeSearchQuery && activeClusterTaskId == null) {
@@ -414,22 +418,7 @@ const SearchArea = () => {
                 variant="outline"
                 className="text-xs w-full h-7"
                 onClick={handleRequestClusters}
-                disabled={
-                  !frameGridId ||
-                  !hasWritePermission ||
-                  // Already loading clusters or bins
-                  (activeSearchQuery &&
-                    (activeSearchQuery.loading_clusters ||
-                      activeSearchQuery.loading_bins)) ||
-                  // Already clustering
-                  activeClusterTaskId !== undefined ||
-                  // Loading a search currently
-                  loadingSearchQuery !== undefined ||
-                  // Disable when clusters are shown or processing clusters
-                  shouldDisableClusterButton
-                  // Disable button when feedback input is visible
-                  // showFeedbackInput
-                }
+                disabled={shouldDisableClusterButton}
               >
                 {activeSearchQuery && activeSearchQuery.loading_clusters ? (
                   <Loader2 className="h-3 w-3 mr-2 animate-spin" />
@@ -456,6 +445,7 @@ const SearchArea = () => {
                       onChange={(e) => setClusterFeedback(e.target.value)}
                       placeholder="Describe how clusters should be improved..."
                       className="text-xs bg-white font-mono text-gray-600 flex-1 h-7"
+                      disabled={shouldDisableClusterButton}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           handleRequestClusters();
@@ -465,6 +455,7 @@ const SearchArea = () => {
                     <Button
                       size="sm"
                       onClick={() => handleRequestClusters()}
+                      disabled={shouldDisableClusterButton}
                       className="text-xs h-7 px-2"
                     >
                       Submit
