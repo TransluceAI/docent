@@ -27,6 +27,7 @@ from sqlalchemy import (
     exists,
     func,
     select,
+    or_,
     text,
     update,
 )
@@ -487,11 +488,11 @@ class DBService:
 
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
         fg_id = ctx.fg_id
-        exists_pending_embedding_job = await self.has_pending_embedding_job(fg_id)
+        pending_count = await self.get_embedding_job_count(fg_id, SQLAJob.status == JobStatus.PENDING)
+        running_count = await self.get_embedding_job_count(fg_id, SQLAJob.status == JobStatus.RUNNING)
 
-        # Add jobs after we've inserted all runs
-        # We don't want to add a job if there's already one pending to prevent reindexing
-        if not exists_pending_embedding_job:
+        # Only start if there's at most one running job and no pending jobs
+        if running_count <= 1 and pending_count == 0:
             # Determine whether to index the new agent runs
             total_runs = await self.count_base_agent_runs(ctx)
             should_index = total_runs >= 5_000
@@ -1043,7 +1044,8 @@ class DBService:
         else:
             logger.info(f"Computing results for {len(agent_runs)} agent runs")
 
-        agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
+        if await self.fg_has_embeddings(ctx.fg_id):
+            agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
 
         async def _results_callback(search_results: list[SearchResult] | None):
             if search_result_callback:
@@ -1204,7 +1206,7 @@ class DBService:
 
         if len(agent_run_ids_without_embeddings) == 0:
             logger.info("All agent runs already have embeddings")
-            return
+            return False
 
         # Use existing get_agent_runs method to fetch full AgentRun objects with transcripts
         agent_runs = await self.get_agent_runs(
@@ -1221,7 +1223,7 @@ class DBService:
         except Exception as e:
             # Just skip
             logger.warning(f"Failed to compute embeddings: {e}")
-            return
+            return False
         embedding_ids = [agent_runs[doc_idx].id for doc_idx in chunk_to_doc]
 
         async with self.session() as session:
@@ -1235,6 +1237,8 @@ class DBService:
             )
 
         logger.info(f"Pushed {len(embeddings)} embeddings")
+
+        return True
 
     async def compute_ivfflat_index(
         self,
@@ -1289,25 +1293,30 @@ class DBService:
 
         return index_name
 
-    async def has_pending_embedding_job(self, fg_id: str) -> bool:
+    async def get_embedding_job_count(
+        self, fg_id: str, _where_clause: ColumnElement[bool] | None = None
+    ) -> int:
         """
-        Check if there exists any pending embedding job for a framegrid.
+        Count the number of embedding jobs for a framegrid.
 
         Args:
             fg_id: The frame grid ID
+            _where_clause: Optional additional filter clause
 
         Returns:
-            True if there's at least one pending embedding job, False otherwise
+            The number of embedding jobs matching the criteria
         """
         async with self.session() as session:
-            result = await session.execute(
-                select(SQLAJob.id)
+            query = (
+                select(func.count(SQLAJob.id))
                 .filter(SQLAJob.type == "compute_embeddings")
                 .filter(SQLAJob.job_json["fg_id"].astext == fg_id)
-                .filter(SQLAJob.status == JobStatus.PENDING)
-                .limit(1)
             )
-            return result.scalar() is not None
+            if _where_clause is not None:
+                query = query.filter(_where_clause)
+
+            result = await session.execute(query)
+            return result.scalar() or 0
 
     #################
     # Paired search #

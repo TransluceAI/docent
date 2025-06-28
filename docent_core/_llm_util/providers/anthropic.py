@@ -35,6 +35,8 @@ from anthropic.types import (
 )
 from backoff.types import Details
 
+from docent._log_util import get_logger
+from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.exceptions import (
     CompletionTooLongException,
@@ -49,8 +51,6 @@ from docent_core._llm_util.data_models.llm_output import (
     LLMOutputPartial,
     finalize_llm_output_partial,
 )
-from docent._log_util import get_logger
-from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
 
 logger = get_logger(__name__)
 

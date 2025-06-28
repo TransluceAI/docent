@@ -10,14 +10,14 @@ from arq.connections import RedisSettings
 from arq.worker import run_worker
 from pydantic_core import to_jsonable_python
 
+from docent._log_util import get_logger
 from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.schemas.tables import JobStatus
+from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import DBService
 from docent_core._env_util import ENV
 from docent_core._server._broker.redis_client import publish_framegrid_update
 from docent_core._server._rest.send_state import publish_searches
-from docent._log_util import get_logger
 
 logger = get_logger(__name__)
 
@@ -28,11 +28,15 @@ REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
 if REDIS_HOST is None or REDIS_PORT is None:
     raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
 REDIS = ArqRedis(
-    connection_pool=redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    connection_pool=redis.ConnectionPool(
+        host=REDIS_HOST, port=REDIS_PORT, decode_responses=True
+    )
 )
 
 
-async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool):
+async def compute_search(
+    _: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool
+):
     db = await DBService.init()
     result = await db.get_search_job_and_query(job_id)
     if result is None:
@@ -42,10 +46,13 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
 
     await db.set_job_status(job_id, JobStatus.RUNNING)
 
-    async def _search_result_callback(search_results: list[SearchResult] | None) -> None:
+    async def _search_result_callback(
+        search_results: list[SearchResult] | None,
+    ) -> None:
         if search_results or search_results is None:
             await REDIS.xadd(
-                f"results_{job_id}", {"results": json.dumps(to_jsonable_python(search_results))}
+                f"results_{job_id}",
+                {"results": json.dumps(to_jsonable_python(search_results))},
             )
             with anyio.CancelScope(shield=True):
                 await publish_searches(db, view_ctx)
@@ -56,7 +63,8 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
         nonlocal canceled
         try:
             async with db.advisory_lock(
-                view_ctx.fg_id + "__search__" + query.search_query, action_id="mutation"
+                view_ctx.fg_id + "__search__" + query.search_query,
+                action_id="mutation",
             ):
                 await db.compute_search(
                     view_ctx,
@@ -101,7 +109,9 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
         tg.start_soon(await_commands, tg)
 
 
-async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
+async def compute_embeddings(
+    ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str
+):
     """
     Worker function to compute embeddings for agent runs.
 
@@ -110,7 +120,9 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         view_ctx: The view context containing frame grid information
         job_id: The ID of the embedding job
     """
-    logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
+    logger.info(
+        f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}"
+    )
 
     db = await DBService.init()
     job = await db.get_job(job_id)
@@ -122,6 +134,16 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
     if job.type != "compute_embeddings":
         logger.error(f"Job {job_id} is not an embedding job (type: {job.type})")
         return
+
+    # Wait for any running embedding jobs
+    while await db.get_embedding_job_count(
+        view_ctx.fg_id,
+        _where_clause=SQLAJob.status == JobStatus.RUNNING,
+    ) >= 1:
+        logger.info(
+            f"Job {job_id} waiting for existing embedding job to complete for fg_id {view_ctx.fg_id}"
+        )
+        await asyncio.sleep(5)
 
     should_index = job.job_json["should_index"]
 
@@ -142,7 +164,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
 
         # Send via websocket instead of Redis stream
         await publish_framegrid_update(
-            view_ctx.fg_id, {"action": "embedding_progress", "payload": progress_data}
+            view_ctx.fg_id,
+            {"action": "embedding_progress", "payload": progress_data},
         )
 
     async def _poll_indexing_status():
@@ -169,7 +192,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
 
             # Send via websocket instead of Redis stream
             await publish_framegrid_update(
-                view_ctx.fg_id, {"action": "embedding_progress", "payload": progress_data}
+                view_ctx.fg_id,
+                {"action": "embedding_progress", "payload": progress_data},
             )
 
             # If indexing is complete (100%), we can stop polling
@@ -182,11 +206,22 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         nonlocal embedding_completed, indexing_completed, errored
 
         try:
-            async with db.advisory_lock(view_ctx.fg_id, action_id="compute_embeddings"):
+            async with db.advisory_lock(
+                view_ctx.fg_id, action_id="compute_embeddings"
+            ):
                 # Compute embeddings
-                await db.compute_embeddings(view_ctx, _progress_callback)
+                embedding_status = await db.compute_embeddings(
+                    view_ctx, _progress_callback
+                )
+
+                if not embedding_status:
+                    errored = True
+                    return
+
                 embedding_completed = True
-                logger.info(f"Embeddings computation completed for job {job_id}")
+                logger.info(
+                    f"Embeddings computation completed for job {job_id}"
+                )
 
                 if not should_index:
                     indexing_completed = True
@@ -200,7 +235,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                 }
                 # Send via websocket instead of Redis stream
                 await publish_framegrid_update(
-                    view_ctx.fg_id, {"action": "embedding_progress", "payload": progress_data}
+                    view_ctx.fg_id,
+                    {"action": "embedding_progress", "payload": progress_data},
                 )
 
                 # Compute index
@@ -223,7 +259,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                     await db.set_job_status(job_id, JobStatus.COMPLETED)
                     # Send completion message via websocket
                     await publish_framegrid_update(
-                        view_ctx.fg_id, {"action": "embedding_complete", "payload": {}}
+                        view_ctx.fg_id,
+                        {"action": "embedding_complete", "payload": {}},
                     )
 
     async with anyio.create_task_group() as tg:
@@ -240,7 +277,9 @@ def run():
     run_worker(
         {
             "functions": [compute_search, compute_embeddings],
-            "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
+            "redis_settings": RedisSettings(
+                host=REDIS_HOST, port=int(REDIS_PORT)
+            ),
             "queue_name": "embedding_and_search_queue",
             "max_jobs": 5,  # Allow up to 5 concurrent jobs per worker
         }

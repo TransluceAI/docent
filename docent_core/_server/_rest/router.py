@@ -8,7 +8,7 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util.logger import get_logger
@@ -32,7 +32,9 @@ from docent_core._db_service.schemas.auth_models import (
 from docent_core._db_service.schemas.collab_models import FramegridCollaborator
 from docent_core._db_service.schemas.tables import (
     EndpointType,
+    JobStatus,
     SQLAAccessControlEntry,
+    SQLAJob,
     SQLASearchCluster,
     SQLASearchResult,
     SQLASearchResultCluster,
@@ -1124,6 +1126,17 @@ async def resume_compute_search(
     await track_endpoint_with_user(db, EndpointType.RESUME_COMPUTE_SEARCH, ctx.user, query.fg_id)
 
     return job_id
+
+
+@user_router.post("/{fg_id}/has_embedding_job")
+async def has_embedding_job(
+    fg_id: str,
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_fg_permission(Permission.READ)),
+):
+    where_clause = or_(SQLAJob.status == JobStatus.PENDING, SQLAJob.status == JobStatus.RUNNING)
+    count = await db.get_embedding_job_count(fg_id, where_clause)
+    return count > 0
 
 
 @user_router.post("/{fg_id}/fg_has_embeddings")

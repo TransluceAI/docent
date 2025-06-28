@@ -20,7 +20,9 @@ import { cn } from '@/lib/utils';
 
 const EmbeddingsPopover: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [hasMissingEmbeddings, setHasMissingEmbeddings] = useState(false);
+  const [hasEmbeddings, setHasEmbeddings] = useState(false);
+  const [isQueued, setIsQueued] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const { frameGridId } = useSelector((state: RootState) => state.frame);
   const { embeddingProgress, isListening: isListeningToEmbeddings } =
@@ -28,34 +30,82 @@ const EmbeddingsPopover: React.FC = () => {
 
   const hasWritePermission = useHasFramegridWritePermission();
 
-  // Function to check for missing embeddings
-  const checkForMissingEmbeddings = async () => {
+  // Derived states for cleaner logic
+  const isEmbeddingInProgress = embeddingProgress && isListeningToEmbeddings;
+  const canComputeEmbeddings = hasWritePermission && 
+    !isLoading && 
+    !isEmbeddingInProgress && 
+    !isQueued && 
+    !hasEmbeddings;
+
+  // Check embeddings status
+  const checkEmbeddingsStatus = async () => {
     if (!frameGridId) return;
 
     try {
-      const hasEmbeddingsResponse = await apiRestClient.post(
-        `/${frameGridId}/fg_has_embeddings`
-      );
-      const hasEmbeddings = hasEmbeddingsResponse.data;
-      setHasMissingEmbeddings(!hasEmbeddings);
+      const [embeddingsResponse, queuedResponse] = await Promise.all([
+        apiRestClient.post(`/${frameGridId}/fg_has_embeddings`),
+        apiRestClient.post(`/${frameGridId}/has_embedding_job`)
+      ]);
+
+      setHasEmbeddings(embeddingsResponse.data);
+      setIsQueued(queuedResponse.data);
+      
+      // Clear loading state if nothing is in progress
+      if (!embeddingsResponse.data && !queuedResponse.data && !isEmbeddingInProgress) {
+        setIsLoading(false);
+      }
     } catch (error) {
       console.error('Failed to check embeddings status:', error);
+      setIsLoading(false);
+      // Don't change queued state on error - let it reflect last known state
     }
   };
 
-  // Check for missing embeddings when frameGridId changes
+  // Check status on mount and when frameGridId changes
   useEffect(() => {
-    checkForMissingEmbeddings();
+    checkEmbeddingsStatus();
   }, [frameGridId]);
 
+  // Track previous value of isListeningToEmbeddings to detect transitions
+  const prevIsListeningToEmbeddings = useRef(isListeningToEmbeddings);
+
+  // Update embeddings status when computation completes
+  useEffect(() => {
+    // Check if isListeningToEmbeddings went from true -> false
+    if (
+      prevIsListeningToEmbeddings.current === true &&
+      isListeningToEmbeddings === false
+    ) {
+      // Embeddings computation completed
+      setHasEmbeddings(true);
+      setIsLoading(false);
+      setIsQueued(false);
+    }
+
+    // Update the ref for next comparison
+    prevIsListeningToEmbeddings.current = isListeningToEmbeddings;
+  }, [isListeningToEmbeddings]);
+
+  // Clear queued state when embedding progress starts
+  useEffect(() => {
+    if (isEmbeddingInProgress && isQueued) {
+      setIsQueued(false);
+    }
+  }, [isEmbeddingInProgress, isQueued]);
+
   const handleRecomputeEmbeddings = async () => {
-    if (!frameGridId || !hasWritePermission) return;
+    if (!canComputeEmbeddings || !frameGridId) return;
 
     setIsLoading(true);
     try {
       await apiRestClient.post(`/${frameGridId}/compute_embeddings`);
-      // Reset the missing embeddings state since we just started computation
-      setHasMissingEmbeddings(false);
+      
+      // Update states to reflect new computation
+      setHasEmbeddings(false);
+      setIsQueued(true);
+      setIsLoading(false); // Loading complete, now it's queued
+      
       toast({
         title: 'Embeddings computation started',
         description: 'Embeddings are being recomputed in the background',
@@ -67,79 +117,34 @@ const EmbeddingsPopover: React.FC = () => {
         description: 'Could not start embeddings computation',
         variant: 'destructive',
       });
-    } finally {
       setIsLoading(false);
+      // Don't set queued on error
     }
   };
 
-  const isEmbeddingInProgress = embeddingProgress && isListeningToEmbeddings;
-
-  // Track previous value of isListeningToEmbeddings to detect transitions
-  const prevIsListeningToEmbeddings = useRef(isListeningToEmbeddings);
-
-  useEffect(() => {
-    // Check if isListeningToEmbeddings went from true -> false
-    if (
-      prevIsListeningToEmbeddings.current === true &&
-      isListeningToEmbeddings === false
-    ) {
-      // Embeddings computation completed, so we have embeddings now
-      setHasMissingEmbeddings(false);
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (open) {
+      checkEmbeddingsStatus();
     }
+  };
 
-    // Update the ref for next comparison
-    prevIsListeningToEmbeddings.current = isListeningToEmbeddings;
-  }, [isListeningToEmbeddings]);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className={cn(
-            'gap-2 px-2 h-7',
-            hasMissingEmbeddings
-              ? 'text-red-700  bg-red-50 hover:bg-red-100 border-red-200'
-              : 'text-gray-700  hover:bg-gray-50',
-            isEmbeddingInProgress &&
-              'text-blue-700 hover:bg-blue-100 bg-blue-50 border-blue-200'
-          )}
-          title={
-            hasMissingEmbeddings
-              ? 'Embeddings missing - click to manage'
-              : 'Manage embeddings'
-          }
-        >
-          <Database className="h-4 w-4" />
-          Index{' '}
-          {isEmbeddingInProgress
-            ? `${embeddingProgress.embedding_progress}%`
-            : ''}
-          {isEmbeddingInProgress && (
-            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 p-3 space-y-3">
-        <div className="space-y-1">
-          <h3 className="text-sm font-medium">Indexing</h3>
-          <p className="text-xs text-muted-foreground">
-            Compute embedding indices to speed up time to first results.
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          {isEmbeddingInProgress ? (
-            <div className="border rounded-sm bg-blue-50 border-blue-200 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-blue-800">
-                  Computing Embeddings
-                </div>
-                <div className="text-xs text-blue-700">
-                  {embeddingProgress.indexing_phase}
-                </div>
-              </div>
+  // Render status content
+  const renderStatusContent = () => {
+    if (isEmbeddingInProgress || isQueued || isLoading) {
+      return (
+        <div className="border rounded-sm bg-blue-50 border-blue-200 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium text-blue-800">
+              Computing Embeddings
+            </div>
+            <div className="text-xs text-blue-700">
+              {embeddingProgress?.indexing_phase || 'Queued'}
+            </div>
+          </div>
+          
+          {embeddingProgress && (
+            <>
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs text-blue-700">
                   <span>Embedding Progress</span>
@@ -150,58 +155,91 @@ const EmbeddingsPopover: React.FC = () => {
                   total={100}
                 />
               </div>
-              {embeddingProgress.indexing_phase !== 'not_required' &&
-                embeddingProgress.indexing_progress > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-blue-700">
-                      <span>Indexing Progress</span>
-                      <span>{embeddingProgress.indexing_progress}%</span>
-                    </div>
-                    <ProgressBar
-                      current={embeddingProgress.indexing_progress}
-                      total={100}
-                    />
+              
+              {embeddingProgress.indexing_progress > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-blue-700">
+                    <span>Indexing Progress</span>
+                    <span>{embeddingProgress.indexing_progress}%</span>
                   </div>
-                )}
-            </div>
-          ) : hasMissingEmbeddings ? (
-            <div className="border rounded-sm bg-red-50 border-red-200 p-3">
-              <div className="text-xs font-medium text-red-800 mb-1">
-                Embeddings Missing
-              </div>
-              <div className="text-xs text-red-700">
-                Some runs are missing embeddings. Click the button below to
-                compute them.
-              </div>
-            </div>
-          ) : (
-            <div className="border rounded-sm bg-green-50 border-green-200 p-2">
-              <div className="text-xs font-medium text-green-800 mb-1">
-                Embeddings Available
-              </div>
-              <div className="text-xs text-green-700">
-                Embeddings are available for all runs.
-              </div>
-            </div>
+                  <ProgressBar
+                    current={embeddingProgress.indexing_progress}
+                    total={100}
+                  />
+                </div>
+              )}
+            </>
           )}
+        </div>
+      );
+    }
 
-          {/* Recompute Button */}
+    if (!hasEmbeddings) {
+      return (
+        <div className="border rounded-sm bg-red-50 border-red-200 p-3">
+          <div className="text-xs font-medium text-red-800 mb-1">
+            Embeddings Missing
+          </div>
+          <div className="text-xs text-red-700">
+            Some runs are missing embeddings. If new agent runs are being added, 
+            embeddings will be computed automatically.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="border rounded-sm bg-green-50 border-green-200 p-2">
+        <div className="text-xs font-medium text-green-800 mb-1">
+          Embeddings Available
+        </div>
+        <div className="text-xs text-green-700">
+          Embeddings are available for all runs.
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Popover open={isOpen} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            'gap-2 px-2 h-7 text-gray-700 hover:bg-gray-50',
+            isEmbeddingInProgress &&
+              'text-blue-700 hover:bg-blue-100 bg-blue-50 border-blue-200'
+          )}
+          title={!hasEmbeddings ? 'Embeddings missing - click to manage' : 'Manage embeddings'}
+        >
+          <Database className="h-4 w-4" />
+          Index{isEmbeddingInProgress && ` ${embeddingProgress.embedding_progress}%`}
+          {isEmbeddingInProgress && (
+            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      
+      <PopoverContent className="w-96 p-3 space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium">Indexing</h3>
+          <p className="text-xs text-muted-foreground">
+            Compute embedding indices to speed up time to first results.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {renderStatusContent()}
+
           <Button
             onClick={handleRecomputeEmbeddings}
-            disabled={!hasWritePermission || isLoading || isEmbeddingInProgress}
+            disabled={!canComputeEmbeddings}
             className="w-full gap-2 h-7"
             size="sm"
           >
-            {isLoading ? (
-              <RefreshCw className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-            {isEmbeddingInProgress
-              ? 'Computing...'
-              : hasMissingEmbeddings
-                ? 'Compute Embeddings'
-                : 'Recompute Embeddings'}
+            <RefreshCw className={cn('h-3 w-3', isLoading && 'animate-spin')} />
+            {isEmbeddingInProgress ? 'Computing...' : 'Compute Embeddings'}
           </Button>
         </div>
       </PopoverContent>
