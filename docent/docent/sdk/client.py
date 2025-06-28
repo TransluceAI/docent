@@ -104,7 +104,9 @@ class Docent:
 
         logger.info(f"Successfully created FrameGrid with id='{fg_id}'")
 
-        logger.info(f"FrameGrid creation complete. Frontend available at: {self._web_url}/{fg_id}")
+        logger.info(
+            f"FrameGrid creation complete. Frontend available at: {self._web_url}/dashboard/{fg_id}"
+        )
         return fg_id
 
     def set_io_bin_keys(self, fg_id: str, inner_bin_key: str | None, outer_bin_key: str | None):
