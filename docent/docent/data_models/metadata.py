@@ -189,16 +189,3 @@ class BaseAgentRunMetadata(BaseMetadata):
     scores: dict[str, int | float | bool | None] = Field(
         description="A dict of score_key -> score_value. Use one key for each metric you're tracking."
     )
-
-
-class FrameDimension(BaseModel):
-    """A dimension for organizing agent runs."""
-
-    id: str
-    name: str
-    search_query: str | None = None
-    metadata_key: str | None = None
-    maintain_mece: bool | None = None
-    loading_clusters: bool = False
-    loading_bins: bool = False
-    binIds: list[dict[str, Any]] | None = None

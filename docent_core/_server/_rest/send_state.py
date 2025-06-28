@@ -1,10 +1,10 @@
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util import get_logger
-from docent.data_models.metadata import FrameDimension
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import SQLAAgentRun
 from docent_core._db_service.service import DBService
@@ -14,6 +14,19 @@ from docent_core._server._broker.redis_client import (
 )
 
 logger = get_logger(__name__)
+
+
+class FrameDimension(BaseModel):
+    """A dimension for organizing agent runs."""
+
+    id: str
+    name: str
+    search_query: str | None = None
+    metadata_key: str | None = None
+    maintain_mece: bool | None = None
+    loading_clusters: bool = False
+    loading_bins: bool = False
+    binIds: list[dict[str, Any]] | None = None
 
 
 async def publish_binnable_keys(db: DBService, ctx: ViewContext):
