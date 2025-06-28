@@ -40,6 +40,10 @@ class ProviderPreferences(BaseModel):
                 model_name="claude-3-7-sonnet-20250219",
             ),
             ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+            ),
+            ModelOption(
                 provider="openai",
                 model_name="o1",
             ),
@@ -56,6 +60,11 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="medium",
+            ),
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -78,6 +87,10 @@ class ProviderPreferences(BaseModel):
                 model_name="claude-3-7-sonnet-20250219",
             ),
             ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+            ),
+            ModelOption(
                 provider="openai",
                 model_name="gpt-4o-2024-08-06",
             ),
@@ -94,6 +107,11 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="low",
+            ),
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
                 reasoning_effort="low",
             ),
             ModelOption(
@@ -117,6 +135,11 @@ class ProviderPreferences(BaseModel):
                 reasoning_effort="low",
             ),
             ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+                reasoning_effort="low",
+            ),
+            ModelOption(
                 provider="openai",
                 model_name="o1",
                 reasoning_effort="low",
@@ -134,6 +157,11 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="medium",
+            ),
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -156,6 +184,10 @@ class ProviderPreferences(BaseModel):
                 model_name="claude-3-7-sonnet-20250219",
             ),
             ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+            ),
+            ModelOption(
                 provider="openai",
                 model_name="gpt-4o-2024-08-06",
             ),
@@ -172,6 +204,11 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="medium",
+            ),
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -236,12 +273,27 @@ class ProviderPreferences(BaseModel):
         """Get model options for the compare_transcripts function.
 
         Returns:
-            List of configured model options for this function.
+                List of configured model options for this function.
         """
         return [
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="medium",
+            ),
+        ]
+
+    @cached_property
+    def cluster_assign_gemini_flash(self) -> list[ModelOption]:
+        """Get model options for the cluster_assign_gemini_flash function.
+
+        Returns:
+                List of configured model options for this function.
+        """
+        return [
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
                 reasoning_effort="medium",
             ),
         ]
