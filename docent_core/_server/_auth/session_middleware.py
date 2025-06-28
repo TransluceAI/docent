@@ -10,8 +10,8 @@ from typing import Awaitable, Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from docent_core._db_service.service import DBService
 from docent._log_util import get_logger
+from docent_core._db_service.service import DBService
 
 logger = get_logger(__name__)
 

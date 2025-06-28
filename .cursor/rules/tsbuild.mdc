@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 To check for typescript errors, run the following

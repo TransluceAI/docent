@@ -72,4 +72,4 @@ export const CitationRenderer: React.FC<CitationRendererProps> = ({
   }
 
   return <>{parts}</>;
-}; 
+};

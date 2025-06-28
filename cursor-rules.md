@@ -24,4 +24,4 @@ When collaborating on a refactor, follow these guidelines for effective, high-qu
    - When in doubt, check the backend/data model for how data is expected to be structured. Don't guess at types or formats—look them up.
 
 8. **Flag and Discuss Potential Improvements**
-   - If you see a potential tech debt improvement, cleanup, or architectural enhancement (e.g., pushing state downward, extracting reusable logic), flag it and ask the user if they want to address it as part of the refactor. Decide together before proceeding. 
+   - If you see a potential tech debt improvement, cleanup, or architectural enhancement (e.g., pushing state downward, extracting reusable logic), flag it and ask the user if they want to address it as part of the refactor. Decide together before proceeding.

@@ -3,7 +3,7 @@ on:
   push:
     branches: [gregor/deploy-dev]
   workflow_dispatch:
-  
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
@@ -35,11 +35,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install modal
-          
+
       - name: Deploy to Modal
         run: modal deploy docent/_server/modal_app.py
         env:
           MODAL_TOKEN_ID: ${{ vars.PROD_MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.PROD_MODAL_TOKEN_SECRET }}
-
-        

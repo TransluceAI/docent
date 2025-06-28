@@ -32,10 +32,10 @@ const EmbeddingsPopover: React.FC = () => {
 
   // Derived states for cleaner logic
   const isEmbeddingInProgress = embeddingProgress && isListeningToEmbeddings;
-  const canComputeEmbeddings = hasWritePermission && 
-    !isLoading && 
-    !isEmbeddingInProgress && 
-    !isQueued && 
+  const canComputeEmbeddings = hasWritePermission &&
+    !isLoading &&
+    !isEmbeddingInProgress &&
+    !isQueued &&
     !hasEmbeddings;
 
   // Check embeddings status
@@ -50,7 +50,7 @@ const EmbeddingsPopover: React.FC = () => {
 
       setHasEmbeddings(embeddingsResponse.data);
       setIsQueued(queuedResponse.data);
-      
+
       // Clear loading state if nothing is in progress
       if (!embeddingsResponse.data && !queuedResponse.data && !isEmbeddingInProgress) {
         setIsLoading(false);
@@ -100,12 +100,12 @@ const EmbeddingsPopover: React.FC = () => {
     setIsLoading(true);
     try {
       await apiRestClient.post(`/${frameGridId}/compute_embeddings`);
-      
+
       // Update states to reflect new computation
       setHasEmbeddings(false);
       setIsQueued(true);
       setIsLoading(false); // Loading complete, now it's queued
-      
+
       toast({
         title: 'Embeddings computation started',
         description: 'Embeddings are being recomputed in the background',
@@ -142,7 +142,7 @@ const EmbeddingsPopover: React.FC = () => {
               {embeddingProgress?.indexing_phase || 'Queued'}
             </div>
           </div>
-          
+
           {embeddingProgress && (
             <>
               <div className="space-y-1">
@@ -155,7 +155,7 @@ const EmbeddingsPopover: React.FC = () => {
                   total={100}
                 />
               </div>
-              
+
               {embeddingProgress.indexing_progress > 0 && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs text-blue-700">
@@ -181,7 +181,7 @@ const EmbeddingsPopover: React.FC = () => {
             Embeddings Missing
           </div>
           <div className="text-xs text-red-700">
-            Some runs are missing embeddings. If new agent runs are being added, 
+            Some runs are missing embeddings. If new agent runs are being added,
             embeddings will be computed automatically.
           </div>
         </div>
@@ -220,7 +220,7 @@ const EmbeddingsPopover: React.FC = () => {
           )}
         </Button>
       </PopoverTrigger>
-      
+
       <PopoverContent className="w-96 p-3 space-y-3">
         <div className="space-y-1">
           <h3 className="text-sm font-medium">Indexing</h3>

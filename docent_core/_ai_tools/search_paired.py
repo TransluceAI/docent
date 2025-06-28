@@ -4,11 +4,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.transcript import MULTI_RUN_CITE_INSTRUCTION
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent.data_models.agent_run import AgentRun
-from docent.data_models.transcript import MULTI_RUN_CITE_INSTRUCTION
 
 
 class ActionResult(BaseModel):

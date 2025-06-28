@@ -26,7 +26,7 @@ export function DiffReportConfig() {
       description: 'Please wait for the clusters to be proposed',
     });
   };
-  
+
   if (!diffsReport) {
     return <div>Config waiting for diffs report to load...</div>;
   }
@@ -58,4 +58,3 @@ export function DiffReportConfig() {
     </div>
   );
 }
-

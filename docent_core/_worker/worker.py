@@ -28,15 +28,11 @@ REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
 if REDIS_HOST is None or REDIS_PORT is None:
     raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
 REDIS = ArqRedis(
-    connection_pool=redis.ConnectionPool(
-        host=REDIS_HOST, port=REDIS_PORT, decode_responses=True
-    )
+    connection_pool=redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 )
 
 
-async def compute_search(
-    _: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool
-):
+async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool):
     db = await DBService.init()
     result = await db.get_search_job_and_query(job_id)
     if result is None:
@@ -109,9 +105,7 @@ async def compute_search(
         tg.start_soon(await_commands, tg)
 
 
-async def compute_embeddings(
-    ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str
-):
+async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
     """
     Worker function to compute embeddings for agent runs.
 
@@ -120,9 +114,7 @@ async def compute_embeddings(
         view_ctx: The view context containing frame grid information
         job_id: The ID of the embedding job
     """
-    logger.info(
-        f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}"
-    )
+    logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
 
     db = await DBService.init()
     job = await db.get_job(job_id)
@@ -136,10 +128,13 @@ async def compute_embeddings(
         return
 
     # Wait for any running embedding jobs
-    while await db.get_embedding_job_count(
-        view_ctx.fg_id,
-        _where_clause=SQLAJob.status == JobStatus.RUNNING,
-    ) >= 1:
+    while (
+        await db.get_embedding_job_count(
+            view_ctx.fg_id,
+            _where_clause=SQLAJob.status == JobStatus.RUNNING,
+        )
+        >= 1
+    ):
         logger.info(
             f"Job {job_id} waiting for existing embedding job to complete for fg_id {view_ctx.fg_id}"
         )
@@ -206,22 +201,16 @@ async def compute_embeddings(
         nonlocal embedding_completed, indexing_completed, errored
 
         try:
-            async with db.advisory_lock(
-                view_ctx.fg_id, action_id="compute_embeddings"
-            ):
+            async with db.advisory_lock(view_ctx.fg_id, action_id="compute_embeddings"):
                 # Compute embeddings
-                embedding_status = await db.compute_embeddings(
-                    view_ctx, _progress_callback
-                )
+                embedding_status = await db.compute_embeddings(view_ctx, _progress_callback)
 
                 if not embedding_status:
                     errored = True
                     return
 
                 embedding_completed = True
-                logger.info(
-                    f"Embeddings computation completed for job {job_id}"
-                )
+                logger.info(f"Embeddings computation completed for job {job_id}")
 
                 if not should_index:
                     indexing_completed = True
@@ -277,9 +266,7 @@ def run():
     run_worker(
         {
             "functions": [compute_search, compute_embeddings],
-            "redis_settings": RedisSettings(
-                host=REDIS_HOST, port=int(REDIS_PORT)
-            ),
+            "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
             "queue_name": "embedding_and_search_queue",
             "max_jobs": 5,  # Allow up to 5 concurrent jobs per worker
         }

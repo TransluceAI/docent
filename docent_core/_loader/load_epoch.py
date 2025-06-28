@@ -1,7 +1,7 @@
 from typing import Any
 
-from docent_core._loader.load_inspect import load_inspect_eval
 from docent.data_models.agent_run import AgentRun
+from docent_core._loader.load_inspect import load_inspect_eval
 
 LOG_DIR_PREFIX = "/home/ubuntu/artifacts/vincent/epoch"
 

@@ -1,11 +1,11 @@
 import re
 from typing import Literal, Protocol, TypedDict
 
+from docent.data_models.citation import Citation, parse_citations_single_run
+from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION, Transcript
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent.data_models.citation import Citation, parse_citations_single_run
-from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION, Transcript
 
 USER_BACKGROUND = "a general (not domain-specific) CS background"
 

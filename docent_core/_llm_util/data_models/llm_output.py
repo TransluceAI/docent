@@ -5,9 +5,9 @@ from typing import Any, Literal, Protocol
 from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from pydantic import BaseModel
 
-from docent_core._llm_util.data_models.exceptions import CompletionTooLongException
 from docent._log_util import get_logger
 from docent.data_models.chat import ToolCall
+from docent_core._llm_util.data_models.exceptions import CompletionTooLongException
 
 logger = get_logger(__name__)
 

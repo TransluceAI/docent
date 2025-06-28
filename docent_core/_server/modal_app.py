@@ -16,6 +16,7 @@ def find_project_root() -> Path:
         current_dir = current_dir.parent
     raise RuntimeError("Could not find project root; no .env file found in parent directories")
 
+
 REMOTE_ROOT = Path("/root/docent")
 LOCAL_ROOT = find_project_root()
 
@@ -34,6 +35,7 @@ image = (
     .add_local_file(f"{LOCAL_ROOT}/.env", "/root/.env", copy=True)
     .add_local_python_source("docent", copy=True)
 )
+
 
 @app.function(
     image=image,

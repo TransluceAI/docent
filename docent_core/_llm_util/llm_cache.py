@@ -5,9 +5,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
+from docent.data_models.chat import ChatMessage, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.llm_output import LLMOutput
-from docent.data_models.chat import ChatMessage, ToolInfo
 
 
 class LLMCache:

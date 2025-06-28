@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal, Protocol, TypedDict
 
+from docent.data_models.chat import ChatMessage, ToolInfo
 from docent_core._llm_util.data_models.llm_output import (
     AsyncSingleLLMOutputStreamingCallback,
     LLMOutput,
@@ -17,7 +18,6 @@ from docent_core._llm_util.providers.openai import (
     get_openai_chat_completion_async,
     get_openai_chat_completion_streaming_async,
 )
-from docent.data_models.chat import ChatMessage, ToolInfo
 
 
 class SingleOutputGetter(Protocol):

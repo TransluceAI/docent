@@ -1,9 +1,12 @@
 import random
 from typing import Any, Callable, Coroutine
 
-from docent_core._ai_tools.clustering.cluster_assigner import LlmApiClusterAssigner
-from docent_core._ai_tools.clustering.cluster_generator import parse_cluster_output, propose_clusters
 from docent._log_util import get_logger
+from docent_core._ai_tools.clustering.cluster_assigner import LlmApiClusterAssigner
+from docent_core._ai_tools.clustering.cluster_generator import (
+    parse_cluster_output,
+    propose_clusters,
+)
 
 logger = get_logger(__name__)
 

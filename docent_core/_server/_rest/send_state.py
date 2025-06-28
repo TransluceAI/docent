@@ -3,6 +3,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.inspection import inspect as sqla_inspect
 
+from docent._log_util import get_logger
+from docent.data_models.metadata import FrameDimension
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import SQLAAgentRun
 from docent_core._db_service.service import DBService
@@ -10,8 +12,6 @@ from docent_core._server._broker.redis_client import (
     publish_to_broker,
     publish_view_update,
 )
-from docent._log_util import get_logger
-from docent.data_models.metadata import FrameDimension
 
 logger = get_logger(__name__)
 

@@ -4,10 +4,10 @@ from pydantic import BaseModel
 from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.schemas.tables import TABLE_AGENT_RUN, TABLE_FRAME_GRID, SQLABase
 from docent.data_models.citation import parse_citations_multi_run
 from docent.data_models.shared_types import EvidenceWithCitation
+from docent_core._db_service.contexts import ViewContext
+from docent_core._db_service.schemas.tables import TABLE_AGENT_RUN, TABLE_FRAME_GRID, SQLABase
 
 
 class MessageState:

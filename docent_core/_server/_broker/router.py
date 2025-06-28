@@ -3,8 +3,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from docent_core._server._broker.redis_client import REDIS
 from docent._log_util import get_logger
+from docent_core._server._broker.redis_client import REDIS
 
 logger = get_logger(__name__)
 

@@ -4,9 +4,9 @@ from typing import Callable, TypedDict, TypeVar, cast
 
 import numpy as np
 
+from docent.data_models._tiktoken_util import truncate_to_token_limit
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent.data_models._tiktoken_util import truncate_to_token_limit
 
 CLUSTER_PROMPT = """
 Here are some items:
