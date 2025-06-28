@@ -1,6 +1,6 @@
 # Quickstart
 
-Before starting, navigate to [docent.transluce.org](https://docent.transluce.org) and sign up for an account.
+Before starting, navigate to [docent-alpha.transluce.org](https://docent-alpha.transluce.org) and sign up for an account.
 <!-- Feel free to explore some sample agent runs in the dashboard. -->
 
 To ingest your own agent runs, install the Python SDK:

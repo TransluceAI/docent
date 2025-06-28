@@ -25,7 +25,7 @@ class Docent:
     def __init__(
         self,
         server_url: str = "https://aws-docent-backend.transluce.org",
-        web_url: str = "https://aws-docent.transluce.org",
+        web_url: str = "https://docent-alpha.transluce.org",
         email: str | None = None,
         password: str | None = None,
     ):
