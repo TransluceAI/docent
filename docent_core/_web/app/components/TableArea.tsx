@@ -276,7 +276,7 @@ export default function TableArea() {
   if (!tableData || !rawBinStats) {
     return (
       <>
-        <div className="h-auto max-h-[40%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
+        <div className="h-auto max-h-[35%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
           <div className="w-full h-16 flex items-center justify-center">
             <p className="text-xs text-gray-500">
               Select an inner or outer bin key to view grouped stats
@@ -289,7 +289,7 @@ export default function TableArea() {
 
   return (
     <>
-      <div className="h-auto max-h-[40%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
+      <div className="h-auto max-h-[35%] overflow-y-auto overflow-x-auto custom-scrollbar border rounded-sm">
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-white z-10">
             <tr>

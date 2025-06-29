@@ -1,4 +1,4 @@
-import { ChevronRight, Layers } from 'lucide-react';
+import { BookText, ChevronRight, Layers } from 'lucide-react';
 import Link from 'next/link';
 import {
   useRouter,
@@ -121,8 +121,28 @@ const Breadcrumbs: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-x-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-x-2 h-7 cursor-default px-2"
+        >
+          <Link
+            href="https://transluce-docent.readthedocs-hosted.com/en/latest/"
+            target="_blank"
+            className="flex items-center gap-x-2"
+          >
+            <BookText size={16} />
+            Docs
+          </Link>
+        </Button>
+
+        {/* Share view */}
         {fgId && <ShareViewPopover framegridId={fgId} />}
+
+        {/* Embeddings */}
         <EmbeddingsPopover />
+
+        {/* Connection status */}
         <Button
           variant="outline"
           size="sm"
