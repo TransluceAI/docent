@@ -29,7 +29,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
   const pairKey = `${id1}___${id2}`;
   const reversePairKey = `${id2}___${id1}`;
   const state = useAppSelector((state) => state.diff);
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const allDiffs = state.transcriptDiffsByKey;
   console.log(allDiffs);
   const transcriptDiff = useAppSelector(
@@ -41,7 +41,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
     if (!transcriptDiff) {
       dispatch(requestTranscriptDiff({ agentRun1Id: id1, agentRun2Id: id2 }));
     }
-  }, [dispatch, id1, id2, transcriptDiff, frameGridId]);
+  }, [dispatch, id1, id2, transcriptDiff, collectionId]);
 
   // Scroll to and highlight claim when data is loaded
   useEffect(() => {

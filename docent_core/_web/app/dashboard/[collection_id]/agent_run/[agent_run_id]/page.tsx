@@ -18,7 +18,7 @@ import AgentRunViewer, {
 export default function AgentRunPage() {
   const dispatch = useAppDispatch();
 
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const curAgentRun = useAppSelector((state) => state.transcript.curAgentRun);
 
   const params = useParams();
@@ -43,7 +43,7 @@ export default function AgentRunPage() {
 
   const alreadyScrolledRef = useRef(false);
   const hasInitSearchQuery = useAppSelector(
-    (state) => state.frame.hasInitSearchQuery
+    (state) => state.collection.hasInitSearchQuery
   );
   const searchResultMap = useAppSelector(
     (state) => state.search.searchResultMap
@@ -80,12 +80,12 @@ export default function AgentRunPage() {
 
   const fetchRef = useRef(false);
   useEffect(() => {
-    if (fetchRef.current || frameGridId === undefined) return;
+    if (fetchRef.current || collectionId === undefined) return;
     if (curAgentRun?.id !== agentRunId) {
       dispatch(getCurAgentRun(agentRunId));
       fetchRef.current = true;
     }
-  }, [frameGridId, agentRunId, blockIdx, dispatch, curAgentRun?.id]);
+  }, [collectionId, agentRunId, blockIdx, dispatch, curAgentRun?.id]);
 
   const onShowAgentRun = (agentRunId: string, blockIdx?: number) => {
     if (agentRunId !== curAgentRun?.id) {

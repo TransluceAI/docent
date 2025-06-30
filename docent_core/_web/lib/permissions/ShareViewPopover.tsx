@@ -29,14 +29,14 @@ import PermissionDropdown from './PermissionDropdown';
 import { toast } from '@/hooks/use-toast';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
 import {
-  useHasFramegridAdminPermission,
-  useHasFramegridWritePermission,
+  useHasCollectionAdminPermission,
+  useHasCollectionWritePermission,
 } from './hooks';
 
-const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
+const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
   const { data: orgUsers, isLoading: isLoadingOrgUsers } =
-    useGetOrgUsersQuery(framegridId);
-  const { data: collaborators } = useGetCollaboratorsQuery(framegridId);
+    useGetOrgUsersQuery(collectionId);
+  const { data: collaborators } = useGetCollaboratorsQuery(collectionId);
   const { user } = useRequireUserContext();
 
   // Local state for input
@@ -47,7 +47,7 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [getUserByEmail] = useLazyGetUserByEmailQuery();
 
-  const hasWritePermission = useHasFramegridWritePermission();
+  const hasWritePermission = useHasCollectionWritePermission();
 
   // Send invite to new collaborator
   const handleSendInvite = async () => {
@@ -88,7 +88,7 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
       await upsertCollaborator({
         subject_id: newUser.id,
         subject_type: 'user',
-        framegrid_id: framegridId,
+        collection_id: collectionId,
         permission_level: inviteePermissionLevel,
       }).unwrap();
 
@@ -139,9 +139,9 @@ const AddCollaborator = ({ framegridId }: { framegridId: string }) => {
   );
 };
 
-const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
+const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
   // Get current public permission level from collaborators
-  const { publicPermissionLevel } = useGetCollaboratorsQuery(framegridId, {
+  const { publicPermissionLevel } = useGetCollaboratorsQuery(collectionId, {
     selectFromResult: (result) => {
       const publicCollab = result.data?.find(
         (c) => c.subject_type === 'public'
@@ -163,22 +163,22 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
         removeCollaborator({
           subject_id: 'public',
           subject_type: 'public',
-          framegrid_id: framegridId,
+          collection_id: collectionId,
         });
       } else {
         // Set or update public access
         upsertCollaborator({
           subject_id: 'public',
           subject_type: 'public',
-          framegrid_id: framegridId,
+          collection_id: collectionId,
           permission_level: newPermissionLevel,
         });
       }
     },
-    [framegridId, upsertCollaborator, removeCollaborator]
+    [collectionId, upsertCollaborator, removeCollaborator]
   );
 
-  const hasAdminPermission = useHasFramegridAdminPermission();
+  const hasAdminPermission = useHasCollectionAdminPermission();
 
   return (
     <Popover>
@@ -198,7 +198,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
         {/* Section 1: Add collaborators */}
         <div className="space-y-1">
           <h3 className="text-sm font-medium">Add collaborators</h3>
-          <AddCollaborator framegridId={framegridId} />
+          <AddCollaborator collectionId={collectionId} />
         </div>
 
         {/* Section 2: Access settings */}
@@ -221,7 +221,7 @@ const ShareViewPopover = ({ framegridId }: { framegridId: string }) => {
 
         {/* Section 3: Collaborators */}
         <div className="border-t" />
-        <CollaboratorsList framegridId={framegridId} />
+        <CollaboratorsList collectionId={collectionId} />
       </PopoverContent>
     </Popover>
   );

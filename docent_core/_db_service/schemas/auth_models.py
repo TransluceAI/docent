@@ -25,7 +25,7 @@ class SubjectType(str, Enum):
 
 
 class ResourceType(str, Enum):
-    FRAME_GRID = "frame_grid"
+    COLLECTION = "collection"
     VIEW = "view"
 
 

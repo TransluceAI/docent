@@ -9,90 +9,90 @@ import socketService from '../services/socketService';
 import { TranscriptMetadataField as AgentRunMetadataField } from '../types/experimentViewerTypes';
 import {
   ComplexFilter,
-  FrameDimension,
-  FrameFilter,
-  FrameGrid,
+  CollectionDimension,
+  CollectionFilter,
+  Collection,
   Bins,
-} from '../types/frameTypes';
+} from '../types/collectionTypes';
 import { BaseAgentRunMetadata } from '../types/transcriptTypes';
 
 import { setToastNotification } from './toastSlice';
 import { Job } from './searchSlice';
 
-export interface FrameState {
+export interface CollectionState {
   // Jank state necessary to auto-scroll correctly:
   //   If there is an initial search query, then we wait until the search has loaded
   //   before we scroll to the specified transcript block
   hasInitSearchQuery?: boolean;
-  // Available frame grids
-  frameGrids?: FrameGrid[];
-  isLoadingFrameGrids: boolean;
-  // FrameGrid state
-  dimensionsMap?: Record<string, FrameDimension>;
-  filtersMap?: Record<string, FrameFilter>;
+  // Available collections
+  collections?: Collection[];
+  isLoadingCollections: boolean;
+  // Collection state
+  dimensionsMap?: Record<string, CollectionDimension>;
+  filtersMap?: Record<string, CollectionFilter>;
   baseFilter?: ComplexFilter;
   // Metadata
   agentRunMetadataFields?: AgentRunMetadataField[];
   agentRunMetadata?: Record<string, Record<string, BaseAgentRunMetadata>>;
   // Global variables
-  frameGridId?: string;
+  collectionId?: string;
   innerBinKey?: string;
   outerBinKey?: string;
   bins?: Bins;
 }
 
-const initialState: FrameState = {
-  isLoadingFrameGrids: false,
+const initialState: CollectionState = {
+  isLoadingCollections: false,
 };
 
-export const fetchFrameGrids = createAsyncThunk(
-  'frame/fetchFrameGrids',
+export const fetchCollections = createAsyncThunk(
+  'collection/fetchCollections',
   async (_, { dispatch }) => {
-    dispatch(setIsLoadingFrameGrids(true));
+    dispatch(setIsLoadingCollections(true));
     try {
-      const response = await apiRestClient.get('/framegrids');
-      dispatch(setFrameGrids(response.data));
+      const response = await apiRestClient.get('/collections');
+      dispatch(setCollections(response.data));
       return response.data;
     } catch (error) {
       dispatch(
         setToastNotification({
-          title: 'Error fetching frame grids',
+          title: 'Error fetching collections',
           description: 'Please try again in a moment',
           variant: 'destructive',
         })
       );
       throw error;
     } finally {
-      dispatch(setIsLoadingFrameGrids(false));
+      dispatch(setIsLoadingCollections(false));
     }
   }
 );
 
 export const initSession = createAsyncThunk(
-  'frame/initSession',
-  async (frameGridId: string, { dispatch }) => {
+  'collection/initSession',
+  async (collectionId: string, { dispatch }) => {
     try {
-      const response = await apiRestClient.post(`/${frameGridId}/join`);
-      const { fg_id, view_id } = response.data;
+      const response = await apiRestClient.post(`/${collectionId}/join`);
+      const { collection_id, view_id } = response.data;
 
-      if (fg_id !== frameGridId) {
-        throw new Error('Frame grid ID mismatch');
+      if (collection_id !== collectionId) {
+        throw new Error('Collection ID mismatch');
       }
 
       // Set various IDs
-      dispatch(setFrameGridId(frameGridId));
-      dispatch(setFrameGridId(frameGridId));
+      dispatch(setCollectionId(collectionId));
+      dispatch(setCollectionId(collectionId));
 
       dispatch(getAgentRunMetadataFields());
       // Start a broker socket to listen for state updates with dual-channel support
-      await socketService.initSocket(fg_id, view_id);
+      await socketService.initSocket(collection_id, view_id);
       // Only request state after connection is established
       dispatch(getState());
     } catch (error) {
       // Cleanup on error
       socketService.closeSocket();
-      dispatch(setFrameGridId(undefined));
-      dispatch(setFrameGridId(undefined));
+      dispatch(setCollectionId(undefined));
+      dispatch(setCollectionId(undefined));
       dispatch(
         setToastNotification({
           title: 'Error connecting to server',
@@ -106,24 +106,24 @@ export const initSession = createAsyncThunk(
 );
 
 export const getState = createAsyncThunk(
-  'frame/getState',
+  'collection/getState',
   async (_, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
-      await apiRestClient.get(`/${frameGridId}/state`);
+      await apiRestClient.get(`/${collectionId}/state`);
     } catch (error) {
       dispatch(
         setToastNotification({
@@ -138,25 +138,25 @@ export const getState = createAsyncThunk(
 );
 
 export const getAgentRunMetadataFields = createAsyncThunk(
-  'frame/getAgentRunMetadataFields',
+  'collection/getAgentRunMetadataFields',
   async (_, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
       const response = await apiRestClient.get(
-        `/${frameGridId}/agent_run_metadata_fields`
+        `/${collectionId}/agent_run_metadata_fields`
       );
       dispatch(setAgentRunMetadataFields(response.data.fields));
     } catch (error) {
@@ -173,25 +173,25 @@ export const getAgentRunMetadataFields = createAsyncThunk(
 );
 
 export const getAgentRunMetadata = createAsyncThunk(
-  'frame/getAgentRunMetadata',
+  'collection/getAgentRunMetadata',
   async (agentRunIds: string[], { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
       const response = await apiRestClient.post(
-        `/${frameGridId}/agent_run_metadata`,
+        `/${collectionId}/agent_run_metadata`,
         {
           agent_run_ids: agentRunIds,
         }
@@ -211,26 +211,26 @@ export const getAgentRunMetadata = createAsyncThunk(
 );
 
 export const getDimensions = createAsyncThunk(
-  'frame/getDimensions',
+  'collection/getDimensions',
   async (dimIds: string[] | undefined, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
-    const curDimensions = Object.values(state.frame.dimensionsMap ?? {});
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
+    const curDimensions = Object.values(state.collection.dimensionsMap ?? {});
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
       const response = await apiRestClient.post(
-        `/${frameGridId}/get_dimensions`,
+        `/${collectionId}/get_dimensions`,
         {
           dim_ids: dimIds,
         }
@@ -251,20 +251,20 @@ export const getDimensions = createAsyncThunk(
 );
 
 export const deleteSearch = createAsyncThunk(
-  'frame/deleteSearch',
+  'collection/deleteSearch',
   async ({ searchQueryId, job }: { searchQueryId: string; job: Job }, { dispatch, getState }) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
@@ -273,7 +273,7 @@ export const deleteSearch = createAsyncThunk(
       }
       console.log("deleting search", searchQueryId, job);
       await apiRestClient.delete(
-        `/${frameGridId}/search?search_query_id=${searchQueryId}`
+        `/${collectionId}/search?search_query_id=${searchQueryId}`
       );
     } catch (error) {
       dispatch(
@@ -288,27 +288,27 @@ export const deleteSearch = createAsyncThunk(
   }
 );
 
-export const updateFrameGrid = createAsyncThunk(
-  'frame/updateFrameGrid',
+export const updateCollection = createAsyncThunk(
+  'collection/updateCollection',
   async (
     {
-      fg_id,
+      collection_id,
       name,
       description,
-    }: { fg_id: string; name?: string; description?: string },
+    }: { collection_id: string; name?: string; description?: string },
     { dispatch }
   ) => {
     try {
-      await apiRestClient.put(`/${fg_id}/framegrid`, {
+      await apiRestClient.put(`/${collection_id}/collection`, {
         name,
         description,
       });
-      return { fg_id };
+      return { collection_id };
     } catch (error) {
       dispatch(
         setToastNotification({
-          title: 'Error updating frame grid',
-          description: 'Failed to update frame grid',
+          title: 'Error updating collection',
+          description: 'Failed to update collection',
           variant: 'destructive',
         })
       );
@@ -317,23 +317,23 @@ export const updateFrameGrid = createAsyncThunk(
   }
 );
 
-export const deleteFrameGrid = createAsyncThunk(
-  'frame/deleteFrameGrid',
-  async (fg_id: string, { dispatch }) => {
+export const deleteCollection = createAsyncThunk(
+  'collection/deleteCollection',
+  async (collection_id: string, { dispatch }) => {
     try {
-      await apiRestClient.delete(`/${fg_id}/framegrid`);
+      await apiRestClient.delete(`/${collection_id}/collection`);
       dispatch(
         setToastNotification({
-          title: 'Frame grid deleted',
-          description: 'The frame grid has been successfully deleted',
+          title: 'Collection deleted',
+          description: 'The collection has been successfully deleted',
         })
       );
-      return { fg_id };
+      return { collection_id };
     } catch (error) {
       dispatch(
         setToastNotification({
-          title: 'Error deleting frame grid',
-          description: 'Failed to delete frame grid',
+          title: 'Error deleting collection',
+          description: 'Failed to delete collection',
           variant: 'destructive',
         })
       );
@@ -343,27 +343,27 @@ export const deleteFrameGrid = createAsyncThunk(
 );
 
 export const editFilter = createAsyncThunk(
-  'frame/editFilter',
+  'collection/editFilter',
   async (
     { filterId, newPredicate }: { filterId: string; newPredicate: string },
     { dispatch, getState }
   ) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/filter`, {
+      await apiRestClient.post(`/${collectionId}/filter`, {
         filter_id: filterId,
         new_predicate: newPredicate,
       });
@@ -380,20 +380,20 @@ export const editFilter = createAsyncThunk(
   }
 );
 
-export const frameSlice = createSlice({
-  name: 'frame',
+export const collectionSlice = createSlice({
+  name: 'collection',
   initialState,
   reducers: {
     setBins: (state, action: PayloadAction<Bins>) => {
       state.bins = action.payload;
     },
-    setDimensions: (state, action: PayloadAction<FrameDimension[]>) => {
+    setDimensions: (state, action: PayloadAction<CollectionDimension[]>) => {
       state.dimensionsMap = action.payload.reduce(
         (map, dimension) => {
           map[dimension.id] = dimension;
           return map;
         },
-        {} as Record<string, FrameDimension>
+        {} as Record<string, CollectionDimension>
       );
     },
     setBaseFilter: (
@@ -419,8 +419,8 @@ export const frameSlice = createSlice({
         ...action.payload,
       };
     },
-    setFrameGridId: (state, action: PayloadAction<string | undefined>) => {
-      state.frameGridId = action.payload;
+    setCollectionId: (state, action: PayloadAction<string | undefined>) => {
+      state.collectionId = action.payload;
     },
     setInnerBinKey: (state, action: PayloadAction<string | undefined>) => {
       state.innerBinKey = action.payload;
@@ -428,16 +428,16 @@ export const frameSlice = createSlice({
     setOuterBinKey: (state, action: PayloadAction<string | undefined>) => {
       state.outerBinKey = action.payload;
     },
-    setFrameGrids: (state, action: PayloadAction<FrameGrid[]>) => {
-      state.frameGrids = action.payload;
+    setCollections: (state, action: PayloadAction<Collection[]>) => {
+      state.collections = action.payload;
     },
-    setIsLoadingFrameGrids: (state, action: PayloadAction<boolean>) => {
-      state.isLoadingFrameGrids = action.payload;
+    setIsLoadingCollections: (state, action: PayloadAction<boolean>) => {
+      state.isLoadingCollections = action.payload;
     },
     setHasInitSearchQuery: (state, action: PayloadAction<boolean>) => {
       state.hasInitSearchQuery = action.payload;
     },
-    resetFrameSlice: () => initialState,
+    resetCollectionSlice: () => initialState,
   },
 });
 
@@ -447,13 +447,13 @@ export const {
   setBaseFilter,
   setAgentRunMetadataFields,
   updateAgentRunMetadata,
-  setFrameGridId,
+  setCollectionId,
   setInnerBinKey,
   setOuterBinKey,
-  setFrameGrids,
-  setIsLoadingFrameGrids,
+  setCollections,
+  setIsLoadingCollections,
   setHasInitSearchQuery,
-  resetFrameSlice,
-} = frameSlice.actions;
+  resetCollectionSlice,
+} = collectionSlice.actions;
 
-export default frameSlice.reducer;
+export default collectionSlice.reducer;

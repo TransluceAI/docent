@@ -14,7 +14,7 @@ import {
   TaMessage,
 } from '../types/transcriptTypes';
 
-import { getAgentRunMetadata, getAgentRunMetadataFields } from './frameSlice';
+import { getAgentRunMetadata, getAgentRunMetadataFields } from './collectionSlice';
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
 
@@ -50,7 +50,7 @@ export const getActionsSummary = createAsyncThunk(
   'transcript/getActionsSummary',
   async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
     // Cancel existing request
     const { actionsSummaryTaskId } = state.transcript;
@@ -63,16 +63,16 @@ export const getActionsSummary = createAsyncThunk(
     dispatch(setActionsSummary(undefined));
     dispatch(setLoadingActionsSummaryForTranscriptId(agentRunId));
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
       dispatch(onFinishLoadingActionsSummary());
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
@@ -82,7 +82,7 @@ export const getActionsSummary = createAsyncThunk(
 
       // Create SSE connection using the service
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/actions_summary?agent_run_id=${agentRunId}`,
+        `/rest/${collectionId}/actions_summary?agent_run_id=${agentRunId}`,
         (data) => {
           // Update actions summary with streamed data
           dispatch(
@@ -128,7 +128,7 @@ export const getSolutionSummary = createAsyncThunk(
   'transcript/getSolutionSummary',
   async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
     // Cancel existing request
     const { solutionSummaryTaskId } = state.transcript;
@@ -141,16 +141,16 @@ export const getSolutionSummary = createAsyncThunk(
     dispatch(setSolutionSummary(undefined));
     dispatch(setLoadingSolutionSummaryForTranscriptId(agentRunId));
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
       dispatch(onFinishLoadingSolutionSummary());
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
@@ -160,7 +160,7 @@ export const getSolutionSummary = createAsyncThunk(
 
       // Create SSE connection using the service
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/solution_summary?agent_run_id=${agentRunId}`,
+        `/rest/${collectionId}/solution_summary?agent_run_id=${agentRunId}`,
         (data) => {
           // Update solution summary with streamed data
           dispatch(
@@ -235,7 +235,7 @@ export const getCurAgentRun = createAsyncThunk(
   'transcript/getAgentRun',
   async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
     // Clear current datapoint
     const curAgentRun = state.transcript.curAgentRun;
@@ -243,20 +243,20 @@ export const getCurAgentRun = createAsyncThunk(
       dispatch(clearCurAgentRun());
     }
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
       const response = await apiRestClient.get(
-        `/${frameGridId}/agent_run?agent_run_id=${agentRunId}`
+        `/${collectionId}/agent_run?agent_run_id=${agentRunId}`
       );
       dispatch(setCurAgentRun(response.data));
     } catch (error) {
@@ -276,7 +276,7 @@ export const getAltAgentRun = createAsyncThunk(
   'transcript/getAltAgentRun',
   async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
     // Clear current datapoint
     const altAgentRun = state.transcript.altAgentRun;
@@ -284,20 +284,20 @@ export const getAltAgentRun = createAsyncThunk(
       dispatch(clearAltAgentRun());
     }
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
       const response = await await apiRestClient.get(
-        `/${frameGridId}/agent_run?agent_run_id=${agentRunId}`
+        `/${collectionId}/agent_run?agent_run_id=${agentRunId}`
       );
       console.log('response', response);
       dispatch(setAltAgentRun(response.data));
@@ -332,7 +332,7 @@ export const handleAgentRunsUpdated = createAsyncThunk(
     }
 
     // Refresh transcript metadata
-    const transcriptMetadata = state.frame.agentRunMetadata;
+    const transcriptMetadata = state.collection.agentRunMetadata;
     if (transcriptMetadata !== undefined) {
       dispatch(getAgentRunMetadata(Object.keys(transcriptMetadata)));
     }
@@ -357,17 +357,17 @@ export const createTaSession = createAsyncThunk(
   'transcript/createTaSession',
   async (agentRunId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
@@ -375,7 +375,7 @@ export const createTaSession = createAsyncThunk(
       dispatch(resetTaSession());
 
       // Create a new TA session via REST API
-      const response = await apiRestClient.post(`/${frameGridId}/ta_session`, {
+      const response = await apiRestClient.post(`/${collectionId}/ta_session`, {
         agent_run_id: agentRunId,
       });
 
@@ -403,7 +403,7 @@ export const sendTaMessage = createAsyncThunk(
   async (message: string, { dispatch, getState }) => {
     const state = getState() as RootState;
     const { taSessionId } = state.transcript;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
     if (!taSessionId) {
       dispatch(
@@ -433,7 +433,7 @@ export const sendTaMessage = createAsyncThunk(
 
       // Create SSE connection
       const { eventSource, onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/ta_message?session_id=${taSessionId}&message=${encodeURIComponent(message)}`,
+        `/rest/${collectionId}/ta_message?session_id=${taSessionId}&message=${encodeURIComponent(message)}`,
         // onMessage
         (data) => {
           if (data.messages) {
@@ -491,17 +491,17 @@ export const loadTaSession = createAsyncThunk(
     { dispatch, getState }
   ) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {

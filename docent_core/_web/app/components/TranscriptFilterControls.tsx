@@ -4,8 +4,8 @@ import { CircleX, RefreshCw } from 'lucide-react';
 import {
   PrimitiveFilter,
   MetadataType,
-  FrameFilter,
-} from '@/app/types/frameTypes';
+  CollectionFilter,
+} from '@/app/types/collectionTypes';
 import { TranscriptMetadataField } from '@/app/types/experimentViewerTypes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,11 +30,11 @@ import { v4 as uuid4 } from 'uuid';
 
 export const TranscriptFilterControls = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const baseFilter = useSelector((state: RootState) => state.frame.baseFilter);
+  const baseFilter = useSelector((state: RootState) => state.collection.baseFilter);
   const agentRunMetadataFields =
-    useSelector((state: RootState) => state.frame.agentRunMetadataFields) || [];
-  const frameGridId = useSelector(
-    (state: RootState) => state.frame.frameGridId
+    useSelector((state: RootState) => state.collection.agentRunMetadataFields) || [];
+  const collectionId = useSelector(
+    (state: RootState) => state.collection.collectionId
   );
 
   const [metadataKey, setMetadataKey] = useState('');
@@ -45,7 +45,7 @@ export const TranscriptFilterControls = () => {
   const [metadataOp, setMetadataOp] = useState<string>('==');
 
   const onUpdateMetadataFilter = (value: string) => {
-    if (!frameGridId) return;
+    if (!collectionId) return;
     if (!metadataKey.trim()) {
       toast({
         title: 'Missing key',
@@ -228,7 +228,7 @@ export const TranscriptFilterControls = () => {
           <Button
             onClick={() => onUpdateMetadataFilter(metadataValue)}
             disabled={
-              !frameGridId ||
+              !collectionId ||
               !metadataKey.trim() ||
               !metadataValue.trim() ||
               metadataType === 'bool' // Disable button for boolean type since it auto-submits
@@ -244,7 +244,7 @@ export const TranscriptFilterControls = () => {
       {/* Current filters */}
       {baseFilter && baseFilter.filters.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-1.5">
-          {baseFilter.filters.map((subFilter: FrameFilter) => (
+          {baseFilter.filters.map((subFilter: CollectionFilter) => (
             <div
               key={subFilter.id}
               className="inline-flex items-center gap-x-1 text-[11px] bg-indigo-bg text-primary border border-indigo-border pl-1.5 pr-1 py-0 rounded-md"

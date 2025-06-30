@@ -1,38 +1,38 @@
-// const useHasFramegridPermission = (frameGridId: string, required)
+// const useHasCollectionPermission = (collectionId: string, required)
 
 import { PERMISSION_LEVELS, PermissionLevel } from '@/lib/permissions/types';
-import { useGetFramegridPermissionsQuery } from './collabSlice';
+import { useGetCollectionPermissionsQuery } from './collabSlice';
 import { useAppSelector } from '@/app/store/hooks';
 import { UserPermissions } from '@/app/services/permissionsService';
 
-const hasFramegridPermission = (
+const hasCollectionPermission = (
   permissions: UserPermissions,
-  framegridId: string,
+  collectionId: string,
   requiredLevel: PermissionLevel
 ) => {
-  if (!permissions?.framegrid_permissions) return false;
-  const userLevel = permissions.framegrid_permissions[framegridId] || 'none';
+  if (!permissions?.collection_permissions) return false;
+  const userLevel = permissions.collection_permissions[collectionId] || 'none';
   return PERMISSION_LEVELS[userLevel] >= PERMISSION_LEVELS[requiredLevel];
 };
 
-export const useHasFramegridPermission = (
+export const useHasCollectionPermission = (
   permission: PermissionLevel,
-  fgId?: string
+  collectionIdParam?: string
 ) => {
-  const framegridId =
-    useAppSelector((state) => state.frame.frameGridId) || fgId;
-  const { data: permissions } = useGetFramegridPermissionsQuery(
-    framegridId || '',
-    { skip: !framegridId }
+  const collectionId =
+    useAppSelector((state) => state.collection.collectionId) || collectionIdParam;
+  const { data: permissions } = useGetCollectionPermissionsQuery(
+    collectionId || '',
+    { skip: !collectionId }
   );
-  if (!permissions || !framegridId) return false;
-  return hasFramegridPermission(permissions, framegridId, permission);
+  if (!permissions || !collectionId) return false;
+  return hasCollectionPermission(permissions, collectionId, permission);
 };
 
-export const useHasFramegridWritePermission = () => {
-  return useHasFramegridPermission('write');
+export const useHasCollectionWritePermission = () => {
+  return useHasCollectionPermission('write');
 };
 
-export const useHasFramegridAdminPermission = () => {
-  return useHasFramegridPermission('admin');
+export const useHasCollectionAdminPermission = () => {
+  return useHasCollectionPermission('admin');
 };

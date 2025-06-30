@@ -15,9 +15,9 @@ export default async function DocentDashboardLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: { fg_id: string };
+  params: { collection_id: string };
 }) {
-  const fgId = params.fg_id;
+  const collectionId = params.collection_id;
 
   try {
     // Check for middleware-provided cookies first, then fall back to actual cookies
@@ -33,12 +33,12 @@ export default async function DocentDashboardLayout({
     }
 
     const permissions = await serverPermissionsService.getUserPermissions(
-      fgId,
+      collectionId,
       cookieString
     );
 
-    // Check if user has read access to this framegrid
-    const userLevel = permissions.framegrid_permissions[fgId] || 'none';
+    // Check if user has read access to this collection
+    const userLevel = permissions.collection_permissions[collectionId] || 'none';
 
     const hasReadAccess =
       PERMISSION_LEVELS[userLevel as keyof typeof PERMISSION_LEVELS] >=

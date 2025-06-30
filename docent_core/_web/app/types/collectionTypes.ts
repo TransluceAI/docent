@@ -47,7 +47,7 @@ export interface ComplexFilter {
   id: string;
   name: string | null;
   type: 'complex';
-  filters: FrameFilter[];
+  filters: CollectionFilter[];
   op: 'and' | 'or' | 'not';
   supports_sql: boolean;
 }
@@ -60,7 +60,7 @@ export interface AgentRunIdFilter {
   supports_sql: boolean;
 }
 
-export type FrameFilter =
+export type CollectionFilter =
   | PrimitiveFilter
   | SearchResultPredicateFilter
   | SearchResultExistsFilter
@@ -70,9 +70,9 @@ export type FrameFilter =
 // Simple dimension representation - just a string key
 export type Dimension = string;
 
-// For backward compatibility, we'll keep FrameDimension as a simple interface
+// For backward compatibility, we'll keep CollectionDimension as a simple interface
 // but it's now just a wrapper around a string
-export interface FrameDimension {
+export interface CollectionDimension {
   id: string; // This is now the metadata key
   name: string | null; // This is now the metadata key
   search_query?: string | null; // For search query dimensions
@@ -80,10 +80,10 @@ export interface FrameDimension {
   maintain_mece?: boolean | null; // For metadata dimensions
   loading_clusters: boolean; // Loading state
   loading_bins: boolean; // Loading state
-  bins?: FrameFilter[] | null; // Optional field for when bins are fetched separately
+  bins?: CollectionFilter[] | null; // Optional field for when bins are fetched separately
 }
 
-export interface FrameGrid {
+export interface Collection {
   id: string;
   name?: string | null;
   description?: string | null;
@@ -103,7 +103,7 @@ export interface BaseAgentRunMetadata {
 
 export interface SearchResult {
   id: string;
-  fg_id: string;
+  collection_id: string;
   agent_run_id: string;
   search_query: string;
   search_result_idx?: number | null;
@@ -116,7 +116,7 @@ export interface SearchResultWithCitations extends SearchResult {
 
 export interface SearchQuery {
   id: string;
-  fg_id: string;
+  collection_id: string;
   search_query: string;
   created_at: string;
 }
@@ -126,7 +126,7 @@ export type MetadataType = 'str' | 'int' | 'float' | 'bool';
 
 export interface View {
   id: string;
-  fg_id: string;
+  collection_id: string;
   name?: string | null;
   is_default: boolean;
   base_filter_id?: string | null;
@@ -169,15 +169,15 @@ export interface AccessControlEntry {
   user_id?: string | null;
   organization_id?: string | null;
   is_public: boolean;
-  fg_id?: string | null;
+  collection_id?: string | null;
   view_id?: string | null;
   permission: string;
 }
 
-export interface FrameState {
-  frameGridId?: string;
-  dimensionsMap?: Record<string, FrameDimension>;
-  filtersMap?: Record<string, FrameFilter>;
+export interface CollectionState {
+  collectionId?: string;
+  dimensionsMap?: Record<string, CollectionDimension>;
+  filtersMap?: Record<string, CollectionFilter>;
   baseFilter?: ComplexFilter;
   inner_bin_key?: string | null;
   outer_bin_key?: string | null;

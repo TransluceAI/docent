@@ -30,12 +30,12 @@ export default function DimensionSelector({
 }: DimensionSelectorProps) {
   const dispatch = useAppDispatch();
 
-  // Frame slice
-  const innerBinKey = useAppSelector((state) => state.frame.innerBinKey);
-  const outerBinKey = useAppSelector((state) => state.frame.outerBinKey);
-  const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
+  // Collection slice
+  const innerBinKey = useAppSelector((state) => state.collection.innerBinKey);
+  const outerBinKey = useAppSelector((state) => state.collection.outerBinKey);
+  const dimensionsMap = useAppSelector((state) => state.collection.dimensionsMap);
   const agentRunMetadataFields =
-    useAppSelector((state) => state.frame.agentRunMetadataFields) || [];
+    useAppSelector((state) => state.collection.agentRunMetadataFields) || [];
 
   // In the new system, innerBinKey and outerBinKey are metadata keys directly
   const innerDim = useMemo(() => {

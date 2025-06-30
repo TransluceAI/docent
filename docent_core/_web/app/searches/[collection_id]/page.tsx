@@ -16,24 +16,24 @@ import {
 
 import { UserProfile } from '../../components/auth/UserProfile';
 import { apiRestClient } from '../../services/apiService';
-import { initSession } from '../../store/frameSlice';
+import { initSession } from '../../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 
 export default function JobsPage() {
   const params = useParams();
-  const framegridId = params.framegrid_id as string;
-  console.log('jobs', framegridId);
+  const collectionId = params.collection_id as string;
+  console.log('jobs', collectionId);
   const dispatch = useAppDispatch();
 
   // Fetch state from the server
   const fetchRef = React.useRef(false); // Prevent double fetch
   useEffect(() => {
-    if (!framegridId || fetchRef.current) {
+    if (!collectionId || fetchRef.current) {
       return;
     }
     fetchRef.current = true;
-    dispatch(initSession(framegridId));
-  }, [framegridId, dispatch]);
+    dispatch(initSession(collectionId));
+  }, [collectionId, dispatch]);
   const searches = useAppSelector((state) => state.search.searchesWithStats);
 
   const cancelJob = (id: string) => async () => {

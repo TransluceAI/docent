@@ -23,11 +23,11 @@ client = Docent(
 )
 ```
 
-You can think of each frame grid as a collection of agent runs. Let's create a fresh one:
+You can think of each collection as a collection of agent runs. Let's create a fresh one:
 
 ```python
-fg_id = client.create_framegrid(
-    name="sample framegrid",
+collection_id = client.create_collection(
+    name="sample collection",
     description="example that comes with the Docent repo",
 )
 ```
@@ -367,10 +367,10 @@ Now we're ready to ingest some logs!
 We can finally ingest the agent run and watch the UI update:
 
 ```python
-client.add_agent_runs(fg_id, agent_runs)
+client.add_agent_runs(collection_id, agent_runs)
 ```
 
-If you navigate to the frontend URL printed by `client.create_framegrid(...)`, you should see the run available for viewing.
+If you navigate to the frontend URL printed by `client.create_collection(...)`, you should see the run available for viewing.
 
 ### Tips and tricks
 

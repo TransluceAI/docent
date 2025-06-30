@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/tooltip';
 import { toast } from '@/hooks/use-toast';
 
-import { FrameGridsTable } from '../components/FrameGridsTable';
+import { CollectionsTable } from '../components/CollectionsTable';
 import { UserProfile } from '../components/auth/UserProfile';
 import { apiRestClient } from '../services/apiService';
 import socketService from '../services/socketService';
@@ -36,7 +36,7 @@ import {
   resetSearchSlice,
 } from '../store/searchSlice';
 import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
-import { fetchFrameGrids, resetFrameSlice } from '../store/frameSlice';
+import { fetchCollections, resetCollectionSlice } from '../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
 import { useRequireUserContext } from '../contexts/UserContext';
@@ -45,25 +45,25 @@ export default function HomePage() {
   // User is guaranteed to be present in authenticated pages
   const { user } = useRequireUserContext();
 
-  const frameGrids = useAppSelector((state) => state.frame.frameGrids);
-  const isLoadingFrameGrids = useAppSelector(
-    (state) => state.frame.isLoadingFrameGrids
+  const collections = useAppSelector((state) => state.collection.collections);
+  const isLoadingCollections = useAppSelector(
+    (state) => state.collection.isLoadingCollections
   );
   const dispatch = useAppDispatch();
 
-  // New framegrid dialog state
-  const [isNewGridDialogOpen, setIsNewGridDialogOpen] = useState(false);
-  const [newGridName, setNewGridName] = useState('');
-  const [newGridDescription, setNewGridDescription] = useState('');
-  const [isCreatingGrid, setIsCreatingGrid] = useState(false);
+  // New collection dialog state
+  const [isNewCollectionDialogOpen, setIsNewCollectionDialogOpen] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionDescription, setNewCollectionDescription] = useState('');
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
 
   useEffect(() => {
     // Fetch data when component mounts
-    dispatch(fetchFrameGrids());
+    dispatch(fetchCollections());
 
     // Clear out old state
     socketService.closeSocket();
-    dispatch(resetFrameSlice());
+    dispatch(resetCollectionSlice());
     dispatch(resetExperimentViewerSlice());
     dispatch(resetSearchSlice());
     dispatch(resetTranscriptSlice());
@@ -72,34 +72,34 @@ export default function HomePage() {
     // TODO(mengk): call thunks to cancel the transcript requests too
   }, [dispatch]);
 
-  const handleCreateFrameGrid = async () => {
-    setIsCreatingGrid(true);
+  const handleCreateCollection = async () => {
+    setIsCreatingCollection(true);
     try {
       await apiRestClient.post('/create', {
-        name: newGridName,
-        description: newGridDescription,
+        name: newCollectionName,
+        description: newCollectionDescription,
       });
 
-      dispatch(fetchFrameGrids());
+      dispatch(fetchCollections());
 
       // Close dialog and reset form
-      setIsNewGridDialogOpen(false);
-      setNewGridName('');
-      setNewGridDescription('');
+      setIsNewCollectionDialogOpen(false);
+      setNewCollectionName('');
+      setNewCollectionDescription('');
 
       toast({
-        title: 'Frame Grid Created',
-        description: 'New frame grid has been created successfully',
+        title: 'Collection Created',
+        description: 'New collection has been created successfully',
       });
     } catch (error) {
-      console.error('Failed to create frame grid:', error);
+      console.error('Failed to create collection:', error);
       toast({
         title: 'Error',
-        description: 'Failed to create new frame grid',
+        description: 'Failed to create new collection',
         variant: 'destructive',
       });
     } finally {
-      setIsCreatingGrid(false);
+      setIsCreatingCollection(false);
     }
   };
 
@@ -116,8 +116,8 @@ export default function HomePage() {
               <div className="text-xs text-muted-foreground">
                 Welcome {user.email}!{' '}
                 {user.is_anonymous
-                  ? 'Make an account to create new FrameGrids.'
-                  : 'Create a new FrameGrid for each benchmark or set of experiments.'}
+                  ? 'Make an account to create new Collections.'
+                  : 'Create a new Collection for each benchmark or set of experiments.'}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -127,16 +127,16 @@ export default function HomePage() {
                     <Button
                       className="flex items-center gap-1 h-7"
                       size="sm"
-                      onClick={() => setIsNewGridDialogOpen(true)}
+                      onClick={() => setIsNewCollectionDialogOpen(true)}
                       disabled={user.is_anonymous}
                     >
                       <PlusIcon className="h-3.5 w-3.5" />
-                      Create New Frame Grid
+                      Create New Collection
                     </Button>
                   </TooltipTrigger>
                   {user.is_anonymous && (
                     <TooltipContent>
-                      <p>Create an account to create frame grids</p>
+                      <p>Create an account to create collections</p>
                     </TooltipContent>
                   )}
                 </Tooltip>
@@ -150,19 +150,19 @@ export default function HomePage() {
         <Separator className="my-4" />
 
         {/* Table area */}
-        <FrameGridsTable
-          frameGrids={frameGrids}
-          isLoading={isLoadingFrameGrids}
+        <CollectionsTable
+          collections={collections}
+          isLoading={isLoadingCollections}
         />
       </div>
 
-      {/* Create New Frame Grid Dialog */}
-      <Dialog open={isNewGridDialogOpen} onOpenChange={setIsNewGridDialogOpen}>
+      {/* Create New Collection Dialog */}
+      <Dialog open={isNewCollectionDialogOpen} onOpenChange={setIsNewCollectionDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Frame Grid</DialogTitle>
+            <DialogTitle>Create New Collection</DialogTitle>
             <DialogDescription>
-              Create a new frame grid for your benchmark or experiment set.
+              Create a new collection for your benchmark or experiment set.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -170,18 +170,18 @@ export default function HomePage() {
               <Label htmlFor="new-name">Name</Label>
               <Input
                 id="new-name"
-                value={newGridName}
-                onChange={(e) => setNewGridName(e.target.value)}
-                placeholder="Enter a name for this frame grid"
+                value={newCollectionName}
+                onChange={(e) => setNewCollectionName(e.target.value)}
+                placeholder="Enter a name for this collection"
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="new-description">Description</Label>
               <Textarea
                 id="new-description"
-                value={newGridDescription}
-                onChange={(e) => setNewGridDescription(e.target.value)}
-                placeholder="Enter a description for this frame grid"
+                value={newCollectionDescription}
+                onChange={(e) => setNewCollectionDescription(e.target.value)}
+                placeholder="Enter a description for this collection"
                 rows={3}
               />
             </div>
@@ -189,19 +189,19 @@ export default function HomePage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsNewGridDialogOpen(false)}
-              disabled={isCreatingGrid}
+              onClick={() => setIsNewCollectionDialogOpen(false)}
+              disabled={isCreatingCollection}
             >
               Cancel
             </Button>
-            <Button onClick={handleCreateFrameGrid} disabled={isCreatingGrid}>
-              {isCreatingGrid ? (
+            <Button onClick={handleCreateCollection} disabled={isCreatingCollection}>
+              {isCreatingCollection ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating...
                 </>
               ) : (
-                'Create Frame Grid'
+                'Create Collection'
               )}
             </Button>
           </DialogFooter>

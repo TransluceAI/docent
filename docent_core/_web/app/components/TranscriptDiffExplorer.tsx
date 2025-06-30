@@ -9,7 +9,7 @@ import {
 } from './TranscriptDiffSummary';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo } from 'react';
-import { getAgentRunMetadata } from '../store/frameSlice';
+import { getAgentRunMetadata } from '../store/collectionSlice';
 import DiffsClusters from './DiffsClusters';
 
 const selectDiffs = createAppSelector(
@@ -32,7 +32,7 @@ export const TranscriptDiffExplorer = () => {
   const diffsReport = useAppSelector((state) => state.diff.diffsReport);
 
   const diffs = useAppSelector(selectDiffs);
-  const frame = useAppSelector((state) => state.frame);
+  const collection = useAppSelector((state) => state.collection);
 
   const selectedCluster = useAppSelector((state) => state.diff.selectedCluster);
   const filteredClaimIds = useAppSelector(
@@ -84,12 +84,12 @@ export const TranscriptDiffExplorer = () => {
   }, [diffs]);
 
   useEffect(() => {
-    if (!frame.frameGridId) {
-      console.log('No frame grid ID available');
+    if (!collection.collectionId) {
+      console.log('No collection ID available');
       return;
     }
     dispatch(getAgentRunMetadata(allAgentRunIds));
-  }, [allAgentRunIds, frame.frameGridId, dispatch]);
+  }, [allAgentRunIds, collection.collectionId, dispatch]);
   if (!diffsReport) return null;
 
   return (

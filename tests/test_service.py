@@ -6,7 +6,7 @@ import pytest_asyncio
 
 from docent_core._db_service.service import DBService
 from docent_core._env_util import ENV
-from docent_core._frames.filters import FrameDimension, PrimitiveFilter
+from docent_core._frames.filters import CollectionDimension, PrimitiveFilter
 from docent_core._frames.transcript import Transcript, TranscriptMetadata
 from docent_core._frames.types import Datapoint
 
@@ -83,11 +83,13 @@ async def db_service(db_service_session_scoped: DBService):
 @pytest.mark.asyncio
 async def test_add_datapoints(db_service: DBService):
     """
-    Tests adding datapoints to a FrameGrid, ensuring data integrity
+    Tests adding datapoints to a Collection, ensuring data integrity
     and proper re-clustering of MECE metadata dimensions.
     """
-    # Create a new FG
-    fg_id = await db_service.create(name="pytest_fg", description="this is a test framegrid")
+    # Create a new Collection
+    collection_id = await db_service.create(
+        name="pytest_collection", description="this is a test collection"
+    )
 
     # Create datapoints.
     datapoints: list[Datapoint] = list(
@@ -97,18 +99,18 @@ async def test_add_datapoints(db_service: DBService):
 
     # Define and upsert a MECE metadata dimension before adding datapoints.
     METADATA_KEY = "sample_id"
-    mece_dim = FrameDimension(
+    mece_dim = CollectionDimension(
         name="sample id mece dimension",
         metadata_key=METADATA_KEY,
         maintain_mece=True,
     )
-    await db_service.upsert_dim(fg_id, mece_dim)
+    await db_service.upsert_dim(collection_id, mece_dim)
 
-    # Add datapoints to the FG, which should trigger re-clustering of the MECE dim
-    await db_service.add_datapoints(fg_id, datapoints)
+    # Add datapoints to the collection, which should trigger re-clustering of the MECE dim
+    await db_service.add_datapoints(collection_id, datapoints)
 
-    # 1. Check that all datapoints are in the FG
-    retrieved_datapoints = await db_service.get_all_data(fg_id)
+    # 1. Check that all datapoints are in the collection
+    retrieved_datapoints = await db_service.get_all_data(collection_id)
     retrieved_datapoint_ids = {dp.id for dp in retrieved_datapoints}
     assert retrieved_datapoint_ids == datapoint_ids, "Not all added datapoints were retrieved"
 
@@ -124,7 +126,7 @@ async def test_add_datapoints(db_service: DBService):
             expected_metadata_values.add(value)
             expected_datapoints_by_value.setdefault(value, set()).add(dp.id)
 
-    retrieved_dim_filters = await db_service.get_dim_filters(fg_id, mece_dim.id)
+    retrieved_dim_filters = await db_service.get_dim_filters(collection_id, mece_dim.id)
 
     assert len(retrieved_dim_filters) == len(expected_metadata_values), (
         f"Expected {len(expected_metadata_values)} filters for MECE dim, "
@@ -147,7 +149,7 @@ async def test_add_datapoints(db_service: DBService):
         processed_filter_values.add(filter_value)
 
         # Check judgments for this filter
-        judgments = await db_service.get_matching_judgments(fg_id, db_filter.id)
+        judgments = await db_service.get_matching_judgments(collection_id, db_filter.id)
         judged_datapoint_ids = {j.datapoint_id for j in judgments}
 
         # Efficiently get the expected datapoints for the current filter value
@@ -162,7 +164,7 @@ async def test_add_datapoints(db_service: DBService):
         processed_filter_values == expected_metadata_values
     ), "The set of filter values does not match the set of unique metadata values"
 
-    # TODO(mengk): clean up: await db_service.delete_framegrid(fg_id)
+    # TODO(mengk): clean up: await db_service.delete_collection(collection_id)
     # This depends on whether tests are isolated or share a DB instance.
     # If isolated (e.g., via fixtures creating/destroying DB for each test),
     # explicit cleanup here might not be necessary.

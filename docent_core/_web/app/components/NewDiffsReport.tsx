@@ -23,9 +23,9 @@ export function NewDiffsReport({
   const experiment1Ref = useRef<HTMLInputElement>(null);
   const experiment2Ref = useRef<HTMLInputElement>(null);
 
-  // Get frameGridId from URL for navigation
-  const frameGridId =
-    searchParams.get('fg_id') || searchParams.get('frameGridId');
+  // Get collectionId from URL for navigation
+  const collectionId =
+    searchParams.get('collection_id') || searchParams.get('collectionId');
 
   useEffect(() => {
     const param1 = searchParams.get('experimentId1') || '';
@@ -53,9 +53,9 @@ export function NewDiffsReport({
       ).unwrap();
       // Navigate to the diff reports page with the diffs report ID
       console.log('Diff Report ID', diffsReportId);
-      if (frameGridId) {
+      if (collectionId) {
         router.push(
-          `/dashboard/${frameGridId}/diff_reports?diffsReportId=${diffsReportId}`
+          `/dashboard/${collectionId}/diff_reports?diffsReportId=${diffsReportId}`
         );
       }
     } finally {

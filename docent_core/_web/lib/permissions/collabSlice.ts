@@ -6,7 +6,7 @@ import { UserPermissions } from '@/app/services/permissionsService';
 
 type CollaboratorIdentifier = Pick<
   Collaborator,
-  'framegrid_id' | 'subject_type' | 'subject_id'
+  'collection_id' | 'subject_type' | 'subject_id'
 >;
 export const collabApi = createApi({
   reducerPath: 'collab',
@@ -14,11 +14,11 @@ export const collabApi = createApi({
     baseUrl: `${BASE_URL}/rest`,
     credentials: 'include',
   }),
-  tagTypes: ['Collaborators', 'Users', 'FramegridPermissions'],
+  tagTypes: ['Collaborators', 'Users', 'CollectionPermissions'],
   endpoints: (build) => ({
-    getFramegridPermissions: build.query<UserPermissions, string>({
-      query: (framegridId) => `/${framegridId}/permissions`,
-      providesTags: ['FramegridPermissions'],
+    getCollectionPermissions: build.query<UserPermissions, string>({
+      query: (collectionId) => `/${collectionId}/permissions`,
+      providesTags: ['CollectionPermissions'],
     }),
     getOrgUsers: build.query<User[], string>({
       query: (orgId) => `/organizations/${orgId}/users`,
@@ -29,20 +29,20 @@ export const collabApi = createApi({
       providesTags: ['Users'],
     }),
     getCollaborators: build.query<Collaborator[], string>({
-      query: (framegridId) => `/framegrids/${framegridId}/collaborators`,
+      query: (collectionId) => `/collections/${collectionId}/collaborators`,
       providesTags: ['Collaborators'],
     }),
     removeCollaborator: build.mutation<
       void,
-      Pick<Collaborator, 'framegrid_id' | 'subject_type' | 'subject_id'>
+      Pick<Collaborator, 'collection_id' | 'subject_type' | 'subject_id'>
     >({
-      query: ({ subject_type, subject_id, framegrid_id }) => ({
-        url: `framegrids/${framegrid_id}/collaborators/delete`,
+      query: ({ subject_type, subject_id, collection_id }) => ({
+        url: `collections/${collection_id}/collaborators/delete`,
         method: 'DELETE',
         body: {
           subject_id,
           subject_type,
-          framegrid_id,
+          collection_id,
         },
       }),
       invalidatesTags: ['Collaborators'],
@@ -52,17 +52,17 @@ export const collabApi = createApi({
       CollaboratorIdentifier & { permission_level: PermissionLevel }
     >({
       query: ({
-        framegrid_id,
+        collection_id,
         subject_type,
         subject_id,
         permission_level,
       }) => ({
-        url: `/framegrids/${framegrid_id}/collaborators/upsert`,
+        url: `/collections/${collection_id}/collaborators/upsert`,
         method: 'PUT',
         body: {
           subject_id,
           subject_type,
-          framegrid_id,
+          collection_id,
           permission_level,
         },
       }),
@@ -72,7 +72,7 @@ export const collabApi = createApi({
 });
 
 export const {
-  useGetFramegridPermissionsQuery,
+  useGetCollectionPermissionsQuery,
   useGetOrgUsersQuery,
   useGetUserByEmailQuery,
   useLazyGetUserByEmailQuery,
@@ -91,21 +91,21 @@ export interface UserCollaborator {
   subject_type: 'user';
   subject_id: string;
   permission_level: PermissionLevel;
-  framegrid_id: string;
+  collection_id: string;
   subject: User;
 }
 export interface OrganizationCollaborator {
   subject_type: 'organization';
   subject_id: string;
   permission_level: PermissionLevel;
-  framegrid_id: string;
+  collection_id: string;
   subject: Organization;
 }
 export interface PublicCollaborator {
   subject_type: 'public';
   subject_id: 'public';
   permission_level: PermissionLevel;
-  framegrid_id: string;
+  collection_id: string;
 }
 
 export type Collaborator =

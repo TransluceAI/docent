@@ -8,7 +8,7 @@ import ResponsiveCheck from '../../components/ResponsiveCheck';
 import {
   initSession,
   setHasInitSearchQuery,
-} from '../../store/frameSlice';
+} from '../../store/collectionSlice';
 import { useAppDispatch } from '../../store/hooks';
 import {
   handleSearchUpdate,
@@ -26,17 +26,17 @@ export default function DocentDashboardClientLayout({
 }) {
   const dispatch = useAppDispatch();
   const params = useParams();
-  const fgId = params.fg_id as string;
+  const collectionId = params.collection_id as string;
 
   // Fetch state from the server
   const fetchRef = React.useRef(false); // Prevent double fetch
   useEffect(() => {
-    if (!fgId || fetchRef.current) {
+    if (!collectionId || fetchRef.current) {
       return;
     }
     fetchRef.current = true;
-    dispatch(initSession(fgId));
-  }, [fgId, dispatch]);
+    dispatch(initSession(collectionId));
+  }, [collectionId, dispatch]);
 
   /**
    * Handle shared persisted search
@@ -57,7 +57,7 @@ export default function DocentDashboardClientLayout({
     }
     dispatch(setHasInitSearchQuery(true));
     apiRestClient
-      .post(`/${fgId}/apply_existing_view`, {
+      .post(`/${collectionId}/apply_existing_view`, {
         search_query: searchQuery,
         view_id: viewId,
       })
@@ -67,7 +67,7 @@ export default function DocentDashboardClientLayout({
         dispatch(setHasInitSearchQuery(true));
         apiRestClient
           .get(
-            `/${fgId}/get_existing_search_results?search_query=${searchQuery}`
+            `/${collectionId}/get_existing_search_results?search_query=${searchQuery}`
           )
           .then((response) => {
             dispatch(handleSearchUpdate(response.data));

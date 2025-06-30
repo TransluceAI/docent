@@ -12,19 +12,19 @@ logger = get_logger(__name__)
 broker_router = APIRouter()
 
 
-@broker_router.websocket("/{framegrid_id}")
+@broker_router.websocket("/{collection_id}")
 async def fg_websocket_endpoint(
-    websocket: WebSocket, framegrid_id: str, view_id: Optional[str] = Query(None)
+    websocket: WebSocket, collection_id: str, view_id: Optional[str] = Query(None)
 ):
-    """WebSocket endpoint for framegrid events.
+    """WebSocket endpoint for collection events.
 
     Subscribes to:
-    - framegrid:{framegrid_id} (always) - for global framegrid changes
-    - framegrid:{framegrid_id}:view:{view_id} (if view_id provided) - for view-specific changes
+    - collection:{collection_id} (always) - for global collection changes
+    - collection:{collection_id}:view:{view_id} (if view_id provided) - for view-specific changes
     """
-    channels = [f"framegrid:{framegrid_id}"]
+    channels = [f"collection:{collection_id}"]
     if view_id:
-        channels.append(f"framegrid:{framegrid_id}:view:{view_id}")
+        channels.append(f"collection:{collection_id}:view:{view_id}")
 
     await websocket_loop(websocket, channels)
 

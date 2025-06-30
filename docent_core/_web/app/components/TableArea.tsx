@@ -3,7 +3,7 @@
 import { useMemo, useCallback } from 'react';
 import { v4 as uuid4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { PrimitiveFilter } from '../types/frameTypes';
+import { PrimitiveFilter } from '../types/collectionTypes';
 import { addBaseFilter, addBaseFilters } from '../store/searchSlice';
 import { cn } from '@/lib/utils';
 import { TaskStats } from '../types/experimentViewerTypes';
@@ -70,7 +70,7 @@ export default function TableArea() {
   );
 
   const { innerBinKey, outerBinKey, dimensionsMap } = useAppSelector(
-    (state) => state.frame
+    (state) => state.collection
   );
 
   // Get unique outer and inner dimension values with their IDs - matching ExperimentViewer logic

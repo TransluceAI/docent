@@ -10,7 +10,7 @@ import socketService from '../services/socketService';
 
 type WebsocketContextType = {
   socketConnected: boolean;
-  wsConnect: (frameGridId: string) => void;
+  wsConnect: (collectionId: string) => void;
 };
 
 const WebsocketContext = createContext<WebsocketContextType | null>(null);
@@ -32,9 +32,9 @@ const WebsocketProvider = ({ children }: { children: React.ReactNode }) => {
   //   // return () => socketService.removeConnectionStatusListener(setConnected);
   // }, []);
 
-  const wsConnect = (frameGridId: string) => {
+  const wsConnect = (collectionId: string) => {
     socketService.addConnectionStatusListener(setSocketConnected);
-    socketService.initSocket(frameGridId);
+    socketService.initSocket(collectionId);
   };
 
   return (

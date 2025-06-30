@@ -8,7 +8,7 @@ import { getCurAgentRun, getAltAgentRun } from '@/app/store/transcriptSlice';
 
 import AgentRunViewer, {
   AgentRunViewerHandle,
-} from '@/app/dashboard/[fg_id]/agent_run/components/AgentRunViewer';
+} from '@/app/dashboard/[collection_id]/agent_run/components/AgentRunViewer';
 import DiffPanel from './components/DiffPanel';
 
 const SCROLL_DELAY = 250;
@@ -16,7 +16,7 @@ const SCROLL_DELAY = 250;
 export default function AgentRunPage2() {
   const dispatch = useAppDispatch();
 
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const curAgentRun = useAppSelector((state) => state.transcript.curAgentRun);
   const altAgentRun = useAppSelector((state) => state.transcript.altAgentRun);
 
@@ -44,7 +44,7 @@ export default function AgentRunPage2() {
   const alreadyScrolledRef1 = useRef(false);
   const alreadyScrolledRef2 = useRef(false);
   const hasInitAttributeDimId = useAppSelector(
-    (state) => state.frame.hasInitSearchQuery
+    (state) => state.collection.hasInitSearchQuery
   );
   const attributeMap = useAppSelector((state) => state.search.searchResultMap);
   useEffect(() => {
@@ -97,7 +97,7 @@ export default function AgentRunPage2() {
 
   const fetchRef = useRef(false);
   useEffect(() => {
-    if (fetchRef.current || frameGridId === undefined) return;
+    if (fetchRef.current || collectionId === undefined) return;
     if (
       curAgentRun?.id !== agentRunIds[0] ||
       altAgentRun?.id !== agentRunIds[1]
@@ -107,7 +107,7 @@ export default function AgentRunPage2() {
       fetchRef.current = true;
     }
   }, [
-    frameGridId,
+    collectionId,
     agentRunIds,
     blockId1,
     blockId2,

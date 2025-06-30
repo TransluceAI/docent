@@ -3,7 +3,7 @@ import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
 import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
-import { SearchResultWithCitations } from '../types/frameTypes';
+import { SearchResultWithCitations } from '../types/collectionTypes';
 import { renderTextWithCitations } from '@/lib/renderCitations';
 import { useMemo } from 'react';
 
@@ -13,10 +13,10 @@ interface AgentRunCardProps {
 
 export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
   const router = useRouter();
-  // Frame slice
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  // Collection slice
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const agentRunMetadata = useAppSelector(
-    (state) => state.frame.agentRunMetadata
+    (state) => state.collection.agentRunMetadata
   );
 
   // Search slice
@@ -49,7 +49,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             agentRunId,
             undefined,
             undefined,
-            frameGridId
+            collectionId
           )
         }
       >
@@ -68,7 +68,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
                   agentRunId,
                   undefined,
                   undefined,
-                  frameGridId,
+                  collectionId,
                   curSearchQuery
                 );
               }}
@@ -225,7 +225,7 @@ export const SearchResultCard: React.FC<{
   searchResult: SearchResultWithCitations;
 }> = ({ curSearchQuery, searchResult }) => {
   const router = useRouter();
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
 
   const resultText = searchResult.value;
   if (!resultText) {
@@ -247,7 +247,7 @@ export const SearchResultCard: React.FC<{
           agentRunId,
           firstCitation?.transcript_idx ?? undefined,
           firstCitation?.block_idx,
-          frameGridId,
+          collectionId,
           curSearchQuery
         );
       }}
@@ -262,7 +262,7 @@ export const SearchResultCard: React.FC<{
               router,
               window,
               curSearchQuery,
-              frameGridId
+              collectionId
             )}
           </p>
         </div>

@@ -15,8 +15,8 @@ import {
   setInnerBinKey,
   setOuterBinKey,
   setDimensions,
-  setFrameGrids,
-} from './frameSlice';
+  setCollections,
+} from './collectionSlice';
 import { AppDispatch } from './store';
 import {
   handleAgentRunsUpdated,
@@ -40,11 +40,11 @@ export const createWebSocketMiddleware = (): Middleware => {
       // Handle different types of messages from the server
       const dispatch = store.dispatch as AppDispatch;
       switch (data.action) {
-        case 'framegrids_updated':
-          dispatch(setFrameGrids(data.payload));
+        case 'collections_updated':
+          dispatch(setCollections(data.payload));
           break;
-        case 'framegrid_deleted':
-          // If the current framegrid is deleted, we could potentially redirect to the home page
+        case 'collection_deleted':
+          // If the current collection is deleted, we could potentially redirect to the home page
           // This would be handled by a different part of the app
           break;
         case 'dimensions':

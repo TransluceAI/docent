@@ -74,8 +74,8 @@ from docent_core._db_service.schemas.tables import (
     SQLAAgentRun,
     SQLAAnalyticsEvent,
     SQLAChatSession,
+    SQLACollection,
     SQLADiffAttribute,
-    SQLAFrameGrid,
     SQLAJob,
     SQLASearchCluster,
     SQLASearchQuery,
@@ -110,7 +110,7 @@ NOT_GIVEN = _NotGiven()
 
 
 class DBService:
-    """PostgreSQL database service for Frames."""
+    """PostgreSQL database service for Collections."""
 
     # Singleton instance and async lock for thread‑safe initialization
     _instance: "DBService | None" = None
@@ -278,43 +278,45 @@ class DBService:
             await session.close()
 
     #############
-    # FrameGrid #
+    # Collection #
     #############
 
-    async def create_fg(
+    async def create_collection(
         self,
         user: User,
-        fg_id: str | None = None,
+        collection_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
     ):
         # Create FG
-        fg_id = fg_id or str(uuid4())
+        collection_id = collection_id or str(uuid4())
         async with self.session() as session:
             session.add(
-                SQLAFrameGrid(id=fg_id, name=name, description=description, created_by=user.id)
+                SQLACollection(
+                    id=collection_id, name=name, description=description, created_by=user.id
+                )
             )
 
         # Create ACL entry for the user
         await self.set_acl_permission(
             SubjectType.USER,
             subject_id=user.id,
-            resource_type=ResourceType.FRAME_GRID,
-            resource_id=fg_id,
+            resource_type=ResourceType.COLLECTION,
+            resource_id=collection_id,
             permission=Permission.ADMIN,
         )
 
-        logger.info(f"Created FrameGrid with ID: {fg_id}")
-        return fg_id
+        logger.info(f"Created Collection with ID: {collection_id}")
+        return collection_id
 
-    async def update_framegrid(
+    async def update_collection(
         self,
-        fg_id: str,
+        collection_id: str,
         name: str | None | _NotGiven = NOT_GIVEN,
         description: str | None | _NotGiven = NOT_GIVEN,
     ):
         """
-        Update the name and/or description of a FrameGrid.
+        Update the name and/or description of a Collection.
         Fields set to `None` will be nulled in the database.
         Fields not provided (i.e., left as NOT_GIVEN) will be unchanged.
         """
@@ -325,107 +327,132 @@ class DBService:
             values_to_update["description"] = description
 
         if not values_to_update:
-            logger.info(f"No values provided to update FrameGrid {fg_id}")
+            logger.info(f"No values provided to update Collection {collection_id}")
             return
 
         async with self.session() as session:
             await session.execute(
-                update(SQLAFrameGrid).where(SQLAFrameGrid.id == fg_id).values(**values_to_update)
+                update(SQLACollection)
+                .where(SQLACollection.id == collection_id)
+                .values(**values_to_update)
             )
-        logger.info(f"Updated FrameGrid {fg_id} with values: {values_to_update}")
+        logger.info(f"Updated Collection {collection_id} with values: {values_to_update}")
 
-    async def fg_exists(self, fg_id: str) -> bool:
+    async def fg_exists(self, collection_id: str) -> bool:
         async with self.session() as session:
-            result = await session.execute(select(exists().where(SQLAFrameGrid.id == fg_id)))
+            result = await session.execute(
+                select(exists().where(SQLACollection.id == collection_id))
+            )
             return result.scalar_one()
 
-    async def delete_fg(self, fg_id: str) -> None:
+    async def delete_collection(self, collection_id: str) -> None:
         # Remove all references from views to other dimensions and filters
         async with self.session() as session:
             await session.execute(
                 update(SQLAView)
-                .where(SQLAView.fg_id == fg_id)
+                .where(SQLAView.collection_id == collection_id)
                 .values(outer_bin_key=None, inner_bin_key=None, base_filter_dict=None)
             )
 
-        # delete all search result clusters joining on search result id to get fg_id
+        # delete all search result clusters joining on search result id to get collection_id
         async with self.session() as session:
             await session.execute(
                 delete(SQLASearchResultCluster).where(
                     SQLASearchResultCluster.cluster_id.in_(
-                        select(SQLASearchCluster.id).where(SQLASearchCluster.fg_id == fg_id)
+                        select(SQLASearchCluster.id).where(
+                            SQLASearchCluster.collection_id == collection_id
+                        )
                     )
                 )
             )
 
         # delete all search results
         async with self.session() as session:
-            await session.execute(delete(SQLASearchResult).where(SQLASearchResult.fg_id == fg_id))
+            await session.execute(
+                delete(SQLASearchResult).where(SQLASearchResult.collection_id == collection_id)
+            )
 
         # delete all search clusters
         async with self.session() as session:
-            await session.execute(delete(SQLASearchCluster).where(SQLASearchCluster.fg_id == fg_id))
+            await session.execute(
+                delete(SQLASearchCluster).where(SQLASearchCluster.collection_id == collection_id)
+            )
 
         # delete all search queries
         async with self.session() as session:
-            await session.execute(delete(SQLASearchQuery).where(SQLASearchQuery.fg_id == fg_id))
+            await session.execute(
+                delete(SQLASearchQuery).where(SQLASearchQuery.collection_id == collection_id)
+            )
 
         # Delete all attributes
         async with self.session() as session:
-            await session.execute(delete(SQLASearchResult).where(SQLASearchResult.fg_id == fg_id))
+            await session.execute(
+                delete(SQLASearchResult).where(SQLASearchResult.collection_id == collection_id)
+            )
 
         # Delete all embeddings
         async with self.session() as session:
             await session.execute(
-                delete(SQLATranscriptEmbedding).where(SQLATranscriptEmbedding.fg_id == fg_id)
+                delete(SQLATranscriptEmbedding).where(
+                    SQLATranscriptEmbedding.collection_id == collection_id
+                )
             )
 
         # Delete all analytics events
         async with self.session() as session:
             await session.execute(
-                delete(SQLAAnalyticsEvent).where(SQLAAnalyticsEvent.fg_id == fg_id)
+                delete(SQLAAnalyticsEvent).where(SQLAAnalyticsEvent.collection_id == collection_id)
             )
 
         # Delete all transcripts
         async with self.session() as session:
-            await session.execute(delete(SQLATranscript).where(SQLATranscript.fg_id == fg_id))
+            await session.execute(
+                delete(SQLATranscript).where(SQLATranscript.collection_id == collection_id)
+            )
 
         # Delete all agent runs
         async with self.session() as session:
-            await session.execute(delete(SQLAAgentRun).where(SQLAAgentRun.fg_id == fg_id))
+            await session.execute(
+                delete(SQLAAgentRun).where(SQLAAgentRun.collection_id == collection_id)
+            )
 
         # Delete all Access Control Entries
         async with self.session() as session:
-            view_ids = await session.execute(select(SQLAView.id).where(SQLAView.fg_id == fg_id))
+            view_ids = await session.execute(
+                select(SQLAView.id).where(SQLAView.collection_id == collection_id)
+            )
             view_ids = view_ids.scalars().all()
             await session.execute(
                 delete(SQLAAccessControlEntry).where(SQLAAccessControlEntry.view_id.in_(view_ids))
             )
             await session.execute(
-                delete(SQLAAccessControlEntry).where(SQLAAccessControlEntry.fg_id == fg_id)
+                delete(SQLAAccessControlEntry).where(
+                    SQLAAccessControlEntry.collection_id == collection_id
+                )
             )
 
         # Delete views
         async with self.session() as session:
-            await session.execute(delete(SQLAView).where(SQLAView.fg_id == fg_id))
+            await session.execute(delete(SQLAView).where(SQLAView.collection_id == collection_id))
 
-        # Finally delete the framegrid
+        # Finally delete the collection
         async with self.session() as session:
-            await session.execute(delete(SQLAFrameGrid).where(SQLAFrameGrid.id == fg_id))
-            logger.info(f"Deleted framegrid {fg_id}")
+            await session.execute(delete(SQLACollection).where(SQLACollection.id == collection_id))
+            logger.info(f"Deleted collection {collection_id}")
 
-    async def get_fgs(self, user: User | None = None) -> Sequence[SQLAFrameGrid]:
+    async def get_collections(self, user: User | None = None) -> Sequence[SQLACollection]:
         """
-        List FrameGrids that the user has access to.
-        If no user provided, returns all framegrids (for backward compatibility).
+        List Collections that the user has access to.
+        If no user provided, returns all collections (for backward compatibility).
         """
         async with self.session() as session:
-            query = select(SQLAFrameGrid).order_by(SQLAFrameGrid.created_at.desc())
+            query = select(SQLACollection).order_by(SQLACollection.created_at.desc())
 
             if user is not None:
                 query = (
                     query.join(
-                        SQLAAccessControlEntry, SQLAFrameGrid.id == SQLAAccessControlEntry.fg_id
+                        SQLAAccessControlEntry,
+                        SQLACollection.id == SQLAAccessControlEntry.collection_id,
                     )
                     .where(
                         # User has direct permission
@@ -437,7 +464,7 @@ class DBService:
                             if user.organization_ids
                             else False
                         )
-                        # Notably, we don't make public framegrids discoverable.
+                        # Notably, we don't make public collections discoverable.
                     )
                     .distinct()  # Avoid duplicates from multiple ACL entries
                 )
@@ -454,24 +481,24 @@ class DBService:
         agent_run_data: list[SQLAAgentRun] = []
         transcript_data: list[SQLATranscript] = []
 
-        # count the number of agent runs in the current framegrid
+        # count the number of agent runs in the current collection
         async with self.session() as session:
-            query = select(func.count()).where(SQLAAgentRun.fg_id == ctx.fg_id)
+            query = select(func.count()).where(SQLAAgentRun.collection_id == ctx.collection_id)
             result = await session.execute(query)
             num_agent_runs = result.scalar_one()
         if num_agent_runs + len(agent_runs) > 100_000:
-            raise ValueError("Number of agent runs in the current framegrid is too large")
+            raise ValueError("Number of agent runs in the current collection is too large")
 
         # Process all agent runs and transcripts first
         for ar in agent_runs:
             # Use the existing from_agent_run method to get all fields properly
-            sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.fg_id)
+            sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.collection_id)
             agent_run_data.append(sqla_agent_run)
 
             # Process transcripts for this agent run
             for dk, t in ar.transcripts.items():
                 # Use the existing from_transcript method to get all fields properly
-                sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.fg_id, ar.id)
+                sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.collection_id, ar.id)
                 transcript_data.append(sqla_transcript)
 
         # Insert all agent runs
@@ -487,12 +514,12 @@ class DBService:
         logger.info(f"Inserted {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
 
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
-        fg_id = ctx.fg_id
+        collection_id = ctx.collection_id
         pending_count = await self.get_embedding_job_count(
-            fg_id, SQLAJob.status == JobStatus.PENDING
+            collection_id, SQLAJob.status == JobStatus.PENDING
         )
         running_count = await self.get_embedding_job_count(
-            fg_id, SQLAJob.status == JobStatus.RUNNING
+            collection_id, SQLAJob.status == JobStatus.RUNNING
         )
 
         # Only start if there's at most one running job and no pending jobs
@@ -502,14 +529,14 @@ class DBService:
             should_index = total_runs >= 5_000
 
             # Enqueue a job in pg and start a redis worker
-            job_id = await self.add_embedding_job(fg_id, should_index)
+            job_id = await self.add_embedding_job(collection_id, should_index)
             await enqueue_embedding_job(ctx, job_id)  # type: ignore
 
-            logger.info(f"Enqueued embedding job {job_id} for frame grid {fg_id}")
+            logger.info(f"Enqueued embedding job {job_id} for collection {collection_id}")
 
     async def get_agent_run_ids(self, ctx: ViewContext) -> list[str]:
         """
-        Get agent run IDs for a given FrameGrid ID without fetching transcripts.
+        Get agent run IDs for a given Collection ID without fetching transcripts.
         This is more efficient than get_agent_runs when you only need the IDs.
         """
         async with self.session() as session:
@@ -527,10 +554,10 @@ class DBService:
         _limit: int | None = None,
     ) -> list[AgentRun]:
         """
-        Get all agent runs for a given FrameGrid ID.
+        Get all agent runs for a given Collection ID.
         """
         logger.info(
-            f"get_agent_runs called with ctx.fg_id={ctx.fg_id}, agent_run_ids={len(agent_run_ids) if agent_run_ids else None}, _limit={_limit}"
+            f"get_agent_runs called with ctx.collection_id={ctx.collection_id}, agent_run_ids={len(agent_run_ids) if agent_run_ids else None}, _limit={_limit}"
         )
 
         async with self.session() as session:
@@ -621,7 +648,7 @@ class DBService:
 
     async def get_any_agent_run(self, ctx: ViewContext) -> AgentRun | None:
         """
-        Get an arbitrary AgentRun from the database for a given FrameGrid ID.
+        Get an arbitrary AgentRun from the database for a given Collection ID.
         """
         agent_runs = await self.get_agent_runs(ctx, _limit=1)
         return agent_runs[0] if agent_runs else None
@@ -643,9 +670,11 @@ class DBService:
     # Views #
     #########
 
-    async def get_all_view_ctxs(self, fg_id: str) -> list[ViewContext]:
+    async def get_all_view_ctxs(self, collection_id: str) -> list[ViewContext]:
         async with self.session() as session:
-            result = await session.execute(select(SQLAView.id).where(SQLAView.fg_id == fg_id))
+            result = await session.execute(
+                select(SQLAView.id).where(SQLAView.collection_id == collection_id)
+            )
             view_ids = result.scalars().all()
             return [await self.get_view_ctx(view_id) for view_id in view_ids]
 
@@ -666,7 +695,7 @@ class DBService:
                 ), "Base filter must be a ComplexFilter"
 
             return ViewContext(
-                fg_id=view.fg_id,
+                collection_id=view.collection_id,
                 view_id=view.id,
                 base_filter=view.base_filter,
                 user=view.user.to_user(),
@@ -678,7 +707,7 @@ class DBService:
             view = result.scalar_one()
             new_view = SQLAView(
                 id=str(uuid4()),
-                fg_id=view.fg_id,
+                collection_id=view.collection_id,
                 user_id=view.user_id,
                 base_filter_dict=view.base_filter_dict,
                 inner_bin_key=view.inner_bin_key,
@@ -694,14 +723,14 @@ class DBService:
             result = await session.execute(select(SQLAView).where(SQLAView.id == view_id))
             return result.scalar_one()
 
-    async def get_default_view_ctx(self, fg_id: str, user: User) -> ViewContext:
-        # TODO(mengk): assert that fg_id exists
+    async def get_default_view_ctx(self, collection_id: str, user: User) -> ViewContext:
+        # TODO(mengk): assert that collection_id exists
 
         # Check if a default view exists for this fg
         async with self.session() as session:
             result = await session.execute(
                 select(SQLAView).where(
-                    SQLAView.fg_id == fg_id,
+                    SQLAView.collection_id == collection_id,
                     SQLAView.user_id == user.id,
                     SQLAView.for_sharing.is_(False),
                 )
@@ -713,7 +742,7 @@ class DBService:
             # Who is the creator of the FG?
             async with self.session() as session:
                 result = await session.execute(
-                    select(SQLAFrameGrid.created_by).where(SQLAFrameGrid.id == fg_id)
+                    select(SQLACollection.created_by).where(SQLACollection.id == collection_id)
                 )
                 creator_id = result.scalar_one()
 
@@ -721,7 +750,7 @@ class DBService:
             async with self.session() as session:
                 result = await session.execute(
                     select(SQLAView).where(
-                        SQLAView.fg_id == fg_id,
+                        SQLAView.collection_id == collection_id,
                         SQLAView.user_id == creator_id,
                         SQLAView.for_sharing.is_(False),
                     )
@@ -732,7 +761,7 @@ class DBService:
             if creator_default_view is not None:
                 view = SQLAView(
                     id=str(uuid4()),
-                    fg_id=fg_id,
+                    collection_id=collection_id,
                     user_id=user.id,
                     base_filter_dict=creator_default_view.base_filter_dict,
                     inner_bin_key=creator_default_view.inner_bin_key,
@@ -741,7 +770,7 @@ class DBService:
             else:
                 view = SQLAView(
                     id=str(uuid4()),
-                    fg_id=fg_id,
+                    collection_id=collection_id,
                     user_id=user.id,
                 )
             async with self.session() as session:
@@ -761,7 +790,9 @@ class DBService:
                 view.base_filter, ComplexFilter
             ), f"Base filter must be a ComplexFilter, found {type(view.base_filter)}"
 
-        return ViewContext(fg_id=fg_id, view_id=view.id, base_filter=view.base_filter, user=user)
+        return ViewContext(
+            collection_id=collection_id, view_id=view.id, base_filter=view.base_filter, user=user
+        )
 
     async def set_view_base_filter(self, ctx: ViewContext, filter: ComplexFilter | None):
         # Clear the old base filter
@@ -777,7 +808,7 @@ class DBService:
                 )
 
         new_ctx = ViewContext(
-            fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=filter, user=ctx.user
+            collection_id=ctx.collection_id, view_id=ctx.view_id, base_filter=filter, user=ctx.user
         )
         return new_ctx
 
@@ -789,7 +820,9 @@ class DBService:
                     update(SQLAView).where(SQLAView.id == ctx.view_id).values(base_filter_dict=None)
                 )
 
-        new_ctx = ViewContext(fg_id=ctx.fg_id, view_id=ctx.view_id, base_filter=None, user=ctx.user)
+        new_ctx = ViewContext(
+            collection_id=ctx.collection_id, view_id=ctx.view_id, base_filter=None, user=ctx.user
+        )
         return new_ctx
 
     async def set_io_bin_key_with_metadata_key(
@@ -868,11 +901,11 @@ class DBService:
                 WHERE metadata_json IS NOT NULL
                 AND metadata_json != 'null'::jsonb
                 AND metadata_json != '{}'::jsonb
-                AND fg_id = :fg_id
+                AND collection_id = :collection_id
             """
             )
 
-            result = await session.execute(query, {"fg_id": ctx.fg_id})
+            result = await session.execute(query, {"collection_id": ctx.collection_id})
             bin_keys = [row.key for row in result]
 
             return bin_keys
@@ -882,25 +915,26 @@ class DBService:
     ##########################
 
     async def get_search_query_by_query(
-        self, fg_id: str, search_query: str
+        self, collection_id: str, search_query: str
     ) -> SQLASearchQuery | None:
         async with self.session() as session:
             result = await session.execute(
                 select(SQLASearchQuery).where(
-                    SQLASearchQuery.fg_id == fg_id, SQLASearchQuery.search_query == search_query
+                    SQLASearchQuery.collection_id == collection_id,
+                    SQLASearchQuery.search_query == search_query,
                 )
             )
             return result.scalar_one_or_none()
 
     async def get_search_query(self, query_id: str) -> SQLASearchQuery:
         async with self.session() as session:
-            # Check if the search query already exists for this frame grid
+            # Check if the search query already exists for this collection
             result = await session.execute(
                 select(SQLASearchQuery).where(SQLASearchQuery.id == query_id)
             )
             return result.scalar_one()
 
-    async def delete_search_query(self, fg_id: str, search_query_id: str):
+    async def delete_search_query(self, collection_id: str, search_query_id: str):
         """
         Delete a search query from the database.
 
@@ -935,7 +969,7 @@ class DBService:
             # Delete all clusters for this search query
             await session.execute(
                 delete(SQLASearchCluster).where(
-                    SQLASearchCluster.fg_id == fg_id,
+                    SQLASearchCluster.collection_id == collection_id,
                     SQLASearchCluster.search_query == search_query,
                 )
             )
@@ -954,7 +988,7 @@ class DBService:
         # Get search result queries
         async with self.session() as session:
             query = select(SQLASearchQuery.id, SQLASearchQuery.search_query).where(
-                SQLASearchQuery.fg_id == ctx.fg_id
+                SQLASearchQuery.collection_id == ctx.collection_id
             )
             result = await session.execute(query)
             search_ids_and_queries = result.all()
@@ -1068,7 +1102,7 @@ class DBService:
         else:
             logger.info(f"Computing results for {len(agent_runs)} agent runs")
 
-        if await self.fg_has_embeddings(ctx.fg_id):
+        if await self.fg_has_embeddings(ctx.collection_id):
             agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
 
         async def _results_callback(search_results: list[SearchResult] | None):
@@ -1081,7 +1115,7 @@ class DBService:
                 to_upload: list[SQLASearchResult] = [
                     SQLASearchResult.from_search_result(
                         search_result=attr,
-                        fg_id=ctx.fg_id,
+                        collection_id=ctx.collection_id,
                     )
                     for attr in search_results
                 ]
@@ -1123,7 +1157,7 @@ class DBService:
                 select(func.count(SQLATranscriptEmbedding.id))
                 .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
                 .where(
-                    SQLATranscriptEmbedding.fg_id == ctx.fg_id,
+                    SQLATranscriptEmbedding.collection_id == ctx.collection_id,
                     ctx.get_base_where_clause(SQLAAgentRun),
                     ~exists().where(
                         SQLASearchResult.agent_run_id == SQLAAgentRun.id,
@@ -1142,7 +1176,7 @@ class DBService:
                 )
                 .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
                 .where(
-                    SQLATranscriptEmbedding.fg_id == ctx.fg_id,
+                    SQLATranscriptEmbedding.collection_id == ctx.collection_id,
                     ctx.get_base_where_clause(SQLAAgentRun),
                     ~exists().where(
                         SQLASearchResult.agent_run_id == SQLAAgentRun.id,
@@ -1172,12 +1206,12 @@ class DBService:
 
         return reranked_agent_runs
 
-    async def fg_has_embeddings(self, fg_id: str) -> bool:
+    async def fg_has_embeddings(self, collection_id: str) -> bool:
         """Check if all runs in the current context have embeddings."""
         async with self.session() as session:
             # Check if there exists any run without embeddings
             subquery = select(1).where(
-                SQLAAgentRun.fg_id == fg_id,
+                SQLAAgentRun.collection_id == collection_id,
                 ~exists().where(SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id),
             )
 
@@ -1185,8 +1219,8 @@ class DBService:
             result = await session.execute(query)
             return result.scalar_one()
 
-    async def get_indexing_progress(self, fg_id: str) -> tuple[str | None, int | None]:
-        index_name = f"ivfflat_embedding_view_{fg_id.replace('-', '_')}"
+    async def get_indexing_progress(self, collection_id: str) -> tuple[str | None, int | None]:
+        index_name = f"ivfflat_embedding_view_{collection_id.replace('-', '_')}"
 
         # Filter for a specific index by name
         query = text(
@@ -1215,13 +1249,13 @@ class DBService:
         self, ctx: ViewContext, progress_callback: AsyncEmbeddingStreamingCallback
     ):
         async with self.session() as session:
-            # Get all agent runs that don't have embeddings in this framegrid
+            # Get all agent runs that don't have embeddings in this collection
             query = (
                 select(SQLAAgentRun.id)
                 .outerjoin(
                     SQLATranscriptEmbedding,
                     (SQLAAgentRun.id == SQLATranscriptEmbedding.agent_run_id)
-                    & (SQLATranscriptEmbedding.fg_id == ctx.fg_id),
+                    & (SQLATranscriptEmbedding.collection_id == ctx.collection_id),
                 )
                 .where(SQLATranscriptEmbedding.agent_run_id.is_(None))
             )
@@ -1254,7 +1288,10 @@ class DBService:
             session.add_all(
                 [
                     SQLATranscriptEmbedding(
-                        id=str(uuid4()), fg_id=ctx.fg_id, agent_run_id=id, embedding=embedding
+                        id=str(uuid4()),
+                        collection_id=ctx.collection_id,
+                        agent_run_id=id,
+                        embedding=embedding,
                     )
                     for id, embedding in zip(embedding_ids, embeddings)
                 ]
@@ -1269,12 +1306,12 @@ class DBService:
         ctx: ViewContext,
     ) -> str:
         """Create an IVFFlat index for embeddings of agent runs in the given view context."""
-        # Check if embeddings exist for agent runs in this framegrid
+        # Check if embeddings exist for agent runs in this collection
         async with self.session() as session:
             count_query = (
                 select(func.count(SQLATranscriptEmbedding.id))
                 .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
-                .where(SQLAAgentRun.fg_id == ctx.fg_id)
+                .where(SQLAAgentRun.collection_id == ctx.collection_id)
             )
             result = await session.execute(count_query)
             embedding_count = result.scalar_one()
@@ -1284,7 +1321,7 @@ class DBService:
 
         lists = min(max(100, int(embedding_count**0.5)), 1_000)
 
-        index_name = f"ivfflat_embedding_view_{ctx.fg_id.replace('-', '_')}"
+        index_name = f"ivfflat_embedding_view_{ctx.collection_id.replace('-', '_')}"
 
         # Drop existing index within a transaction
         async with self.session() as session:
@@ -1307,7 +1344,7 @@ class DBService:
                 CREATE INDEX CONCURRENTLY {index_name} ON {TABLE_TRANSCRIPT_EMBEDDING}
                 USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = {lists})
-                WHERE fg_id = '{ctx.fg_id}'
+                WHERE collection_id = '{ctx.collection_id}'
                 """
             )
 
@@ -1318,13 +1355,13 @@ class DBService:
         return index_name
 
     async def get_embedding_job_count(
-        self, fg_id: str, _where_clause: ColumnElement[bool] | None = None
+        self, collection_id: str, _where_clause: ColumnElement[bool] | None = None
     ) -> int:
         """
-        Count the number of embedding jobs for a framegrid.
+        Count the number of embedding jobs for a collection.
 
         Args:
-            fg_id: The frame grid ID
+            collection_id: The collection ID
             _where_clause: Optional additional filter clause
 
         Returns:
@@ -1334,7 +1371,7 @@ class DBService:
             query = (
                 select(func.count(SQLAJob.id))
                 .filter(SQLAJob.type == "compute_embeddings")
-                .filter(SQLAJob.job_json["fg_id"].astext == fg_id)
+                .filter(SQLAJob.job_json["collection_id"].astext == collection_id)
             )
             if _where_clause is not None:
                 query = query.filter(_where_clause)
@@ -1410,7 +1447,7 @@ class DBService:
         should_persist: bool = True,
     ):
         # TODO(vincent): intersect with a filter, maybe allow user to pass in attribute as well
-        # get pairs of datapoints from fg_id where (sample_id, task_id, epoch_id) match
+        # get pairs of datapoints from collection_id where (sample_id, task_id, epoch_id) match
         # and the datapoints have the corresponding experiment_id's
 
         # TODO(vincent): flexible binning and comparisons
@@ -1449,7 +1486,7 @@ class DBService:
             async with self.session() as session:
                 result = await session.execute(
                     select(SQLATranscriptDiff).where(
-                        SQLATranscriptDiff.frame_grid_id == ctx.fg_id,
+                        SQLATranscriptDiff.collection_id == ctx.collection_id,
                     )
                 )
                 existing_diffs = result.scalars().all()
@@ -1559,7 +1596,7 @@ class DBService:
                 centroid_id = str(uuid4())
                 cluster = SQLASearchCluster(
                     id=centroid_id,
-                    fg_id=ctx.fg_id,
+                    collection_id=ctx.collection_id,
                     search_query=search_query,
                     centroid=centroid,
                 )
@@ -1609,7 +1646,7 @@ class DBService:
         async with self.session() as session:
             result = await session.execute(
                 select(SQLASearchCluster.centroid, SQLASearchCluster.id).where(
-                    SQLASearchCluster.fg_id == ctx.fg_id,
+                    SQLASearchCluster.collection_id == ctx.collection_id,
                     SQLASearchCluster.search_query == search_query,
                 )
             )
@@ -1624,7 +1661,7 @@ class DBService:
                 delete(SQLASearchResultCluster).where(
                     SQLASearchResultCluster.cluster_id.in_(
                         select(SQLASearchCluster.id).where(
-                            SQLASearchCluster.fg_id == ctx.fg_id,
+                            SQLASearchCluster.collection_id == ctx.collection_id,
                             SQLASearchCluster.search_query == search_query,
                         )
                     )
@@ -1634,7 +1671,7 @@ class DBService:
             # Delete all clusters for this search query
             await session.execute(
                 delete(SQLASearchCluster).where(
-                    SQLASearchCluster.fg_id == ctx.fg_id,
+                    SQLASearchCluster.collection_id == ctx.collection_id,
                     SQLASearchCluster.search_query == search_query,
                 )
             )
@@ -1654,7 +1691,7 @@ class DBService:
         #     result = await session.execute(
         #         select(SQLADiffAttribute)
         #         .where(
-        #             SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+        #             SQLADiffAttribute.collection_id == ctx.collection_id,
         #         )
         #         .order_by(SQLADiffAttribute.id)
         #     )
@@ -1688,7 +1725,7 @@ class DBService:
             result = await session.execute(
                 select(SQLADiffAttribute)
                 .where(
-                    SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+                    SQLADiffAttribute.collection_id == ctx.collection_id,
                 )
                 .order_by(SQLADiffAttribute.id)
             )
@@ -1730,9 +1767,9 @@ class DBService:
             logger.info(f"Added job with ID: {job_id}")
         return job_id
 
-    async def add_embedding_job(self, fg_id: str, should_index: bool) -> str:
+    async def add_embedding_job(self, collection_id: str, should_index: bool) -> str:
         """
-        Adds or finds an embedding job for the given frame grid.
+        Adds or finds an embedding job for the given collection.
 
         Args:
             should_index: Whether to index the new agent runs
@@ -1745,7 +1782,7 @@ class DBService:
                     type="compute_embeddings",
                     job_json={
                         "should_index": should_index,
-                        "fg_id": fg_id,
+                        "collection_id": collection_id,
                     },
                 )
             )
@@ -2055,8 +2092,8 @@ class DBService:
         resource_id: str,
         resource_type: ResourceType,
     ) -> list[SQLAAccessControlEntry]:
-        if resource_type == ResourceType.FRAME_GRID:
-            resource_filter = SQLAAccessControlEntry.fg_id == resource_id
+        if resource_type == ResourceType.COLLECTION:
+            resource_filter = SQLAAccessControlEntry.collection_id == resource_id
         elif resource_type == ResourceType.VIEW:
             resource_filter = SQLAAccessControlEntry.view_id == resource_id
         else:
@@ -2079,8 +2116,8 @@ class DBService:
         """Get the highest permission level a user has for a resource."""
 
         # Build the resource filter based on ResourceType
-        if resource_type == ResourceType.FRAME_GRID:
-            resource_filter = SQLAAccessControlEntry.fg_id == resource_id
+        if resource_type == ResourceType.COLLECTION:
+            resource_filter = SQLAAccessControlEntry.collection_id == resource_id
         elif resource_type == ResourceType.VIEW:
             resource_filter = SQLAAccessControlEntry.view_id == resource_id
         else:
@@ -2132,12 +2169,12 @@ class DBService:
     ):
         async with self.session() as session:
             # Build the resource filter based on ResourceType
-            if resource_type == ResourceType.FRAME_GRID:
-                resource_filter = SQLAAccessControlEntry.fg_id == resource_id
-                resource_fields = {"fg_id": resource_id, "view_id": None}
+            if resource_type == ResourceType.COLLECTION:
+                resource_filter = SQLAAccessControlEntry.collection_id == resource_id
+                resource_fields = {"collection_id": resource_id, "view_id": None}
             elif resource_type == ResourceType.VIEW:
                 resource_filter = SQLAAccessControlEntry.view_id == resource_id
-                resource_fields = {"fg_id": None, "view_id": resource_id}
+                resource_fields = {"collection_id": None, "view_id": resource_id}
             else:
                 raise ValueError(f"Unsupported resource type: {resource_type}")
 
@@ -2212,8 +2249,8 @@ class DBService:
                 raise ValueError(f"Unsupported subject type: {subject_type}")
 
             # Handle resource filtering based on ResourceType
-            if resource_type == ResourceType.FRAME_GRID:
-                query = query.where(SQLAAccessControlEntry.fg_id == resource_id)
+            if resource_type == ResourceType.COLLECTION:
+                query = query.where(SQLAAccessControlEntry.collection_id == resource_id)
             elif resource_type == ResourceType.VIEW:
                 query = query.where(SQLAAccessControlEntry.view_id == resource_id)
             else:
@@ -2238,26 +2275,26 @@ class DBService:
     ###########
 
     @asynccontextmanager
-    async def advisory_lock(self, fg_id: str, action_id: str) -> AsyncIterator[None]:
-        """Acquires a PostgreSQL advisory lock for the given FrameGrid ID and action ID.
+    async def advisory_lock(self, collection_id: str, action_id: str) -> AsyncIterator[None]:
+        """Acquires a PostgreSQL advisory lock for the given Collection ID and action ID.
 
         This provides a concurrency safety mechanism that can prevent race conditions
-        when multiple processes or tasks attempt to modify the same FrameGrid data.
+        when multiple processes or tasks attempt to modify the same Collection data.
 
         Args:
-            fg_id: The FrameGrid ID to lock
+            collection_id: The Collection ID to lock
             action_id: An identifier for the action being performed
 
         Example:
             ```python
-            async with db_service.advisory_lock(fg_id, "compute_filter"):
+            async with db_service.advisory_lock(collection_id, "compute_filter"):
                 # This code is protected by the lock
-                await db_service.compute_filter(fg_id, filter_id)
+                await db_service.compute_filter(collection_id, filter_id)
             ```
         """
         # Create integer keys from the string IDs using hash functions
         # We use two separate hashing algorithms to minimize collision risk
-        fg_hash = int(hashlib.md5(fg_id.encode()).hexdigest(), 16) % (2**31 - 1)
+        fg_hash = int(hashlib.md5(collection_id.encode()).hexdigest(), 16) % (2**31 - 1)
         action_hash = int(hashlib.sha1(action_id.encode()).hexdigest(), 16) % (2**31 - 1)
 
         async with self._engine.connect() as conn:
@@ -2269,7 +2306,7 @@ class DBService:
                     text("SELECT pg_advisory_lock(:key1, :key2)"),
                     {"key1": fg_hash, "key2": action_hash},
                 )
-                logger.info(f"Acquired advisory lock for {fg_id}/{action_id}")
+                logger.info(f"Acquired advisory lock for {collection_id}/{action_id}")
 
                 # Yield control back to the caller
                 yield
@@ -2279,7 +2316,7 @@ class DBService:
                     text("SELECT pg_advisory_unlock(:key1, :key2)"),
                     {"key1": fg_hash, "key2": action_hash},
                 )
-                logger.info(f"Released advisory lock for {fg_id}/{action_id}")
+                logger.info(f"Released advisory lock for {collection_id}/{action_id}")
 
     async def add_search_query(self, ctx: ViewContext, search_query: str) -> str:
         """
@@ -2287,10 +2324,10 @@ class DBService:
         Returns the id of the search query.
         """
         async with self.session() as session:
-            # Check if the search query already exists for this frame grid
+            # Check if the search query already exists for this collection
             result = await session.execute(
                 select(SQLASearchQuery).where(
-                    SQLASearchQuery.fg_id == ctx.fg_id,
+                    SQLASearchQuery.collection_id == ctx.collection_id,
                     SQLASearchQuery.search_query == search_query,
                 )
             )
@@ -2303,10 +2340,12 @@ class DBService:
             new_id = str(uuid4())
             sq = SQLASearchQuery(
                 id=new_id,
-                fg_id=ctx.fg_id,
+                collection_id=ctx.collection_id,
                 search_query=search_query,
             )
             session.add(sq)
 
-        logger.info(f"Added new search query {search_query} with id {new_id} to fg_id {ctx.fg_id}")
+        logger.info(
+            f"Added new search query {search_query} with id {new_id} to collection_id {ctx.collection_id}"
+        )
         return new_id

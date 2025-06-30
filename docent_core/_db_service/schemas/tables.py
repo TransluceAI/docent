@@ -34,13 +34,13 @@ from docent_core._db_service.schemas.base import SQLABase
 
 logger = get_logger(__name__)
 
-TABLE_FRAME_GRID = "frame_grids"
+TABLE_COLLECTION = "collections"
 TABLE_AGENT_RUN = "agent_runs"
 TABLE_TRANSCRIPT_EMBEDDING = "transcript_embeddings"
 EMBEDDING_DIM = 512
 TABLE_SEARCH_RESULTS = "search_results"
 TABLE_SEARCH_QUERIES = "search_queries"
-TABLE_FRAME_DIMENSION = "frame_dimensions"
+TABLE_COLLECTION_DIMENSION = "collection_dimensions"
 TABLE_FILTER = "filters"
 TABLE_JUDGMENT = "judgments"
 TABLE_JOB = "jobs"
@@ -79,8 +79,8 @@ def sanitize_pg_text(text: str) -> str:
 class SQLAAgentRun(SQLABase):
     __tablename__ = TABLE_AGENT_RUN
 
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
 
     id = mapped_column(String(36), primary_key=True)
@@ -99,7 +99,7 @@ class SQLAAgentRun(SQLABase):
     )
 
     @classmethod
-    def from_agent_run(cls, agent_run: AgentRun, fg_id: str) -> "SQLAAgentRun":
+    def from_agent_run(cls, agent_run: AgentRun, collection_id: str) -> "SQLAAgentRun":
         # Sanitize raw text
         metadata_json = json.loads(sanitize_pg_text(agent_run.metadata.model_dump_json()))
         text_for_search = sanitize_pg_text(agent_run.text)
@@ -108,7 +108,7 @@ class SQLAAgentRun(SQLABase):
             id=agent_run.id,
             name=agent_run.name,
             description=agent_run.description,
-            fg_id=fg_id,
+            collection_id=collection_id,
             metadata_json=metadata_json,
             text_for_search=text_for_search,
         )
@@ -126,8 +126,8 @@ class SQLAAgentRun(SQLABase):
 class SQLATranscript(SQLABase):
     __tablename__ = TABLE_TRANSCRIPT
 
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     agent_run_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
@@ -146,7 +146,7 @@ class SQLATranscript(SQLABase):
 
     @classmethod
     def from_transcript(
-        cls, transcript: Transcript, dict_key: str, fg_id: str, agent_run_id: str
+        cls, transcript: Transcript, dict_key: str, collection_id: str, agent_run_id: str
     ) -> "SQLATranscript":
         # Serialize to JSON and then convert to bytes to avoid encoding issues
         messages_binary = json.dumps(to_jsonable_python(transcript.messages)).encode("utf-8")
@@ -157,7 +157,7 @@ class SQLATranscript(SQLABase):
             id=transcript.id,
             name=transcript.name,
             description=transcript.description,
-            fg_id=fg_id,
+            collection_id=collection_id,
             agent_run_id=agent_run_id,
             messages=messages_binary,
             metadata_json=metadata_binary,
@@ -176,8 +176,8 @@ class SQLATranscriptEmbedding(SQLABase):
     __tablename__ = TABLE_TRANSCRIPT_EMBEDDING
 
     id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     agent_run_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
@@ -185,14 +185,14 @@ class SQLATranscriptEmbedding(SQLABase):
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
 
 
-class SQLAFrameGrid(SQLABase):
-    __tablename__ = TABLE_FRAME_GRID
+class SQLACollection(SQLABase):
+    __tablename__ = TABLE_COLLECTION
 
     id = mapped_column(String(36), primary_key=True)
     name = mapped_column(Text)
     description = mapped_column(Text)
 
-    # User who created this frame grid
+    # User who created this collection
     created_by = mapped_column(
         String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
     )
@@ -203,7 +203,7 @@ class SQLAFrameGrid(SQLABase):
 
     views: Mapped[list["SQLAView"]] = relationship(
         "SQLAView",
-        back_populates="framegrid",
+        back_populates="collection",
         cascade="all, delete-orphan",
     )
 
@@ -212,10 +212,10 @@ class SQLAView(SQLABase):
     __tablename__ = TABLE_VIEW
 
     id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
-    # Owner of this view. Combined with fg_id must be unique (for non-sharing rows).
+    # Owner of this view. Combined with collection_id must be unique (for non-sharing rows).
     user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
     name = mapped_column(Text, nullable=True)
 
@@ -228,8 +228,8 @@ class SQLAView(SQLABase):
     for_sharing = mapped_column(Boolean, nullable=False, default=False)
 
     user: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
-    framegrid: Mapped["SQLAFrameGrid"] = relationship(
-        "SQLAFrameGrid",
+    collection: Mapped["SQLACollection"] = relationship(
+        "SQLACollection",
         back_populates="views",
     )
 
@@ -240,11 +240,11 @@ class SQLAView(SQLABase):
         passive_deletes=True,
     )
 
-    # Enforce that the combination of fg_id and user_id is unique for non-sharing views
+    # Enforce that the combination of collection_id and user_id is unique for non-sharing views
     __table_args__ = (
         Index(
-            "idx_view_fg_user_unique_non_sharing",
-            "fg_id",
+            "idx_view_collection_user_unique_non_sharing",
+            "collection_id",
             "user_id",
             unique=True,
             postgresql_where="for_sharing = false",
@@ -264,8 +264,8 @@ class SQLASearchCluster(SQLABase):
     __tablename__ = TABLE_SEARCH_CLUSTER
 
     id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     centroid = mapped_column(Text, nullable=False)
     search_query = mapped_column(Text, nullable=False, index=True)
@@ -313,8 +313,8 @@ class SQLASearchResult(SQLABase):
     __tablename__ = TABLE_SEARCH_RESULTS
 
     id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
 
     # Location of the search result
@@ -335,7 +335,7 @@ class SQLASearchResult(SQLABase):
 
     __table_args__ = (
         UniqueConstraint(
-            "fg_id",
+            "collection_id",
             "agent_run_id",
             "search_query",
             "search_result_idx",
@@ -347,14 +347,14 @@ class SQLASearchResult(SQLABase):
     def from_search_result(
         cls,
         search_result: SearchResult,
-        fg_id: str,
+        collection_id: str,
     ):
         value = search_result.value
         if value is not None:
             value = sanitize_pg_text(value)
         return cls(
             id=search_result.id,
-            fg_id=fg_id,
+            collection_id=collection_id,
             agent_run_id=search_result.agent_run_id,
             search_query=search_result.search_query,
             search_result_idx=search_result.search_result_idx,
@@ -375,8 +375,8 @@ class SQLASearchQuery(SQLABase):
     __tablename__ = TABLE_SEARCH_QUERIES
 
     id = mapped_column(String(36), primary_key=True)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
 
     search_query = mapped_column(Text, nullable=False, index=True)
@@ -409,8 +409,8 @@ class SQLADiffAttribute(SQLABase):
     __tablename__ = TABLE_DIFF_ATTRIBUTE
 
     id = mapped_column(String(36), primary_key=True)
-    frame_grid_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
 
     # Location of the diff attribute
@@ -429,7 +429,7 @@ class SQLADiffAttribute(SQLABase):
 
     __table_args__ = (
         UniqueConstraint(
-            "frame_grid_id",
+            "collection_id",
             "data_id_1",
             "data_id_2",
             "attribute",
@@ -447,11 +447,11 @@ class SQLADiffAttribute(SQLABase):
         attribute_idx: int | None,
         claim: str | None,
         evidence: str | None,
-        fg_id: str,
+        collection_id: str,
     ):
         return cls(
             id=str(uuid4()),
-            frame_grid_id=fg_id,
+            collection_id=collection_id,
             data_id_1=data_id_1,
             data_id_2=data_id_2,
             attribute=attribute,
@@ -566,9 +566,9 @@ class SQLAAccessControlEntry(SQLABase):
     is_public = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     # Which resource the permission is for: exactly one must be set
-    fg_id = mapped_column(
+    collection_id = mapped_column(
         String(36),
-        ForeignKey(f"{TABLE_FRAME_GRID}.id", ondelete="CASCADE"),
+        ForeignKey(f"{TABLE_COLLECTION}.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -601,7 +601,7 @@ class SQLAAccessControlEntry(SQLABase):
         ),
         # Ensure exactly one resource is set
         CheckConstraint(
-            "(fg_id IS NOT NULL)::int + (view_id IS NOT NULL)::int = 1",
+            "(collection_id IS NOT NULL)::int + (view_id IS NOT NULL)::int = 1",
             name="check_exactly_one_resource",
         ),
         # Validate permission values
@@ -615,7 +615,7 @@ class SQLAAccessControlEntry(SQLABase):
             "user_id",
             "organization_id",
             "is_public",
-            "fg_id",
+            "collection_id",
             "view_id",
             "permission",
             name="uq_access_control_entry_combination",
@@ -628,7 +628,7 @@ class EndpointType(enum.Enum):
 
     SIGNUP = "signup"
     CREATE_ANONYMOUS_SESSION = "create_anonymous_session"
-    CREATE_FG = "create_fg"
+    CREATE_FG = "create_collection"
     GET_AGENT_RUN = "get_agent_run"
     POST_AGENT_RUNS = "post_agent_runs"
     JOIN = "join"
@@ -678,9 +678,9 @@ class SQLAAnalyticsEvent(SQLABase):
 
     id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
 
-    # The framegrid ID (can be None for endpoints that don't operate on a specific framegrid)
-    fg_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=True, index=True
+    # The collection ID (can be None for endpoints that don't operate on a specific collection)
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=True, index=True
     )
 
     # The user ID (can be None for anonymous users)
@@ -698,12 +698,12 @@ class SQLAAnalyticsEvent(SQLABase):
     def create_event(
         cls,
         endpoint: EndpointType,
-        fg_id: str | None = None,
+        collection_id: str | None = None,
         user_id: str | None = None,
     ) -> "SQLAAnalyticsEvent":
         """Create a new analytics event."""
         return cls(
             endpoint=endpoint,
-            fg_id=fg_id,
+            collection_id=collection_id,
             user_id=user_id,
         )

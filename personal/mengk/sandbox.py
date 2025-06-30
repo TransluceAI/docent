@@ -23,9 +23,9 @@ user
 
 # %%
 
-fgs = await db.get_fgs()
-fg_id = [fg.id for fg in fgs if fg.name == "oai"][0]
-ctx = await db.get_default_view_ctx(fg_id, user)
+fgs = await db.get_collections()
+collection_id = [fg.id for fg in fgs if fg.name == "oai"][0]
+ctx = await db.get_default_view_ctx(collection_id, user)
 print(ctx)
 runs = await db.get_agent_runs(ctx)
 len(runs)
@@ -54,7 +54,7 @@ SELECT
     END
   )
 FROM agent_runs
-WHERE fg_id = 'e91db3aa-9430-4739-a205-041ab1512cab'
+WHERE collection_id = 'e91db3aa-9430-4739-a205-041ab1512cab'
 GROUP BY sample_id, model;
 """
 )
@@ -69,10 +69,10 @@ user = users[0]
 
 # %%
 
-fgs = await db.get_fgs()
+fgs = await db.get_collections()
 fgs
-fg_id = [fg.id for fg in fgs if fg.name][0]
-ctx = await db.get_default_view_ctx(fg_id, user)
+collection_id = [fg.id for fg in fgs if fg.name][0]
+ctx = await db.get_default_view_ctx(collection_id, user)
 
 
 # %%
@@ -270,11 +270,11 @@ print(run.text)
 
 from docent_core._db_service.schemas.auth_models import Permission, ResourceType, SubjectType
 
-fg_id = fgs[1].id
+collection_id = fgs[1].id
 await db.set_acl_permission(
-    SubjectType.PUBLIC, "*", ResourceType.FRAME_GRID, fg_id, Permission.READ
+    SubjectType.PUBLIC, "*", ResourceType.COLLECTION, collection_id, Permission.READ
 )
-views = await db.get_all_view_ctxs(fg_id)
+views = await db.get_all_view_ctxs(collection_id)
 for view in views:
     await db.set_acl_permission(
         SubjectType.PUBLIC, "*", ResourceType.VIEW, view.view_id, Permission.READ
@@ -283,7 +283,7 @@ for view in views:
 
 # %%
 
-ctx = await db.get_default_view_ctx(fg_id)
+ctx = await db.get_default_view_ctx(collection_id)
 
 # %%
 
@@ -292,5 +292,5 @@ ctx
 # %%
 
 
-fg_id = "677791bc-0891-4605-9cfa-150e6187543d"
+collection_id = "677791bc-0891-4605-9cfa-150e6187543d"
 run = await db.get_any_agent_run(ctx)

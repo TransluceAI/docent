@@ -8,12 +8,12 @@ export async function middleware(request: NextRequest) {
   // Check if cookies already have a user associated
   let user = await getUser();
 
-  // If not, we might be able to create an anonymous session, if the path contains a fg_id
+  // If not, we might be able to create an anonymous session, if the path contains a collection_id
   if (!user) {
-    const isFgRoute = pathname.match(
+    const isCollectionRoute = pathname.match(
       /^\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/.*)?$/i
     );
-    if (isFgRoute) {
+    if (isCollectionRoute) {
       // Create an anonymous session
       const anonResponse = await fetch(
         `${INTERNAL_BASE_URL}/rest/anonymous_session`,

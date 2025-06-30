@@ -4,12 +4,12 @@ import { requestDiffClusters } from '../store/diffSlice';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
-import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 export function DiffReportConfig() {
   const dispatch = useAppDispatch();
   const diffsReport = useAppSelector((state) => state.diff.diffsReport);
-  const hasWritePermission = useHasFramegridWritePermission()
+  const hasWritePermission = useHasCollectionWritePermission()
 
   const onProposeClustersClick = async () => {
     if (!diffsReport) {

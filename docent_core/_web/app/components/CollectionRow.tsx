@@ -13,55 +13,55 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { BASE_DOCENT_PATH } from '@/app/constants';
-import { FrameGrid } from '@/app/types/frameTypes';
+import { Collection } from '@/app/types/collectionTypes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import { cn, copyToClipboard } from '@/lib/utils';
 
-import { updateFrameGrid } from '../store/frameSlice';
+import { updateCollection } from '../store/collectionSlice';
 import { useAppDispatch } from '../store/hooks';
-import { useHasFramegridPermission } from '@/lib/permissions/hooks';
+import { useHasCollectionPermission } from '@/lib/permissions/hooks';
 
-interface FrameGridRowProps {
-  framegrid: FrameGrid;
+interface CollectionRowProps {
+  collection: Collection;
   /**
    * Triggered when the delete button is pressed. The parent component is
    * responsible for showing the confirmation dialog and dispatching the actual
    * delete thunk.
    */
-  onDelete: (grid: FrameGrid) => void;
+  onDelete: (collection: Collection) => void;
 }
 
-export default function FrameGridRow({
-  framegrid,
+export default function CollectionRow({
+  collection,
   onDelete,
-}: FrameGridRowProps) {
+}: CollectionRowProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const hasAdminPermission = useHasFramegridPermission('admin', framegrid.id);
-  const hasWritePermission = useHasFramegridPermission('write', framegrid.id);
+  const hasAdminPermission = useHasCollectionPermission('admin', collection.id);
+  const hasWritePermission = useHasCollectionPermission('write', collection.id);
 
   // Local editing state
   const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(framegrid.name ?? '');
-  const [description, setDescription] = useState(framegrid.description ?? '');
+  const [name, setName] = useState(collection.name ?? '');
+  const [description, setDescription] = useState(collection.description ?? '');
 
   /* ----------------------------- Event handlers ---------------------------- */
-  const openFrameGrid = () => {
+  const openCollection = () => {
     // Prevent navigation while editing to avoid accidental navigation away
     if (isEditing) return;
-    router.push(`${BASE_DOCENT_PATH}/${framegrid.id}`);
+    router.push(`${BASE_DOCENT_PATH}/${collection.id}`);
   };
 
   const copyId = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const success = await copyToClipboard(framegrid.id);
+    const success = await copyToClipboard(collection.id);
     if (success) {
       toast({
-        title: 'FrameGrid ID Copied',
-        description: `Copied ${framegrid.id} to clipboard`,
+        title: 'Collection ID Copied',
+        description: `Copied ${collection.id} to clipboard`,
       });
     } else {
       toast({
@@ -82,8 +82,8 @@ export default function FrameGridRow({
     e?.stopPropagation();
     setIsEditing(false);
     // Reset local state to original values
-    setName(framegrid.name ?? '');
-    setDescription(framegrid.description ?? '');
+    setName(collection.name ?? '');
+    setDescription(collection.description ?? '');
   };
 
   const saveChanges = (e: React.MouseEvent) => {
@@ -91,16 +91,16 @@ export default function FrameGridRow({
     if (!isEditing) return;
 
     dispatch(
-      updateFrameGrid({
-        fg_id: framegrid.id,
+      updateCollection({
+        collection_id: collection.id,
         name,
         description,
       })
     );
 
     toast({
-      title: 'Frame Grid Updated',
-      description: 'The frame grid has been updated successfully',
+      title: 'Collection Updated',
+      description: 'The collection has been updated successfully',
     });
 
     setIsEditing(false);
@@ -109,7 +109,7 @@ export default function FrameGridRow({
   const triggerDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    onDelete(framegrid);
+    onDelete(collection);
   };
 
   /* ------------------------------- Utilities ------------------------------- */
@@ -127,8 +127,8 @@ export default function FrameGridRow({
   /* --------------------------------- Render -------------------------------- */
   return (
     <TableRow
-      key={framegrid.id}
-      onClick={openFrameGrid}
+      key={collection.id}
+      onClick={openCollection}
       className={cn(
         'group transition-colors cursor-pointer hover:bg-secondary/50',
         isEditing && 'bg-blue-50 cursor-default'
@@ -139,7 +139,7 @@ export default function FrameGridRow({
         <div className="flex items-center">
           <Layers className="h-3.5 w-3.5 text-muted-foreground mr-1.5" />
           <span className="font-mono text-primary text-xs">
-            {framegrid.id.split('-')[0]}
+            {collection.id.split('-')[0]}
           </span>
           <Button
             variant="ghost"
@@ -159,14 +159,14 @@ export default function FrameGridRow({
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Enter grid name"
+            placeholder="Enter collection name"
             className="h-7 text-xs py-0 px-2"
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
           <span className="text-primary text-xs">
-            {framegrid.name || (
-              <span className="italic text-secondary">Unnamed Grid</span>
+            {collection.name || (
+              <span className="italic text-secondary">Unnamed Collection</span>
             )}
           </span>
         )}
@@ -184,7 +184,7 @@ export default function FrameGridRow({
           />
         ) : (
           <span className="text-xs text-muted-foreground">
-            {framegrid.description || (
+            {collection.description || (
               <span className="italic text-muted-foreground">
                 No description provided
               </span>
@@ -197,7 +197,7 @@ export default function FrameGridRow({
       <TableCell className="text-xs py-2">
         <div className="flex items-center text-muted-foreground">
           <CalendarIcon className="h-3 w-3 mr-1 text-muted-foreground" />
-          {formatDate(framegrid.created_at)}
+          {formatDate(collection.created_at)}
         </div>
       </TableCell>
 
@@ -232,9 +232,9 @@ export default function FrameGridRow({
               className="h-7 w-7 text-secondary group-hover:text-accent-foreground"
               onClick={(e) => {
                 e.stopPropagation();
-                openFrameGrid();
+                openCollection();
               }}
-              title="Open frame grid"
+              title="Open collection"
             >
               <ExternalLinkIcon className="h-3.5 w-3.5" />
             </Button> */}
@@ -246,7 +246,7 @@ export default function FrameGridRow({
                   className="h-auto w-auto text-muted-foreground group-hover:text-blue-text p-0"
                   onClick={startEditing}
                   disabled={!hasWritePermission}
-                  title="Edit frame grid"
+                  title="Edit collection"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
@@ -256,7 +256,7 @@ export default function FrameGridRow({
                   className="h-auto w-auto text-muted-foreground group-hover:text-red-text p-0"
                   disabled={!hasAdminPermission}
                   onClick={triggerDelete}
-                  title="Delete frame grid"
+                  title="Delete collection"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

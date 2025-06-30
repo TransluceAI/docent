@@ -130,12 +130,12 @@ export const requestDiffsReport = createAsyncThunk(
     { dispatch, getState }
   ) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
-    if (!frameGridId) {
-      throw new Error('No frame grid ID available');
+    const collectionId = state.collection.collectionId;
+    if (!collectionId) {
+      throw new Error('No collection ID available');
     }
     const response = await apiRestClient.get(
-      `/${frameGridId}/diffs_reports/${diffsReportId}`
+      `/${collectionId}/diffs_reports/${diffsReportId}`
     );
     const { id, name, experiment_id_1, experiment_id_2, diffs } = response.data;
     const diffReport = {
@@ -175,26 +175,26 @@ export const requestDiffs = createAsyncThunk(
       // Set the UI loading state
       dispatch(setDiffLoadingProgress([0, 0]));
 
-      // Get the frame grid ID from the state
+      // Get the collection ID from the state
       const state = getState() as RootState;
-      const frameGridId = state.frame.frameGridId;
+      const collectionId = state.collection.collectionId;
 
-      if (!frameGridId) {
+      if (!collectionId) {
         dispatch(
           setToastNotification({
             title: 'Configuration error',
-            description: 'No frame grid ID available',
+            description: 'No collection ID available',
             variant: 'destructive',
           })
         );
-        throw new Error('No frame grid ID available');
+        throw new Error('No collection ID available');
       }
 
       // Start the compute diffs job
       const response = await apiRestClient.post(
-        `/${frameGridId}/start_compute_diffs`,
+        `/${collectionId}/start_compute_diffs`,
         {
-          fg_id: frameGridId,
+          collection_id: collectionId,
           experiment_id_1: experimentId1,
           experiment_id_2: experimentId2,
         }
@@ -209,7 +209,7 @@ export const requestDiffs = createAsyncThunk(
 
       // Set up event source to listen for streaming updates using sseService
       const { onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/listen_compute_diffs?job_id=${job_id}`,
+        `/rest/${collectionId}/listen_compute_diffs?job_id=${job_id}`,
         (data: StreamedDiffs) => {
           dispatch(handleDiffsUpdate(data));
         },
@@ -257,12 +257,12 @@ export const requestDiffClusters = createAsyncThunk(
       throw new Error('No diffs report available');
     }
     const { experiment_id_1, experiment_id_2 } = diffsReport;
-    // Get the frame grid ID from the state
-    const frameGridId = state.frame.frameGridId;
+    // Get the collection ID from the state
+    const collectionId = state.collection.collectionId;
 
     try {
-      if (!frameGridId) {
-        throw new Error('No frame grid ID available');
+      if (!collectionId) {
+        throw new Error('No collection ID available');
       }
 
       // Cancel any previous cluster requests
@@ -270,7 +270,7 @@ export const requestDiffClusters = createAsyncThunk(
 
       // Start the cluster dimension job
       const response = await apiRestClient.post(
-        `/${frameGridId}/compute_diff_clusters`,
+        `/${collectionId}/compute_diff_clusters`,
         {
           diffs_report_id: diffsReportId,
         }
@@ -338,12 +338,12 @@ export const requestTranscriptDiff = createAsyncThunk(
     { dispatch, getState }
   ) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
-    if (!frameGridId) {
-      throw new Error('No frame grid ID available');
+    const collectionId = state.collection.collectionId;
+    if (!collectionId) {
+      throw new Error('No collection ID available');
     }
     const response = await apiRestClient.get(
-      `/${frameGridId}/transcript_diff?agent_run_1_id=${agentRun1Id}&agent_run_2_id=${agentRun2Id}`
+      `/${collectionId}/transcript_diff?agent_run_1_id=${agentRun1Id}&agent_run_2_id=${agentRun2Id}`
     );
     const diff = response.data;
     if (diff) {

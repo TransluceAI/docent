@@ -14,12 +14,12 @@ const notifyConnectionStatusChange = (status: boolean) => {
 };
 
 // Keep track of the last connection parameters for reconnection
-let lastFrameGridId: string | null = null;
+let lastCollectionId: string | null = null;
 let lastViewId: string | null = null;
 
 /**
  * Ensure the websocket is connected. If it's closed, we try to reconnect
- * using the last successfully-used frameGridId and viewId. If we cannot reconnect we
+ * using the last successfully-used collectionId and viewId. If we cannot reconnect we
  * throw, allowing the caller (e.g. an axios interceptor) to surface the
  * error.
  */
@@ -28,7 +28,7 @@ export const ensureConnected = async (): Promise<void> => {
     return;
   }
 
-  if (!lastFrameGridId) {
+  if (!lastCollectionId) {
     // If we have never established a connection before, just return and let
     // the caller proceed. Some endpoints (e.g. fetching available eval IDs)
     // do not require an active websocket connection.
@@ -37,16 +37,16 @@ export const ensureConnected = async (): Promise<void> => {
 
   console.log(
     'Attempting to reconnect to',
-    lastFrameGridId,
+    lastCollectionId,
     'with view',
     lastViewId
   );
-  await initSocket(lastFrameGridId, lastViewId || undefined);
+  await initSocket(lastCollectionId, lastViewId || undefined);
 };
 
 // Initialize the WebSocket connection
 export const initSocket = (
-  frameGridId: string,
+  collectionId: string,
   viewId?: string
 ): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -58,19 +58,19 @@ export const initSocket = (
 
     const baseUrl = `${BASE_URL ? (BASE_URL.startsWith('https') ? 'wss' : 'ws') : 'ws'}://${(BASE_URL || '').replace(/^https?:\/\//, '')}`;
     const viewParam = viewId ? `?view_id=${viewId}` : '';
-    const ws = new WebSocket(`${baseUrl}/broker/${frameGridId}${viewParam}`);
+    const ws = new WebSocket(`${baseUrl}/broker/${collectionId}${viewParam}`);
 
     ws.onopen = () => {
       console.log(
-        'Redux socket connected to framegrid:',
-        frameGridId,
+        'Redux socket connected to collection:',
+        collectionId,
         'view:',
         viewId || 'none'
       );
       socket = ws;
       isConnected = true;
       notifyConnectionStatusChange(isConnected);
-      lastFrameGridId = frameGridId;
+      lastCollectionId = collectionId;
       lastViewId = viewId || null;
       resolve();
     };
@@ -159,7 +159,7 @@ export const closeSocket = (): void => {
   if (socket) {
     socket.close();
     socket = null;
-    lastFrameGridId = null;
+    lastCollectionId = null;
     lastViewId = null;
     isConnected = false;
     notifyConnectionStatusChange(false);

@@ -15,9 +15,9 @@ import sseService from '../services/sseService';
 import {
   SearchResultWithCitations,
   ComplexFilter,
-  FrameFilter,
+  CollectionFilter,
   PrimitiveFilter,
-} from '../types/frameTypes';
+} from '../types/collectionTypes';
 
 import { clearRegexSnippets } from './experimentViewerSlice';
 import { RootState } from './store';
@@ -75,15 +75,15 @@ export const requestRegexSnippetsIfExist = createAsyncThunk(
     { dispatch, getState }
   ) => {
     try {
-      const state = getState() as { frame: { frameGridId?: string } };
-      const frameGridId = state.frame.frameGridId;
+      const state = getState() as { collection: { collectionId?: string } };
+      const collectionId = state.collection.collectionId;
 
-      if (!frameGridId) {
-        throw new Error('No frame grid ID available');
+      if (!collectionId) {
+        throw new Error('No collection ID available');
       }
 
       const response = await apiRestClient.post(
-        `/${frameGridId}/get_regex_snippets`,
+        `/${collectionId}/get_regex_snippets`,
         {
           filter_id: filterId,
           agent_run_ids: agentRunIds,
@@ -133,14 +133,14 @@ export const computeSearch = createAsyncThunk(
       }
 
       // Send the request via REST API
-      const frameGridId = state.frame.frameGridId;
-      if (!frameGridId) {
-        throw new Error('No frame grid ID available');
+      const collectionId = state.collection.collectionId;
+      if (!collectionId) {
+        throw new Error('No collection ID available');
       }
 
       // Start the compute search job
       const response = await apiRestClient.post(
-        `/${frameGridId}/start_compute_search`,
+        `/${collectionId}/start_compute_search`,
         {
           search_query: searchQuery,
         }
@@ -153,7 +153,7 @@ export const computeSearch = createAsyncThunk(
 
       // Set up event source to listen for streaming updates using sseService
       const { onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/listen_compute_search?job_id=${jobId}${maxResults !== null ? `&max_results=${maxResults}` : ''}`,
+        `/rest/${collectionId}/listen_compute_search?job_id=${jobId}${maxResults !== null ? `&max_results=${maxResults}` : ''}`,
         (data: StreamedSearchResult) => {
           dispatch(handleSearchUpdate(data));
 
@@ -212,13 +212,13 @@ export const requestClusters = createAsyncThunk(
     payload: { searchQuery: string; feedback?: string; readOnly?: boolean },
     { dispatch, getState }
   ) => {
-    // Get the frame grid ID from the state
-    const state = getState() as { frame: { frameGridId?: string } };
-    const frameGridId = state.frame.frameGridId;
+    // Get the collection ID from the state
+    const state = getState() as { collection: { collectionId?: string } };
+    const collectionId = state.collection.collectionId;
 
     try {
-      if (!frameGridId) {
-        throw new Error('No frame grid ID available');
+      if (!collectionId) {
+        throw new Error('No collection ID available');
       }
 
       // Cancel any previous cluster requests
@@ -226,7 +226,7 @@ export const requestClusters = createAsyncThunk(
 
       // Start the cluster search results job
       const response = await apiRestClient.post(
-        `/${frameGridId}/start_cluster_search_results`,
+        `/${collectionId}/start_cluster_search_results`,
         {
           search_query: payload.searchQuery,
           feedback: payload.feedback,
@@ -239,7 +239,7 @@ export const requestClusters = createAsyncThunk(
 
       // Set up event source to listen for streaming updates using sseService
       const { onCancel } = sseService.createEventSource(
-        `/rest/${frameGridId}/listen_cluster_search_results?job_id=${jobId}`,
+        `/rest/${collectionId}/listen_cluster_search_results?job_id=${jobId}`,
         (data: StreamedSearchResultClusterAssignment[]) => {
           // As we get lists of assignments, we need to show them in the ClusterViewerUI
           // We need to update the state with the new assignments
@@ -333,22 +333,22 @@ export const cancelCurrentSearch = createAsyncThunk(
 export const updateBaseFilter = createAsyncThunk(
   'experimentViewer/updateBaseFilter',
   async (filter: ComplexFilter | undefined, { dispatch, getState }) => {
-    const state = getState() as { frame: { frameGridId?: string } };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: { collectionId?: string } };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/base_filter`, {
+      await apiRestClient.post(`/${collectionId}/base_filter`, {
         filter: filter ?? null,
       });
 
@@ -370,21 +370,21 @@ export const updateBaseFilter = createAsyncThunk(
 
 export const addBaseFilter = createAsyncThunk(
   'experimentViewer/addBaseFilter',
-  async (filter: FrameFilter, { dispatch }) => {
+  async (filter: CollectionFilter, { dispatch }) => {
     dispatch(addBaseFilters([filter]));
   }
 );
 
 export const addBaseFilters = createAsyncThunk(
   'experimentViewer/addBaseFilters',
-  async (filters: FrameFilter[], { dispatch, getState }) => {
+  async (filters: CollectionFilter[], { dispatch, getState }) => {
     const state = getState() as RootState;
 
     // Create new base filter with all filters added
-    const newBaseFilter: ComplexFilter = state.frame.baseFilter
+    const newBaseFilter: ComplexFilter = state.collection.baseFilter
       ? {
-          ...state.frame.baseFilter,
-          filters: [...state.frame.baseFilter.filters, ...filters],
+          ...state.collection.baseFilter,
+          filters: [...state.collection.baseFilter.filters, ...filters],
         }
       : {
           filters: [...filters],
@@ -411,7 +411,7 @@ export const addBaseFilters = createAsyncThunk(
         seenFilterKeys.add(filterKey);
       }
       return [filter, ...acc];
-    }, [] as FrameFilter[]);
+    }, [] as CollectionFilter[]);
 
     dispatch(updateBaseFilter(newBaseFilter));
   }
@@ -422,14 +422,14 @@ export const removeBaseFilter = createAsyncThunk(
   async (filterId: string, { dispatch, getState }) => {
     const state = getState() as RootState;
 
-    if (!state.frame.baseFilter) {
+    if (!state.collection.baseFilter) {
       return;
     }
 
     // Clone the current filter
     let newBaseFilter: ComplexFilter | undefined = {
-      ...state.frame.baseFilter,
-      filters: [...state.frame.baseFilter.filters],
+      ...state.collection.baseFilter,
+      filters: [...state.collection.baseFilter.filters],
     };
 
     // Remove the internal filter from the base filter
@@ -557,15 +557,15 @@ export const executeRawQuery = createAsyncThunk(
 export const getExistingClusters = createAsyncThunk(
   'experimentViewer/getExistingClusters',
   async (payload: { dimensionId: string }, { dispatch, getState }) => {
-    const state = getState() as { frame: { frameGridId?: string } };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: { collectionId?: string } };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
-      throw new Error('No frame grid ID available');
+    if (!collectionId) {
+      throw new Error('No collection ID available');
     }
 
     const response = await apiRestClient.get(
-      `/${frameGridId}/get_existing_clusters?dim_id=${payload.dimensionId}`
+      `/${collectionId}/get_existing_clusters?dim_id=${payload.dimensionId}`
     );
 
     return response.data;

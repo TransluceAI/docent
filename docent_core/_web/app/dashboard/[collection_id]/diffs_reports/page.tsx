@@ -13,12 +13,12 @@ export default function DiffReportPage() {
   const searchParams = useSearchParams();
   const diffsReportId = searchParams.get('diffsReportId');
   const dispatch = useDispatch<AppDispatch>();
-  const frameGridId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   React.useEffect(() => {
     if (diffsReportId) {
       dispatch(requestDiffsReport({ diffsReportId }));
     }
-  }, [diffsReportId, frameGridId, dispatch]);
+  }, [diffsReportId, collectionId, dispatch]);
   const diffReport = useAppSelector((state) => state.diff.diffsReport);
 
   return (

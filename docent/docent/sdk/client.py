@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class Docent:
     """Client for interacting with the Docent API.
 
-    This client provides methods for creating and managing FrameGrids,
+    This client provides methods for creating and managing Collections,
     dimensions, agent runs, and filters in the Docent system.
 
     Args:
@@ -64,32 +64,32 @@ class Docent:
         response.raise_for_status()
         logger.info(f"Successfully logged in as {self._email}")
 
-    def create_framegrid(
+    def create_collection(
         self,
-        fg_id: str | None = None,
+        collection_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
     ) -> str:
-        """Creates a new FrameGrid.
+        """Creates a new Collection.
 
-        Creates a new FrameGrid and sets up a default MECE dimension
+        Creates a new Collection and sets up a default MECE dimension
         for grouping on the homepage.
 
         Args:
-            fg_id: Optional ID for the new FrameGrid. If not provided, one will be generated.
-            name: Optional name for the FrameGrid.
-            description: Optional description for the FrameGrid.
+            collection_id: Optional ID for the new Collection. If not provided, one will be generated.
+            name: Optional name for the Collection.
+            description: Optional description for the Collection.
 
         Returns:
-            str: The ID of the created FrameGrid.
+            str: The ID of the created Collection.
 
         Raises:
-            ValueError: If the response is missing the FrameGrid ID.
+            ValueError: If the response is missing the Collection ID.
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._server_url}/create"
         payload = {
-            "fg_id": fg_id,
+            "collection_id": collection_id,
             "name": name,
             "description": description,
         }
@@ -98,44 +98,46 @@ class Docent:
         response.raise_for_status()
 
         response_data = response.json()
-        fg_id = response_data.get("fg_id")
-        if fg_id is None:
-            raise ValueError("Failed to create frame grid: 'fg_id' missing in response.")
+        collection_id = response_data.get("collection_id")
+        if collection_id is None:
+            raise ValueError("Failed to create collection: 'collection_id' missing in response.")
 
-        logger.info(f"Successfully created FrameGrid with id='{fg_id}'")
+        logger.info(f"Successfully created Collection with id='{collection_id}'")
 
         logger.info(
-            f"FrameGrid creation complete. Frontend available at: {self._web_url}/dashboard/{fg_id}"
+            f"Collection creation complete. Frontend available at: {self._web_url}/dashboard/{collection_id}"
         )
-        return fg_id
+        return collection_id
 
-    def set_io_bin_keys(self, fg_id: str, inner_bin_key: str | None, outer_bin_key: str | None):
-        """Set inner and outer bin keys for a frame grid."""
+    def set_io_bin_keys(
+        self, collection_id: str, inner_bin_key: str | None, outer_bin_key: str | None
+    ):
+        """Set inner and outer bin keys for a collection."""
         response = self._session.post(
-            f"{self._server_url}/{fg_id}/set_io_bin_keys",
+            f"{self._server_url}/{collection_id}/set_io_bin_keys",
             json={"inner_bin_key": inner_bin_key, "outer_bin_key": outer_bin_key},
         )
         response.raise_for_status()
 
-    def set_inner_bin_key(self, fg_id: str, dim: str):
-        """Set the inner bin key for a frame grid."""
-        current_io_bin_keys = self.get_io_bin_keys(fg_id)
+    def set_inner_bin_key(self, collection_id: str, dim: str):
+        """Set the inner bin key for a collection."""
+        current_io_bin_keys = self.get_io_bin_keys(collection_id)
         if current_io_bin_keys is None:
             current_io_bin_keys = (None, None)
-        self.set_io_bin_keys(fg_id, dim, current_io_bin_keys[1])  # Set inner, keep outer
+        self.set_io_bin_keys(collection_id, dim, current_io_bin_keys[1])  # Set inner, keep outer
 
-    def set_outer_bin_key(self, fg_id: str, dim: str):
-        """Set the outer bin key for a frame grid."""
-        current_io_bin_keys = self.get_io_bin_keys(fg_id)
+    def set_outer_bin_key(self, collection_id: str, dim: str):
+        """Set the outer bin key for a collection."""
+        current_io_bin_keys = self.get_io_bin_keys(collection_id)
         if current_io_bin_keys is None:
             current_io_bin_keys = (None, None)
-        self.set_io_bin_keys(fg_id, current_io_bin_keys[0], dim)  # Keep inner, set outer
+        self.set_io_bin_keys(collection_id, current_io_bin_keys[0], dim)  # Keep inner, set outer
 
-    def get_io_bin_keys(self, fg_id: str) -> tuple[str | None, str | None] | None:
-        """Gets the current inner and outer bin keys for a FrameGrid.
+    def get_io_bin_keys(self, collection_id: str) -> tuple[str | None, str | None] | None:
+        """Gets the current inner and outer bin keys for a Collection.
 
         Args:
-            fg_id: ID of the FrameGrid.
+            collection_id: ID of the Collection.
 
         Returns:
             tuple: (inner_bin_key | None, outer_bin_key | None)
@@ -143,20 +145,20 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{fg_id}/io_bin_keys"
+        url = f"{self._server_url}/{collection_id}/io_bin_keys"
         response = self._session.get(url)
         response.raise_for_status()
         data = response.json()
         return (data.get("inner_bin_key"), data.get("outer_bin_key"))
 
-    def add_agent_runs(self, fg_id: str, agent_runs: list[AgentRun]) -> dict[str, Any]:
-        """Adds agent runs to a FrameGrid.
+    def add_agent_runs(self, collection_id: str, agent_runs: list[AgentRun]) -> dict[str, Any]:
+        """Adds agent runs to a Collection.
 
         Agent runs represent execution traces that can be visualized and analyzed.
-        This method batches the insertion in groups of 5,000 for better performance.
+        This method batches the insertion in groups of 1,000 for better performance.
 
         Args:
-            fg_id: ID of the FrameGrid.
+            collection_id: ID of the Collection.
             agent_runs: List of AgentRun objects to add.
 
         Returns:
@@ -167,7 +169,7 @@ class Docent:
         """
         from tqdm import tqdm
 
-        url = f"{self._server_url}/{fg_id}/agent_runs"
+        url = f"{self._server_url}/{collection_id}/agent_runs"
         batch_size = 1000
         total_runs = len(agent_runs)
 
@@ -182,32 +184,34 @@ class Docent:
 
                 pbar.update(len(batch))
 
-        url = f"{self._server_url}/{fg_id}/compute_embeddings"
+        url = f"{self._server_url}/{collection_id}/compute_embeddings"
         response = self._session.post(url)
         response.raise_for_status()
 
-        logger.info(f"Successfully added {total_runs} agent runs to FrameGrid '{fg_id}'")
+        logger.info(f"Successfully added {total_runs} agent runs to Collection '{collection_id}'")
         return {"status": "success", "total_runs_added": total_runs}
 
-    def list_framegrids(self) -> list[dict[str, Any]]:
-        """Lists all available FrameGrids.
+    def list_collections(self) -> list[dict[str, Any]]:
+        """Lists all available Collections.
 
         Returns:
-            list: List of dictionaries containing FrameGrid information.
+            list: List of dictionaries containing Collection information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/framegrids"
+        url = f"{self._server_url}/collections"
         response = self._session.get(url)
         response.raise_for_status()
         return response.json()
 
-    def get_dimensions(self, fg_id: str, dim_ids: list[str] | None = None) -> list[dict[str, Any]]:
-        """Retrieves dimensions for a FrameGrid.
+    def get_dimensions(
+        self, collection_id: str, dim_ids: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Retrieves dimensions for a Collection.
 
         Args:
-            fg_id: ID of the FrameGrid.
+            collection_id: ID of the Collection.
             dim_ids: Optional list of dimension IDs to retrieve. If None, retrieves all dimensions.
 
         Returns:
@@ -216,7 +220,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{fg_id}/get_dimensions"
+        url = f"{self._server_url}/{collection_id}/get_dimensions"
         payload = {
             "dim_ids": dim_ids,
         }
@@ -225,14 +229,14 @@ class Docent:
         return response.json()
 
     def list_attribute_searches(
-        self, fg_id: str, base_data_only: bool = True
+        self, collection_id: str, base_data_only: bool = True
     ) -> list[dict[str, Any]]:
-        """Lists available attribute searches for a FrameGrid.
+        """Lists available attribute searches for a Collection.
 
-        Attribute searches allow finding frames with specific metadata attributes.
+        Attribute searches allow finding collections with specific metadata attributes.
 
         Args:
-            fg_id: ID of the FrameGrid.
+            collection_id: ID of the Collection.
             base_data_only: If True, returns only basic search information.
 
         Returns:
@@ -241,7 +245,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{fg_id}/attribute_searches"
+        url = f"{self._server_url}/{collection_id}/attribute_searches"
         params = {
             "base_data_only": base_data_only,
         }

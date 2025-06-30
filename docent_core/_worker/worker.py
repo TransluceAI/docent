@@ -16,7 +16,7 @@ from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import DBService
 from docent_core._env_util import ENV
-from docent_core._server._broker.redis_client import publish_framegrid_update
+from docent_core._server._broker.redis_client import publish_collection_update
 from docent_core._server._rest.send_state import publish_searches
 
 logger = get_logger(__name__)
@@ -59,7 +59,7 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
         nonlocal canceled
         try:
             async with db.advisory_lock(
-                view_ctx.fg_id + "__search__" + query.search_query,
+                view_ctx.collection_id + "__search__" + query.search_query,
                 action_id="mutation",
             ):
                 await db.compute_search(
@@ -111,7 +111,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
 
     Args:
         ctx: Worker context (unused but required by arq)
-        view_ctx: The view context containing frame grid information
+        view_ctx: The view context containing collection information
         job_id: The ID of the embedding job
     """
     logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
@@ -130,13 +130,13 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
     # Wait for any running embedding jobs
     while (
         await db.get_embedding_job_count(
-            view_ctx.fg_id,
+            view_ctx.collection_id,
             _where_clause=SQLAJob.status == JobStatus.RUNNING,
         )
         >= 1
     ):
         logger.info(
-            f"Job {job_id} waiting for existing embedding job to complete for fg_id {view_ctx.fg_id}"
+            f"Job {job_id} waiting for existing embedding job to complete for collection_id {view_ctx.collection_id}"
         )
         await asyncio.sleep(5)
 
@@ -158,8 +158,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         }
 
         # Send via websocket instead of Redis stream
-        await publish_framegrid_update(
-            view_ctx.fg_id,
+        await publish_collection_update(
+            view_ctx.collection_id,
             {"action": "embedding_progress", "payload": progress_data},
         )
 
@@ -175,7 +175,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         while not indexing_completed:
             await asyncio.sleep(1)
 
-            phase, percent = await db.get_indexing_progress(view_ctx.fg_id)
+            phase, percent = await db.get_indexing_progress(view_ctx.collection_id)
             if phase is None:
                 continue
 
@@ -186,8 +186,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
             }
 
             # Send via websocket instead of Redis stream
-            await publish_framegrid_update(
-                view_ctx.fg_id,
+            await publish_collection_update(
+                view_ctx.collection_id,
                 {"action": "embedding_progress", "payload": progress_data},
             )
 
@@ -201,7 +201,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         nonlocal embedding_completed, indexing_completed, errored
 
         try:
-            async with db.advisory_lock(view_ctx.fg_id, action_id="compute_embeddings"):
+            async with db.advisory_lock(view_ctx.collection_id, action_id="compute_embeddings"):
                 # Compute embeddings
                 embedding_status = await db.compute_embeddings(view_ctx, _progress_callback)
 
@@ -223,8 +223,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                     "indexing_progress": 0,
                 }
                 # Send via websocket instead of Redis stream
-                await publish_framegrid_update(
-                    view_ctx.fg_id,
+                await publish_collection_update(
+                    view_ctx.collection_id,
                     {"action": "embedding_progress", "payload": progress_data},
                 )
 
@@ -247,8 +247,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                     logger.highlight(f"Job {job_id} finished", color="green")
                     await db.set_job_status(job_id, JobStatus.COMPLETED)
                     # Send completion message via websocket
-                    await publish_framegrid_update(
-                        view_ctx.fg_id,
+                    await publish_collection_update(
+                        view_ctx.collection_id,
                         {"action": "embedding_complete", "payload": {}},
                     )
 

@@ -2,7 +2,7 @@ import { BASE_DOCENT_PATH } from '@/app/constants';
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 export const getAgentRunUrl = (
-  fgId: string,
+  collectionId: string,
   agentRunId: string,
   transcriptIdx?: number,
   blockIdx?: number,
@@ -11,7 +11,7 @@ export const getAgentRunUrl = (
   searchQuery?: string
 ) => {
   const prefix =
-    `${BASE_DOCENT_PATH}/${fgId}/` +
+    `${BASE_DOCENT_PATH}/${collectionId}/` +
     (paired ? 'paired_transcript' : 'agent_run') +
     `/${agentRunId}`;
   const params = new URLSearchParams();
@@ -42,19 +42,19 @@ export const navToAgentRun = (
   agentRunId: string,
   transcriptIdx?: number,
   blockIdx?: number,
-  frameGridId?: string,
+  collectionId?: string,
   searchQuery?: string
 ) => {
   e.stopPropagation();
-  if (!frameGridId) {
-    console.error('frameGridId is required');
+  if (!collectionId) {
+    console.error('collectionId is required');
     return;
   }
 
   if (e.metaKey || e.ctrlKey || e.button === 1) {
     // Open in new tab
     const url = getAgentRunUrl(
-      frameGridId,
+      collectionId,
       agentRunId,
       transcriptIdx,
       blockIdx,
@@ -66,7 +66,7 @@ export const navToAgentRun = (
   } else if (e.button === 0) {
     // Open in same tab
     const url = getAgentRunUrl(
-      frameGridId,
+      collectionId,
       agentRunId,
       transcriptIdx,
       blockIdx,

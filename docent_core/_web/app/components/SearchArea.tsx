@@ -27,7 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 
-import { deleteSearch } from '../store/frameSlice';
+import { deleteSearch } from '../store/collectionSlice';
 import { useAppDispatch } from '../store/hooks';
 import {
   clearSearch,
@@ -42,7 +42,7 @@ import { RootState } from '../store/store';
 import ClusterViewer from './ClusterViewer';
 import { ProgressBar } from './ProgressBar';
 import { apiRestClient } from '../services/apiService';
-import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { copyToClipboard } from '@/lib/utils';
 
 // Preset search queries with custom icons
@@ -78,8 +78,8 @@ const SearchArea = () => {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const { frameGridId, dimensionsMap } = useSelector(
-    (state: RootState) => state.frame
+  const { collectionId, dimensionsMap } = useSelector(
+    (state: RootState) => state.collection
   );
   const {
     curSearchQuery,
@@ -272,7 +272,7 @@ const SearchArea = () => {
     setPlaceholderText(DEFAULT_PLACEHOLDER_TEXT);
   };
 
-  const hasWritePermission = useHasFramegridWritePermission();
+  const hasWritePermission = useHasCollectionWritePermission();
 
   const handleMaxResultsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -289,7 +289,7 @@ const SearchArea = () => {
    * Handle share button
    */
   const handleShare = async (searchQuery: string) => {
-    const response = await apiRestClient.post(`/${frameGridId}/clone_own_view`);
+    const response = await apiRestClient.post(`/${collectionId}/clone_own_view`);
     const success = await copyToClipboard(
       `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&searchQuery=${encodeURIComponent(searchQuery)}`
     );

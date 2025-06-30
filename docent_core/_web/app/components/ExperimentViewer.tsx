@@ -22,7 +22,7 @@ import GraphArea from './GraphArea';
 import TableArea from './TableArea';
 import AgentRunCard from './AgentRunCard';
 
-import { getAgentRunMetadata } from '../store/frameSlice';
+import { getAgentRunMetadata } from '../store/collectionSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
@@ -35,8 +35,8 @@ export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
 
   // Get all state at the top level
-  const { innerBinKey, outerBinKey, frameGridId } = useAppSelector(
-    (state) => state.frame
+  const { innerBinKey, outerBinKey, collectionId } = useAppSelector(
+    (state) => state.collection
   );
 
   const {
@@ -127,7 +127,7 @@ export default function ExperimentViewer() {
 
   // When the page changes, request metadata for the new page
   useEffect(() => {
-    if (!frameGridId || !currentPageItems.length) return;
+    if (!collectionId || !currentPageItems.length) return;
 
     // Only fetch metadata for agent run IDs that haven't been fetched before
     const agentRunIdsToFetch = currentPageItems.filter(
@@ -140,7 +140,7 @@ export default function ExperimentViewer() {
     agentRunIdsToFetch.forEach((id) => fetchedAgentRunIdsRef.current.add(id));
 
     dispatch(getAgentRunMetadata(agentRunIdsToFetch));
-  }, [currentPageItems, dispatch, frameGridId]);
+  }, [currentPageItems, dispatch, collectionId]);
 
   // Clear fetched IDs when the overall agent run list changes
   useEffect(() => {

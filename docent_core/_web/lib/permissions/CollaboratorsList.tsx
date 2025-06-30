@@ -15,8 +15,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
 import {
-  useHasFramegridAdminPermission,
-  useHasFramegridWritePermission,
+  useHasCollectionAdminPermission,
+  useHasCollectionWritePermission,
 } from './hooks';
 
 // Types matching ShareViewPopover
@@ -53,13 +53,13 @@ interface CollaboratorRowProps {
 const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [removeCollaborator] = useRemoveCollaboratorMutation();
-  const hasWritePermission = useHasFramegridWritePermission();
-  const hasAdminPermission = useHasFramegridAdminPermission();
+  const hasWritePermission = useHasCollectionWritePermission();
+  const hasAdminPermission = useHasCollectionAdminPermission();
   const onPermissionChange = (newPermission: PermissionLevel) => {
     upsertCollaborator({
       subject_id: collaborator.subject_id,
       subject_type: collaborator.subject_type,
-      framegrid_id: collaborator.framegrid_id,
+      collection_id: collaborator.collection_id,
       permission_level: newPermission,
     });
   };
@@ -126,7 +126,7 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
             removeCollaborator({
               subject_id: collaborator.subject_id,
               subject_type: collaborator.subject_type,
-              framegrid_id: collaborator.framegrid_id,
+              collection_id: collaborator.collection_id,
             })
           }
         >
@@ -139,13 +139,13 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
 
 // Main CollaboratorsList Component
 interface CollaboratorsListProps {
-  framegridId: string;
+  collectionId: string;
 }
 
-const CollaboratorsList = ({ framegridId }: CollaboratorsListProps) => {
+const CollaboratorsList = ({ collectionId }: CollaboratorsListProps) => {
   const { user: currentUser } = useRequireUserContext();
   const { userCollaborators, orgCollaborators } = useGetCollaboratorsQuery(
-    framegridId,
+    collectionId,
     {
       selectFromResult: (result) => {
         return {
@@ -177,13 +177,13 @@ const CollaboratorsList = ({ framegridId }: CollaboratorsListProps) => {
 
       {userCollaborators.map((collaborator) => (
         <CollaboratorRow
-          key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.framegrid_id}`}
+          key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.collection_id}`}
           collaborator={collaborator}
         />
       ))}
       {orgCollaborators.map((collaborator) => (
         <CollaboratorRow
-          key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.framegrid_id}`}
+          key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.collection_id}`}
           collaborator={collaborator}
         />
       ))}

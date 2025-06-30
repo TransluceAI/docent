@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 
 import searchReducer from './searchSlice';
 import experimentViewerReducer from './experimentViewerSlice';
-import frameReducer from './frameSlice';
+import collectionReducer from './collectionSlice';
 import toastReducer from './toastSlice';
 import transcriptReducer from './transcriptSlice';
 import { diffReducer } from './diffSlice';
@@ -33,7 +33,7 @@ const store = configureStore({
     search: searchReducer,
     embed: embedReducer,
     diff: diffReducer,
-    frame: frameReducer,
+    collection: collectionReducer,
     transcript: transcriptReducer,
     toast: toastReducer,
     [collabApi.reducerPath]: collabApi.reducer,

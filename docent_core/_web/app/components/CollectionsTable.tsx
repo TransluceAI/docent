@@ -3,7 +3,7 @@
 import { Layers, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { FrameGrid } from '@/app/types/frameTypes';
+import { Collection } from '@/app/types/collectionTypes';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,41 +21,41 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import { deleteFrameGrid, fetchFrameGrids } from '../store/frameSlice';
+import { deleteCollection, fetchCollections } from '../store/collectionSlice';
 import { useAppDispatch } from '../store/hooks';
 
-import FrameGridRow from './FrameGridRow';
+import CollectionRow from './CollectionRow';
 
-interface FrameGridsTableProps {
-  frameGrids?: FrameGrid[];
+interface CollectionsTableProps {
+  collections?: Collection[];
   isLoading: boolean;
 }
 
-export function FrameGridsTable({
-  frameGrids,
+export function CollectionsTable({
+  collections,
   isLoading,
-}: FrameGridsTableProps) {
+}: CollectionsTableProps) {
   const dispatch = useAppDispatch();
 
   // Delete dialog state – kept here so multiple rows can reuse shared dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deletingGrid, setDeletingGrid] = useState<FrameGrid | null>(null);
+  const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
 
-  const openDeleteDialog = (grid: FrameGrid) => {
-    setDeletingGrid(grid);
+  const openDeleteDialog = (collection: Collection) => {
+    setDeletingCollection(collection);
     setIsDeleteDialogOpen(true);
   };
 
-  const handleDeleteFrameGrid = () => {
-    if (!deletingGrid) return;
+  const handleDeleteCollection = () => {
+    if (!deletingCollection) return;
 
-    dispatch(deleteFrameGrid(deletingGrid.id)).then(() => {
-      dispatch(fetchFrameGrids());
+    dispatch(deleteCollection(deletingCollection.id)).then(() => {
+      dispatch(fetchCollections());
     });
     setIsDeleteDialogOpen(false);
   };
 
-  if (isLoading || !frameGrids) {
+  if (isLoading || !collections) {
     return (
       <div className="flex-1 flex items-center justify-center h-full min-h-[200px]">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -63,17 +63,17 @@ export function FrameGridsTable({
     );
   }
 
-  if (frameGrids.length === 0) {
+  if (collections.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 px-3 text-center">
         <div className="bg-secondary p-3 rounded-full mb-3">
-          <Layers className="h-7 w-7 text-secondary" />
+          <Layers className="h-7 w-7 text-primary" />
         </div>
         <h3 className="text-sm font-medium text-primary mb-1">
-          No frame grids available
+          No collections available
         </h3>
         <p className="text-xs text-muted-foreground max-w-md">
-          No frame grids have been created yet. Create a new frame grid to get
+          No collections have been created yet. Create a new collection to get
           started.
         </p>
       </div>
@@ -103,10 +103,10 @@ export function FrameGridsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {frameGrids.map((grid) => (
-            <FrameGridRow
-              key={grid.id}
-              framegrid={grid}
+          {collections.map((collection) => (
+            <CollectionRow
+              key={collection.id}
+              collection={collection}
               onDelete={openDeleteDialog}
             />
           ))}
@@ -117,23 +117,23 @@ export function FrameGridsTable({
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Frame Grid</DialogTitle>
+            <DialogTitle>Delete Collection</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this frame grid? This action
+              Are you sure you want to delete this collection? This action
               cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            {deletingGrid && (
+            {deletingCollection && (
               <div className="flex flex-col space-y-2 bg-secondary p-3 rounded-md">
                 <div className="text-sm font-medium">
-                  {deletingGrid.name || 'Unnamed Grid'}
+                  {deletingCollection.name || 'Unnamed Collection'}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {deletingGrid.description || 'No description'}
+                  {deletingCollection.description || 'No description'}
                 </div>
                 <div className="text-xs font-mono text-secondary">
-                  ID: {deletingGrid.id}
+                  ID: {deletingCollection.id}
                 </div>
               </div>
             )}
@@ -145,7 +145,7 @@ export function FrameGridsTable({
             >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDeleteFrameGrid}>
+            <Button variant="destructive" onClick={handleDeleteCollection}>
               Delete
             </Button>
           </DialogFooter>

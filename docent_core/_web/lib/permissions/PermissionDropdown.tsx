@@ -7,8 +7,8 @@ import {
 } from '@/components/ui/select';
 import { PermissionLevel } from './types';
 import {
-  useHasFramegridAdminPermission,
-  useHasFramegridWritePermission,
+  useHasCollectionAdminPermission,
+  useHasCollectionWritePermission,
 } from './hooks';
 
 // Permission Dropdown Component
@@ -18,8 +18,8 @@ interface PermissionDropdownProps {
 }
 
 const PermissionDropdown = ({ value, onChange }: PermissionDropdownProps) => {
-  const hasWritePermission = useHasFramegridWritePermission();
-  const hasAdminPermission = useHasFramegridAdminPermission();
+  const hasWritePermission = useHasCollectionWritePermission();
+  const hasAdminPermission = useHasCollectionAdminPermission();
   const permissionLabels = {
     none: 'No access',
     read: 'Can view',
@@ -30,7 +30,7 @@ const PermissionDropdown = ({ value, onChange }: PermissionDropdownProps) => {
   const permissionDescriptions = {
     read: 'View runs and searches',
     write: 'Add/remove runs and perform searches',
-    admin: 'Manage sharing and delete the framegrid',
+    admin: 'Manage sharing and delete the collection',
   };
 
   return (

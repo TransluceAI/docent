@@ -15,7 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import { RootState } from '../store/store';
 import { ProgressBar } from './ProgressBar';
 import { apiRestClient } from '../services/apiService';
-import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { cn } from '@/lib/utils';
 
 const EmbeddingsPopover: React.FC = () => {
@@ -24,11 +24,11 @@ const EmbeddingsPopover: React.FC = () => {
   const [isQueued, setIsQueued] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
-  const { frameGridId } = useSelector((state: RootState) => state.frame);
+  const { collectionId } = useSelector((state: RootState) => state.collection);
   const { embeddingProgress, isListening: isListeningToEmbeddings } =
     useSelector((state: RootState) => state.embed);
 
-  const hasWritePermission = useHasFramegridWritePermission();
+  const hasWritePermission = useHasCollectionWritePermission();
 
   // Derived states for cleaner logic
   const isEmbeddingInProgress = embeddingProgress && isListeningToEmbeddings;
@@ -41,12 +41,12 @@ const EmbeddingsPopover: React.FC = () => {
 
   // Check embeddings status
   const checkEmbeddingsStatus = async () => {
-    if (!frameGridId) return;
+    if (!collectionId) return;
 
     try {
       const [embeddingsResponse, queuedResponse] = await Promise.all([
-        apiRestClient.post(`/${frameGridId}/fg_has_embeddings`),
-        apiRestClient.post(`/${frameGridId}/has_embedding_job`),
+        apiRestClient.post(`/${collectionId}/fg_has_embeddings`),
+        apiRestClient.post(`/${collectionId}/has_embedding_job`),
       ]);
 
       setHasEmbeddings(embeddingsResponse.data);
@@ -67,10 +67,10 @@ const EmbeddingsPopover: React.FC = () => {
     }
   };
 
-  // Check status on mount and when frameGridId changes
+  // Check status on mount and when collectionId changes
   useEffect(() => {
     checkEmbeddingsStatus();
-  }, [frameGridId]);
+  }, [collectionId]);
 
   // Track previous value of isListeningToEmbeddings to detect transitions
   const prevIsListeningToEmbeddings = useRef(isListeningToEmbeddings);
@@ -100,11 +100,11 @@ const EmbeddingsPopover: React.FC = () => {
   }, [isEmbeddingInProgress, isQueued]);
 
   const handleRecomputeEmbeddings = async () => {
-    if (!canComputeEmbeddings || !frameGridId) return;
+    if (!canComputeEmbeddings || !collectionId) return;
 
     setIsLoading(true);
     try {
-      await apiRestClient.post(`/${frameGridId}/compute_embeddings`);
+      await apiRestClient.post(`/${collectionId}/compute_embeddings`);
 
       // Update states to reflect new computation
       setHasEmbeddings(false);

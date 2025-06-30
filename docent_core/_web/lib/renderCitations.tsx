@@ -9,7 +9,7 @@ export const renderTextWithCitations = (
   router: AppRouterInstance,
   window: Window,
   searchQuery?: string,
-  frameGridId?: string
+  collectionId?: string
 ) => {
   if (!citations.length) {
     return text;
@@ -47,7 +47,7 @@ export const renderTextWithCitations = (
             dataId,
             citation.transcript_idx ?? undefined,
             citation.block_idx,
-            frameGridId,
+            collectionId,
             searchQuery
           );
         }}

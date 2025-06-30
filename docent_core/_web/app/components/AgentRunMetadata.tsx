@@ -13,7 +13,7 @@ type Props = {
 
 export function AgentRunMetadata({ agentRunId }: Props) {
   const metadata = useAppSelector(
-    (state: RootState) => state.frame.agentRunMetadata?.[agentRunId]
+    (state: RootState) => state.collection.agentRunMetadata?.[agentRunId]
   );
 
   if (!metadata) {

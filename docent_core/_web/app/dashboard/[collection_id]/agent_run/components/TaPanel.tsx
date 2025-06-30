@@ -361,7 +361,7 @@ export default function TaPanel({ onShowAgentRun }: TaPanelProps) {
                 placeholder={
                   taSessionId
                     ? 'Enter a question...'
-                    : 'Apply a base frame to start chatting...'
+                    : 'Apply a base collection to start chatting...'
                 }
                 className="rounded-md border bg-secondary resize-none shadow-none focus-visible:ring-0 max-h-64 overflow-y-auto pr-12"
                 value={inputValue}

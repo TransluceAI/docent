@@ -22,7 +22,7 @@ type Props = {
 };
 const useHandleShowAgentRun = () => {
   const router = useRouter();
-  const fgId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
 
   const handleShowAgentRun = useCallback(
     (
@@ -33,7 +33,7 @@ const useHandleShowAgentRun = () => {
     ) => {
       console.log('PARAMS', agentRunId, blockIdx, blockIdx2, paired);
       let prefix =
-        `${BASE_DOCENT_PATH}/${fgId}/` +
+        `${BASE_DOCENT_PATH}/${collectionId}/` +
         (paired ? 'paired_transcript' : 'transcript') +
         `/${agentRunId}`;
       if (blockIdx != undefined) {
@@ -45,7 +45,7 @@ const useHandleShowAgentRun = () => {
       console.log('PUSHING', prefix);
       router.push(prefix);
     },
-    [router, fgId]
+    [router, collectionId]
   );
 
   return handleShowAgentRun;
@@ -104,7 +104,7 @@ const AgentMetadataSummary = ({
   agentLabel,
 }: AgentMetadataSummaryProps) => {
   const agentRunMetadata = useAppSelector(
-    (state) => state.frame.agentRunMetadata
+    (state) => state.collection.agentRunMetadata
   );
   const meta = agentRunMetadata?.[agentRunId];
   const [showDetails, setShowDetails] = useState(false);
@@ -209,7 +209,7 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
   const [expanded, setExpanded] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const handleShowAgentRun = useHandleShowAgentRun();
-  const fgId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const router = useRouter();
 
   return (
@@ -269,7 +269,7 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link
-                  href={`${BASE_DOCENT_PATH}/${fgId}/paired_transcript/${transcriptDiff.agent_run_1_id}___${transcriptDiff.agent_run_2_id}?block_id=0&block_id_2=0&claim_id=${claim.id}`}
+                  href={`${BASE_DOCENT_PATH}/${collectionId}/paired_transcript/${transcriptDiff.agent_run_1_id}___${transcriptDiff.agent_run_2_id}?block_id=0&block_id_2=0&claim_id=${claim.id}`}
                   className={cn(
                     'ml-2 p-1 rounded-full',
                     'hover:bg-accent',
@@ -349,7 +349,7 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
                     text={claim.evidence_with_citations.evidence}
                     citations={claim.evidence_with_citations.citations || []}
                     onCitationClick={(citation) => {
-                      const url = `${BASE_DOCENT_PATH}/${fgId}/paired_transcript/${transcriptDiff.agent_run_1_id}___${transcriptDiff.agent_run_2_id}?block_id=${citation.block_idx}${citation.transcript_idx === 1 ? `&block_id_2=${citation.block_idx}` : ''}&claim_id=${claim.id}`;
+                      const url = `${BASE_DOCENT_PATH}/${collectionId}/paired_transcript/${transcriptDiff.agent_run_1_id}___${transcriptDiff.agent_run_2_id}?block_id=${citation.block_idx}${citation.transcript_idx === 1 ? `&block_id_2=${citation.block_idx}` : ''}&claim_id=${claim.id}`;
                       router.push(url);
                     }}
                   />

@@ -28,22 +28,22 @@ Search results are persisted and shareable: you can click the share button on bo
 
 ### Retrieving search results from the SDK
 
-The Python SDK exposes search results via `get_search_results_for_id`, given a FrameGrid ID (`fg_id`) and Dimension ID (`dim_id`).
+The Python SDK exposes search results via `get_search_results_for_id`, given a Collection ID (`collection_id`) and Dimension ID (`dim_id`).
 
 ```python
-results = client.get_search_results_for_id(fg_id, dim_id)
+results = client.get_search_results_for_id(collection_id, dim_id)
 ```
 
-If you aren't sure which `fg_id` and `dim_id` to use, you can call `client.list_framegrids()` to find the right FrameGrid, then use `client.list_attribute_searches(fg_id)` to find the right `dim_id` corresponding to your search.
+If you aren't sure which `collection_id` and `dim_id` to use, you can call `client.list_framegrids()` to find the right Collection, then use `client.list_attribute_searches(collection_id)` to find the right `dim_id` corresponding to your search.
 
 ```python
-# Find the right FrameGrid
+# Find the right Collection
 framegrids = client.list_framegrids()
 print(framegrids)
-fg_id = framegrids[0]["id"]  # An arbitrary FrameGrid
+collection_id = framegrids[0]["id"]  # An arbitrary Collection
 
 # Find the right dim_id
-searches = client.list_attribute_searches(fg_id)
+searches = client.list_attribute_searches(collection_id)
 print(searches)
 dim_id = searches[0]["dim_id"]  # An arbitrary Dimension
 ```

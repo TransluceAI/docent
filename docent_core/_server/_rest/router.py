@@ -29,7 +29,7 @@ from docent_core._db_service.schemas.auth_models import (
     SubjectType,
     User,
 )
-from docent_core._db_service.schemas.collab_models import FramegridCollaborator
+from docent_core._db_service.schemas.collab_models import CollectionCollaborator
 from docent_core._db_service.schemas.tables import (
     EndpointType,
     JobStatus,
@@ -60,9 +60,9 @@ from docent_core._server._broker.redis_client import (
     enqueue_search_job,
     publish_to_broker,
 )
-from docent_core._server._dependencies.database import get_db, require_fg_exists
+from docent_core._server._dependencies.database import get_db, require_collection_exists
 from docent_core._server._dependencies.permissions import (
-    require_fg_permission,
+    require_collection_permission,
     require_view_permission,
 )
 from docent_core._server._dependencies.user import (
@@ -71,7 +71,7 @@ from docent_core._server._dependencies.user import (
     get_user_anonymous_ok,
 )
 from docent_core._server._rest.send_state import (
-    publish_framegrids,
+    publish_collections,
     publish_homepage_state,
     publish_searches,
 )
@@ -262,90 +262,93 @@ async def logout(request: Request, response: Response):
 
 
 #############
-# Framegrid #
+# Collection #
 #############
 
 
-@user_router.get("/framegrids")
-async def get_framegrids(
+@user_router.get("/collections")
+async def get_collections(
     user: User = Depends(get_user_anonymous_ok), db: DBService = Depends(get_db)
 ):
-    sqla_fgs = await db.get_fgs(user)  # Filter to only the user's framegrids
+    sqla_collections = await db.get_collections(user)  # Filter to only the user's collections
     return [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
-        for obj in sqla_fgs
+        for obj in sqla_collections
         if await db.has_permission(
             user,
-            resource_type=ResourceType.FRAME_GRID,
+            resource_type=ResourceType.COLLECTION,
             resource_id=obj.id,
             permission=Permission.READ,
         )
     ]
 
 
-class CreateFrameGridRequest(BaseModel):
-    fg_id: str | None = None
+class CreateCollectionRequest(BaseModel):
+    collection_id: str | None = None
     name: str | None = None
     description: str | None = None
 
 
 @user_router.post("/create")
-async def create_fg(
-    request: CreateFrameGridRequest = CreateFrameGridRequest(),
+async def create_collection(
+    request: CreateCollectionRequest = CreateCollectionRequest(),
     user: User = Depends(get_authenticated_user),
     db: DBService = Depends(get_db),
 ):
-    fg_id = await db.create_fg(
-        user=user, fg_id=request.fg_id, name=request.name, description=request.description
+    collection_id = await db.create_collection(
+        user=user,
+        collection_id=request.collection_id,
+        name=request.name,
+        description=request.description,
     )
-    # Publish updated framegrids list to all clients
-    await publish_framegrids(db)
+    # Publish updated collections list to all clients
+    await publish_collections(db)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.CREATE_FG, user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.CREATE_FG, user, collection_id)
 
-    return {"fg_id": fg_id}
+    return {"collection_id": collection_id}
 
 
-class UpdateFrameGridRequest(BaseModel):
+class UpdateCollectionRequest(BaseModel):
     name: str | None = None
     description: str | None = None
 
 
-@user_router.put("/{fg_id}/framegrid")
-async def update_framegrid(
-    fg_id: str,
-    request: UpdateFrameGridRequest,
+@user_router.put("/{collection_id}/collection")
+async def update_collection(
+    collection_id: str,
+    request: UpdateCollectionRequest,
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
-    await db.update_framegrid(fg_id, name=request.name, description=request.description)
+    await db.update_collection(collection_id, name=request.name, description=request.description)
 
-    # Publish updated framegrids list to all clients
-    await publish_framegrids(db)
+    # Publish updated collections list to all clients
+    await publish_collections(db)
 
-    return {"fg_id": fg_id}
+    return {"collection_id": collection_id}
 
 
-@user_router.delete("/{fg_id}/framegrid")
-async def delete_framegrid(
-    fg_id: str,
+@user_router.delete("/{collection_id}/collection")
+async def delete_collection(
+    collection_id: str,
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.ADMIN)),
+    _: None = Depends(require_collection_permission(Permission.ADMIN)),
 ):
-    await db.delete_fg(fg_id)
-    # Notify about the specific deleted framegrid
+    await db.delete_collection(collection_id)
+    # Notify about the specific deleted collection
     await publish_to_broker(
         None,  # Broadcast to all connections
         {
-            "action": "framegrid_deleted",
-            "payload": {"fg_id": fg_id},
+            "action": "collection_deleted",
+            "payload": {"collection_id": collection_id},
         },
     )
-    # Also publish the updated list of framegrids
-    await publish_framegrids(db)
-    return {"status": "success", "fg_id": fg_id}
+    # Also publish the updated list of collections
+    await publish_collections(db)
+    return {"status": "success", "collection_id": collection_id}
 
 
 ##############
@@ -353,7 +356,7 @@ async def delete_framegrid(
 ##############
 
 
-@user_router.get("/{fg_id}/agent_run_metadata_fields")
+@user_router.get("/{collection_id}/agent_run_metadata_fields")
 async def agent_run_metadata_fields(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -369,7 +372,7 @@ async def agent_run_metadata_fields(
     return {"fields": fields}
 
 
-@user_router.get("/{fg_id}/agent_run")
+@user_router.get("/{collection_id}/agent_run")
 async def get_agent_run(
     agent_run_id: str,
     db: DBService = Depends(get_db),
@@ -377,7 +380,7 @@ async def get_agent_run(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.GET_AGENT_RUN, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(db, EndpointType.GET_AGENT_RUN, ctx.user, ctx.collection_id)
 
     return await db.get_agent_run(ctx, agent_run_id)
 
@@ -386,7 +389,7 @@ class AgentRunMetadataRequest(BaseModel):
     agent_run_ids: list[str]
 
 
-@user_router.post("/{fg_id}/agent_run_metadata")
+@user_router.post("/{collection_id}/agent_run_metadata")
 async def get_agent_run_metadata(
     request: AgentRunMetadataRequest,
     db: DBService = Depends(get_db),
@@ -401,23 +404,23 @@ class PostAgentRunsRequest(BaseModel):
     agent_runs: list[AgentRunWithoutMetadataValidator]
 
 
-@user_router.post("/{fg_id}/agent_runs")
+@user_router.post("/{collection_id}/agent_runs")
 async def post_agent_runs(
-    fg_id: str,
+    collection_id: str,
     request: PostAgentRunsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
+    async with db.advisory_lock(collection_id, action_id="mutation"):
         await db.add_agent_runs(ctx, request.agent_runs)
 
         # Publish state of ALL views
-        for ctx in await db.get_all_view_ctxs(fg_id):
+        for ctx in await db.get_all_view_ctxs(collection_id):
             await publish_homepage_state(db, ctx)
 
     # Track analytics - we need to get the user from the context
-    await track_endpoint_with_user(db, EndpointType.POST_AGENT_RUNS, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.POST_AGENT_RUNS, ctx.user, collection_id)
 
 
 ########
@@ -425,20 +428,20 @@ async def post_agent_runs(
 ########
 
 
-@user_router.post("/{fg_id}/join")
+@user_router.post("/{collection_id}/join")
 async def join(
-    fg_id: str,
+    collection_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    if not await db.fg_exists(fg_id):
-        raise HTTPException(status_code=404, detail=f"Frame grid with ID {fg_id} not found")
+    if not await db.fg_exists(collection_id):
+        raise HTTPException(status_code=404, detail=f"Collection with ID {collection_id} not found")
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.JOIN, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.JOIN, ctx.user, collection_id)
 
-    return {"fg_id": fg_id, "view_id": ctx.view_id}
+    return {"collection_id": collection_id, "view_id": ctx.view_id}
 
 
 class SetIODimsRequest(BaseModel):
@@ -446,20 +449,20 @@ class SetIODimsRequest(BaseModel):
     outer_bin_key: str | None = None
 
 
-@user_router.post("/{fg_id}/set_io_bin_keys")
+@user_router.post("/{collection_id}/set_io_bin_keys")
 async def set_io_bin_keys(
-    fg_id: str,
+    collection_id: str,
     request: SetIODimsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
+    async with db.advisory_lock(collection_id, action_id="mutation"):
         await db.set_io_bin_keys(ctx, request.inner_bin_key, request.outer_bin_key)
         await publish_homepage_state(db, ctx)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.SET_IO_BIN_KEYS, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.SET_IO_BIN_KEYS, ctx.user, collection_id)
 
 
 class SetIODimWithMetadataKeyRequest(BaseModel):
@@ -467,21 +470,21 @@ class SetIODimWithMetadataKeyRequest(BaseModel):
     type: Literal["inner", "outer"]
 
 
-@user_router.post("/{fg_id}/io_bin_key_with_metadata_key")
+@user_router.post("/{collection_id}/io_bin_key_with_metadata_key")
 async def set_io_bin_key_with_metadata_key_endpoint(
-    fg_id: str,
+    collection_id: str,
     request: SetIODimWithMetadataKeyRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
+    async with db.advisory_lock(collection_id, action_id="mutation"):
         await db.set_io_bin_key_with_metadata_key(ctx, request.metadata_key, request.type)
         await publish_homepage_state(db, ctx)
 
     # Track analytics
     await track_endpoint_with_user(
-        db, EndpointType.SET_IO_BIN_KEY_WITH_METADATA_KEY, ctx.user, fg_id
+        db, EndpointType.SET_IO_BIN_KEY_WITH_METADATA_KEY, ctx.user, collection_id
     )
 
 
@@ -489,15 +492,15 @@ class PostBaseFilterRequest(BaseModel):
     filter: ComplexFilter | None
 
 
-@user_router.post("/{fg_id}/base_filter")
+@user_router.post("/{collection_id}/base_filter")
 async def post_base_filter(
-    fg_id: str,
+    collection_id: str,
     request: PostBaseFilterRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
-    async with db.advisory_lock(fg_id, action_id="mutation"):
+    async with db.advisory_lock(collection_id, action_id="mutation"):
         if request.filter is None:
             new_ctx = await db.clear_view_base_filter(ctx)
         else:
@@ -507,12 +510,12 @@ async def post_base_filter(
         await publish_homepage_state(db, new_ctx)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.POST_BASE_FILTER, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.POST_BASE_FILTER, ctx.user, collection_id)
 
     return {"status": "ok"}
 
 
-@user_router.post("/{fg_id}/clone_own_view")
+@user_router.post("/{collection_id}/clone_own_view")
 async def clone_own_view(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -521,7 +524,7 @@ async def clone_own_view(
     new_view_id = await db.clone_view_for_sharing(ctx)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.CLONE_OWN_VIEW, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(db, EndpointType.CLONE_OWN_VIEW, ctx.user, ctx.collection_id)
 
     return {"view_id": new_view_id}
 
@@ -531,7 +534,7 @@ class ApplyExistingFilterRequest(BaseModel):
     view_id: str
 
 
-@user_router.post("/{fg_id}/apply_existing_view")
+@user_router.post("/{collection_id}/apply_existing_view")
 async def apply_existing_view(
     request: ApplyExistingFilterRequest,
     db: DBService = Depends(get_db),
@@ -544,14 +547,18 @@ async def apply_existing_view(
     await publish_homepage_state(db, ctx)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.APPLY_EXISTING_VIEW, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(
+        db, EndpointType.APPLY_EXISTING_VIEW, ctx.user, ctx.collection_id
+    )
 
     # Get the existing search query; tells frontend whether to load clusters
-    existing_search_query = await db.get_search_query_by_query(ctx.fg_id, request.search_query)
+    existing_search_query = await db.get_search_query_by_query(
+        ctx.collection_id, request.search_query
+    )
     return existing_search_query is not None
 
 
-@user_router.get("/{fg_id}/get_existing_search_results")
+@user_router.get("/{collection_id}/get_existing_search_results")
 async def get_existing_search_results(
     search_query: str,
     db: DBService = Depends(get_db),
@@ -569,7 +576,7 @@ async def get_existing_search_results(
 
     # Track analytics
     await track_endpoint_with_user(
-        db, EndpointType.GET_EXISTING_SEARCH_RESULTS, ctx.user, ctx.fg_id
+        db, EndpointType.GET_EXISTING_SEARCH_RESULTS, ctx.user, ctx.collection_id
     )
 
     num_search_hits = len([result for result in results if result.value is not None])
@@ -587,7 +594,7 @@ async def get_existing_search_results(
 #     agent_run_ids: list[str]
 
 
-# @user_router.post("/{fg_id}/get_regex_snippets")
+# @user_router.post("/{collection_id}/get_regex_snippets")
 # async def get_regex_snippets_endpoint(
 #     request: GetRegexSnippetsRequest,
 #     db: DBService = Depends(get_db),
@@ -608,7 +615,7 @@ async def get_existing_search_results(
 #     elif filter.type == "complex":
 
 #         # Recursively search for all primitive filters
-#         def _search(f: FrameFilter):
+#         def _search(f: CollectionFilter):
 #             if f.type == "primitive" and f.op == "~*":
 #                 patterns.append(str(f.value))
 #             elif f.type == "complex":
@@ -623,14 +630,14 @@ async def get_existing_search_results(
 #     agent_runs = await db.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
 
 #     # Track analytics
-#     await track_endpoint_with_user(db, EndpointType.GET_REGEX_SNIPPETS_ENDPOINT, ctx.user, ctx.fg_id)
+#     await track_endpoint_with_user(db, EndpointType.GET_REGEX_SNIPPETS_ENDPOINT, ctx.user, ctx.collection_id)
 
 #     return {
 #         d.id: [item for p in patterns for item in get_regex_snippets(d.text, p)] for d in agent_runs
 #     }
 
 
-@user_router.get("/{fg_id}/state")
+@user_router.get("/{collection_id}/state")
 async def get_state(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -639,7 +646,7 @@ async def get_state(
     await publish_homepage_state(db, ctx)
 
 
-@user_router.get("/{fg_id}/searches")
+@user_router.get("/{collection_id}/searches")
 async def get_searches(
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -649,17 +656,17 @@ async def get_searches(
     return await db.get_searches_with_result_counts(ctx)
 
 
-@user_router.delete("/{fg_id}/search")
+@user_router.delete("/{collection_id}/search")
 async def delete_search(
-    fg_id: str,
+    collection_id: str,
     search_query_id: str,
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
-    await db.delete_search_query(fg_id, search_query_id)
+    await db.delete_search_query(collection_id, search_query_id)
 
-    # Publish updated searches state to all views in this framegrid
-    for ctx in await db.get_all_view_ctxs(fg_id):
+    # Publish updated searches state to all views in this collection
+    for ctx in await db.get_all_view_ctxs(collection_id):
         await publish_searches(db, ctx)
 
     return {"status": "success", "search_query_id": search_query_id}
@@ -679,22 +686,22 @@ async def get_user_by_email(email: str, db: DBService = Depends(get_db)):
 
 
 class UserPermissionsResponse(BaseModel):
-    framegrid_permissions: dict[str, str | None]
+    collection_permissions: dict[str, str | None]
     view_permissions: dict[str, str | None]
 
 
-@user_router.get("/{fg_id}/permissions")
+@user_router.get("/{collection_id}/permissions")
 async def get_user_permissions(
-    fg_id: str = Depends(require_fg_exists),
+    collection_id: str = Depends(require_collection_exists),
     user: User = Depends(get_user_anonymous_ok),
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     fg_permission = await db.get_permission_level(
         user=user,
-        resource_type=ResourceType.FRAME_GRID,
-        resource_id=fg_id,
+        resource_type=ResourceType.COLLECTION,
+        resource_id=collection_id,
     )
 
     view_permission = await db.get_permission_level(
@@ -704,7 +711,7 @@ async def get_user_permissions(
     )
 
     return UserPermissionsResponse(
-        framegrid_permissions={fg_id: fg_permission.value if fg_permission else None},
+        collection_permissions={collection_id: fg_permission.value if fg_permission else None},
         view_permissions={ctx.view_id: view_permission.value if view_permission else None},
     )
 
@@ -714,18 +721,18 @@ async def get_org_users(org_id: str, db: DBService = Depends(get_db)):
     return [u for u in await db.get_users() if not u.is_anonymous]
 
 
-@user_router.get("/framegrids/{fg_id}/collaborators")
-async def get_framegrid_collaborators(
-    fg_id: str,
+@user_router.get("/collections/{collection_id}/collaborators")
+async def get_collection_collaborators(
+    collection_id: str,
     db: DBService = Depends(get_db),
     # You need READ permissions to see other people's permissions
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     return [
-        FramegridCollaborator.from_sqla_acl(acl)
+        CollectionCollaborator.from_sqla_acl(acl)
         for acl in await db.get_acl_entries(
-            resource_id=fg_id,
-            resource_type=ResourceType.FRAME_GRID,
+            resource_id=collection_id,
+            resource_type=ResourceType.COLLECTION,
         )
     ]
 
@@ -736,7 +743,7 @@ from pydantic import model_validator
 class UpsertCollaboratorRequest(BaseModel):
     subject_id: str | None = None
     subject_type: SubjectType
-    framegrid_id: str
+    collection_id: str
     permission_level: Permission
 
     @model_validator(mode="after")
@@ -748,24 +755,24 @@ class UpsertCollaboratorRequest(BaseModel):
         return self
 
 
-@user_router.put("/framegrids/{fg_id}/collaborators/upsert")
+@user_router.put("/collections/{collection_id}/collaborators/upsert")
 async def upsert_collaborator(
-    fg_id: str,
+    collection_id: str,
     request: UpsertCollaboratorRequest,
     user: User = Depends(get_user_anonymous_ok),
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.ADMIN)),
+    _: None = Depends(require_collection_permission(Permission.ADMIN)),
 ):
     collaborator = await db.set_acl_permission(
         subject_type=request.subject_type,
         subject_id=request.subject_id,
-        resource_type=ResourceType.FRAME_GRID,
-        resource_id=fg_id,
+        resource_type=ResourceType.COLLECTION,
+        resource_id=collection_id,
         permission=request.permission_level,
     )
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.UPSERT_COLLABORATOR, user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.UPSERT_COLLABORATOR, user, collection_id)
 
     return collaborator
 
@@ -773,20 +780,22 @@ async def upsert_collaborator(
 class RemoveCollaboratorRequest(BaseModel):
     subject_id: str
     subject_type: SubjectType
-    framegrid_id: str
+    collection_id: str
 
 
-@user_router.delete("/framegrids/{fg_id}/collaborators/delete")
+@user_router.delete("/collections/{collection_id}/collaborators/delete")
 async def remove_collaborator(
-    fg_id: str,
+    collection_id: str,
     request: RemoveCollaboratorRequest,
     db: DBService = Depends(get_db),
     user: User = Depends(get_user_anonymous_ok),
-    _: None = Depends(require_fg_permission(Permission.ADMIN)),
+    _: None = Depends(require_collection_permission(Permission.ADMIN)),
 ):
     async with db.session() as session:
         # Build the delete query with the provided filters
-        query = select(SQLAAccessControlEntry).where(SQLAAccessControlEntry.fg_id == fg_id)
+        query = select(SQLAAccessControlEntry).where(
+            SQLAAccessControlEntry.collection_id == collection_id
+        )
 
         # Handle subject filtering based on SubjectType
         if request.subject_type == SubjectType.USER:
@@ -812,8 +821,8 @@ async def remove_collaborator(
     await db.clear_acl_permission(
         subject_type=request.subject_type,
         subject_id=request.subject_id,
-        resource_type=ResourceType.FRAME_GRID,
-        resource_id=fg_id,
+        resource_type=ResourceType.COLLECTION,
+        resource_id=collection_id,
     )
     return {"status": "success"}
 
@@ -824,13 +833,13 @@ class ShareViewRequest(BaseModel):
     level: Literal["read"]
 
 
-# @user_router.post("/{fg_id}/share_view")
+# @user_router.post("/{collection_id}/share_view")
 # async def share_view(
-#     fg_id: str,
+#     collection_id: str,
 #     request: ShareViewRequest,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
-#     _: None = Depends(require_fg_permission(Permission.READ)),
+#     _: None = Depends(require_collection_permission(Permission.READ)),
 # ):
 #     await db.set_acl_permission(
 #         subject_type=SubjectType(request.subject_type),
@@ -851,9 +860,9 @@ class ShareViewRequest(BaseModel):
 #     dim: str
 
 
-# @user_router.post("/{fg_id}/dimension")
+# @user_router.post("/{collection_id}/dimension")
 # async def post_dimension(
-#     fg_id: str,
+#     collection_id: str,
 #     request: PostDimensionRequest,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -863,7 +872,7 @@ class ShareViewRequest(BaseModel):
 #     await publish_searches(db, ctx)
 
 #     # Track analytics
-#     await track_endpoint_with_user(db, EndpointType.POST_DIMENSION, ctx.user, ctx.fg_id)
+#     await track_endpoint_with_user(db, EndpointType.POST_DIMENSION, ctx.user, ctx.collection_id)
 
 #     return request.dim
 
@@ -872,7 +881,7 @@ class ShareViewRequest(BaseModel):
 #     dim_ids: list[str] | None = None
 
 
-# @user_router.post("/{fg_id}/get_dimensions")
+# @user_router.post("/{collection_id}/get_dimensions")
 # async def get_dimensions(
 #     request: GetDimensionsRequest,
 #     db: DBService = Depends(get_db),
@@ -885,40 +894,40 @@ class ShareViewRequest(BaseModel):
 #         raise ValueError("dim_ids are not supported")
 
 
-# @user_router.delete("/{fg_id}/dimension")
+# @user_router.delete("/{collection_id}/dimension")
 # async def delete_dimension(
-#     fg_id: str,
+#     collection_id: str,
 #     dim_id: str,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
 #     _: None = Depends(require_view_permission(Permission.WRITE)),
 # ):
-#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#     async with db.advisory_lock(collection_id, action_id="mutation"):
 #         await db.delete_dimension(dim_id)
 #         await publish_binnable_keys(db, ctx)
 
-#         # TODO: This is a framegrid-wide operation that affects all views.
+#         # TODO: This is a collection-wide operation that affects all views.
 #         # We should either:
-#         # 1. Make publish_attribute_searches framegrid-wide (not view-specific), OR
-#         # 2. Publish to all views in this framegrid
+#         # 1. Make publish_attribute_searches collection-wide (not view-specific), OR
+#         # 2. Publish to all views in this collection
 #         # For now, using the authenticated user's ViewProvider.
 #         await publish_searches(db, ctx)
 
 
-# @user_router.delete("/{fg_id}/filter")
+# @user_router.delete("/{collection_id}/filter")
 # async def delete_filter(
-#     fg_id: str,
+#     collection_id: str,
 #     dim_id: str,
 #     filter_id: str,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
 #     _: None = Depends(require_view_permission(Permission.WRITE)),
 # ):
-#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#     async with db.advisory_lock(collection_id, action_id="mutation"):
 #         await db.delete_filter(filter_id)
 
 #     # Track analytics
-#     await track_endpoint_with_user(db, EndpointType.DELETE_FILTER, ctx.user, fg_id)
+#     await track_endpoint_with_user(db, EndpointType.DELETE_FILTER, ctx.user, collection_id)
 
 
 # class PostFilterRequest(BaseModel):
@@ -927,15 +936,15 @@ class ShareViewRequest(BaseModel):
 #     new_predicate: str
 
 
-# @user_router.post("/{fg_id}/filter")
+# @user_router.post("/{collection_id}/filter")
 # async def post_filter(
-#     fg_id: str,
+#     collection_id: str,
 #     request: PostFilterRequest,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
 #     _: None = Depends(require_view_permission(Permission.WRITE)),
 # ):
-#     async with db.advisory_lock(fg_id, action_id="mutation"):
+#     async with db.advisory_lock(collection_id, action_id="mutation"):
 #         old_filter = await db.get_filter(request.filter_id)
 #         if old_filter is None:
 #             raise ValueError(f"Filter {request.filter_id} not found")
@@ -949,7 +958,7 @@ class ShareViewRequest(BaseModel):
 #             raise ValueError("dim_ids are not supported")
 
 #     # Track analytics
-#     await track_endpoint_with_user(db, EndpointType.POST_FILTER, ctx.user, fg_id)
+#     await track_endpoint_with_user(db, EndpointType.POST_FILTER, ctx.user, collection_id)
 
 #     return new_filter.id
 
@@ -975,14 +984,14 @@ class ComputeSearchRequest(BaseModel):
     search_query: str
 
 
-@user_router.post("/{fg_id}/start_compute_search")
+@user_router.post("/{collection_id}/start_compute_search")
 async def start_compute_search(
-    fg_id: str,
+    collection_id: str,
     request: ComputeSearchRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     user: User = Depends(get_user_anonymous_ok),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     query_id = await db.add_search_query(ctx, request.search_query)
     new, job_id = await db.add_search_job(query_id)
@@ -990,21 +999,21 @@ async def start_compute_search(
         # When we enqueue the job, check if the user has write perms
         write_allowed = await db.has_permission(
             user=user,
-            resource_type=ResourceType.FRAME_GRID,
-            resource_id=fg_id,
+            resource_type=ResourceType.COLLECTION,
+            resource_id=collection_id,
             permission=Permission.WRITE,
         )
         await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.START_COMPUTE_SEARCH, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.START_COMPUTE_SEARCH, ctx.user, collection_id)
 
     return job_id
 
 
-@user_router.get("/{fg_id}/listen_compute_search")
+@user_router.get("/{collection_id}/listen_compute_search")
 async def listen_compute_search(
-    fg_id: str,
+    collection_id: str,
     job_id: str,
     max_results: int | None = None,
     db: DBService = Depends(get_db),
@@ -1109,7 +1118,7 @@ async def resume_compute_search(
     db: DBService = Depends(get_db),
     user: User = Depends(get_user_anonymous_ok),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     new, job_id = await db.add_search_job(query_id)
     query = await db.get_search_query(query_id)
@@ -1117,44 +1126,46 @@ async def resume_compute_search(
         # When we enqueue the job, check if the user has write perms
         write_allowed = await db.has_permission(
             user=user,
-            resource_type=ResourceType.FRAME_GRID,
-            resource_id=query.fg_id,
+            resource_type=ResourceType.COLLECTION,
+            resource_id=query.collection_id,
             permission=Permission.WRITE,
         )
         await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.RESUME_COMPUTE_SEARCH, ctx.user, query.fg_id)
+    await track_endpoint_with_user(
+        db, EndpointType.RESUME_COMPUTE_SEARCH, ctx.user, query.collection_id
+    )
 
     return job_id
 
 
-@user_router.post("/{fg_id}/has_embedding_job")
+@user_router.post("/{collection_id}/has_embedding_job")
 async def has_embedding_job(
-    fg_id: str,
+    collection_id: str,
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     where_clause = or_(SQLAJob.status == JobStatus.PENDING, SQLAJob.status == JobStatus.RUNNING)
-    count = await db.get_embedding_job_count(fg_id, where_clause)
+    count = await db.get_embedding_job_count(collection_id, where_clause)
     return count > 0
 
 
-@user_router.post("/{fg_id}/fg_has_embeddings")
+@user_router.post("/{collection_id}/fg_has_embeddings")
 async def fg_has_embeddings(
-    fg_id: str,
+    collection_id: str,
     db: DBService = Depends(get_db),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
-    return await db.fg_has_embeddings(fg_id)
+    return await db.fg_has_embeddings(collection_id)
 
 
-@user_router.post("/{fg_id}/compute_embeddings")
+@user_router.post("/{collection_id}/compute_embeddings")
 async def compute_embeddings(
-    fg_id: str,
+    collection_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     await db.add_and_enqueue_embedding_job(ctx)
 
@@ -1175,14 +1186,14 @@ class ClusterSearchResultsRequest(BaseModel):
     read_only: bool = False
 
 
-@user_router.post("/{fg_id}/start_cluster_search_results")
+@user_router.post("/{collection_id}/start_cluster_search_results")
 async def start_cluster_search_results(
-    fg_id: str,
+    collection_id: str,
     request: ClusterSearchResultsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
     user: User = Depends(get_user_anonymous_ok),
-    _: None = Depends(require_fg_permission(Permission.READ)),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """Start clustering search results directly."""
 
@@ -1190,8 +1201,8 @@ async def start_cluster_search_results(
     if not request.read_only:
         write_allowed = await db.has_permission(
             user=user,
-            resource_type=ResourceType.FRAME_GRID,
-            resource_id=fg_id,
+            resource_type=ResourceType.COLLECTION,
+            resource_id=collection_id,
             permission=Permission.WRITE,
         )
         if not write_allowed:
@@ -1200,7 +1211,7 @@ async def start_cluster_search_results(
     job_id = await db.add_job(
         "cluster_search_results",
         {
-            "fg_id": fg_id,
+            "collection_id": collection_id,
             "search_query": request.search_query,
             "feedback": request.feedback,
             "read_only": request.read_only,
@@ -1208,14 +1219,16 @@ async def start_cluster_search_results(
     )
 
     # Track analytics - we need to get the user from the context
-    await track_endpoint_with_user(db, EndpointType.START_CLUSTER_SEARCH_RESULTS, ctx.user, fg_id)
+    await track_endpoint_with_user(
+        db, EndpointType.START_CLUSTER_SEARCH_RESULTS, ctx.user, collection_id
+    )
 
     return job_id
 
 
-@user_router.get("/{fg_id}/listen_cluster_search_results")
+@user_router.get("/{collection_id}/listen_cluster_search_results")
 async def listen_cluster_search_results(
-    fg_id: str,
+    collection_id: str,
     job_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -1230,8 +1243,8 @@ async def listen_cluster_search_results(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
     job = job.job_json
-    fg_id, search_query, feedback, read_only = (
-        job["fg_id"],
+    collection_id, search_query, feedback, read_only = (
+        job["collection_id"],
         job["search_query"],
         job.get("feedback"),
         job["read_only"],
@@ -1243,7 +1256,7 @@ async def listen_cluster_search_results(
 
     async def execute():
         async with db.advisory_lock(
-            fg_id + "__cluster_search__" + search_query, action_id="mutation"
+            collection_id + "__cluster_search__" + search_query, action_id="mutation"
         ):
             async with anyio.create_task_group() as tg:
                 done = False
@@ -1286,7 +1299,7 @@ async def listen_cluster_search_results(
                                 SQLASearchResultCluster.cluster_id == SQLASearchCluster.id,
                             )
                             .where(
-                                SQLASearchCluster.fg_id == ctx.fg_id,
+                                SQLASearchCluster.collection_id == ctx.collection_id,
                                 SQLASearchCluster.search_query == search_query,
                                 SQLASearchResultCluster.id.notin_(
                                     already_sent_search_result_assignments
@@ -1330,7 +1343,7 @@ async def listen_cluster_search_results(
 #######################
 
 
-@user_router.get("/{fg_id}/actions_summary")
+@user_router.get("/{collection_id}/actions_summary")
 async def get_actions_summary(
     agent_run_id: str,
     db: DBService = Depends(get_db),
@@ -1428,7 +1441,7 @@ async def get_actions_summary(
     )
 
 
-# @user_router.get("/{fg_id}/solution_summary")
+# @user_router.get("/{collection_id}/solution_summary")
 # async def get_solution_summary(
 #     agent_run_id: str,
 #     db: DBService = Depends(get_db),
@@ -1525,7 +1538,7 @@ async def get_ta_session_messages(
     }
 
 
-@user_router.post("/{fg_id}/ta_session")
+@user_router.post("/{collection_id}/ta_session")
 async def create_ta_session(
     request: CreateTASessionRequest,
     db: DBService = Depends(get_db),
@@ -1561,7 +1574,7 @@ async def create_ta_session(
     }
 
 
-@user_router.get("/{fg_id}/ta_message")
+@user_router.get("/{collection_id}/ta_message")
 async def get_ta_message(
     session_id: str,
     message: str,
@@ -1656,7 +1669,7 @@ async def get_ta_message(
         await send_stream.aclose()
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.GET_TA_MESSAGE, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(db, EndpointType.GET_TA_MESSAGE, ctx.user, ctx.collection_id)
 
     return StreamingResponse(
         sse_event_stream(_execute, recv_stream), media_type="text/event-stream"
@@ -1689,7 +1702,7 @@ class StreamedDiffSearchResult(TypedDict):
     num_results_total: int
 
 
-@user_router.get("/{fg_id}/diffs_reports/{diffs_report_id}")
+@user_router.get("/{collection_id}/diffs_reports/{diffs_report_id}")
 async def get_diffs_report(
     diffs_report_id: str,
     db: DBService = Depends(get_db),
@@ -1699,14 +1712,14 @@ async def get_diffs_report(
     report = await db.get_diffs_report(diffs_report_id)
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.GET_DIFFS_REPORT, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(db, EndpointType.GET_DIFFS_REPORT, ctx.user, ctx.collection_id)
 
     return report.to_pydantic().model_dump()
 
 
-@user_router.post("/{fg_id}/start_compute_diffs")
+@user_router.post("/{collection_id}/start_compute_diffs")
 async def start_compute_diffs(
-    fg_id: str,
+    collection_id: str,
     request: ComputeDiffRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -1721,7 +1734,7 @@ async def start_compute_diffs(
                 select(SQLADiffsReport).where(
                     SQLADiffsReport.experiment_id_1 == request.experiment_id_1,
                     SQLADiffsReport.experiment_id_2 == request.experiment_id_2,
-                    SQLADiffsReport.frame_grid_id == fg_id,
+                    SQLADiffsReport.collection_id == collection_id,
                 )
             )
         ).scalar_one_or_none()
@@ -1736,7 +1749,7 @@ async def start_compute_diffs(
 
     report = SQLADiffsReport(
         id=str(uuid4()),
-        frame_grid_id=fg_id,
+        collection_id=collection_id,
         name=f"{request.experiment_id_1} vs {request.experiment_id_2}",
         experiment_id_1=request.experiment_id_1,
         experiment_id_2=request.experiment_id_2,
@@ -1746,13 +1759,13 @@ async def start_compute_diffs(
     job_id = await db.add_job(
         "compute_diffs",
         {
-            "fg_id": fg_id,
+            "collection_id": collection_id,
             "diffs_report_id": report.id,
         },
     )
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.START_COMPUTE_DIFFS, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.START_COMPUTE_DIFFS, ctx.user, collection_id)
 
     return {
         "job_id": job_id,
@@ -1760,9 +1773,9 @@ async def start_compute_diffs(
     }
 
 
-@user_router.get("/{fg_id}/listen_compute_diffs")
+@user_router.get("/{collection_id}/listen_compute_diffs")
 async def listen_compute_diffs(
-    fg_id: str,
+    collection_id: str,
     job_id: str,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -1818,7 +1831,7 @@ async def listen_compute_diffs(
             await send_stream.aclose()
 
     async def _execute():
-        async with db.advisory_lock(fg_id, action_id="mutation"):
+        async with db.advisory_lock(collection_id, action_id="mutation"):
             # Get total number of pairs to compute
             datapoints = await db.get_agent_runs(ctx)
 
@@ -1878,13 +1891,13 @@ class ComputeClusteringDiffsRequest(BaseModel):
     diffs_report_id: str
 
 
-@user_router.post("/{fg_id}/compute_diff_clusters")
+@user_router.post("/{collection_id}/compute_diff_clusters")
 async def compute_diff_clusters(
-    fg_id: str,
+    collection_id: str,
     request: ComputeClusteringDiffsRequest,
     db: DBService = Depends(get_db),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_fg_permission(Permission.WRITE)),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     diffs_report = await db.get_diffs_report(request.diffs_report_id)
     claims = [c.to_pydantic() for diff in diffs_report.diffs for c in diff.claims]
@@ -1894,7 +1907,7 @@ async def compute_diff_clusters(
     )
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.COMPUTE_DIFF_CLUSTERS, ctx.user, fg_id)
+    await track_endpoint_with_user(db, EndpointType.COMPUTE_DIFF_CLUSTERS, ctx.user, collection_id)
 
     return clusters
 
@@ -1905,9 +1918,9 @@ class ComputeDiffSearchRequest(BaseModel):
     search_query: str
 
 
-# @user_router.post("/{fg_id}/start_compute_diff_search")
+# @user_router.post("/{collection_id}/start_compute_diff_search")
 # async def start_compute_diff_search(
-#     fg_id: str,
+#     collection_id: str,
 #     request: ComputeDiffSearchRequest,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -1916,7 +1929,7 @@ class ComputeDiffSearchRequest(BaseModel):
 #         "diff",
 #         {
 #             "type": "compute_diff_search",
-#             "fg_id": fg_id,
+#             "collection_id": collection_id,
 #             "experiment_id_1": request.experiment_id_1,
 #             "experiment_id_2": request.experiment_id_2,
 #             "search_query": request.search_query,
@@ -1925,13 +1938,13 @@ class ComputeDiffSearchRequest(BaseModel):
 #     return job_id
 
 
-# @user_router.get("/{fg_id}/listen_compute_diff_search")
+# @user_router.get("/{collection_id}/listen_compute_diff_search")
 # async def listen_compute_diff_search(
-#     fg_id: str,
+#     collection_id: str,
 #     job_id: str,
 #     db: DBService = Depends(get_db),
 #     ctx: ViewContext = Depends(get_default_view_ctx),
-#     _: None = Depends(require_fg_permission(Permission.WRITE)),
+#     _: None = Depends(require_collection_permission(Permission.WRITE)),
 # ):
 #     # Retrieve job arguments
 #     job = await db.get_job(job_id)
@@ -1949,7 +1962,7 @@ class ComputeDiffSearchRequest(BaseModel):
 #         result = await session.execute(
 #             select(SQLADiffAttribute)
 #             .where(
-#                 SQLADiffAttribute.frame_grid_id == ctx.fg_id,
+#                 SQLADiffAttribute.collection_id == ctx.collection_id,
 #             )
 #             .order_by(SQLADiffAttribute.id)
 #         )
@@ -1993,7 +2006,7 @@ class ComputeDiffSearchRequest(BaseModel):
 
 #     async def _execute():
 #         nonlocal num_total
-#         async with db.advisory_lock(fg_id, action_id="mutation"):
+#         async with db.advisory_lock(collection_id, action_id="mutation"):
 #             # Send initial 0% state message
 #             init_data = StreamedDiffSearchResult(
 #                 claim=None,
@@ -2018,7 +2031,7 @@ class ComputeDiffSearchRequest(BaseModel):
 #     )
 
 
-@user_router.get("/{fg_id}/transcript_diff")
+@user_router.get("/{collection_id}/transcript_diff")
 async def get_transcript_diff(
     agent_run_1_id: str,
     agent_run_2_id: str,
@@ -2053,6 +2066,8 @@ async def get_transcript_diff(
         return None
 
     # Track analytics
-    await track_endpoint_with_user(db, EndpointType.GET_TRANSCRIPT_DIFF, ctx.user, ctx.fg_id)
+    await track_endpoint_with_user(
+        db, EndpointType.GET_TRANSCRIPT_DIFF, ctx.user, ctx.collection_id
+    )
 
     return transcript_diff.to_pydantic().model_dump()

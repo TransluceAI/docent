@@ -10,8 +10,8 @@ import {
   TaskStats,
   TranscriptDiffViewport,
 } from '../types/experimentViewerTypes';
-import { PrimitiveFilter } from '../types/frameTypes';
-import { FrameState } from './frameSlice';
+import { PrimitiveFilter } from '../types/collectionTypes';
+import { CollectionState } from './collectionSlice';
 import { GraphDatum } from '../components/Graph';
 
 import { RootState } from './store';
@@ -57,15 +57,15 @@ export const setIODims = createAsyncThunk(
     },
     { dispatch, getState }
   ) => {
-    const state = getState() as { frame: FrameState };
-    const frameGridId = state.frame.frameGridId;
+    const state = getState() as { collection: CollectionState };
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
-      throw new Error('No frame grid ID available');
+    if (!collectionId) {
+      throw new Error('No collection ID available');
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/set_io_bin_keys`, {
+      await apiRestClient.post(`/${collectionId}/set_io_bin_keys`, {
         inner_bin_key: innerBinKey,
         outer_bin_key: outerBinKey,
       });
@@ -91,21 +91,21 @@ export const setIODimByMetadataKey = createAsyncThunk(
     { dispatch, getState }
   ) => {
     const state = getState() as RootState;
-    const frameGridId = state.frame.frameGridId;
+    const collectionId = state.collection.collectionId;
 
-    if (!frameGridId) {
+    if (!collectionId) {
       dispatch(
         setToastNotification({
           title: 'Configuration error',
-          description: 'No frame grid ID available',
+          description: 'No collection ID available',
           variant: 'destructive',
         })
       );
-      throw new Error('No frame grid ID available');
+      throw new Error('No collection ID available');
     }
 
     try {
-      await apiRestClient.post(`/${frameGridId}/io_bin_key_with_metadata_key`, {
+      await apiRestClient.post(`/${collectionId}/io_bin_key_with_metadata_key`, {
         metadata_key: metadataKey,
         type: type,
       });

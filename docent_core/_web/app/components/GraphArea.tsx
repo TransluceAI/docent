@@ -109,10 +109,10 @@ export default function GraphArea() {
   const binStats = useAppSelector((state) => state.experimentViewer.binStats);
   const chartType = useAppSelector((state) => state.experimentViewer.chartType);
 
-  // frame slice
-  const innerBinKey = useAppSelector((state) => state.frame.innerBinKey);
-  const outerBinKey = useAppSelector((state) => state.frame.outerBinKey);
-  const dimensionsMap = useAppSelector((state) => state.frame.dimensionsMap);
+  // collection slice
+  const innerBinKey = useAppSelector((state) => state.collection.innerBinKey);
+  const outerBinKey = useAppSelector((state) => state.collection.outerBinKey);
+  const dimensionsMap = useAppSelector((state) => state.collection.dimensionsMap);
 
   const graphData = useMemo(() => {
     const result: GraphDatum[] = [];

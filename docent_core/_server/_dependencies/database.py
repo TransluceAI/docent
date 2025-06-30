@@ -8,8 +8,8 @@ async def get_db() -> DBService:
     return await DBService.init()
 
 
-async def require_fg_exists(fg_id: str, db: DBService = Depends(get_db)):
-    if not await db.fg_exists(fg_id):
-        raise HTTPException(status_code=404, detail=f"Framegrid {fg_id} not found")
+async def require_collection_exists(collection_id: str, db: DBService = Depends(get_db)):
+    if not await db.fg_exists(collection_id):
+        raise HTTPException(status_code=404, detail=f"Collection {collection_id} not found")
 
-    return fg_id
+    return collection_id

@@ -10,8 +10,8 @@ import {
 } from '@/components/ui/tooltip';
 
 import { useAppSelector } from '../store/hooks';
-import { SearchResultWithCitations } from '../types/frameTypes';
-import { useHasFramegridWritePermission } from '@/lib/permissions/hooks';
+import { SearchResultWithCitations } from '../types/collectionTypes';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { StreamedSearchResultClusterAssignment } from '../types/experimentViewerTypes';
 import { SearchResultsSection } from './AgentRunCard';
 
@@ -39,7 +39,7 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
     new Set()
   );
 
-  const fgId = useAppSelector((state) => state.frame.frameGridId);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const searchResultMap = useAppSelector(
     (state) => state.search.searchResultMap
   );
@@ -49,7 +49,7 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
   const activeClusterTaskId = useAppSelector(
     (state) => state.search.activeClusterTaskId
   );
-  const hasWritePermission = useHasFramegridWritePermission();
+  const hasWritePermission = useHasCollectionWritePermission();
 
   // Create clusters dynamically from streaming data
   const clusters: SearchCluster[] = React.useMemo(() => {
@@ -130,13 +130,13 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
   };
 
   // const handleDeleteCluster = async (clusterId: string) => {
-  //   if (!fgId || !hasWritePermission) return;
+  //   if (!collectionId || !hasWritePermission) return;
 
   //   try {
-  //     await apiRestClient.delete(`/${fgId}/delete_search_cluster/${clusterId}`);
+  //     await apiRestClient.delete(`/${collectionId}/delete_search_cluster/${clusterId}`);
   //     // Refresh clusters after deletion
   //     const clustersResponse = await apiRestClient.get(
-  //       `/${fgId}/get_existing_search_clusters?search_query=${encodeURIComponent(searchQuery)}`
+  //       `/${collectionId}/get_existing_search_clusters?search_query=${encodeURIComponent(searchQuery)}`
   //     );
   //     setClusters(clustersResponse.data || []);
   //   } catch (err) {

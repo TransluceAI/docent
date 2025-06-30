@@ -15,7 +15,7 @@ def extract_user_id(user: Optional[User]) -> Optional[str]:
 async def track_endpoint_usage(
     db: DBService,
     endpoint: EndpointType,
-    fg_id: Optional[str] = None,
+    collection_id: Optional[str] = None,
     user_id: Optional[str] = None,
 ) -> None:
     """
@@ -24,14 +24,14 @@ async def track_endpoint_usage(
     Args:
         db: Database service instance
         endpoint: The endpoint that was called
-        fg_id: Optional framegrid ID (None if endpoint doesn't operate on a specific framegrid)
+        collection_id: Optional collection ID (None if endpoint doesn't operate on a specific collection)
         user_id: Optional user ID (None for anonymous users)
     """
     try:
         # Create the analytics event
         event = SQLAAnalyticsEvent.create_event(
             endpoint=endpoint,
-            fg_id=fg_id,
+            collection_id=collection_id,
             user_id=user_id,
         )
 
@@ -53,7 +53,7 @@ async def track_endpoint_with_user(
     db: DBService,
     endpoint: EndpointType,
     user: Optional[User] = None,
-    fg_id: Optional[str] = None,
+    collection_id: Optional[str] = None,
 ) -> None:
     """
     Convenience function to track endpoint usage with a User object.
@@ -62,7 +62,7 @@ async def track_endpoint_with_user(
         db: Database service instance
         endpoint: The endpoint that was called
         user: Optional User object (None for anonymous users)
-        fg_id: Optional framegrid ID
+        collection_id: Optional collection ID
     """
     user_id = extract_user_id(user)
-    await track_endpoint_usage(db, endpoint, fg_id, user_id)
+    await track_endpoint_usage(db, endpoint, collection_id, user_id)

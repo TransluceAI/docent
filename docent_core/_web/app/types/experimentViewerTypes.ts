@@ -2,7 +2,7 @@ import { TranscriptDiff } from '../store/diffSlice';
 import {
   SearchResultWithCitations,
   MetadataType,
-} from './frameTypes';
+} from './collectionTypes';
 
 // export interface PaginationState {
 //   currentPage: number;

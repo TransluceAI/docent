@@ -17,13 +17,13 @@ export class NotFoundError extends Error {
 }
 
 export interface UserPermissions {
-  framegrid_permissions: Record<string, PermissionLevel>;
+  collection_permissions: Record<string, PermissionLevel>;
   view_permissions: Record<string, PermissionLevel>;
 }
 
 export const permissionsService = {
-  async getUserPermissions(frameGridId: string): Promise<UserPermissions> {
-    const response = await apiRestClient.get(`/${frameGridId}/permissions`);
+  async getUserPermissions(collectionId: string): Promise<UserPermissions> {
+    const response = await apiRestClient.get(`/${collectionId}/permissions`);
     return response.data;
   },
 };
@@ -31,11 +31,11 @@ export const permissionsService = {
 // Server-side compatible permissions service
 export const serverPermissionsService = {
   async getUserPermissions(
-    frameGridId: string,
+    collectionId: string,
     cookies?: string
   ): Promise<UserPermissions> {
     const response = await fetch(
-      `${INTERNAL_BASE_URL}/rest/${frameGridId}/permissions`,
+      `${INTERNAL_BASE_URL}/rest/${collectionId}/permissions`,
       {
         method: 'GET',
         headers: {
@@ -49,10 +49,10 @@ export const serverPermissionsService = {
     if (!response.ok) {
       if (response.status === 403) {
         throw new ForbiddenError(
-          `You don't have permission to access this framegrid`
+          `You don't have permission to access this collection`
         );
       } else if (response.status === 404) {
-        throw new NotFoundError(`Framegrid ${frameGridId} does not exist`);
+        throw new NotFoundError(`Collection ${collectionId} does not exist`);
       } else {
         throw new Error(`Failed to fetch permissions: ${response.statusText}`);
       }

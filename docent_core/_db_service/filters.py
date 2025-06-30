@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class BaseFrameFilter(BaseModel):
-    """Base class for all frame filters."""
+class BaseCollectionFilter(BaseModel):
+    """Base class for all collection filters."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str | None = None
@@ -31,7 +31,7 @@ class BaseFrameFilter(BaseModel):
         )
 
 
-class PrimitiveFilter(BaseFrameFilter):
+class PrimitiveFilter(BaseCollectionFilter):
     """Filter that applies a primitive operation to a metadata field."""
 
     type: Literal["primitive"] = "primitive"
@@ -87,16 +87,16 @@ class PrimitiveFilter(BaseFrameFilter):
             raise ValueError(f"Unsupported operation: {self.op}")
 
 
-class ComplexFilter(BaseFrameFilter):
+class ComplexFilter(BaseCollectionFilter):
     """Filter that combines multiple filters with AND/OR/NOT logic."""
 
     type: Literal["complex"] = "complex"
-    filters: list[FrameFilter]
+    filters: list[CollectionFilter]
     op: Literal["and", "or"] = "and"
 
     @field_validator("filters")
     @classmethod
-    def validate_filters(cls, v: list[FrameFilter]) -> list[FrameFilter]:
+    def validate_filters(cls, v: list[CollectionFilter]) -> list[CollectionFilter]:
         if not v:
             raise ValueError("ComplexFilter must have at least one filter")
         return v
@@ -125,7 +125,7 @@ class ComplexFilter(BaseFrameFilter):
         return result
 
 
-class AgentRunIdFilter(BaseFrameFilter):
+class AgentRunIdFilter(BaseCollectionFilter):
     """Filter that matches specific agent run IDs."""
 
     type: Literal["agent_run_id"] = "agent_run_id"
@@ -143,7 +143,7 @@ class AgentRunIdFilter(BaseFrameFilter):
         return table.id.in_(self.agent_run_ids)
 
 
-class SearchResultPredicateFilter(BaseFrameFilter):
+class SearchResultPredicateFilter(BaseCollectionFilter):
     """Filter that applies a predicate to search results."""
 
     type: Literal["search_result_predicate"] = "search_result_predicate"
@@ -158,7 +158,7 @@ class SearchResultPredicateFilter(BaseFrameFilter):
         return None
 
 
-class SearchResultExistsFilter(BaseFrameFilter):
+class SearchResultExistsFilter(BaseCollectionFilter):
     """Filter that checks if search results exist."""
 
     type: Literal["search_result_exists"] = "search_result_exists"
@@ -172,7 +172,7 @@ class SearchResultExistsFilter(BaseFrameFilter):
         return None
 
 
-FrameFilter = Annotated[
+CollectionFilter = Annotated[
     Union[
         PrimitiveFilter,
         ComplexFilter,
@@ -184,8 +184,8 @@ FrameFilter = Annotated[
 ]
 
 
-def parse_filter_dict(filter_dict: dict[str, Any]) -> FrameFilter:
-    """Parse a filter dictionary into a FrameFilter object."""
+def parse_filter_dict(filter_dict: dict[str, Any]) -> CollectionFilter:
+    """Parse a filter dictionary into a CollectionFilter object."""
     filter_type = filter_dict.get("type")
 
     if filter_type == "primitive":

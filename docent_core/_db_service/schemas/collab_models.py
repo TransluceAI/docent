@@ -10,16 +10,16 @@ from docent_core._db_service.schemas.tables import (
 )
 
 
-class FramegridCollaborator(BaseModel):
-    framegrid_id: str
+class CollectionCollaborator(BaseModel):
+    collection_id: str
     subject_type: SubjectType
     subject_id: str
     subject: User | Organization | Literal["public"]
     permission_level: Permission
 
     @classmethod
-    def from_sqla_acl(cls, sqla_acl: SQLAAccessControlEntry) -> "FramegridCollaborator":
-        assert sqla_acl.fg_id is not None
+    def from_sqla_acl(cls, sqla_acl: SQLAAccessControlEntry) -> "CollectionCollaborator":
+        assert sqla_acl.collection_id is not None
         subject_type = (
             SubjectType.USER
             if sqla_acl.user_id
@@ -32,7 +32,7 @@ class FramegridCollaborator(BaseModel):
             subject = subject.to_organization()
 
         return cls(
-            framegrid_id=sqla_acl.fg_id,
+            collection_id=sqla_acl.collection_id,
             subject_type=subject_type,
             subject_id=(
                 sqla_acl.user_id

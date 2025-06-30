@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from docent.data_models.citation import parse_citations_multi_run
 from docent.data_models.shared_types import EvidenceWithCitation
 from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.schemas.tables import TABLE_AGENT_RUN, TABLE_FRAME_GRID, SQLABase
+from docent_core._db_service.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION, SQLABase
 
 
 class MessageState:
@@ -71,8 +71,8 @@ class SQLATranscriptDiff(SQLABase):
     __tablename__ = TABLE_TRANSCRIPT_DIFF
 
     id = mapped_column(String(36), primary_key=True)
-    frame_grid_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     diffs_report_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_DIFFS_REPORT}.id"), nullable=False, index=True
@@ -100,7 +100,7 @@ class SQLATranscriptDiff(SQLABase):
 
     __table_args__ = (
         UniqueConstraint(
-            "frame_grid_id",
+            "collection_id",
             "diffs_report_id",
             "agent_run_1_id",
             "agent_run_2_id",
@@ -114,7 +114,7 @@ class SQLATranscriptDiff(SQLABase):
         return cls(
             id=pydantic_obj.id,
             title=pydantic_obj.title,
-            frame_grid_id=ctx.fg_id,
+            collection_id=ctx.collection_id,
             agent_run_1_id=pydantic_obj.agent_run_1_id,
             agent_run_2_id=pydantic_obj.agent_run_2_id,
             claims=claims,
@@ -179,8 +179,8 @@ class SQLADiffsReport(SQLABase):
     __tablename__ = TABLE_DIFFS_REPORT
 
     id = mapped_column(String(36), primary_key=True)
-    frame_grid_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_FRAME_GRID}.id"), nullable=False, index=True
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     name = mapped_column(Text, nullable=False)
     # TODO - would be great to foreign key these somehow

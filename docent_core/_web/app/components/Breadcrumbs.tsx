@@ -34,7 +34,7 @@ const Breadcrumbs: React.FC = () => {
   const pathname = usePathname();
   const [isConnected, setIsConnected] = useState(false);
 
-  const fgId = useSelector((state: RootState) => state.frame.frameGridId);
+  const collectionId = useSelector((state: RootState) => state.collection.collectionId);
 
   // Get the current page information
   const agentRunId = params?.agent_run_id as string | undefined;
@@ -75,16 +75,16 @@ const Breadcrumbs: React.FC = () => {
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>See all FrameGrids</p>
+            <p>See all Collections</p>
           </TooltipContent>
         </Tooltip>
 
         {/* Breadcrumbs */}
         <div className="flex gap-x-1 items-center">
           {/* Home link */}
-          {fgId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
+          {collectionId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
             <Link
-              href={`${BASE_DOCENT_PATH}/${fgId}`}
+              href={`${BASE_DOCENT_PATH}/${collectionId}`}
               className="text-blue-text hover:underline"
             >
               All agent runs
@@ -138,7 +138,7 @@ const Breadcrumbs: React.FC = () => {
         </Button>
 
         {/* Share view */}
-        {fgId && <ShareViewPopover framegridId={fgId} />}
+        {collectionId && <ShareViewPopover collectionId={collectionId} />}
 
         {/* Embeddings */}
         <EmbeddingsPopover />

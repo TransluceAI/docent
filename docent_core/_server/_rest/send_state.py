@@ -16,7 +16,7 @@ from docent_core._server._broker.redis_client import (
 logger = get_logger(__name__)
 
 
-class FrameDimension(BaseModel):
+class CollectionDimension(BaseModel):
     """A dimension for organizing agent runs."""
 
     id: str
@@ -34,9 +34,9 @@ async def publish_binnable_keys(db: DBService, ctx: ViewContext):
 
     bin_keys = await db.get_binnable_keys(ctx)
 
-    # Convert to FrameDimension objects
+    # Convert to CollectionDimension objects
     dimensions = [
-        FrameDimension(
+        CollectionDimension(
             id=key,
             name=key,
             search_query=None,
@@ -51,7 +51,7 @@ async def publish_binnable_keys(db: DBService, ctx: ViewContext):
 
     # Publish to frontend
     await publish_view_update(
-        ctx.fg_id,
+        ctx.collection_id,
         ctx.view_id,
         {
             "action": "dimensions",
@@ -62,7 +62,7 @@ async def publish_binnable_keys(db: DBService, ctx: ViewContext):
 
 async def publish_base_filter(db: DBService, ctx: ViewContext):
     await publish_view_update(
-        ctx.fg_id,
+        ctx.collection_id,
         ctx.view_id,
         {
             "action": "base_filter",
@@ -76,7 +76,7 @@ async def publish_io_bin_keys(db: DBService, ctx: ViewContext):
     inner_bin_key, outer_bin_key = io_dims if io_dims is not None else (None, None)
 
     await publish_view_update(
-        ctx.fg_id,
+        ctx.collection_id,
         ctx.view_id,
         {
             "action": "io_dims_updated",
@@ -92,7 +92,7 @@ async def publish_io_bin_keys(db: DBService, ctx: ViewContext):
 
 async def publish_searches(db: DBService, ctx: ViewContext):
     await publish_view_update(
-        ctx.fg_id,
+        ctx.collection_id,
         ctx.view_id,
         {
             "action": "searches",
@@ -123,7 +123,7 @@ async def publish_bin_stats_and_agent_runs(
             },
         }
         await publish_view_update(
-            ctx.fg_id,
+            ctx.collection_id,
             ctx.view_id,
             {
                 "action": "specific_bins",
@@ -265,7 +265,7 @@ async def publish_bin_stats_and_agent_runs(
     }
 
     await publish_view_update(
-        ctx.fg_id,
+        ctx.collection_id,
         ctx.view_id,
         {
             "action": "specific_bins",
@@ -274,20 +274,20 @@ async def publish_bin_stats_and_agent_runs(
     )
 
 
-async def publish_framegrids(db: DBService):
-    """Publish updated framegrids to all connected clients."""
-    sqla_fgs = await db.get_fgs()
-    framegrids = [
+async def publish_collections(db: DBService):
+    """Publish updated collections to all connected clients."""
+    sqla_collections = await db.get_collections()
+    collections = [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
-        for obj in sqla_fgs
+        for obj in sqla_collections
     ]
 
     await publish_to_broker(
         None,  # Broadcast to the general channel
         {
-            "action": "framegrids_updated",
-            "payload": framegrids,
+            "action": "collections_updated",
+            "payload": collections,
         },
     )
 

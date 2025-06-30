@@ -30,35 +30,35 @@ def _get_redis_client():
 REDIS = _get_redis_client()
 
 
-async def publish_to_broker(framegrid_id: str | None, data: dict[str, Any]):
-    """Publish a message to the broker for a specific framegrid.
+async def publish_to_broker(collection_id: str | None, data: dict[str, Any]):
+    """Publish a message to the broker for a specific collection.
 
     Args:
-        framegrid_id: The ID of the framegrid to publish to
+        collection_id: The ID of the collection to publish to
         data: The data to publish (will be converted to JSON)
     """
-    channel = f"framegrid:{framegrid_id}" if framegrid_id is not None else "general:general"
+    channel = f"collection:{collection_id}" if collection_id is not None else "general:general"
     await REDIS.publish(channel, json.dumps(jsonable_encoder(data)))  # type: ignore
 
 
-async def publish_framegrid_update(fg_id: str, payload: dict[str, Any]):
-    """Publish a framegrid-wide update that all clients viewing this framegrid should receive.
+async def publish_collection_update(collection_id: str, payload: dict[str, Any]):
+    """Publish a collection-wide update that all clients viewing this collection should receive.
 
     Use this for global changes like:
     - Adding/removing agent runs
-    - Modifying framegrid metadata
+    - Modifying collection metadata
     - Updating dimensions
     - Global filter changes
 
     Args:
-        fg_id: The framegrid ID
+        collection_id: The collection ID
         payload: The data to publish (will be converted to JSON)
     """
-    channel = f"framegrid:{fg_id}"
+    channel = f"collection:{collection_id}"
     await REDIS.publish(channel, json.dumps(jsonable_encoder(payload)))  # type: ignore
 
 
-async def publish_view_update(fg_id: str, view_id: str, payload: dict[str, Any]):
+async def publish_view_update(collection_id: str, view_id: str, payload: dict[str, Any]):
     """Publish a view-specific update that only clients viewing this specific view should receive.
 
     Use this for view-local changes like:
@@ -67,11 +67,11 @@ async def publish_view_update(fg_id: str, view_id: str, payload: dict[str, Any])
     - View-scoped UI state
 
     Args:
-        fg_id: The framegrid ID
+        collection_id: The collection ID
         view_id: The view ID
         payload: The data to publish (will be converted to JSON)
     """
-    channel = f"framegrid:{fg_id}:view:{view_id}"
+    channel = f"collection:{collection_id}:view:{view_id}"
     await REDIS.publish(channel, json.dumps(jsonable_encoder(payload)))  # type: ignore
 
 
