@@ -189,3 +189,41 @@ class BaseAgentRunMetadata(BaseMetadata):
     scores: dict[str, int | float | bool | None] = Field(
         description="A dict of score_key -> score_value. Use one key for each metric you're tracking."
     )
+
+
+class InspectAgentRunMetadata(BaseAgentRunMetadata):
+    """Extends BaseAgentRunMetadata with fields specific to Inspect runs.
+
+    Attributes:
+        task_id: The ID of the 'benchmark' or 'set of evals' that the transcript belongs to
+        sample_id: The specific task inside of the `task_id` benchmark that the transcript was run on
+        epoch_id: Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run.
+        model: The model that was used to generate the transcript
+        scoring_metadata: Additional metadata about the scoring process
+        additional_metadata: Additional metadata about the transcript
+    """
+
+    task_id: str = Field(
+        description="The ID of the 'benchmark' or 'set of evals' that the transcript belongs to"
+    )
+
+    # Identification of this particular run
+    sample_id: str = Field(
+        description="The specific task inside of the `task_id` benchmark that the transcript was run on"
+    )
+    epoch_id: int = Field(
+        description="Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run."
+    )
+
+    # Parameters for the run
+    model: str = Field(description="The model that was used to generate the transcript")
+
+    # Outcome
+    scoring_metadata: dict[str, Any] | None = Field(
+        description="Additional metadata about the scoring process"
+    )
+
+    # Inspect metadata
+    additional_metadata: dict[str, Any] | None = Field(
+        description="Additional metadata about the transcript"
+    )

@@ -110,6 +110,8 @@ class Transcript(BaseModel):
         A unit of action represents a logical group of messages, such as a system message
         on its own or a user message followed by assistant responses and tool outputs.
 
+        For precise details on how action units are determined, refer to the _compute_units_of_action method implementation.
+
         Returns:
             list[list[int]]: List of units of action, where each unit is a list of message indices.
         """
