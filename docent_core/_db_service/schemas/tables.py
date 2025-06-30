@@ -61,7 +61,7 @@ TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 
 
-def _sanitize_pg_text(text: str) -> str:
+def sanitize_pg_text(text: str) -> str:
     """
     Wow this took almost an hour to debug.
     Postgres rejects strings with \\x00 and \\u0000, but it turns out that
@@ -101,8 +101,8 @@ class SQLAAgentRun(SQLABase):
     @classmethod
     def from_agent_run(cls, agent_run: AgentRun, fg_id: str) -> "SQLAAgentRun":
         # Sanitize raw text
-        metadata_json = json.loads(_sanitize_pg_text(agent_run.metadata.model_dump_json()))
-        text_for_search = _sanitize_pg_text(agent_run.text)
+        metadata_json = json.loads(sanitize_pg_text(agent_run.metadata.model_dump_json()))
+        text_for_search = sanitize_pg_text(agent_run.text)
 
         return cls(
             id=agent_run.id,
@@ -349,13 +349,16 @@ class SQLASearchResult(SQLABase):
         search_result: SearchResult,
         fg_id: str,
     ):
+        value = search_result.value
+        if value is not None:
+            value = sanitize_pg_text(value)
         return cls(
             id=search_result.id,
             fg_id=fg_id,
             agent_run_id=search_result.agent_run_id,
             search_query=search_result.search_query,
             search_result_idx=search_result.search_result_idx,
-            value=search_result.value,
+            value=value,
         )
 
     def to_search_result(self) -> SearchResult:

@@ -2,6 +2,7 @@ import tiktoken
 
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
+from docent_core._db_service.schemas.tables import sanitize_pg_text
 
 MAX_TOKENS = 50_000
 GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used
@@ -29,4 +30,5 @@ You must adhere exactly to the following: {SINGLE_RUN_CITE_INSTRUCTION}
 
 def make_single_tasst_system_prompt(agent_run: AgentRun) -> str:
     truncated_transcript = truncate_to_token_limit(agent_run.text, MAX_TOKENS)
+    truncated_transcript = sanitize_pg_text(truncated_transcript)
     return SINGLE_TEMPLATE.format(transcript=truncated_transcript)

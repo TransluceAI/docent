@@ -921,13 +921,33 @@ class DBService:
             )
             search_query = search_query.scalar_one()
 
-            # Queries
+            # First, delete all search result cluster assignments that reference search results with this query
             await session.execute(
-                delete(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
+                delete(SQLASearchResultCluster).where(
+                    SQLASearchResultCluster.search_result_id.in_(
+                        select(SQLASearchResult.id).where(
+                            SQLASearchResult.search_query == search_query
+                        )
+                    )
+                )
             )
-            # Results
+
+            # Delete all clusters for this search query
+            await session.execute(
+                delete(SQLASearchCluster).where(
+                    SQLASearchCluster.fg_id == fg_id,
+                    SQLASearchCluster.search_query == search_query,
+                )
+            )
+
+            # Delete search results
             await session.execute(
                 delete(SQLASearchResult).where(SQLASearchResult.search_query == search_query)
+            )
+
+            # Finally, delete the search query itself
+            await session.execute(
+                delete(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
             )
 
     async def get_searches_with_result_counts(self, ctx: ViewContext) -> list[dict[str, Any]]:
