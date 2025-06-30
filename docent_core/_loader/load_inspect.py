@@ -1,12 +1,11 @@
-from typing import Any, Literal
+from typing import Any
 
 from inspect_ai.log import read_eval_log
-from pydantic import Field
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat import parse_chat_message
-from docent.data_models.metadata import BaseAgentRunMetadata
+from docent.data_models.metadata import InspectAgentRunMetadata
 from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
@@ -122,62 +121,11 @@ SWE_BENCH_LOGS: dict[str, str | tuple[str, dict[str, Any]]] = {
 }
 
 
-class InspectAgentRunMetadata(BaseAgentRunMetadata):
-    task_id: str = Field(
-        description="The ID of the 'benchmark' or 'set of evals' that the transcript belongs to"
-    )
-
-    # Identification of this particular run
-    sample_id: str = Field(
-        description="The specific task inside of the `task_id` benchmark that the transcript was run on"
-    )
-    original_sample_id_type: Literal["str", "int"] = Field(
-        description="This is a hack required for compatibility with Inspect; they allow both string and int sample_ids, but this is annoying for a number of reasons. This field tracks the original type of the `sample_id` field."
-    )
-    epoch_id: int = Field(
-        description="Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run."
-    )
-
-    # Experiment
-    experiment_id: str = Field(
-        description="Each 'experiment' is a run of a subset of samples under some configuration. This is the ID of the experiment that the transcript belongs to."
-    )
-    intervention_description: str | None = Field(
-        description="Experiments may involve interventions on the chat message history (e.g., to change what the model did or provide hints). This is a natural language description of the intervention that was applied, if any."
-    )
-    intervention_index: int | None = Field(
-        description="The integer index in the list of chat messages that the intervention, if any, was applied to"
-    )
-    intervention_timestamp: str | None = Field(
-        description="The timestamp of the intervention, if any"
-    )
-
-    # Parameters for the run
-    model: str = Field(description="The model that was used to generate the transcript")
-    task_args: dict[str, Any] = Field(
-        description="[Inspect-specific] Inspect TaskArgs used to generate the transcript"
-    )
-    is_loading_messages: bool = Field(
-        description="Whether the transcript is un-finalized and still loading messages"
-    )
-
-    # Outcome
-    scoring_metadata: dict[str, Any] | None = Field(
-        description="Additional metadata about the scoring process"
-    )
-
-    # Inspect metadata
-    additional_metadata: dict[str, Any] | None = Field(
-        description="Additional metadata about the transcript"
-    )
-
-
 def load_inspect_experiment(
     experiment_id: str,
     fpath: str,
     only_epoch_1: bool = False,
     only_epoch_1_5: bool = False,
-    _custom_metadata: dict[str, Any] | None = None,
 ) -> list[AgentRun]:
     """Loads transcripts from Inspect AI evaluation logs.
 
@@ -234,15 +182,8 @@ def load_inspect_experiment(
         metadata = InspectAgentRunMetadata(
             task_id=logs.eval.task,
             sample_id=str(sample_id),
-            original_sample_id_type="str" if isinstance(sample_id, str) else "int",
             epoch_id=epoch_id,
-            experiment_id=experiment_id,
-            intervention_description=(_custom_metadata or {}).get("intervention_description"),
-            intervention_timestamp=(_custom_metadata or {}).get("intervention_timestamp"),
-            intervention_index=(_custom_metadata or {}).get("intervention_index"),
             model=logs.eval.model,
-            task_args=logs.eval.task_args,
-            is_loading_messages=False,
             scores=scores,
             additional_metadata=s.metadata,
             scoring_metadata=s.scores,
@@ -269,15 +210,13 @@ def load_inspect_eval(logs: dict[str, str | tuple[str, dict[str, Any]]]) -> list
     for experiments_id, extra_metadata in logs.items():
         # Parse arguments in the dict
         if isinstance(extra_metadata, tuple):
-            fpath, intervention_metadata = extra_metadata
+            fpath, _ = extra_metadata
         else:
             fpath = extra_metadata
-            intervention_metadata = None
 
         agent_runs = load_inspect_experiment(
             experiments_id,
             fpath,
-            _custom_metadata=intervention_metadata,
         )
         result.extend(agent_runs)
 

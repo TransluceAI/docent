@@ -13,6 +13,10 @@ Docent provides tools to **summarize, cluster, and search** over agent transcrip
   alt="Screenshot of the Docent interface"
 />
 
+In addition to analyzing agent transcripts, our users have also gotten value from using Docent for other applications such as:
+- observing anomalies in long reasoning traces
+- monitoring rollouts to find behaviors that emerge in RL training
+
 <!-- ## Key features
 
 🚜WIP🚜 -->
