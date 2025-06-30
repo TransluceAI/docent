@@ -984,6 +984,18 @@ class ComputeSearchRequest(BaseModel):
     search_query: str
 
 
+class GetSearchResultsRequest(BaseModel):
+    search_query: str
+
+
+class ListSearchClustersRequest(BaseModel):
+    search_query: str
+
+
+class GetClusterMatchesRequest(BaseModel):
+    centroid: str
+
+
 @user_router.post("/{collection_id}/start_compute_search")
 async def start_compute_search(
     collection_id: str,
@@ -1170,14 +1182,47 @@ async def compute_embeddings(
     await db.add_and_enqueue_embedding_job(ctx)
 
 
-@user_router.get("/search_jobs")
-async def search_jobs(
+@user_router.get("/{collection_id}/list_search_queries")
+async def list_search_queries(
+    collection_id: str,
     db: DBService = Depends(get_db),
+    _: None = Depends(require_collection_permission(Permission.READ)),
 ):
-    jobs = await db.list_search_jobs_and_queries()
-    for job in jobs:
-        logger.info(f"- {job}")
-    return [[job.dict(), query.dict()] for job, query in jobs]
+    queries = await db.list_search_queries(collection_id)
+    return [query.dict() for query in queries]
+
+
+@user_router.post("/{collection_id}/get_search_results")
+async def get_search_results(
+    collection_id: str,
+    request: GetSearchResultsRequest,
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    results = await db.get_search_results(ctx, request.search_query)
+    return [result.model_dump() for result in results]
+
+
+@user_router.post("/{collection_id}/list_search_clusters")
+async def list_search_clusters(
+    collection_id: str,
+    request: ListSearchClustersRequest,
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    return await db.get_existing_search_clusters(ctx, request.search_query)
+
+
+@user_router.post("/{collection_id}/get_cluster_matches")
+async def get_cluster_matches(
+    collection_id: str,
+    request: GetClusterMatchesRequest,
+    db: DBService = Depends(get_db),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    return await db.get_cluster_matches(request.centroid)
 
 
 class ClusterSearchResultsRequest(BaseModel):

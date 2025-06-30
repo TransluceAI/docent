@@ -910,9 +910,9 @@ class DBService:
 
             return bin_keys
 
-    ##########################
-    # Dimensions and filters #
-    ##########################
+    ###########
+    # Filters #
+    ###########
 
     async def get_search_query_by_query(
         self, collection_id: str, search_query: str
@@ -1653,6 +1653,16 @@ class DBService:
             clusters = result.all()
             return [{"centroid": c.centroid, "id": c.id} for c in clusters]
 
+    async def get_cluster_matches(self, centroid: str) -> list[dict[str, Any]]:
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLASearchResultCluster)
+                .options(selectinload(SQLASearchResultCluster.search_result))
+                .join(SQLASearchCluster, SQLASearchResultCluster.cluster_id == SQLASearchCluster.id)
+                .where(SQLASearchCluster.centroid == centroid)
+            )
+            return [r.search_result.to_search_result() for r in result.scalars().all()]
+
     async def clear_search_result_clusters(self, ctx: ViewContext, search_query: str):
         """Clear cluster assignments for search results."""
         async with self.session() as session:
@@ -1828,6 +1838,14 @@ class DBService:
         async with self.session() as session:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
+
+    async def list_search_queries(self, collection_id: str) -> list[SQLASearchQuery]:
+        async with self.session() as session:
+            result = await session.execute(
+                select(SQLASearchQuery).where(SQLASearchQuery.collection_id == collection_id)
+            )
+
+            return list(result.scalars().all())
 
     async def list_search_jobs_and_queries(self):
         async with self.session() as session:

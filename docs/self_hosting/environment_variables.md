@@ -6,6 +6,7 @@ title: Environment variables
 
 * `OPENAI_API_KEY`: OpenAI API key
 * `ANTHROPIC_API_KEY`: Anthropic API key
+* `GOOGLE_API_KEY`: Google API key
 * `LLM_CACHE_PATH`: Path to the LLM cache
 
 <Note>

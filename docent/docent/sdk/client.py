@@ -205,50 +205,75 @@ class Docent:
         response.raise_for_status()
         return response.json()
 
-    def get_dimensions(
-        self, collection_id: str, dim_ids: list[str] | None = None
-    ) -> list[dict[str, Any]]:
-        """Retrieves dimensions for a Collection.
+    def list_searches(self, collection_id: str) -> list[dict[str, Any]]:
+        """List all searches for a given collection.
 
         Args:
             collection_id: ID of the Collection.
-            dim_ids: Optional list of dimension IDs to retrieve. If None, retrieves all dimensions.
 
         Returns:
-            list: List of dictionaries containing dimension information.
+            list: List of dictionaries containing search query information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/get_dimensions"
-        payload = {
-            "dim_ids": dim_ids,
-        }
-        response = self._session.post(url, json=payload)
+        url = f"{self._server_url}/{collection_id}/list_search_queries"
+        response = self._session.get(url)
         response.raise_for_status()
         return response.json()
 
-    def list_attribute_searches(
-        self, collection_id: str, base_data_only: bool = True
-    ) -> list[dict[str, Any]]:
-        """Lists available attribute searches for a Collection.
-
-        Attribute searches allow finding collections with specific metadata attributes.
+    def get_search_results(self, collection_id: str, search_query: str) -> list[dict[str, Any]]:
+        """Get search results for a given collection and search query.
+        Pass in either search_query or query_id.
 
         Args:
             collection_id: ID of the Collection.
-            base_data_only: If True, returns only basic search information.
+            search_query: The search query to get results for.
 
         Returns:
-            list: List of dictionaries containing attribute search information.
+            list: List of dictionaries containing search result information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/attribute_searches"
-        params = {
-            "base_data_only": base_data_only,
-        }
-        response = self._session.get(url, params=params)
+        url = f"{self._server_url}/{collection_id}/get_search_results"
+        response = self._session.post(url, json={"search_query": search_query})
+        response.raise_for_status()
+        return response.json()
+
+    def list_search_clusters(self, collection_id: str, search_query: str) -> list[dict[str, Any]]:
+        """List all search clusters for a given collection.
+        Pass in either search_query or query_id.
+
+        Args:
+            collection_id: ID of the Collection.
+            search_query: The search query to get clusters for.
+
+        Returns:
+            list: List of dictionaries containing search cluster information.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/list_search_clusters"
+        response = self._session.post(url, json={"search_query": search_query})
+        response.raise_for_status()
+        return response.json()
+
+    def get_cluster_matches(self, collection_id: str, centroid: str) -> list[dict[str, Any]]:
+        """Get the matches for a given cluster.
+
+        Args:
+            collection_id: ID of the Collection.
+            cluster_id: The ID of the cluster to get matches for.
+
+        Returns:
+            list: List of dictionaries containing the search results that match the cluster.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/get_cluster_matches"
+        response = self._session.post(url, json={"centroid": centroid})
         response.raise_for_status()
         return response.json()
