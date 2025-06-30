@@ -1,32 +1,49 @@
 # Search and clustering
 
-!!! note
-    🚜 This page is still under construction! 🚜
+Use search to find behaviors that you specify in natural language.
+
+### Example walkthrough
+
+Suppose we're curious if there are any issues with the agent scaffolding that are causing failures.
+
+We can start by filtering to runs where the agent failed and searching for `potential issues with the environment the agent is operating in`:
+
+<video controls autoplay loop width="100%">
+  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/docent-docs/search-compressed.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+We can then cluster the results and see what the most common issues are:
+
+<video controls autoplay loop width="100%">
+  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/docent-docs/clustering-compressed.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+### Sharing results
+
+You can open access permissions to share these results with anyone:
+
+<video controls autoplay loop width="100%">
+  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/docent-docs/sharing-general-compressed.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+You can also link to specific parts of the agent run:
+
+<video controls autoplay loop width="100%">
+  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/docent-docs/sharing-specific-compressed.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ### Tips for using search
 
 - If you don't precisely know what you're looking for, start with a general search (e.g., "cases of cheating" or "types of environment issues"). Then, based on initial results, refine your query.
-- If you *do* know what you're looking for, feel free to provide lots of detail in your query; we use reasoning models to determine whether an agent run matches your query.
+- If you *do* know what you're looking for, feel free to provide lots of detail in your query; that's why the text box is so large.
 - Use appropriate metadata filters to narrow the scope of your search.
 
-### Linking to search results
 
-!!! warning
-    We're still ironing out some weird behavior when the base filter changes. You may encounter slowness if you share a completed search result, make the base filter less restrictive, and then open the link.
-
-Search results are persisted and shareable: you can click the share button on both overall results and individual transcript blocks to get shareable links.
-
-<iframe
-  width="100%"
-  height="375px"
-  src="https://www.loom.com/embed/3fe38fcf1efc4970a088ac1f28360534?sid=1c5ed81c-87df-4903-87e3-c0b48e13fc14"
-  title="Persisted search results"
-  frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-  allowfullscreen
-></iframe>
-
-### Retrieving search results from the SDK
+### Retrieving results from the SDK
 
 The Python SDK exposes search results via `get_search_results`, given a Collection ID (`collection_id`) and `search_query`.
 
