@@ -349,13 +349,16 @@ class SQLASearchResult(SQLABase):
         search_result: SearchResult,
         fg_id: str,
     ):
+        value = search_result.value
+        if value is not None:
+            value = sanitize_pg_text(value)
         return cls(
             id=search_result.id,
             fg_id=fg_id,
             agent_run_id=search_result.agent_run_id,
             search_query=search_result.search_query,
             search_result_idx=search_result.search_result_idx,
-            value=search_result.value,
+            value=value,
         )
 
     def to_search_result(self) -> SearchResult:
