@@ -1,7 +1,7 @@
 'use client';
 import { ModeToggle } from '@/components/ui/theme-toggle';
 
-import { Loader2, PlusIcon } from 'lucide-react';
+import { Loader2, PlusIcon, BookOpenIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,10 @@ import {
   resetSearchSlice,
 } from '../store/searchSlice';
 import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
-import { fetchCollections, resetCollectionSlice } from '../store/collectionSlice';
+import {
+  fetchCollections,
+  resetCollectionSlice,
+} from '../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
 import { useRequireUserContext } from '../contexts/UserContext';
@@ -52,7 +55,8 @@ export default function HomePage() {
   const dispatch = useAppDispatch();
 
   // New collection dialog state
-  const [isNewCollectionDialogOpen, setIsNewCollectionDialogOpen] = useState(false);
+  const [isNewCollectionDialogOpen, setIsNewCollectionDialogOpen] =
+    useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
@@ -105,7 +109,7 @@ export default function HomePage() {
 
   return (
     <ScrollArea className="h-screen">
-      <div className="container mx-auto py-4 px-3 max-w-screen-xl">
+      <div className="container mx-auto py-4 px-3 max-w-screen-xl space-y-3">
         {/* Header Section */}
         <div className="space-y-1 mb-4">
           <div className="flex justify-between items-center">
@@ -149,6 +153,30 @@ export default function HomePage() {
 
         <Separator className="my-4" />
 
+        {/* Quickstart banner */}
+        <div className="bg-muted/50 border border-muted rounded-sm p-3">
+          <div className="flex items-start gap-3">
+            <BookOpenIcon className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-medium text-sm mb-1">
+                Get Started with Docent
+              </h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Learn how to ingest your data and get started with analysis!
+              </p>
+              <Button variant="outline" size="sm" asChild>
+                <a
+                  href="https://transluce-docent.readthedocs-hosted.com/en/latest/quickstart"
+                  target="_blank"
+                  className="inline-flex items-center gap-1"
+                >
+                  Read the quickstart guide
+                </a>
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {/* Table area */}
         <CollectionsTable
           collections={collections}
@@ -157,7 +185,10 @@ export default function HomePage() {
       </div>
 
       {/* Create New Collection Dialog */}
-      <Dialog open={isNewCollectionDialogOpen} onOpenChange={setIsNewCollectionDialogOpen}>
+      <Dialog
+        open={isNewCollectionDialogOpen}
+        onOpenChange={setIsNewCollectionDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Collection</DialogTitle>
@@ -194,7 +225,10 @@ export default function HomePage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleCreateCollection} disabled={isCreatingCollection}>
+            <Button
+              onClick={handleCreateCollection}
+              disabled={isCreatingCollection}
+            >
               {isCreatingCollection ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
