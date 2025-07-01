@@ -23,7 +23,7 @@ client = Docent(
 )
 ```
 
-You can think of each collection as a collection of agent runs. Let's create a fresh one:
+Let's create a fresh collection of agent runs:
 
 ```python
 collection_id = client.create_collection(
