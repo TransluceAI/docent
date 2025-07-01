@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronFirst,
   ChevronLast,
+  Upload,
 } from 'lucide-react';
 import React, {
   useMemo,
@@ -14,6 +15,7 @@ import React, {
 } from 'react';
 
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 
@@ -35,23 +37,30 @@ export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
 
   // Get all state at the top level
-  const { innerBinKey, outerBinKey, collectionId } = useAppSelector(
-    (state) => state.collection
+  const innerBinKey = useAppSelector((state) => state.collection.innerBinKey);
+  const outerBinKey = useAppSelector((state) => state.collection.outerBinKey);
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
+  const baseFilter = useAppSelector((state) => state.collection.baseFilter);
+
+  const loadingSearchQuery = useAppSelector(
+    (state) => state.search.loadingSearchQuery
   );
+  const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
+  const currentSearchHitCount = useAppSelector(
+    (state) => state.search.currentSearchHitCount
+  );
+  const attributeMap = useAppSelector((state) => state.search.searchResultMap);
 
-  const {
-    loadingSearchQuery,
-    curSearchQuery,
-    currentSearchHitCount,
-    searchResultMap: attributeMap,
-  } = useAppSelector((state) => state.search);
-
-  const {
-    experimentViewerScrollPosition,
-    binStats: rawBinStats,
-    agentRunIds: rawAgentRunIds,
-    chartType,
-  } = useAppSelector((state) => state.experimentViewer);
+  const experimentViewerScrollPosition = useAppSelector(
+    (state) => state.experimentViewer.experimentViewerScrollPosition
+  );
+  const rawBinStats = useAppSelector(
+    (state) => state.experimentViewer.binStats
+  );
+  const rawAgentRunIds = useAppSelector(
+    (state) => state.experimentViewer.agentRunIds
+  );
+  const chartType = useAppSelector((state) => state.experimentViewer.chartType);
 
   /**
    * Scrolling
@@ -225,7 +234,40 @@ export default function ExperimentViewer() {
         </div>
       </div>
       <TranscriptFilterControls />
-      <div
+
+      {(agentRunIds?.length || 0) > 0 ? (
+        <div
+          className="flex-1 space-y-1 custom-scrollbar min-w-0 overflow-y-auto"
+          ref={containerRef}
+        >
+          {currentPageItems.map((agentRunId) => (
+            <AgentRunCard key={agentRunId} agentRunId={agentRunId} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 space-y-1 custom-scrollbar min-w-0 text-xs text-muted-foreground flex">
+          {curSearchQuery || baseFilter ? (
+            'No results found'
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-center">
+              <div className="flex flex-col items-center space-y-3">
+                <Upload className="h-12 w-12 text-muted-foreground" />
+                <div className="text-muted-foreground">No agent runs found</div>
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href="https://docs.transluce.org/en/latest/quickstart/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    See quickstart guide
+                  </a>
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {/* <div
         className="flex-1 space-y-1 custom-scrollbar min-w-0 overflow-y-auto"
         ref={containerRef}
       >
@@ -239,12 +281,17 @@ export default function ExperimentViewer() {
                 <span>Loading results...</span>
                 <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
               </div>
-            ) : (
+            ) : curSearchQuery ? (
               'No results found'
+            ) : (
+              <div className="w-full h-full bg-red-500">
+                <span>No agent runs found</span>
+                shit
+              </div>
             )}
           </div>
         )}
-      </div>
+      </div> */}
 
       {/* Pagination controls */}
       <div className="flex items-center justify-between shrink-0">

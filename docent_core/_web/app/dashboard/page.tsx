@@ -154,11 +154,11 @@ export default function HomePage() {
         <Separator className="my-4" />
 
         {/* Quickstart banner */}
-        <div className="bg-muted/50 border border-muted rounded-sm p-3">
+        <div className="bg-secondary border-border rounded-sm p-3">
           <div className="flex items-start gap-3">
             <BookOpenIcon className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h3 className="font-medium text-sm mb-1">
+              <h3 className="font-medium text-sm mb-1 text-primary">
                 Get Started with Docent
               </h3>
               <p className="text-xs text-muted-foreground mb-3">

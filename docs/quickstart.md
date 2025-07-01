@@ -1,14 +1,19 @@
 # Quickstart
 
-Before starting, navigate to [docent-alpha.transluce.org](https://docent-alpha.transluce.org){target=_blank} and sign up for an account.
+This guide helps you ingest agent runs into Docent.
 <!-- Feel free to explore some sample agent runs in the dashboard. -->
 
-To ingest your own agent runs, install the Python SDK:
+### Ingesting transcripts
+
+Before starting, navigate to [docent-alpha.transluce.org](https://docent-alpha.transluce.org){target=_blank} and sign up for an account.
+
+Then install Docent's Python SDK:
+
 ```bash
 pip install docent-python
 ```
 
-You'll need an API key to connect to the Docent interface. Navigate to the [API keys page](https://docent-alpha.transluce.org/settings/api_keys){target=_blank} while logged in and create a token. Then create a new Python script that instantiates a client object:
+Next, go to the [API keys page](https://docent-alpha.transluce.org/settings/api_keys){target=_blank}, create a key, and instantiate a client object with that key:
 
 ```python
 import os
@@ -32,7 +37,7 @@ collection_id = client.create_collection(
 )
 ```
 
-Now we're ready to ingest some logs!
+Now we're ready to ingest some logs! There are three end-to-end examples below; pick whichever you're most interested in.
 
 === "Simple example"
 

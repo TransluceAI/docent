@@ -3,7 +3,7 @@ description:
 globs:
 alwaysApply: true
 ---
-## Padding and spacing
+## Padding, spacing, and height
 - For div containers, set padding and spacing to `3`, e.g., `p-3 space-y-3`
 
 ## Color System
