@@ -11,6 +11,7 @@ import { diffReducer } from './diffSlice';
 import embedReducer from './embedSlice';
 import createWebSocketMiddleware from './webSocketMiddleware';
 import { collabApi } from '@/lib/permissions/collabSlice';
+import { experimentViewerApi } from '../api/experimentViewerApi';
 
 // Create a custom error logger middleware
 const errorLogger = () => (next: any) => (action: any) => {
@@ -37,12 +38,14 @@ const store = configureStore({
     transcript: transcriptReducer,
     toast: toastReducer,
     [collabApi.reducerPath]: collabApi.reducer,
+    [experimentViewerApi.reducerPath]: experimentViewerApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware()
       .concat(createWebSocketMiddleware())
       .concat(errorLogger)
-      .concat(collabApi.middleware),
+      .concat(collabApi.middleware)
+      .concat(experimentViewerApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

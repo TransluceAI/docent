@@ -16,10 +16,10 @@ import {
 } from '@/components/ui/tooltip';
 
 import {
-  setIODims,
-  setIODimByMetadataKey,
-} from '../store/experimentViewerSlice';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
+  useSetIODimsMutation,
+  useSetIODimByMetadataKeyMutation,
+} from '../api/experimentViewerApi';
+import { useAppSelector } from '../store/hooks';
 
 interface DimensionSelectorProps {
   className?: string;
@@ -28,12 +28,13 @@ interface DimensionSelectorProps {
 export default function DimensionSelector({
   className,
 }: DimensionSelectorProps) {
-  const dispatch = useAppDispatch();
+  const [setIODims] = useSetIODimsMutation();
+  const [setIODimByMetadataKey] = useSetIODimByMetadataKeyMutation();
 
   // Collection slice
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const innerBinKey = useAppSelector((state) => state.collection.innerBinKey);
   const outerBinKey = useAppSelector((state) => state.collection.outerBinKey);
-  const dimensionsMap = useAppSelector((state) => state.collection.dimensionsMap);
   const agentRunMetadataFields =
     useAppSelector((state) => state.collection.agentRunMetadataFields) || [];
 
@@ -49,35 +50,39 @@ export default function DimensionSelector({
   }, [outerBinKey]);
 
   const handleInnerDimChange = (value: string) => {
+    if (!collectionId) return;
+
     if (value === 'None') {
-      dispatch(setIODims({ innerBinKey: undefined, outerBinKey }));
+      setIODims({ collectionId, innerBinKey: undefined, outerBinKey });
     } else {
-      dispatch(setIODimByMetadataKey({ metadataKey: value, type: 'inner' }));
+      setIODimByMetadataKey({ collectionId, metadataKey: value, type: 'inner' });
     }
   };
 
   const handleOuterDimChange = (value: string) => {
+    if (!collectionId) return;
+
     if (value === 'None') {
-      dispatch(setIODims({ innerBinKey, outerBinKey: undefined }));
+      setIODims({ collectionId, innerBinKey, outerBinKey: undefined });
     } else {
-      dispatch(setIODimByMetadataKey({ metadataKey: value, type: 'outer' }));
+      setIODimByMetadataKey({ collectionId, metadataKey: value, type: 'outer' });
     }
   };
 
   const handleSwapDimensions = () => {
-    if (innerBinKey && outerBinKey) {
-      // Swap the dimensions using a single dispatch
-      dispatch(
-        setIODims({
-          innerBinKey: outerBinKey,
-          outerBinKey: innerBinKey,
-        })
-      );
-    }
+    if (!collectionId || !innerBinKey || !outerBinKey) return;
+
+    setIODims({
+      collectionId,
+      innerBinKey: outerBinKey,
+      outerBinKey: innerBinKey,
+    });
   };
 
   const handleClearDimensions = () => {
-    dispatch(setIODims({ innerBinKey: undefined, outerBinKey: undefined }));
+    if (!collectionId) return;
+
+    setIODims({ collectionId, innerBinKey: undefined, outerBinKey: undefined });
   };
 
   const showSwapButton = innerDim && outerDim && outerDim !== 'None';
@@ -86,7 +91,8 @@ export default function DimensionSelector({
     (innerDim && innerDim !== 'None') || (outerDim && outerDim !== 'None');
 
   const filteredAgentRunMetadataFields = useMemo(() => {
-    return agentRunMetadataFields.filter((field) =>
+    const fields = agentRunMetadataFields || [];
+    return fields.filter((field) =>
       field.name.startsWith('metadata.')
     ); // FIXME(mengk): FIX THIS HACK!!!
     // .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality

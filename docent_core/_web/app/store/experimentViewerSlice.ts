@@ -1,21 +1,14 @@
 import {
   createSlice,
   type PayloadAction,
-  createAsyncThunk,
 } from '@reduxjs/toolkit';
-
-import { apiRestClient } from '../services/apiService';
 import {
   RegexSnippet,
   TaskStats,
   TranscriptDiffViewport,
 } from '../types/experimentViewerTypes';
 import { PrimitiveFilter } from '../types/collectionTypes';
-import { CollectionState } from './collectionSlice';
 import { GraphDatum } from '../components/Graph';
-
-import { RootState } from './store';
-import { setToastNotification } from './toastSlice';
 
 export interface ExperimentViewerState {
   // Global binning results
@@ -44,85 +37,6 @@ const initialState: ExperimentViewerState = {
   chartType: 'table',
 };
 
-// Thunk to set inner and outer dimension IDs
-export const setIODims = createAsyncThunk(
-  'experimentViewer/setIODims',
-  async (
-    {
-      innerBinKey,
-      outerBinKey,
-    }: {
-      innerBinKey?: string;
-      outerBinKey?: string;
-    },
-    { dispatch, getState }
-  ) => {
-    const state = getState() as { collection: CollectionState };
-    const collectionId = state.collection.collectionId;
-
-    if (!collectionId) {
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      await apiRestClient.post(`/${collectionId}/set_io_bin_keys`, {
-        inner_bin_key: innerBinKey,
-        outer_bin_key: outerBinKey,
-      });
-
-      return { innerBinKey, outerBinKey };
-    } catch (error) {
-      console.error('Error setting IO dims:', error);
-      throw error;
-    }
-  }
-);
-
-export const setIODimByMetadataKey = createAsyncThunk(
-  'experimentViewer/setIODimByMetadataKey',
-  async (
-    {
-      metadataKey,
-      type,
-    }: {
-      metadataKey: string;
-      type: 'inner' | 'outer';
-    },
-    { dispatch, getState }
-  ) => {
-    const state = getState() as RootState;
-    const collectionId = state.collection.collectionId;
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      await apiRestClient.post(`/${collectionId}/io_bin_key_with_metadata_key`, {
-        metadata_key: metadataKey,
-        type: type,
-      });
-      // No specific data needs to be returned, success implies backend will publish updates
-      return { metadataKey, type };
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error setting dimension by metadata key',
-          description: `Failed to set ${type} dimension using metadata key ${metadataKey}`,
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
 
 export const experimentViewerSlice = createSlice({
   name: 'experimentViewer',

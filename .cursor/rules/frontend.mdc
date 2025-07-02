@@ -1,8 +1,16 @@
 ---
 description:
-globs:
-alwaysApply: true
+globs: docent_core/_web/**/*.ts,docent_core/_web/**/*.tsx
+alwaysApply: false
 ---
+# State management
+
+- Use Redux slices in `app/store` to store frontend state
+- Use RTK queries in `app/api` to access the backend through APIs.
+    - We're still migrating API calls from thunks to RTK queries. Do not change any existing thunks unless the user explicitly tells you to do a refactor. However, any new functionality should be implemented using the RTK pattern.
+
+# Styling
+
 ## Padding, spacing, and height
 - For div containers, set padding and spacing to `3`, e.g., `p-3 space-y-3`
 
