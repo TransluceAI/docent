@@ -10,9 +10,29 @@ IPython.get_ipython().run_line_magic("autoreload", "2")
 
 # %%
 
+from docent_core._db_service.db import DocentDB
 from docent_core._db_service.service import DBService
+from docent_core.app.services.diff import DiffService
 
-db = await DBService.init()
+db = await DocentDB.init()
+service = await DBService.init()
+ds = DiffService(db, service)
+
+
+# %%
+
+
+# %%
+
+
+ds.compute_paired_search(
+    ctx,
+    grouping_md_fields=["sample_id"],
+    identifying_md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    identifying_md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    shared_context="Both agents knew the name of the specific file or function they needed to find.",
+)
+
 
 # %%
 
