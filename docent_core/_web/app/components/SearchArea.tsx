@@ -289,7 +289,9 @@ const SearchArea = () => {
    * Handle share button
    */
   const handleShare = async (searchQuery: string) => {
-    const response = await apiRestClient.post(`/${collectionId}/clone_own_view`);
+    const response = await apiRestClient.post(
+      `/${collectionId}/clone_own_view`
+    );
     const success = await copyToClipboard(
       `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&searchQuery=${encodeURIComponent(searchQuery)}`
     );
@@ -703,15 +705,15 @@ const SearchArea = () => {
       </div>
 
       {/* Paired search */}
-      {/* <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Paired Search</div>
-            <div className="text-xs">
-              Compare pairs of agent runs for behavioral differences
-            </div>
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-semibold">Paired Search</div>
+          <div className="text-xs">
+            Compare pairs of agent runs for behavioral differences
           </div>
-          Not implemented yet
-        </div> */}
+        </div>
+        Not implemented yet
+      </div>
     </Card>
   );
 };

@@ -1,0 +1,30 @@
+---
+description:
+globs: docent_core/_db_service/**/*.py,docent_core/services/**/*.py
+alwaysApply: false
+---
+# Sessions and services
+
+Application services should accept a DB session and required services. This way, transaction management is handled across services.
+
+```
+class Service:
+    def __init__(self, session: AsyncSession, ...services):
+        self.session = session
+        ...
+```
+
+In cases where services need to immediately commit results (e.g., computing searches), you can pass an additional writer_session_ctx factory:
+
+```
+class DiffService:
+    def __init__(
+        self,
+        session: AsyncSession,
+        writer_session_ctx: Callable[[], AsyncContextManager[AsyncSession]],
+        ...services,
+    ):
+        self.session = session
+        self.writer_session_ctx = writer_session_ctx
+        ...
+```

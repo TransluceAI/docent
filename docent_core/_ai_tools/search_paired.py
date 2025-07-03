@@ -1,5 +1,5 @@
 import re
-from typing import Optional, Protocol
+from typing import Any, Optional, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -21,11 +21,24 @@ class ActionResult(BaseModel):
 class SearchPairedInstance(BaseModel):
     """Represents a single instance of shared context and agent actions."""
 
+    id: str = Field(default_factory=lambda: str(uuid4()))
     shared_context: str
     agent_1_action_1: ActionResult
     agent_1_action_2: ActionResult
     agent_2_action_1: ActionResult
     agent_2_action_2: ActionResult
+
+
+class SearchPairedQuery(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    # How to pair the runs up
+    grouping_md_fields: list[str]
+    md_field_value_1: tuple[str, Any]
+    md_field_value_2: tuple[str, Any]
+    # What to search for
+    context: str
+    action_1: str
+    action_2: str
 
 
 class SearchPairedResult(BaseModel):
@@ -34,9 +47,6 @@ class SearchPairedResult(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_run_1_id: str
     agent_run_2_id: str
-    context: str
-    action_1: str
-    action_2: str
     instances: list[SearchPairedInstance] | None
 
 
@@ -45,15 +55,12 @@ class SearchPairedResultStreamingCallback(Protocol):
 
     async def __call__(
         self,
-        search_results: list[SearchPairedResult] | None,
+        search_results: list[SearchPairedResult],
     ) -> None: ...
 
 
 def _get_llm_streaming_callback_for_paired_search(
-    context: str,
-    action_1: str,
-    action_2: str,
-    paired_run_ids: list[tuple[str, str]],
+    paired_agent_runs: list[tuple[AgentRun, AgentRun]],
     search_result_callback: SearchPairedResultStreamingCallback,
 ):
     async def _streaming_callback(batch_index: int, llm_output: LLMOutput):
@@ -61,20 +68,12 @@ def _get_llm_streaming_callback_for_paired_search(
             _parse_output(llm_output.first_text) if llm_output.first_text is not None else None
         )
 
-        # Return nothing if the LLM call failed (hence None)
-        if instances is None:
-            await search_result_callback(None)
-        else:
-            agent_run_1_id, agent_run_2_id = paired_run_ids[batch_index]
-            result = SearchPairedResult(
-                agent_run_1_id=agent_run_1_id,
-                agent_run_2_id=agent_run_2_id,
-                context=context,
-                action_1=action_1,
-                action_2=action_2,
-                instances=instances,
-            )
-            await search_result_callback([result])
+        result = SearchPairedResult(
+            agent_run_1_id=paired_agent_runs[batch_index][0].id,
+            agent_run_2_id=paired_agent_runs[batch_index][1].id,
+            instances=instances,  # Is None if the LLM call failed
+        )
+        await search_result_callback([result])
 
     return _streaming_callback
 
@@ -115,17 +114,11 @@ Agent 2 performed action 2: [Y/N] | [explanation if Y]
 
 async def execute_search_paired(
     paired_agent_runs: list[tuple[AgentRun, AgentRun]],
-    context: str,
-    action_1: str,
-    action_2: str,
+    query: SearchPairedQuery,
     search_result_callback: SearchPairedResultStreamingCallback | None = None,
 ):
-    paired_run_ids = [(ar1.id, ar2.id) for ar1, ar2 in paired_agent_runs]
-
     llm_callback = (
-        _get_llm_streaming_callback_for_paired_search(
-            context, action_1, action_2, paired_run_ids, search_result_callback
-        )
+        _get_llm_streaming_callback_for_paired_search(paired_agent_runs, search_result_callback)
         if search_result_callback is not None
         else None
     )
@@ -134,9 +127,9 @@ async def execute_search_paired(
         SEARCH_PROMPT.format(
             agent_run_1=ar1.text,
             agent_run_2=ar2.text,
-            context=context,
-            action_1=action_1,
-            action_2=action_2,
+            context=query.context,
+            action_1=query.action_1,
+            action_2=query.action_2,
         )
         for ar1, ar2 in paired_agent_runs
     ]
@@ -163,14 +156,11 @@ async def execute_search_paired(
     ]
     return [
         SearchPairedResult(
-            agent_run_1_id=agent_run_1_id,
-            agent_run_2_id=agent_run_2_id,
-            context=context,
-            action_1=action_1,
-            action_2=action_2,
+            agent_run_1_id=paired_agent_runs[i][0].id,
+            agent_run_2_id=paired_agent_runs[i][1].id,
             instances=instances,
         )
-        for instances, (agent_run_1_id, agent_run_2_id) in zip(instances_per_input, paired_run_ids)
+        for i, instances in enumerate(instances_per_input)
     ]
 
 

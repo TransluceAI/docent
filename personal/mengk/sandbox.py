@@ -8,30 +8,74 @@ import IPython
 IPython.get_ipython().run_line_magic("load_ext", "autoreload")
 IPython.get_ipython().run_line_magic("autoreload", "2")
 
+
 # %%
 
 from docent_core._db_service.db import DocentDB
 from docent_core._db_service.service import DBService
-from docent_core.app.services.diff import DiffService
+from docent_core.services.diff import DiffService
 
 db = await DocentDB.init()
 service = await DBService.init()
-ds = DiffService(db, service)
+ts = await db.get_test_session()
+ds = DiffService(ts, db.session, service)
+
+
+# %%
+
+fg_id = "7f99cfc1-bc5b-4979-968f-9e837193d1a9"
+user = await service.get_user_by_email("mengk@mit.edu")
+ctx = await service.get_default_view_ctx(fg_id, user)
 
 
 # %%
 
 
-# %%
-
-
-ds.compute_paired_search(
-    ctx,
+ds.pair_runs(
+    await service.get_agent_runs(ctx),
     grouping_md_fields=["sample_id"],
     identifying_md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
     identifying_md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
-    shared_context="Both agents knew the name of the specific file or function they needed to find.",
 )
+
+
+# %%
+
+
+from docent_core._ai_tools.search_paired import SearchPairedQuery
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents knew the name of the specific file or function they needed to find.",
+    action_1="Agent used tools like grep or find to search for the object",
+    action_2="Agent searched manually without tools",
+)
+
+query_id = await ds.add_paired_search_query(ctx, query)
+
+# %%
+
+results = await ds.compute_paired_search(ctx, query_id)
+
+
+# %%
+
+
+await ts.commit()
+
+
+# %%
+
+
+query_id
+
+
+# %%
+
+
+results[0]
 
 
 # %%

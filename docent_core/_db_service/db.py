@@ -185,3 +185,7 @@ class DocentDB:
             raise
         finally:
             await session.close()
+
+    async def _get_test_session(self) -> AsyncSession:
+        logger.warning("Using test session. This is not recommended for production.")
+        return self._Session()
