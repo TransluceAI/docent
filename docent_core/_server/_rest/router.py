@@ -579,6 +579,17 @@ async def get_agent_run(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
+    """
+    Get an agent run by ID.
+
+    Args:
+        agent_run_id: The ID of the agent run to get.
+        apply_base_where_clause: Whether to apply the base where clause to the query.
+
+    Returns:
+        The agent run.
+    """
+
     # Track analytics
     await track_endpoint_with_user(db, EndpointType.GET_AGENT_RUN, ctx.user, ctx.collection_id)
 

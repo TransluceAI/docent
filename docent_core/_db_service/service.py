@@ -467,6 +467,14 @@ class DBService:
     ) -> AgentRun | None:
         """
         Get an AgentRun from the database by its ID.
+
+        Args:
+            ctx: The ViewContext to use for the query.
+            agent_run_id: The ID of the agent run to get.
+            apply_base_where_clause: Whether to apply the base where clause to the query.
+
+        Returns:
+            The agent run.
         """
         agent_runs = await self.get_agent_runs(
             ctx,

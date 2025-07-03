@@ -296,7 +296,7 @@ export const getAltAgentRun = createAsyncThunk(
     }
 
     try {
-      const response = await await apiRestClient.get(
+      const response = await apiRestClient.get(
         `/${collectionId}/agent_run?agent_run_id=${agentRunId}&apply_base_where_clause=false`
       );
       console.log('response', response);
