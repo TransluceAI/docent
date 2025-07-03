@@ -28,3 +28,6 @@ class DiffService:
         self.writer_session_ctx = writer_session_ctx
         ...
 ```
+
+Other notes:
+- Flushing and committing are the responsibility of the service *callers* (e.g., workers, HTTP handlers), not the service itself.
