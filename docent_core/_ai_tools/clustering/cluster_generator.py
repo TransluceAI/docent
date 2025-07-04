@@ -93,7 +93,7 @@ async def propose_clusters(
             "content": (
                 CLUSTER_PROMPT.format(
                     # n_clusters=n_clusters or "an appropriate number of",
-                    n_clusters=5,
+                    n_clusters="between 5 and 8",
                     extra_instructions=(f"\n{extra_instructions}\n" if extra_instructions else ""),
                     items=all_items,
                 )
