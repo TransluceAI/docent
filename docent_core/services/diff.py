@@ -59,6 +59,7 @@ class DiffService:
         grouping_md_fields: list[str],
         md_field_value_1: tuple[str, Any],
         md_field_value_2: tuple[str, Any],
+        raise_errors: bool = True,
     ):
         # Map from the grouping key (determined by grouping_md_fields) to
         #   a dict of field values to matching agent runs.
@@ -80,11 +81,15 @@ class DiffService:
             if len(v) > 2:
                 raise ValueError(f"Pairing failed. Found {len(v)} runs for key {k}")
 
-            runs_1, runs_2 = v[md_field_value_1], v[md_field_value_2]
+            runs_1, runs_2 = v.get(md_field_value_1, []), v.get(md_field_value_2, [])
             if not (len(runs_1) == 1 and len(runs_2) == 1):
-                raise ValueError(
-                    f"Pairing failed. Found {len(runs_1)} runs for {md_field_value_1} and {len(runs_2)} runs for {md_field_value_2}"
-                )
+                err_msg = f"Pairing failed. Found {len(runs_1)} runs for {md_field_value_1} and {len(runs_2)} runs for {md_field_value_2}"
+                if raise_errors:
+                    raise ValueError(err_msg)
+                else:
+                    logger.warning(f"{err_msg} (continuing)")
+                    continue
+
             paired_list.append((runs_1[0], runs_2[0]))
 
         return paired_list
@@ -197,6 +202,7 @@ class DiffService:
             query.grouping_md_fields,
             query.md_field_value_1,
             query.md_field_value_2,
+            raise_errors=False,
         )
 
         # Only compute diffs for agent runs that don't have results yet

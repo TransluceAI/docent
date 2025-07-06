@@ -40,7 +40,7 @@ service = await DBService.init()
 
 # %%
 
-fg_id = "d9bf6d2a-95d2-4bee-a29d-6cf5a5582cc5"
+fg_id = "8df1f4c1-cd28-4bd6-93d7-d015c38f721a"
 user = await service.get_user_by_email("a@b.com")
 ctx = await service.get_default_view_ctx(fg_id, user)
 
@@ -68,24 +68,25 @@ query = DiffQuery(
     md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
     focus="exploration strategies",
 )
+query = DiffQuery(
+    grouping_md_fields=["task_id"],
+    md_field_value_1=("model", "harmony_v4.0.15_berry_v3_1mil_orion_no_budget"),
+    md_field_value_2=(
+        "model",
+        "harmony_v4.0.16_berry_v3_1mil_orion_lpe_no_budget_commentary_cs_cross_msg_msc",
+    ),
+    focus="high level problem solving strategies",
+)
 
 results = await execute_diff(query)
 results
 
-
-# %%
-
-async with db.session() as session:
-    ds = DiffService(session, db.session, service)
-    await ds.delete_diff_results("a8639497-2297-4863-92d5-5dda651927a3")
-
-
 # %%
 
 
 async with db.session() as session:
     ds = DiffService(session, db.session, service)
-    claims = await ds.propose_diff_claims("3f92fc2a-ff27-40aa-8e53-88f6315d5090")
+    claims = await ds.propose_diff_claims("b998ee8d-f72a-47fb-acbe-af87edd1dcf4")
 
 
 # %%
@@ -101,12 +102,15 @@ async with db.session() as session:
 
 async with db.session() as session:
     ds = DiffService(session, db.session, service)
-    claims = await ds.get_diff_claims("3f92fc2a-ff27-40aa-8e53-88f6315d5090")
+    claims = await ds.get_diff_claims("b998ee8d-f72a-47fb-acbe-af87edd1dcf4")
 
 
 # %%
 
-claims.instances[0].model_dump()
+from pprint import pprint
+
+for instance in claims.instances:
+    pprint(instance.model_dump())
 
 # %%
 
