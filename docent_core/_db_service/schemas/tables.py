@@ -28,12 +28,6 @@ from docent.data_models.agent_run import AgentRun
 from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
 from docent.data_models.transcript import Transcript
 from docent_core._ai_tools.search import SearchResult
-from docent_core._ai_tools.search_paired import (
-    ActionResult,
-    SearchPairedInstance,
-    SearchPairedQuery,
-    SearchPairedResult,
-)
 from docent_core._db_service.filters import ComplexFilter, parse_filter_dict
 from docent_core._db_service.schemas.auth_models import Organization, Permission, User
 from docent_core._db_service.schemas.base import SQLABase
@@ -49,8 +43,6 @@ TABLE_SEARCH_QUERIES = "search_queries"
 TABLE_FILTER = "filters"
 TABLE_JUDGMENT = "judgments"
 TABLE_JOB = "jobs"
-TABLE_DIFF_ATTRIBUTE = "diff_attributes"
-TABLE_DIFF_CLUSTER = "diff_clusters"
 TABLE_TRANSCRIPT = "transcripts"
 TABLE_USER = "users"
 TABLE_SESSION = "sessions"
@@ -65,10 +57,6 @@ TABLE_SEARCH_RESULT_CLUSTER = "search_result_clusters"
 TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
-
-TABLE_PAIRED_SEARCH_QUERY = "paired_search_query"
-TABLE_PAIRED_SEARCH_RESULT = "paired_search_result"
-TABLE_PAIRED_SEARCH_INSTANCE = "paired_search_instance"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -667,143 +655,3 @@ class SQLAApiKey(SQLABase):
     @property
     def is_active(self) -> bool:
         return self.disabled_at is None
-
-
-class SQLAPairedSearchQuery(SQLABase):
-    __tablename__ = TABLE_PAIRED_SEARCH_QUERY
-
-    id = mapped_column(String(36), primary_key=True)
-    collection_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
-    )
-
-    grouping_md_fields = mapped_column(JSONB, nullable=False)
-    md_field_value_1 = mapped_column(JSONB, nullable=False)
-    md_field_value_2 = mapped_column(JSONB, nullable=False)
-
-    context = mapped_column(Text, nullable=False)
-    action_1 = mapped_column(Text, nullable=False)
-    action_2 = mapped_column(Text, nullable=False)
-
-    @classmethod
-    def from_pydantic(
-        cls,
-        paired_search_query: SearchPairedQuery,
-        collection_id: str,
-    ) -> "SQLAPairedSearchQuery":
-        return cls(
-            id=paired_search_query.id,
-            collection_id=collection_id,
-            grouping_md_fields=paired_search_query.grouping_md_fields,
-            md_field_value_1=paired_search_query.md_field_value_1,
-            md_field_value_2=paired_search_query.md_field_value_2,
-            context=paired_search_query.context,
-            action_1=paired_search_query.action_1,
-            action_2=paired_search_query.action_2,
-        )
-
-    def to_pydantic(self) -> SearchPairedQuery:
-        return SearchPairedQuery(
-            grouping_md_fields=self.grouping_md_fields,
-            md_field_value_1=tuple(self.md_field_value_1),
-            md_field_value_2=tuple(self.md_field_value_2),
-            context=self.context,
-            action_1=self.action_1,
-            action_2=self.action_2,
-        )
-
-
-class SQLAPairedSearchResult(SQLABase):
-    __tablename__ = TABLE_PAIRED_SEARCH_RESULT
-
-    id = mapped_column(String(36), primary_key=True)
-    paired_search_query_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_PAIRED_SEARCH_QUERY}.id"), nullable=False, index=True
-    )
-
-    agent_run_1_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
-    )
-    agent_run_2_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
-    )
-
-    instances: Mapped[list["SQLAPairedSearchInstance"]] = relationship(
-        "SQLAPairedSearchInstance",
-        back_populates="result",
-        cascade="all, delete-orphan",
-    )
-
-    def to_pydantic(self) -> SearchPairedResult:
-        """
-        Note: `self.instances` must have already been loaded, otherwise this function will error.
-        Use `.options(selectinload(...))` to load them explicitly.
-        """
-        return SearchPairedResult(
-            id=self.id,
-            agent_run_1_id=self.agent_run_1_id,
-            agent_run_2_id=self.agent_run_2_id,
-            instances=[instance.to_pydantic() for instance in self.instances],
-        )
-
-    @classmethod
-    def from_pydantic(cls, paired_search_result: SearchPairedResult, query_id: str):
-        sqla_instances = (
-            [
-                SQLAPairedSearchInstance.from_pydantic(instance, paired_search_result.id)
-                for instance in paired_search_result.instances
-            ]
-            if paired_search_result.instances is not None
-            else []
-        )
-        return cls(
-            id=paired_search_result.id,
-            paired_search_query_id=query_id,
-            agent_run_1_id=paired_search_result.agent_run_1_id,
-            agent_run_2_id=paired_search_result.agent_run_2_id,
-            instances=sqla_instances,
-        )
-
-
-class SQLAPairedSearchInstance(SQLABase):
-    __tablename__ = TABLE_PAIRED_SEARCH_INSTANCE
-
-    id = mapped_column(String(36), primary_key=True)
-    paired_search_result_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_PAIRED_SEARCH_RESULT}.id"), nullable=False, index=True
-    )
-
-    shared_context = mapped_column(Text, nullable=False)
-    agent_1_action_1 = mapped_column(JSONB, nullable=False)
-    agent_1_action_2 = mapped_column(JSONB, nullable=False)
-    agent_2_action_1 = mapped_column(JSONB, nullable=False)
-    agent_2_action_2 = mapped_column(JSONB, nullable=False)
-
-    result: Mapped["SQLAPairedSearchResult"] = relationship(
-        "SQLAPairedSearchResult",
-        back_populates="instances",
-    )
-
-    @classmethod
-    def from_pydantic(
-        cls, paired_search_instance: SearchPairedInstance, result_id: str
-    ) -> "SQLAPairedSearchInstance":
-        return cls(
-            id=paired_search_instance.id,
-            paired_search_result_id=result_id,
-            shared_context=paired_search_instance.shared_context,
-            agent_1_action_1=paired_search_instance.agent_1_action_1.model_dump(),
-            agent_1_action_2=paired_search_instance.agent_1_action_2.model_dump(),
-            agent_2_action_1=paired_search_instance.agent_2_action_1.model_dump(),
-            agent_2_action_2=paired_search_instance.agent_2_action_2.model_dump(),
-        )
-
-    def to_pydantic(self) -> SearchPairedInstance:
-        return SearchPairedInstance(
-            id=self.id,
-            shared_context=self.shared_context,
-            agent_1_action_1=ActionResult(**self.agent_1_action_1),
-            agent_1_action_2=ActionResult(**self.agent_1_action_2),
-            agent_2_action_1=ActionResult(**self.agent_2_action_1),
-            agent_2_action_2=ActionResult(**self.agent_2_action_2),
-        )

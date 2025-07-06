@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+import docent_core._db_service.schemas._all_tables as tables  # Import all tables to ensure SQLAlchemy checks their existence
 from docent._log_util import get_logger
-from docent_core._db_service.schemas.base import SQLABase
 from docent_core._env_util import ENV
 
 logger = get_logger(__name__)
@@ -157,7 +157,7 @@ class DocentDB:
             # Enable pgvector extension
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             # Create tables
-            await conn.run_sync(SQLABase.metadata.create_all)
+            await conn.run_sync(tables.base.SQLABase.metadata.create_all)
         logger.info("pgvector and tables initialized successfully")
 
     async def drop_all_tables(self) -> None:
@@ -170,7 +170,7 @@ class DocentDB:
             raise ValueError("Refusing to drop tables from the 'postgres' system database")
 
         async with self.engine.begin() as conn:
-            await conn.run_sync(SQLABase.metadata.drop_all)
+            await conn.run_sync(tables.base.SQLABase.metadata.drop_all)
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:

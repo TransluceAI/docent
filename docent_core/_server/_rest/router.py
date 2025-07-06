@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from inspect_ai.log import read_eval_log_async
 from pydantic import BaseModel
 from pydantic_core import ValidationError
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util.logger import get_logger
@@ -2378,43 +2378,43 @@ class ComputeDiffSearchRequest(BaseModel):
 #     )
 
 
-@user_router.get("/{collection_id}/transcript_diff")
-async def get_transcript_diff(
-    agent_run_1_id: str,
-    agent_run_2_id: str,
-    db: DBService = Depends(get_db),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    """Get a transcript diff between two agent runs."""
-    from sqlalchemy import or_, select
+# @user_router.get("/{collection_id}/transcript_diff")
+# async def get_transcript_diff(
+#     agent_run_1_id: str,
+#     agent_run_2_id: str,
+#     db: DBService = Depends(get_db),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.READ)),
+# ):
+#     """Get a transcript diff between two agent runs."""
+#     from sqlalchemy import or_, select
 
-    from docent_core._ai_tools.diffs.models import SQLATranscriptDiff
+#     from docent_core._ai_tools.diffs.models import SQLATranscriptDiff
 
-    # Query for transcript diff in either direction
-    async with db.db.session() as session:
-        result = await session.execute(
-            select(SQLATranscriptDiff).where(
-                or_(
-                    and_(
-                        SQLATranscriptDiff.agent_run_1_id == agent_run_1_id,
-                        SQLATranscriptDiff.agent_run_2_id == agent_run_2_id,
-                    ),
-                    and_(
-                        SQLATranscriptDiff.agent_run_1_id == agent_run_2_id,
-                        SQLATranscriptDiff.agent_run_2_id == agent_run_1_id,
-                    ),
-                )
-            )
-        )
-        transcript_diff = result.scalar_one_or_none()
+#     # Query for transcript diff in either direction
+#     async with db.db.session() as session:
+#         result = await session.execute(
+#             select(SQLATranscriptDiff).where(
+#                 or_(
+#                     and_(
+#                         SQLATranscriptDiff.agent_run_1_id == agent_run_1_id,
+#                         SQLATranscriptDiff.agent_run_2_id == agent_run_2_id,
+#                     ),
+#                     and_(
+#                         SQLATranscriptDiff.agent_run_1_id == agent_run_2_id,
+#                         SQLATranscriptDiff.agent_run_2_id == agent_run_1_id,
+#                     ),
+#                 )
+#             )
+#         )
+#         transcript_diff = result.scalar_one_or_none()
 
-    if not transcript_diff:
-        return None
+#     if not transcript_diff:
+#         return None
 
-    # Track analytics
-    await track_endpoint_with_user(
-        db, EndpointType.GET_TRANSCRIPT_DIFF, ctx.user, ctx.collection_id
-    )
+#     # Track analytics
+#     await track_endpoint_with_user(
+#         db, EndpointType.GET_TRANSCRIPT_DIFF, ctx.user, ctx.collection_id
+#     )
 
-    return transcript_diff.to_pydantic().model_dump()
+#     return transcript_diff.to_pydantic().model_dump()

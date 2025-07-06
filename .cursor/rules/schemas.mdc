@@ -1,0 +1,112 @@
+---
+description:
+globs: docent_core/_db_service/schemas/*.py,
+alwaysApply: false
+---
+
+# SQLA table specification
+
+## Foreign Keys and Relationships
+
+### Rule: Relationship Configuration
+Configure relationships with proper back-references and cascading:
+
+```python
+# Parent side
+instances: Mapped[list["SQLADiffInstance"]] = relationship(
+    "SQLADiffInstance",
+    back_populates="result",
+    cascade="all, delete-orphan",
+)
+
+# Child side
+result: Mapped["SQLADiffResult"] = relationship(
+    "SQLADiffResult",
+    back_populates="instances",
+)
+```
+
+**Key requirements**:
+- Use `Mapped[...]` type hints
+- Always specify `back_populates` for bidirectional relationships
+- Use `cascade="all, delete-orphan"` for parent-child relationships
+- Quote class names in relationships to handle forward references
+
+### Rule: Cascade Behavior
+Use `cascade="all, delete-orphan"` for parent-child relationships where:
+- Children should be deleted when parent is deleted
+- Children cannot exist without a parent
+
+**Example**: When a `DiffResult` is deleted, all its `DiffInstance` records should be deleted.
+
+## Column Specifications
+
+### Rule: Explicit Nullable Specification
+Always explicitly specify nullable behavior:
+
+```python
+summary = mapped_column(Text, nullable=False)
+focus = mapped_column(Text, nullable=True)
+```
+
+**Why**: Makes intent clear and prevents SQLAlchemy defaults from causing confusion.
+
+### Rule: Use Appropriate Column Types
+- `String(36)` for UUIDs
+- `Text` for long text content
+- `JSONB` for complex data structures
+- `Boolean` for true/false values
+
+### Rule: Index Foreign Keys
+Always add indexes to foreign key columns:
+
+```python
+collection_id = mapped_column(
+    String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
+)
+```
+
+**Why**: Foreign keys are frequently used in JOINs and WHERE clauses.
+
+## Pydantic Integration
+
+### Rule: Implement Conversion Methods
+Every SQLAlchemy model must implement both conversion methods:
+
+```python
+@classmethod
+def from_pydantic(cls, model: PydanticModel, additional_params: str) -> "SQLAModel":
+    """Convert Pydantic model to SQLAlchemy model"""
+    return cls(
+        id=model.id,
+        # ... other fields
+    )
+
+def to_pydantic(self) -> PydanticModel:
+    """Convert SQLAlchemy model to Pydantic model"""
+    return PydanticModel(
+        id=self.id,
+        # ... other fields
+    )
+```
+
+### Rule: Handle Nested Relationships in Conversion
+When converting models with relationships, handle nested objects properly:
+
+```python
+@classmethod
+def from_pydantic(cls, diff_result: DiffResult, query_id: str) -> "SQLADiffResult":
+    sqla_instances = (
+        [
+            SQLADiffInstance.from_pydantic(instance, diff_result.id)
+            for instance in diff_result.instances
+        ]
+        if diff_result.instances is not None
+        else []
+    )
+    return cls(
+        id=diff_result.id,
+        instances=sqla_instances,
+        # ... other fields
+    )
+```

@@ -4,19 +4,35 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent_core._ai_tools.diff.diff import (
+    DiffQuery,
+    DiffResult,
+    DiffResultStreamingCallback,
+    execute_diff,
+)
+from docent_core._ai_tools.diff.propose_claims import (
+    DiffClaimsResult,
+    execute_propose_claims,
+)
 from docent_core._ai_tools.search_paired import (
     SearchPairedQuery,
     SearchPairedResult,
     SearchPairedResultStreamingCallback,
     execute_search_paired,
 )
-from docent_core._db_service.schemas.tables import (
+from docent_core._db_service.schemas.diff import (
+    SQLADiffClaimsResult,
+    SQLADiffQuery,
+    SQLADiffResult,
     SQLAPairedSearchQuery,
     SQLAPairedSearchResult,
 )
 from docent_core._db_service.service import DBService
 from docent_core._server._rest.router import ViewContext
+
+logger = get_logger(__name__)
 
 
 class DiffService:
@@ -41,8 +57,8 @@ class DiffService:
         self,
         agent_runs: list[AgentRun],
         grouping_md_fields: list[str],
-        identifying_md_field_value_1: tuple[str, Any],
-        identifying_md_field_value_2: tuple[str, Any],
+        md_field_value_1: tuple[str, Any],
+        md_field_value_2: tuple[str, Any],
     ):
         # Map from the grouping key (determined by grouping_md_fields) to
         #   a dict of field values to matching agent runs.
@@ -51,16 +67,27 @@ class DiffService:
             key = tuple(run.metadata.get(field) for field in grouping_md_fields)
             if key not in m:
                 m[key] = {}
-            if run.metadata.get(identifying_md_field_value_1[0]) == identifying_md_field_value_1[1]:
-                m[key].setdefault(identifying_md_field_value_1, []).append(run)
-            elif (
-                run.metadata.get(identifying_md_field_value_2[0]) == identifying_md_field_value_2[1]
-            ):
-                m[key].setdefault(identifying_md_field_value_2, []).append(run)
+            if run.metadata.get(md_field_value_1[0]) == md_field_value_1[1]:
+                m[key].setdefault(md_field_value_1, []).append(run)
+            elif run.metadata.get(md_field_value_2[0]) == md_field_value_2[1]:
+                m[key].setdefault(md_field_value_2, []).append(run)
             else:
                 raise ValueError(f"Run {run.id} does not match any identifying field value")
 
-        return m
+        # Pair agent runs up; raise error if there are more than 2 runs for a key
+        paired_list: list[tuple[AgentRun, AgentRun]] = []
+        for k, v in m.items():
+            if len(v) > 2:
+                raise ValueError(f"Pairing failed. Found {len(v)} runs for key {k}")
+
+            runs_1, runs_2 = v[md_field_value_1], v[md_field_value_2]
+            if not (len(runs_1) == 1 and len(runs_2) == 1):
+                raise ValueError(
+                    f"Pairing failed. Found {len(runs_1)} runs for {md_field_value_1} and {len(runs_2)} runs for {md_field_value_2}"
+                )
+            paired_list.append((runs_1[0], runs_2[0]))
+
+        return paired_list
 
     async def add_paired_search_query(self, ctx: ViewContext, query: SearchPairedQuery):
         sqla_query = SQLAPairedSearchQuery.from_pydantic(query, ctx.collection_id)
@@ -73,34 +100,40 @@ class DiffService:
         query_id: str,
         search_result_callback: SearchPairedResultStreamingCallback | None = None,
     ):
+        """Note: make sure `query_id` is *committed* before calling this function.
+        The writer session needs to have access to it."""
+
         # Get query
         result = await self.session.execute(
             select(SQLAPairedSearchQuery).where(SQLAPairedSearchQuery.id == query_id)
         )
         sqla_query = result.scalar_one()
         query, query_id = sqla_query.to_pydantic(), sqla_query.id
-        agent_runs = await self.service.get_agent_runs(ctx)
 
-        # Aggregate agent runs up according to the query
-        m = self.pair_runs(
+        # Pair agent runs up
+        agent_runs = await self.service.get_agent_runs(ctx)
+        raw_paired_list = self.pair_runs(
             agent_runs,
             query.grouping_md_fields,
             query.md_field_value_1,
             query.md_field_value_2,
         )
 
-        # Pair agent runs up; raise error if there are more than 2 runs for a key
-        paired_list: list[tuple[AgentRun, AgentRun]] = []
-        for k, v in m.items():
-            if len(v) > 2:
-                raise ValueError(f"Pairing failed. Found {len(v)} runs for key {k}")
+        # Only compute search results for agent runs that don't have results yet
+        cur_results = await self.get_paired_search_results(query_id)
+        pairs_with_results = set(
+            (result.agent_run_1_id, result.agent_run_2_id) for result in cur_results
+        )
+        paired_list = [
+            pair for pair in raw_paired_list if (pair[0].id, pair[1].id) not in pairs_with_results
+        ]
 
-            runs_1, runs_2 = v[query.md_field_value_1], v[query.md_field_value_2]
-            if not (len(runs_1) == 1 and len(runs_2) == 1):
-                raise ValueError(
-                    f"Pairing failed. Found {len(runs_1)} runs for {query.md_field_value_1} and {len(runs_2)} runs for {query.md_field_value_2}"
-                )
-            paired_list.append((runs_1[0], runs_2[0]))
+        # Early exit if nothing to do
+        if len(paired_list) == 0:
+            logger.warning(
+                f"Skipping compute_paired_search for query {query_id}, all pairs already have results"
+            )
+            return
 
         async def _callback(search_results: list[SearchPairedResult]):
             if search_result_callback is not None:
@@ -113,6 +146,7 @@ class DiffService:
             async with self.writer_session_ctx() as write_session:
                 write_session.add_all(sqla_results)
 
+        logger.info(f"Computing search results for {len(paired_list)}/{len(raw_paired_list)} pairs")
         await execute_search_paired(paired_list, query, search_result_callback=_callback)
 
     async def get_paired_search_results(self, query_id: str) -> list[SearchPairedResult]:
@@ -125,3 +159,178 @@ class DiffService:
         )
         sqla_results = result.scalars().all()
         return [sqla_result.to_pydantic() for sqla_result in sqla_results]
+
+    ######################################
+    # Computing low-level diff instances #
+    ######################################
+
+    async def add_diff_query(self, ctx: ViewContext, query: DiffQuery):
+        sqla_query = SQLADiffQuery.from_pydantic(query, ctx.collection_id)
+        self.session.add(sqla_query)
+        return sqla_query.id
+
+    async def get_diff_query(self, query_id: str) -> SQLADiffQuery:
+        result = await self.session.execute(
+            select(SQLADiffQuery).where(SQLADiffQuery.id == query_id)
+        )
+        return result.scalar_one()
+
+    async def compute_diff(
+        self,
+        ctx: ViewContext,
+        query_id: str,
+        diff_result_callback: DiffResultStreamingCallback | None = None,
+    ):
+        """Only computes diffs for agent runs that don't have results yet.
+
+        Note: make sure `query_id` is *committed* before calling this function.
+        The writer session needs to have access to it.
+        """
+
+        # Get query
+        query = (await self.get_diff_query(query_id)).to_pydantic()
+
+        # Pair agent runs up
+        agent_runs = await self.service.get_agent_runs(ctx)
+        raw_paired_list = self.pair_runs(
+            agent_runs,
+            query.grouping_md_fields,
+            query.md_field_value_1,
+            query.md_field_value_2,
+        )
+
+        # Only compute diffs for agent runs that don't have results yet
+        cur_results = await self.get_diff_results(query_id)
+        pairs_with_results = set(
+            (result.agent_run_1_id, result.agent_run_2_id) for result in cur_results
+        )
+        paired_list = [
+            pair for pair in raw_paired_list if (pair[0].id, pair[1].id) not in pairs_with_results
+        ]
+
+        # Early exit if nothing to do
+        if len(paired_list) == 0:
+            logger.warning(
+                f"Skipping compute_diff for query {query_id}, all pairs already have results"
+            )
+            return
+
+        async def _callback(diff_results: list[DiffResult]):
+            if diff_result_callback is not None:
+                await diff_result_callback(diff_results)
+
+            sqla_results = [
+                SQLADiffResult.from_pydantic(result, query_id) for result in diff_results
+            ]
+            # Use a separate writer session that commits changes immediately
+            async with self.writer_session_ctx() as write_session:
+                write_session.add_all(sqla_results)
+
+        logger.info(f"Computing diffs for {len(paired_list)}/{len(raw_paired_list)} pairs")
+        await execute_diff(paired_list, query.focus, diff_result_callback=_callback)
+
+    async def get_diff_results(self, query_id: str) -> list[DiffResult]:
+        result = await self.session.execute(
+            select(SQLADiffResult).where(SQLADiffResult.diff_query_id == query_id)
+            # Eager-load instances to avoid downstream errors
+            .options(selectinload(SQLADiffResult.instances))
+        )
+        sqla_results = result.scalars().all()
+        return [sqla_result.to_pydantic() for sqla_result in sqla_results]
+
+    async def delete_diff_results(self, query_id: str):
+        """Uses ORM delete to trigger cascade."""
+        result = await self.session.execute(
+            select(SQLADiffResult).where(SQLADiffResult.diff_query_id == query_id)
+        )
+        diff_results = result.scalars().all()
+        for diff_result in diff_results:
+            await self.session.delete(diff_result)
+
+    ########################################
+    # Proposing diff claims from instances #
+    ########################################
+
+    async def propose_diff_claims(self, query_id: str):
+        """Only proposes claims if there aren't any already."""
+
+        # Are there existing claim results?
+        existing_claims = await self.get_diff_claims(query_id)
+        if existing_claims is not None:
+            logger.warning(
+                f"Skipping propose_diff_claims for query {query_id}, already have claims"
+            )
+            return
+
+        # Get query and results
+        sqla_query = await self.get_diff_query(query_id)
+        query = sqla_query.to_pydantic()
+        results = await self.get_diff_results(query_id)
+
+        # Feed them all into a language model to propose high-level claims
+        claims_result = await execute_propose_claims(results, query)
+
+        # Persist the claims result to the database
+        sqla_claims_result = SQLADiffClaimsResult.from_pydantic(
+            claims_result, query_id, sqla_query.collection_id
+        )
+        self.session.add(sqla_claims_result)
+
+    async def delete_diff_claims(self, query_id: str):
+        """Uses ORM delete to trigger cascade."""
+        result = await self.session.execute(
+            select(SQLADiffClaimsResult).where(SQLADiffClaimsResult.diff_query_id == query_id)
+        )
+        claims_results = result.scalars().all()
+
+        for claims_result in claims_results:
+            await self.session.delete(claims_result)
+
+    async def get_diff_claims(self, query_id: str) -> DiffClaimsResult | None:
+        result = await self.session.execute(
+            select(SQLADiffClaimsResult).where(SQLADiffClaimsResult.diff_query_id == query_id)
+            # Eager-load the paired search queries to avoid downstream errors
+            .options(selectinload(SQLADiffClaimsResult.paired_search_queries))
+        )
+        # `one_or_none` is fine since we always maintain that there's only one
+        sqla_claims_result = result.scalar_one_or_none()
+        return sqla_claims_result.to_pydantic() if sqla_claims_result is not None else None
+
+
+"""
+select
+    agent_1_action_1,
+    agent_1_action_2,
+    agent_2_action_1,
+    agent_2_action_2
+from paired_search_result r
+join paired_search_instance i on r.id = i.paired_search_result_id
+where r.paired_search_query_id = 'c09af043-0de1-475a-8fa2-8a4e396def65';
+
+select
+    count(*) filter (where agent_1_action_1 = true and agent_2_action_1 = false) as agent1_only,
+    count(*) filter (where agent_1_action_1 = false and agent_2_action_1 = true) as agent2_only,
+    count(*) filter (where agent_1_action_1 = false and agent_2_action_1 = false) as neither,
+    count(*) filter (where agent_1_action_1 = true and agent_2_action_1 = true) as both
+from paired_search_result r
+join paired_search_instance i on r.id = i.paired_search_result_id
+where r.paired_search_query_id = 'c8e8662e-7c10-4831-9679-a82664ef460f';
+
+select
+    count(*) filter (where agent_1_action_2 = true and agent_2_action_2 = false) as agent1_only,
+    count(*) filter (where agent_1_action_2 = false and agent_2_action_2 = true) as agent2_only,
+    count(*) filter (where agent_1_action_2 = false and agent_2_action_2 = false) as neither,
+    count(*) filter (where agent_1_action_2 = true and agent_2_action_2 = true) as both
+from paired_search_result r
+join paired_search_instance i on r.id = i.paired_search_result_id
+-- where r.paired_search_query_id = 'c09af043-0de1-475a-8fa2-8a4e396def65';
+where r.paired_search_query_id = 'f7ace840-0db0-4859-bd3b-971f4baaf1da';
+
+
+select *
+from paired_search_result r
+join paired_search_instance i on r.id = i.paired_search_result_id
+where
+    r.paired_search_query_id = 'c8e8662e-7c10-4831-9679-a82664ef460f'
+    and agent_1_action_1 = true and agent_2_action_1 = false;
+"""

@@ -11,7 +11,7 @@ from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
 from docent_core._server._broker.router import broker_router
-from docent_core._server._rest.router import public_router, user_router
+from docent_core._server._rest._all_routers import REST_ROUTERS
 
 logger = get_logger(__name__)
 
@@ -161,10 +161,11 @@ asgi_app.add_middleware(SessionAuthMiddleware)
 cors_config = get_cors_configuration()
 asgi_app.add_middleware(CORSMiddleware, **cors_config)
 
-# Include routers with clear separation
-asgi_app.include_router(public_router, prefix="/rest")
-asgi_app.include_router(user_router, prefix="/rest")
+# Include broker router
 asgi_app.include_router(broker_router, prefix="/broker")
+# Include all REST routers (different ones for different features)
+for router in REST_ROUTERS:
+    asgi_app.include_router(router["router"], prefix=router["prefix"])
 
 # If running in production, add Sentry middleware
 # import sentry_sdk
@@ -183,9 +184,3 @@ asgi_app.include_router(broker_router, prefix="/broker")
 @asgi_app.get("/")
 async def root():
     return "clarity has been achieved"
-
-
-@asgi_app.get("/eval_ids")
-async def get_eval_ids():
-    # TODO(mengk): remove this deprecated endpoint
-    return list[str]()
