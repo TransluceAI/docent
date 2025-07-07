@@ -12,6 +12,7 @@ from docent_core._server._broker.redis_client import (
     publish_to_broker,
     publish_view_update,
 )
+from docent_core.services.charts import ChartsService
 
 logger = get_logger(__name__)
 
@@ -101,11 +102,36 @@ async def publish_searches(db: DBService, ctx: ViewContext):
     )
 
 
+async def publish_charts(db: DBService, ctx: ViewContext):
+    """Publish charts for the view."""
+    async with db.db.session() as session:
+        charts_service = ChartsService(session, db)
+        charts = await charts_service.get_charts(ctx)
+
+    # Convert SQLAlchemy objects to dictionaries
+    chart_data = [
+        {c.key: getattr(chart, c.key) for c in sqla_inspect(chart).mapper.column_attrs}
+        for chart in charts
+    ]
+
+    chart_data.sort(key=lambda x: x["created_at"])
+
+    await publish_view_update(
+        ctx.collection_id,
+        ctx.view_id,
+        {
+            "action": "charts",
+            "payload": chart_data,
+        },
+    )
+
+
 async def publish_bin_stats_and_agent_runs(
     db: DBService,
     ctx: ViewContext,
     inner_bin_key: str | None,
     outer_bin_key: str | None,
+    y_key: str | None,
 ):
     """Publish homepage binStats and agentRunIds"""
 
@@ -274,6 +300,34 @@ async def publish_bin_stats_and_agent_runs(
     )
 
 
+async def publish_agent_runs(
+    db: DBService,
+    ctx: ViewContext,
+):
+    """Publish agent run IDs for the view"""
+
+    # Get all agent run IDs for this view
+    all_agent_run_ids = await db.get_agent_run_ids(ctx)
+
+    payload: dict[str, Any] = {
+        "request_type": "comb_stats",
+        "result": {
+            "binStats": {},
+            "agentRunIds": all_agent_run_ids,
+        },
+    }
+    await publish_view_update(
+        ctx.collection_id,
+        ctx.view_id,
+        {
+            "action": "specific_bins",
+            "payload": payload,
+        },
+    )
+
+    return
+
+
 async def publish_collections(db: DBService):
     """Publish updated collections to all connected clients."""
     sqla_collections = await db.get_collections()
@@ -301,11 +355,17 @@ async def publish_homepage_state(db: DBService, ctx: ViewContext):
     # Publish dimensions
     await publish_binnable_keys(db, ctx)
 
-    # Publish current bin keys
-    inner_bin_key, outer_bin_key = await publish_io_bin_keys(db, ctx)
+    await publish_agent_runs(db, ctx)
 
-    # Publish bin stats and agent runs
-    await publish_bin_stats_and_agent_runs(db, ctx, inner_bin_key, outer_bin_key)
+    # FIXME(ryanbloom): this is pretty inefficient
+    async with db.db.session() as session:
+        charts_service = ChartsService(session, db)
+        charts = await charts_service.get_charts(ctx)
+    for chart in charts:
+        await publish_bin_stats_and_agent_runs(db, ctx, chart.x_key, chart.series_key, chart.y_key)
 
     # Publish searches
     await publish_searches(db, ctx)
+
+    # Publish charts
+    await publish_charts(db, ctx)

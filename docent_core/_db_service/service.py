@@ -32,8 +32,14 @@ from sqlalchemy.orm import selectinload
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript
-from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
-from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
+from docent_core._ai_tools.clustering.cluster_assigner import (
+    DEFAULT_ASSIGNER,
+    assign_with_backend,
+)
+from docent_core._ai_tools.clustering.cluster_generator import (
+    ClusterFeedback,
+    propose_clusters,
+)
 from docent_core._ai_tools.search import (
     SearchResult,
     SearchResultStreamingCallback,

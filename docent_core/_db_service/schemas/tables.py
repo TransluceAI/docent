@@ -57,6 +57,7 @@ TABLE_SEARCH_RESULT_CLUSTER = "search_result_clusters"
 TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
+TABLE_CHART = "charts"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -580,6 +581,9 @@ class EndpointType(enum.Enum):
     START_COMPUTE_DIFFS = "start_compute_diffs"
     COMPUTE_DIFF_CLUSTERS = "compute_diff_clusters"
     GET_TRANSCRIPT_DIFF = "get_transcript_diff"
+    CREATE_CHART = "create_chart"
+    UPDATE_CHART = "update_chart"
+    DELETE_CHART = "delete_chart"
 
 
 class SQLAChatSession(SQLABase):
@@ -655,3 +659,39 @@ class SQLAApiKey(SQLABase):
     @property
     def is_active(self) -> bool:
         return self.disabled_at is None
+
+
+class SQLAChart(SQLABase):
+    __tablename__ = TABLE_CHART
+
+    id = mapped_column(String(36), primary_key=True)
+    name = mapped_column(Text, nullable=False)
+
+    # Foreign keys
+    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
+    created_by = mapped_column(
+        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
+    )
+
+    # Chart configuration
+    series_key = mapped_column(Text, nullable=True)
+    x_key = mapped_column(Text, nullable=True)
+    y_key = mapped_column(Text, nullable=True)
+    sql_query = mapped_column(Text, nullable=True)
+
+    # Chart visualization settings
+    chart_type = mapped_column(Text, nullable=False, default="bar")  # 'bar', 'line', 'table'
+
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    updated_at = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
+        nullable=False,
+    )
+
+    # Relationships
+    creator: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
+    view: Mapped["SQLAView"] = relationship("SQLAView", lazy="select")

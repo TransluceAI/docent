@@ -4,9 +4,9 @@ import socketService from '../services/socketService';
 
 import { setSearchesWithStats, handleSearchUpdate } from './searchSlice';
 import {
-  setOuterBinStats,
   setAgentRunIds,
   setBinStats,
+  setCharts,
 } from './experimentViewerSlice';
 import {
   setBaseFilter,
@@ -30,6 +30,18 @@ import {
   setTaSessionId,
 } from './transcriptSlice';
 import { setEmbeddingProgress, setIsListening } from './embedSlice';
+
+function convertChart(chart: any) {
+  return {
+    id: chart.id,
+    name: chart.name,
+    sqlQuery: chart.sql_query,
+    chartType: chart.chart_type,
+    xKey: chart.x_key,
+    yKey: chart.y_key,
+    seriesKey: chart.series_key,
+  };
+}
 
 export const createWebSocketMiddleware = (): Middleware => {
   return (store) => {
@@ -65,11 +77,6 @@ export const createWebSocketMiddleware = (): Middleware => {
             dispatch(setAgentRunIds(data.payload.result?.agentRunIds || []));
           } else if (data.payload.request_type === 'agent_runs') {
             dispatch(setAgentRunIds(data.payload.result?.agentRunIds || []));
-          } else if (
-            data.payload.request_type === 'outer_stats' &&
-            data.payload.result
-          ) {
-            dispatch(setOuterBinStats(data.payload.result));
           }
           break;
         case 'datapoint':
@@ -94,6 +101,9 @@ export const createWebSocketMiddleware = (): Middleware => {
         case 'io_dims_updated':
           dispatch(setInnerBinKey(data.payload.inner_bin_key));
           dispatch(setOuterBinKey(data.payload.outer_bin_key));
+          break;
+        case 'charts':
+          dispatch(setCharts(data.payload.map(convertChart)));
           break;
         case 'summarize_transcript_update':
           if (data.payload.type === 'solution') {

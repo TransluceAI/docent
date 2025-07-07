@@ -92,6 +92,7 @@ from docent_core._server._rest.send_state import (
     publish_searches,
 )
 from docent_core._server.util import sse_event_stream
+from docent_core.services.charts import ChartsService
 
 logger = get_logger(__name__)
 
@@ -697,6 +698,108 @@ async def set_io_bin_key_with_metadata_key_endpoint(
     await track_endpoint_with_user(
         db, EndpointType.SET_IO_BIN_KEY_WITH_METADATA_KEY, ctx.user, collection_id
     )
+
+
+class CreateChartRequest(BaseModel):
+    name: str | None = None
+    series_key: str | None = None
+    x_key: str | None = None
+    y_key: str | None = None
+    sql_query: str | None = None
+    chart_type: str = "bar"
+
+
+@user_router.post("/{collection_id}/charts/create")
+async def create_chart(
+    collection_id: str,
+    request: CreateChartRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    async with db.advisory_lock(collection_id, action_id="mutation"):
+        async with db.db.session() as session:
+            chart_service = ChartsService(session, db)
+            chart_id = await chart_service.create_chart(
+                ctx=ctx,
+                name=request.name,
+                series_key=request.series_key,
+                x_key=request.x_key,
+                y_key=request.y_key,
+                sql_query=request.sql_query,
+                chart_type=request.chart_type,
+            )
+
+    await publish_homepage_state(db, ctx)
+
+    # Track analytics
+    await track_endpoint_with_user(db, EndpointType.CREATE_CHART, ctx.user, collection_id)
+
+    return {"chart_id": chart_id}
+
+
+class UpdateChartRequest(BaseModel):
+    chart_id: str
+    name: str | None = None
+    series_key: str | None = None
+    x_key: str | None = None
+    y_key: str | None = None
+    sql_query: str | None = None
+    chart_type: str = "bar"
+
+
+@user_router.post("/{collection_id}/charts")
+async def update_chart(
+    collection_id: str,
+    request: UpdateChartRequest,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    # Only include fields that were explicitly set in the request
+    update_fields = {
+        field: getattr(request, field)
+        for field in request.model_fields_set
+        if field not in {"chart_id"}  # Exclude fields with special handling
+    }
+
+    update_fields = request.model_dump()
+    del update_fields["chart_id"]
+
+    async with db.db.session() as session:
+        chart_service = ChartsService(session, db)
+        async with db.advisory_lock(collection_id, action_id="mutation"):
+            await chart_service.update_chart(
+                ctx=ctx, chart_id=request.chart_id, updates=update_fields
+            )
+
+    await publish_homepage_state(db, ctx)
+
+    # Track analytics
+    await track_endpoint_with_user(db, EndpointType.UPDATE_CHART, ctx.user, collection_id)
+
+    return {"status": "ok"}
+
+
+@user_router.delete("/{collection_id}/charts/{chart_id}")
+async def delete_chart(
+    collection_id: str,
+    chart_id: str,
+    db: DBService = Depends(get_db),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    async with db.db.session() as session:
+        chart_service = ChartsService(session, db)
+        async with db.advisory_lock(collection_id, action_id="mutation"):
+            await chart_service.delete_chart(ctx, chart_id)
+
+    await publish_homepage_state(db, ctx)
+
+    # Track analytics
+    await track_endpoint_with_user(db, EndpointType.DELETE_CHART, ctx.user, collection_id)
+
+    return {"status": "ok"}
 
 
 class PostBaseFilterRequest(BaseModel):

@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { BASE_URL } from '@/app/constants';
+import { ChartType } from '../types/collectionTypes';
 
 export const experimentViewerApi = createApi({
   reducerPath: 'experimentViewerApi',
@@ -7,40 +8,91 @@ export const experimentViewerApi = createApi({
     baseUrl: `${BASE_URL}/rest`,
     credentials: 'include',
   }),
-  tagTypes: ['IODims'],
+  tagTypes: ['Charts'],
   endpoints: (build) => ({
-    setIODims: build.mutation<
-      { innerBinKey?: string; outerBinKey?: string },
-      { collectionId: string; innerBinKey?: string; outerBinKey?: string }
+    createChart: build.mutation<
+      { chart_id: string },
+      {
+        collectionId: string;
+        seriesKey?: string;
+        xKey?: string;
+        yKey?: string;
+        sqlQuery?: string;
+        chartType?: ChartType;
+      }
     >({
-      query: ({ collectionId, innerBinKey, outerBinKey }) => ({
-        url: `/${collectionId}/set_io_bin_keys`,
+      query: ({
+        collectionId,
+        seriesKey,
+        xKey,
+        yKey,
+        sqlQuery,
+        chartType = 'table',
+      }) => ({
+        url: `/${collectionId}/charts/create`,
         method: 'POST',
         body: {
-          inner_bin_key: innerBinKey,
-          outer_bin_key: outerBinKey,
+          series_key: seriesKey,
+          x_key: xKey,
+          y_key: yKey,
+          sql_query: sqlQuery,
+          chart_type: chartType,
         },
       }),
-      invalidatesTags: ['IODims'],
+      invalidatesTags: ['Charts'],
     }),
-    setIODimByMetadataKey: build.mutation<
-      { metadataKey: string; type: 'inner' | 'outer' },
-      { collectionId: string; metadataKey: string; type: 'inner' | 'outer' }
+    updateChart: build.mutation<
+      { status: string },
+      {
+        collectionId: string;
+        id?: string;
+        name: string;
+        seriesKey?: string;
+        xKey?: string;
+        yKey?: string;
+        sqlQuery?: string;
+        chartType?: string;
+      }
     >({
-      query: ({ collectionId, metadataKey, type }) => ({
-        url: `/${collectionId}/io_bin_key_with_metadata_key`,
+      query: ({
+        collectionId,
+        id,
+        name,
+        seriesKey,
+        xKey,
+        yKey,
+        sqlQuery,
+        chartType,
+      }) => ({
+        url: `/${collectionId}/charts`,
         method: 'POST',
         body: {
-          metadata_key: metadataKey,
-          type: type,
+          chart_id: id,
+          name,
+          series_key: seriesKey,
+          x_key: xKey,
+          y_key: yKey,
+          sql_query: sqlQuery,
+          chart_type: chartType,
         },
       }),
-      invalidatesTags: ['IODims'],
+      invalidatesTags: ['Charts'],
+    }),
+    deleteChart: build.mutation<
+      { status: string },
+      { collectionId: string; chartId: string }
+    >({
+      query: ({ collectionId, chartId }) => ({
+        url: `/${collectionId}/charts/${chartId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Charts'],
     }),
   }),
 });
 
 export const {
-  useSetIODimsMutation,
-  useSetIODimByMetadataKeyMutation,
+  useCreateChartMutation,
+  useUpdateChartMutation,
+  useDeleteChartMutation,
 } = experimentViewerApi;

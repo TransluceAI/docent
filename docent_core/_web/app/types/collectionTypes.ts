@@ -60,6 +60,17 @@ export interface AgentRunIdFilter {
   supports_sql: boolean;
 }
 
+export type ChartType = 'bar' | 'line' | 'table';
+
+export interface ChartSpec {
+  id: string;
+  name: string;
+  chartType: ChartType;
+  seriesKey?: string;
+  xKey: string;
+  yKey: string;
+}
+
 export type CollectionFilter =
   | PrimitiveFilter
   | SearchResultPredicateFilter

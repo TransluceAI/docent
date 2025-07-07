@@ -1,24 +1,17 @@
-import {
-  createSlice,
-  type PayloadAction,
-} from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import {
   RegexSnippet,
   TaskStats,
   TranscriptDiffViewport,
 } from '../types/experimentViewerTypes';
-import { PrimitiveFilter } from '../types/collectionTypes';
-import { GraphDatum } from '../components/Graph';
+import { ChartSpec, PrimitiveFilter } from '../types/collectionTypes';
 
 export interface ExperimentViewerState {
   // Global binning results
-  binStats?: Record<string, TaskStats>;
+  binStats?: Record<string, Record<string, TaskStats>>;
   agentRunIds?: string[];
-  outerBinStats?: Record<string, TaskStats>;
   dimIdsToFilterIds?: Record<string, string[]>;
   filtersMap?: Record<string, PrimitiveFilter>;
-  // UI state of the viewer
-  chartType?: 'bar' | 'line' | 'table';
   experimentViewerScrollPosition?: number;
   // paginationState?: ;
   // Diffing state
@@ -28,15 +21,22 @@ export interface ExperimentViewerState {
   // Regex snippets
   regexSnippets?: Record<string, RegexSnippet[]>;
   // Graph state
-  graphData?: GraphDatum[];
-  innerBinKey?: string;
-  outerBinKey?: string;
+  charts?: ChartSpec[];
 }
 
-const initialState: ExperimentViewerState = {
-  chartType: 'table',
-};
+const initialState: ExperimentViewerState = {};
 
+function parseKeys(binStats: Record<string, TaskStats>) {
+  const key = Object.keys(binStats)[0];
+  const pieces = key.split('|');
+  if (pieces.length == 1) {
+    const key1 = pieces[0].split(',')[0];
+    return key1;
+  }
+  const key1 = pieces[0].split(',')[0];
+  const key2 = pieces[1].split(',')[0];
+  return `${key1}|${key2}`;
+}
 
 export const experimentViewerSlice = createSlice({
   name: 'experimentViewer',
@@ -58,22 +58,12 @@ export const experimentViewerSlice = createSlice({
           stats = action.payload;
         }
       }
-      state.binStats = stats;
-    },
-    setOuterBinStats: (state, action: PayloadAction<any>) => {
-      let stats: Record<string, TaskStats> = {};
-      if (action.payload && typeof action.payload === 'object') {
-        if (
-          'binIds' in action.payload &&
-          typeof action.payload.binIds === 'object'
-        ) {
-          // Extract stats from the binIds field
-          stats = action.payload.binIds;
-        } else {
-          stats = action.payload;
-        }
+      if (!state.binStats) {
+        state.binStats = {};
       }
-      state.outerBinStats = typeof stats === 'object' ? stats : {};
+      if (Object.keys(stats).length > 0) {
+        state.binStats[parseKeys(stats)] = stats;
+      }
     },
     setDimIdsToFilterIds: (
       state,
@@ -86,9 +76,6 @@ export const experimentViewerSlice = createSlice({
       action: PayloadAction<Record<string, PrimitiveFilter>>
     ) => {
       state.filtersMap = action.payload;
-    },
-    setChartType: (state, action: PayloadAction<'bar' | 'line' | 'table'>) => {
-      state.chartType = action.payload;
     },
     setExperimentViewerScrollPosition: (
       state,
@@ -120,8 +107,8 @@ export const experimentViewerSlice = createSlice({
     clearRegexSnippets: (state) => {
       state.regexSnippets = undefined;
     },
-    setGraphData: (state, action: PayloadAction<GraphDatum[] | undefined>) => {
-      state.graphData = action.payload;
+    setCharts: (state, action: PayloadAction<ChartSpec[]>) => {
+      state.charts = action.payload;
     },
     resetExperimentViewerSlice: () => initialState,
   },
@@ -130,18 +117,16 @@ export const experimentViewerSlice = createSlice({
 export const {
   setAgentRunIds,
   setBinStats,
-  setOuterBinStats,
-  setChartType,
   setExperimentViewerScrollPosition,
   setSelectedDiffTranscript,
   setSelectedDiffSampleId,
   setTranscriptDiffViewport,
   updateRegexSnippets,
   clearRegexSnippets,
-  setGraphData,
   resetExperimentViewerSlice,
   setDimIdsToFilterIds,
   setFiltersMap,
+  setCharts,
 } = experimentViewerSlice.actions;
 
 export default experimentViewerSlice.reducer;
