@@ -5,11 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import SQLAChart
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 
 
 class ChartsService:
-    def __init__(self, session: AsyncSession, service: DBService):
+    def __init__(self, session: AsyncSession, service: MonoService):
         self.session = session
         self.service = service
 

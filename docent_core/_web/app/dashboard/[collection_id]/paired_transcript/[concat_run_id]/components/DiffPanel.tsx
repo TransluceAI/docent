@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { CitationRenderer } from '@/components/CitationRenderer';
 import { useAppSelector, useAppDispatch } from '@/app/store/hooks';
 import { cn } from '@/lib/utils';
-import { requestTranscriptDiff } from '@/app/store/diffSlice';
+import { requestTranscriptDiff } from '@/app/store/diffSliceOld';
 import {
   interpolateAgentBadges,
   agentBadge,
@@ -53,7 +53,10 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
       // Add a highlight effect
       claimElement.classList.add('bg-purple-200/50', 'dark:bg-purple-800/50');
       setTimeout(() => {
-        claimElement.classList.remove('bg-purple-200/50', 'dark:bg-purple-800/50');
+        claimElement.classList.remove(
+          'bg-purple-200/50',
+          'dark:bg-purple-800/50'
+        );
       }, 2000);
     }
   }, [claimId, transcriptDiff]);
@@ -137,9 +140,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
                 {/* Shared context */}
                 {diff.shared_context && (
                   <div
-                    className={cn(
-                      'text-xs text-muted-foreground italic mb-2'
-                    )}
+                    className={cn('text-xs text-muted-foreground italic mb-2')}
                   >
                     {diff.shared_context}
                   </div>
@@ -193,7 +194,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
               </div>
             ))}
           </div>
-      </ScrollArea>
+        </ScrollArea>
       )}
     </Card>
   );

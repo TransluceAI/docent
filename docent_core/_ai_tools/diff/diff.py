@@ -1,6 +1,5 @@
 import re
 import traceback
-import xml.etree.ElementTree as ET
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -29,7 +28,7 @@ Second agent:
 {{agent_run_2}}
 
 Your job is to note the interesting differences in the actions of two agents. Here are some criteria:
-- We are ONLY interested in cases where two agents have the same immediate goal and context, but take different actions. This implies that the difference in actions stems solely from a difference in the agents themselves.
+- We are ONLY interested in cases where two agents have the same *immediate* goal and context, but take different actions. This implies that the difference in actions stems solely from a difference in the agents themselves.
 - We are looking for context-action pairs that are *local*. It does not count if the action is very far after the context.
 {{focus_text}}
 
@@ -37,24 +36,12 @@ List the major differences in actions between the two agents. Use these guidelin
 
 Format each entry in your final list of claims follows:
 <claim>
-<summary>
-High level description of the difference
-</summary>
-<shared_context>
-Shared context between the two agents
-</shared_context>
-<agent_1_action>
-Action taken by agent 1
-</agent_1_action>
-<agent_1_evidence>
-Evidence for the action taken by agent 1
-</agent_1_evidence>
-<agent_2_action>
-Action taken by agent 2
-</agent_2_action>
-<agent_2_evidence>
-Evidence for the action taken by agent 2
-</agent_2_evidence>
+Summary: High level description of the difference
+Shared context: Shared context between the two agents
+Agent 1 action: Action taken by agent 1
+Agent 1 evidence: Evidence for the action taken by agent 1
+Agent 2 action: Action taken by agent 2
+Agent 2 evidence: Evidence for the action taken by agent 2
 </claim>
 
 - Do not respond with any other text than the list of claims and evidence.
@@ -125,20 +112,12 @@ def _get_llm_streaming_callback_for_diff(
     return _streaming_callback
 
 
-# Extract text content with fallback to empty string
-def _get_text(element: ET.Element, tag_name: str) -> str:
-    elem = element.find(tag_name)
-    return elem.text.strip() if elem is not None and elem.text else ""
-
-
 def _parse_output(output: str):
     """
     Parse the LLM output into a list of DiffInstance objects.
 
     Args:
-        output: The LLM output string containing claims in XML-like format
-        agent_run_1_id: ID of the first agent run
-        agent_run_2_id: ID of the second agent run
+        output: The LLM output string containing claims in line-based format
 
     Returns:
         A list of DiffInstance objects containing the parsed claims
@@ -151,17 +130,49 @@ def _parse_output(output: str):
     claim_matches = re.findall(claim_pattern, output, re.DOTALL)
 
     for claim_content in claim_matches:
-        # Parse each claim individually
-        claim_xml = f"<claim>{claim_content}</claim>"
         try:
-            claim_element = ET.fromstring(claim_xml)
+            # Use regex to extract each field
+            summary_match = re.search(r"Summary:\s*(.+)", claim_content, re.IGNORECASE)
+            shared_context_match = re.search(
+                r"Shared context:\s*(.+)", claim_content, re.IGNORECASE
+            )
+            agent_1_action_match = re.search(
+                r"Agent 1 action:\s*(.+)", claim_content, re.IGNORECASE
+            )
+            agent_1_evidence_match = re.search(
+                r"Agent 1 evidence:\s*(.+)", claim_content, re.IGNORECASE
+            )
+            agent_2_action_match = re.search(
+                r"Agent 2 action:\s*(.+)", claim_content, re.IGNORECASE
+            )
+            agent_2_evidence_match = re.search(
+                r"Agent 2 evidence:\s*(.+)", claim_content, re.IGNORECASE
+            )
 
-            summary = _get_text(claim_element, "summary")
-            shared_context = _get_text(claim_element, "shared_context")
-            agent_1_action = _get_text(claim_element, "agent_1_action")
-            agent_1_evidence = _get_text(claim_element, "agent_1_evidence")
-            agent_2_action = _get_text(claim_element, "agent_2_action")
-            agent_2_evidence = _get_text(claim_element, "agent_2_evidence")
+            # Extract the matched text or use empty string as fallback
+            summary = summary_match.group(1).strip() if summary_match else ""
+            shared_context = shared_context_match.group(1).strip() if shared_context_match else ""
+            agent_1_action = agent_1_action_match.group(1).strip() if agent_1_action_match else ""
+            agent_1_evidence = (
+                agent_1_evidence_match.group(1).strip() if agent_1_evidence_match else ""
+            )
+            agent_2_action = agent_2_action_match.group(1).strip() if agent_2_action_match else ""
+            agent_2_evidence = (
+                agent_2_evidence_match.group(1).strip() if agent_2_evidence_match else ""
+            )
+
+            if not summary:
+                logger.warning("Missing summary")
+            if not shared_context:
+                logger.warning("Missing shared context")
+            if not agent_1_action:
+                logger.warning("Missing agent 1 action")
+            if not agent_1_evidence:
+                logger.warning("Missing agent 1 evidence")
+            if not agent_2_action:
+                logger.warning("Missing agent 2 action")
+            if not agent_2_evidence:
+                logger.warning("Missing agent 2 evidence")
 
             claim = DiffInstance(
                 summary=summary,
@@ -178,9 +189,9 @@ def _parse_output(output: str):
                 ),
             )
             diffs.append(claim)
-        except ET.ParseError:
+        except Exception as e:
             logger.error(
-                f"Failed to parse individual claim XML:\n{claim_xml}\nTraceback:\n{traceback.format_exc()}"
+                f"Failed to parse claim content:\n{claim_content}\nError: {e}\nTraceback:\n{traceback.format_exc()}"
             )
             # Continue processing other claims even if this one fails
 

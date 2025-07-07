@@ -123,14 +123,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 async def periodic_cleanup_task():
     """Background task that periodically cleans up old chat sessions."""
-    from docent_core._db_service.service import DBService
+    from docent_core._db_service.service import MonoService
 
     while True:
         await anyio.sleep(24 * 3600)  # once a day
 
         try:
-            db = await DBService.init()
-            deleted_count = await db.cleanup_old_chat_sessions()
+            mono_svc = await MonoService.init()
+            deleted_count = await mono_svc.cleanup_old_chat_sessions()
             logger.info(f"Periodic cleanup: deleted {deleted_count} old chat sessions")
 
         except Exception as e:

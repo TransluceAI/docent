@@ -97,7 +97,7 @@ class _NotGiven:
 NOT_GIVEN = _NotGiven()
 
 
-class DBService:
+class MonoService:
     def __init__(self, db: DocentDB):
         self.db = db
 

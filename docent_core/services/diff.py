@@ -29,7 +29,7 @@ from docent_core._db_service.schemas.diff import (
     SQLAPairedSearchQuery,
     SQLAPairedSearchResult,
 )
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 from docent_core._server._rest.router import ViewContext
 
 logger = get_logger(__name__)
@@ -39,14 +39,14 @@ class DiffService:
     def __init__(
         self,
         session: AsyncSession,
-        writer_session_ctx: Callable[[], AsyncContextManager[AsyncSession]],
-        service: DBService,
+        session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]],
+        service: MonoService,
     ):
-        """The `writer_session_ctx` creates new sessions that commit writes immediately.
+        """The `session_cm_factory` creates new sessions that commit writes immediately.
         This is helpful if you don't want to wait for results to be written."""
 
         self.session = session
-        self.writer_session_ctx = writer_session_ctx
+        self.session_cm_factory = session_cm_factory
         self.service = service
 
     #################
@@ -59,7 +59,8 @@ class DiffService:
         grouping_md_fields: list[str],
         md_field_value_1: tuple[str, Any],
         md_field_value_2: tuple[str, Any],
-        raise_errors: bool = True,
+        sample_if_multiple: bool = True,
+        errors_ok: bool = True,
     ):
         # Map from the grouping key (determined by grouping_md_fields) to
         #   a dict of field values to matching agent runs.
@@ -72,25 +73,27 @@ class DiffService:
                 m[key].setdefault(md_field_value_1, []).append(run)
             elif run.metadata.get(md_field_value_2[0]) == md_field_value_2[1]:
                 m[key].setdefault(md_field_value_2, []).append(run)
-            else:
-                raise ValueError(f"Run {run.id} does not match any identifying field value")
 
         # Pair agent runs up; raise error if there are more than 2 runs for a key
         paired_list: list[tuple[AgentRun, AgentRun]] = []
-        for k, v in m.items():
-            if len(v) > 2:
-                raise ValueError(f"Pairing failed. Found {len(v)} runs for key {k}")
-
+        for v in m.values():
             runs_1, runs_2 = v.get(md_field_value_1, []), v.get(md_field_value_2, [])
-            if not (len(runs_1) == 1 and len(runs_2) == 1):
-                err_msg = f"Pairing failed. Found {len(runs_1)} runs for {md_field_value_1} and {len(runs_2)} runs for {md_field_value_2}"
-                if raise_errors:
-                    raise ValueError(err_msg)
-                else:
-                    logger.warning(f"{err_msg} (continuing)")
-                    continue
 
-            paired_list.append((runs_1[0], runs_2[0]))
+            # If there are exactly one for each, pair without errors
+            if len(runs_1) == 1 and len(runs_2) == 1:
+                paired_list.append((runs_1[0], runs_2[0]))
+
+            # If there are more than one for each, sample one
+            elif len(runs_1) > 0 and len(runs_2) > 0 and sample_if_multiple:
+                paired_list.append((runs_1[0], runs_2[0]))
+
+            # Otherwise, there's an error
+            else:
+                err_msg = f"Pairing failed. Found {len(runs_1)} runs for {md_field_value_1} and {len(runs_2)} runs for {md_field_value_2}"
+                if errors_ok:
+                    logger.warning(f"{err_msg} (continuing)")
+                else:
+                    raise ValueError(err_msg)
 
         return paired_list
 
@@ -148,7 +151,7 @@ class DiffService:
                 SQLAPairedSearchResult.from_pydantic(result, query_id) for result in search_results
             ]
             # Use a separate writer session that commits changes immediately
-            async with self.writer_session_ctx() as write_session:
+            async with self.session_cm_factory() as write_session:
                 write_session.add_all(sqla_results)
 
         logger.info(f"Computing search results for {len(paired_list)}/{len(raw_paired_list)} pairs")
@@ -180,6 +183,14 @@ class DiffService:
         )
         return result.scalar_one()
 
+    async def get_all_diff_queries(self, ctx: ViewContext) -> list[DiffQuery]:
+        """Get all diff queries for a collection."""
+        result = await self.session.execute(
+            select(SQLADiffQuery).where(SQLADiffQuery.collection_id == ctx.collection_id)
+        )
+        sqla_queries = result.scalars().all()
+        return [sqla_query.to_pydantic() for sqla_query in sqla_queries]
+
     async def compute_diff(
         self,
         ctx: ViewContext,
@@ -202,7 +213,6 @@ class DiffService:
             query.grouping_md_fields,
             query.md_field_value_1,
             query.md_field_value_2,
-            raise_errors=False,
         )
 
         # Only compute diffs for agent runs that don't have results yet
@@ -229,7 +239,7 @@ class DiffService:
                 SQLADiffResult.from_pydantic(result, query_id) for result in diff_results
             ]
             # Use a separate writer session that commits changes immediately
-            async with self.writer_session_ctx() as write_session:
+            async with self.session_cm_factory() as write_session:
                 write_session.add_all(sqla_results)
 
         logger.info(f"Computing diffs for {len(paired_list)}/{len(raw_paired_list)} pairs")

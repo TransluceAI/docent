@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { requestDiffClusters } from '../store/diffSlice';
+import { requestDiffClusters } from '../store/diffSliceOld';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
@@ -9,7 +9,7 @@ import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 export function DiffReportConfig() {
   const dispatch = useAppDispatch();
   const diffsReport = useAppSelector((state) => state.diff.diffsReport);
-  const hasWritePermission = useHasCollectionWritePermission()
+  const hasWritePermission = useHasCollectionWritePermission();
 
   const onProposeClustersClick = async () => {
     if (!diffsReport) {
@@ -39,12 +39,7 @@ export function DiffReportConfig() {
           Analyze the differences between experiments and propose themes.
         </div>
       </div>
-      <div
-        className={cn(
-          'border rounded-md p-2',
-          'bg-secondary'
-        )}
-      >
+      <div className={cn('border rounded-md p-2', 'bg-secondary')}>
         <Button
           size="sm"
           className="text-xs w-full"

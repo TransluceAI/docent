@@ -40,7 +40,7 @@ service = await DBService.init()
 
 # %%
 
-fg_id = "8df1f4c1-cd28-4bd6-93d7-d015c38f721a"
+fg_id = "e43b95a7-4e0c-45c6-b8f5-9170c94a32f1"
 user = await service.get_user_by_email("a@b.com")
 ctx = await service.get_default_view_ctx(fg_id, user)
 
@@ -70,31 +70,38 @@ query = DiffQuery(
 )
 query = DiffQuery(
     grouping_md_fields=["task_id"],
+    md_field_value_1=("step", 65),
+    md_field_value_2=("step", 85),
+    focus=None,
+)
+query = DiffQuery(
+    grouping_md_fields=["task_id"],
     md_field_value_1=("model", "harmony_v4.0.15_berry_v3_1mil_orion_no_budget"),
     md_field_value_2=(
         "model",
         "harmony_v4.0.16_berry_v3_1mil_orion_lpe_no_budget_commentary_cs_cross_msg_msc",
     ),
-    focus="high level problem solving strategies",
+    # focus="high level problem solving strategies",
+    focus=None,
 )
 
 results = await execute_diff(query)
 results
 
-# %%
-
-
-async with db.session() as session:
-    ds = DiffService(session, db.session, service)
-    claims = await ds.propose_diff_claims("b998ee8d-f72a-47fb-acbe-af87edd1dcf4")
-
 
 # %%
 
 
 async with db.session() as session:
     ds = DiffService(session, db.session, service)
-    await ds.delete_diff_claims("3f92fc2a-ff27-40aa-8e53-88f6315d5090")
+    results = await ds.get_diff_results("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+    from pprint import pprint
+
+    for result in results:
+        print(result.agent_run_1_id, result.agent_run_2_id)
+        for instance in result.instances:
+            pprint(instance.model_dump())
 
 
 # %%
@@ -102,15 +109,30 @@ async with db.session() as session:
 
 async with db.session() as session:
     ds = DiffService(session, db.session, service)
-    claims = await ds.get_diff_claims("b998ee8d-f72a-47fb-acbe-af87edd1dcf4")
+    await ds.propose_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
 
 
 # %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    await ds.delete_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    claims = await ds.get_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
 
 from pprint import pprint
 
 for instance in claims.instances:
     pprint(instance.model_dump())
+
 
 # %%
 

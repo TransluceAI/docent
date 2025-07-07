@@ -1,0 +1,22 @@
+from typing import AsyncContextManager, Callable
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from docent_core._db_service.service import MonoService
+from docent_core._server._dependencies.database import (
+    get_mono_svc,
+    get_session,
+    get_session_cm_factory,
+)
+from docent_core.services.diff import DiffService
+
+
+def get_diff_service(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    session: AsyncSession = Depends(get_session),
+    session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]] = Depends(
+        get_session_cm_factory
+    ),
+) -> DiffService:
+    return DiffService(session, session_cm_factory, mono_svc)

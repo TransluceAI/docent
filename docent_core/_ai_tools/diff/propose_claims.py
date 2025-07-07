@@ -1,6 +1,5 @@
 import re
 import traceback
-import xml.etree.ElementTree as ET
 from uuid import uuid4
 
 import yaml
@@ -32,9 +31,9 @@ Each part must be specified carefully enough to be checkable, yet broadly applic
 
 Output claims in the following format:
 <claim>
-<shared_context>...</shared_context>
-<action_1>...</action_1>
-<action_2>...</action_2>
+Shared context: ...
+Action 1: ...
+Action 2: ...
 </claim>
 
 - Do not respond with any other text than the list of claims.
@@ -48,21 +47,15 @@ class DiffClaimsResult(BaseModel):
     instances: list[SearchPairedQuery]
 
 
-def _get_text(element: ET.Element, tag_name: str) -> str:
-    """Extract text content with fallback to empty string"""
-    elem = element.find(tag_name)
-    return elem.text.strip() if elem is not None and elem.text else ""
-
-
 def _parse_claims_output(output: str, diff_query: DiffQuery) -> list[SearchPairedQuery]:
     """
-    Parse the LLM output into a list of ClaimsInstance objects.
+    Parse the LLM output into a list of SearchPairedQuery objects.
 
     Args:
-        output: The LLM output string containing claims in XML-like format
+        output: The LLM output string containing claims in line-based format
 
     Returns:
-        A list of ClaimsInstance objects containing the parsed claims
+        A list of SearchPairedQuery objects containing the parsed claims
     """
     claims: list[SearchPairedQuery] = []
 
@@ -71,14 +64,25 @@ def _parse_claims_output(output: str, diff_query: DiffQuery) -> list[SearchPaire
     claim_matches = re.findall(claim_pattern, output, re.DOTALL)
 
     for claim_content in claim_matches:
-        # Parse each claim individually
-        claim_xml = f"<claim>{claim_content}</claim>"
         try:
-            claim_element = ET.fromstring(claim_xml)
+            # Use regex to extract each field
+            shared_context_match = re.search(
+                r"Shared context:\s*(.+)", claim_content, re.IGNORECASE
+            )
+            action_1_match = re.search(r"Action 1:\s*(.+)", claim_content, re.IGNORECASE)
+            action_2_match = re.search(r"Action 2:\s*(.+)", claim_content, re.IGNORECASE)
 
-            shared_context = _get_text(claim_element, "shared_context")
-            action_1 = _get_text(claim_element, "action_1")
-            action_2 = _get_text(claim_element, "action_2")
+            # Extract the matched text or use empty string as fallback
+            shared_context = shared_context_match.group(1).strip() if shared_context_match else ""
+            action_1 = action_1_match.group(1).strip() if action_1_match else ""
+            action_2 = action_2_match.group(1).strip() if action_2_match else ""
+
+            if not shared_context:
+                logger.warning("Missing shared context")
+            if not action_1:
+                logger.warning("Missing action 1")
+            if not action_2:
+                logger.warning("Missing action 2")
 
             claim = SearchPairedQuery(
                 grouping_md_fields=diff_query.grouping_md_fields,
@@ -89,9 +93,9 @@ def _parse_claims_output(output: str, diff_query: DiffQuery) -> list[SearchPaire
                 action_2=action_2,
             )
             claims.append(claim)
-        except ET.ParseError:
+        except Exception as e:
             logger.error(
-                f"Failed to parse individual claim XML:\n{claim_xml}\nTraceback:\n{traceback.format_exc()}"
+                f"Failed to parse claim content:\n{claim_content}\nError: {e}\nTraceback:\n{traceback.format_exc()}"
             )
             # Continue processing other claims even if this one fails
 

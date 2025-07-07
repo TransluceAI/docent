@@ -8,7 +8,7 @@ from typing import Literal
 
 from fastapi import Response
 
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
 
 ENVIRONMENT = ENV.get("ENVIRONMENT")
@@ -48,10 +48,10 @@ async def create_user_session(user_id: str, response: Response) -> str:
         The created session ID
     """
     # Get database service instance
-    db = await DBService.init()
+    mono_svc = await MonoService.init()
 
     # Create a new session in the database
-    session_id = await db.create_session(user_id)
+    session_id = await mono_svc.create_session(user_id)
 
     # Set the session cookie with consistent settings
     response.set_cookie(
@@ -76,10 +76,10 @@ async def invalidate_user_session(session_id: str, response: Response) -> None:
         response: FastAPI Response object to clear cookies
     """
     # Get database service instance
-    db = await DBService.init()
+    mono_svc = await MonoService.init()
 
     # Invalidate the session in the database
-    await db.invalidate_session(session_id)
+    await mono_svc.invalidate_session(session_id)
 
     # Clear the session cookie
     response.delete_cookie(

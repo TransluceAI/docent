@@ -1,8 +1,5 @@
-import { TranscriptDiff } from '../store/diffSlice';
-import {
-  SearchResultWithCitations,
-  MetadataType,
-} from './collectionTypes';
+import { TranscriptDiff } from '../store/diffSliceOld';
+import { SearchResultWithCitations, MetadataType } from './collectionTypes';
 
 // export interface PaginationState {
 //   currentPage: number;

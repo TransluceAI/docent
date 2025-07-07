@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { TranscriptDiffExplorer } from '@/app/components/TranscriptDiffExplorer';
-import { requestDiffsReport } from '@/app/store/diffSlice';
+import { requestDiffsReport } from '@/app/store/diffSliceOld';
 import { useDispatch } from 'react-redux';
 import React from 'react';
 import { useAppSelector } from '@/app/store/hooks';
