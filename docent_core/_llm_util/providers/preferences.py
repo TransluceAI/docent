@@ -254,6 +254,21 @@ class ProviderPreferences(BaseModel):
         ]
 
     @cached_property
+    def cluster_assign_o4_mini(self) -> list[ModelOption]:
+        """Get model options for the cluster_assign_o4-mini function.
+
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(
+                provider="openai",
+                model_name="o4-mini",
+                reasoning_effort="medium",
+            ),
+        ]
+
+    @cached_property
     def cluster_assign_sonnet_37_thinking(self) -> list[ModelOption]:
         """Get model options for the cluster_assign_sonnet-37-thinking function.
 

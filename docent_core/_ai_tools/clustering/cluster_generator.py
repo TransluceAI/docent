@@ -20,6 +20,7 @@ Guidelines:
 - Clusters should be collectively exhaustive: no item should be left out.
 - Cluster descriptions should be specific enough such that a reader could guess the items in the cluster. Indicate exactly what you mean, and do NOT give vague descriptions that could be misinterpreted.
 - If a cluster description seems like it could pertain to a majority of the items, then it is too specific and should be broken up into multiple specific sub-clusters.
+- If two clusters describe similar enough concepts such that they would overlap on over than half of their items, only mention the first cluster.
 - Do NOT give examples of the items in the cluster, because that will overfit.
 {extra_instructions}
 

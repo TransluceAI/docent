@@ -20,19 +20,32 @@ from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, Mo
 logger = get_logger(__name__)
 
 ASSIGNMENT_PROMPT = """
-You are given a cluster label C of an item I.
-Your task is to perform membership testing: determine whether the description of C matches I.
-
-The cluster label may come with examples, which you shouldn't treat as requirements; they simply give a feel for items that would belong.
+You are given a detailed item A and a broader item B.
+Your task is to perform membership testing: determine whether the description of A matches B.
 
 Return two lines in the following exact format:
 - ANSWER: <YES/NO>
 - EXPLANATION: <concise but specific explanation; no more than a few high-information words>
 
 Here is your input:
-C: {cluster}
-I: {item}
+A: {item}
+B: {cluster}
 """.strip()
+
+# ASSIGNMENT_PROMPT = """
+# You are given a cluster label C of an item I.
+# Your task is to perform membership testing: determine whether the description of C matches I.
+
+# The cluster label may come with examples, which you shouldn't treat as requirements; they simply give a feel for items that would belong.
+
+# Return two lines in the following exact format:
+# - ANSWER: <YES/NO>
+# - EXPLANATION: <concise but specific explanation; no more than a few high-information words>
+
+# Here is your input:
+# C: {cluster}
+# I: {item}
+# """.strip()
 
 
 class AssignmentStreamingCallback(Protocol):
@@ -120,6 +133,16 @@ class LlmApiClusterAssigner(ClusterAssigner):
         )
 
     @classmethod
+    def from_o4_mini(cls, assign_prompt_fn: Callable[[str, str], str] | None = None):
+        return cls(
+            system_prompt=None,
+            max_new_tokens=8192,
+            temperature=1,
+            model_options=PROVIDER_PREFERENCES.cluster_assign_o4_mini,
+            assign_prompt_fn=assign_prompt_fn,
+        )
+
+    @classmethod
     def from_sonnet_37_thinking(cls, assign_prompt_fn: Callable[[str, str], str] | None = None):
         return cls(
             system_prompt=None,
@@ -196,6 +219,8 @@ class LlmApiClusterAssigner(ClusterAssigner):
             ]
             for item, cluster in zip(items, clusters, strict=True)
         ]
+
+        # print(queries[0])
 
         # Get the LLM callback if we're streaming
         llm_callback = (
@@ -358,7 +383,9 @@ class LlmApiClusterAssigner(ClusterAssigner):
 #         return results
 
 
-BaseAssignerType = Literal["o3-mini", "sonnet-37-thinking", "modernbert-ft", "gemini-flash"]
+BaseAssignerType = Literal[
+    "o3-mini", "o4-mini", "sonnet-37-thinking", "modernbert-ft", "gemini-flash"
+]
 BASE_ASSIGNERS: dict[BaseAssignerType, ClusterAssigner] = {}
 
 
@@ -369,6 +396,8 @@ async def _get_base_assigner(backend: BaseAssignerType) -> ClusterAssigner:
     async with anyio.Lock():
         if backend == "o3-mini":
             assigner = LlmApiClusterAssigner.from_o3_mini()
+        elif backend == "o4-mini":
+            assigner = LlmApiClusterAssigner.from_o4_mini()
         elif backend == "sonnet-37-thinking":
             assigner = LlmApiClusterAssigner.from_sonnet_37_thinking()
         elif backend == "gemini-flash":
@@ -502,4 +531,4 @@ async def assign_with_backend(
     return await assigner.assign(items, clusters, assignment_callback)
 
 
-DEFAULT_ASSIGNER: AssignerType = "o3-mini"
+DEFAULT_ASSIGNER: AssignerType = "o4-mini"
