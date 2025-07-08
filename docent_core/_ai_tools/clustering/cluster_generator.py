@@ -12,13 +12,14 @@ CLUSTER_PROMPT = """
 Here are some items:
 {items}
 
-Please generate {n_clusters} clusters from the provided list of items.
+Please generate clusters from the provided list of items. Use as many clusters as you need to capture the variation in the items; we recommend generating between 5 and 10 clusters but sometimes more is necessary.
 
 Guidelines:
 - Clusters should contain exactly one idea/concept each.
 - Clusters should be mutually exclusive: no two clusters should describe the same thing.
 - Clusters should be collectively exhaustive: no item should be left out.
 - Cluster descriptions should be specific enough such that a reader could guess the items in the cluster. Indicate exactly what you mean, and do NOT give vague descriptions that could be misinterpreted.
+- If a cluster description seems like it could pertain to a majority of the items, then it is too specific and should be broken up into multiple specific sub-clusters.
 - Do NOT give examples of the items in the cluster, because that will overfit.
 {extra_instructions}
 
@@ -31,14 +32,6 @@ For example:
 
 The user may provide feedback on the clusters you propose; please take that into careful account.
 """.strip()
-
-DEFAULT_EXTRA_INSTRUCTIONS_LIST: list[str | None] = [
-    None,
-    None,
-    None,
-    "Focus on the items you find most surprising or interesting.",
-    "Focus on the items that seem to have the most related items.",
-]
 
 
 class ClusterFeedback(TypedDict):
@@ -65,7 +58,7 @@ T = TypeVar("T")  # ClusterType Object
 
 async def propose_clusters(
     items: list[str],
-    extra_instructions_list: list[str | None] = DEFAULT_EXTRA_INSTRUCTIONS_LIST,
+    extra_instructions_list: list[str],
     feedback_list: list[ClusterFeedback] | None = None,
     random_seed: int = 42,
     clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
@@ -75,7 +68,7 @@ async def propose_clusters(
     rng = np.random.RandomState(random_seed)
 
     # Sample k elements with replacement from both lists
-    extra_instructions = cast(str | None, rng.choice(extra_instructions_list))  # type: ignore
+    extra_instructions = cast(str, rng.choice(extra_instructions_list))  # type: ignore
 
     # Shuffle descriptions using a task-specific RNG
     task_rng = np.random.RandomState(random_seed)
