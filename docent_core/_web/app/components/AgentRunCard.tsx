@@ -1,12 +1,11 @@
 'use client';
 import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
-import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
-import { SearchResultWithCitations } from '../types/collectionTypes';
-import { renderTextWithCitations } from '@/lib/renderCitations';
-import { openAgentRunInDashboard } from '../store/transcriptSlice';
 import { useMemo } from 'react';
+import { cn } from '@/lib/utils';
+// import { SearchResultsList } from './SearchResults';
 
 interface AgentRunCardProps {
   agentRunId: string;
@@ -26,6 +25,12 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     (state) => state.search.searchResultMap
   );
 
+  // Hover state
+  const hoveredAgentRunId = useAppSelector(
+    (state) => state.experimentViewer.hoveredAgentRunId
+  );
+  const isHighlighted = hoveredAgentRunId === agentRunId;
+
 
 
   // Get search results
@@ -39,7 +44,14 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
   }, [curSearchQuery, searchResultMap, agentRunId]);
 
   return (
-    <div className="flex flex-col p-1 border rounded text-xs bg-secondary/30 hover:bg-secondary min-w-0 overflow-x-hidden">
+    <div
+      className={cn(
+        'flex flex-col p-1 border rounded text-xs min-w-0 overflow-x-hidden transition-all duration-200',
+        isHighlighted
+          ? 'bg-indigo-bg border-indigo-border shadow-md'
+          : 'bg-secondary/30 hover:bg-secondary border-border'
+      )}
+    >
       <div
         className="cursor-pointer"
         onMouseDown={(e) =>
@@ -88,13 +100,12 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 
       {/* <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} /> */}
 
-      {/* Replace the inline attribute section with the new component */}
-      {searchResults && curSearchQuery && (
-        <SearchResultsSection
+      {/* {searchResults && curSearchQuery && (
+        <SearchResultsList
           curSearchQuery={curSearchQuery}
           searchResults={searchResults}
         />
-      )}
+      )} */}
     </div>
   );
 }
@@ -186,113 +197,3 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 //     return <p className="text-xs text-destructive">Error rendering snippet</p>;
 //   }
 // };
-
-interface SearchResultsSectionProps {
-  curSearchQuery: string;
-  searchResults: SearchResultWithCitations[];
-  usePreview?: boolean;
-}
-
-export const SearchResultsSection = ({
-  curSearchQuery,
-  searchResults,
-  usePreview = true,
-}: SearchResultsSectionProps) => {
-  if (searchResults.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="pt-1 mt-1 border-t border-border text-xs space-y-1">
-      <div className="flex items-center mb-1">
-        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-        <span className="text-xs font-medium text-primary">
-          Search results
-        </span>
-      </div>
-
-      {/* Render only the attributes for the current query */}
-      {searchResults.map((searchResult, idx) => (
-        <SearchResultCard
-          key={idx}
-          curSearchQuery={curSearchQuery}
-          searchResult={searchResult}
-          usePreview={usePreview}
-        />
-      ))}
-    </div>
-  );
-};
-
-interface SearchResultCardProps {
-  curSearchQuery: string;
-  searchResult: SearchResultWithCitations;
-  usePreview: boolean;
-}
-
-export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: SearchResultCardProps) => {
-  const router = useRouter();
-  const dispatch = useAppDispatch();
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
-
-  const resultText = searchResult.value;
-  if (!resultText) {
-    return null;
-  }
-  const agentRunId = searchResult.agent_run_id;
-  const citations = searchResult.citations || [];
-  // const currentVote = voteState?.[dataId]?.[attributeText];
-
-  return (
-    <div
-      className="group bg-indigo-bg rounded-md p-1 text-xs text-primary leading-snug mt-1 hover:border-indigo-border transition-colors cursor-pointer border border-transparent"
-      onMouseDown={(e) => {
-        e.stopPropagation();
-        const firstCitation = citations.length > 0 ? citations[0] : null;
-
-        if (e.metaKey || e.ctrlKey || e.button === 1 || !usePreview) {
-          // Open in new tab - use original navigation
-          navToAgentRun(
-            e,
-            router,
-            window,
-            agentRunId,
-            firstCitation?.transcript_idx ?? undefined,
-            firstCitation?.block_idx,
-            collectionId,
-            curSearchQuery
-          );
-        } else if (e.button === 0 && usePreview) {
-          // Open in dashboard - use new mechanism
-          dispatch(
-            openAgentRunInDashboard({
-              agentRunId,
-              blockIdx: firstCitation?.block_idx,
-              transcriptIdx: firstCitation?.transcript_idx ?? undefined,
-            })
-          );
-        }
-      }}
-    >
-      <div className="flex flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <p className="mb-0.5 flex-1">
-            {renderTextWithCitations(
-              resultText,
-              citations,
-              agentRunId,
-              router,
-              window,
-              curSearchQuery,
-              collectionId,
-              dispatch
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] text-primary mt-1">
-          <span className="opacity-70">{curSearchQuery}</span>
-        </div>
-      </div>
-    </div>
-  );
-};

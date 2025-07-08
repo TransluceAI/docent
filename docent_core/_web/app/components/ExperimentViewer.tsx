@@ -51,9 +51,6 @@ export default function ExperimentViewer() {
     (state) => state.search.loadingSearchQuery
   );
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const currentSearchHitCount = useAppSelector(
-    (state) => state.search.currentSearchHitCount
-  );
   const attributeMap = useAppSelector((state) => state.search.searchResultMap);
 
   const experimentViewerScrollPosition = useAppSelector(
@@ -234,9 +231,6 @@ export default function ExperimentViewer() {
           <div className="text-sm font-semibold">Agent Run List</div>
           <div className="text-xs text-muted-foreground">
             {agentRunIds?.length || 0} agent runs matching the current view
-            {curSearchQuery && (
-              <span>, {currentSearchHitCount} hits for current query</span>
-            )}
           </div>
         </div>
 

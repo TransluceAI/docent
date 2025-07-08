@@ -41,6 +41,7 @@ import { RootState } from '../store/store';
 
 import ClusterViewer from './ClusterViewer';
 import { ProgressBar } from './ProgressBar';
+import { SearchResultsSection } from './SearchResults';
 import { apiRestClient } from '../services/apiService';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { copyToClipboard } from '@/lib/utils';
@@ -473,6 +474,7 @@ const SearchArea = () => {
 
               {/* Display search result clusters if they exist */}
               {curSearchQuery && <ClusterViewer searchQuery={curSearchQuery} />}
+              <SearchResultsSection />
             </div>
           ) : (
             <>

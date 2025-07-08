@@ -13,7 +13,7 @@ import { useAppSelector } from '../store/hooks';
 import { SearchResultWithCitations } from '../types/collectionTypes';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { StreamedSearchResultClusterAssignment } from '../types/experimentViewerTypes';
-import { SearchResultsSection } from './AgentRunCard';
+import { SearchResultsList } from './SearchResults';
 
 interface SearchCluster {
   id: string;
@@ -227,7 +227,7 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
             {/* Expanded search results */}
             {isExpanded && hasResults && (
               <div className="pl-4">
-                <SearchResultsSection
+                <SearchResultsList
                   searchResults={clusterSearchResults}
                   curSearchQuery={searchQuery}
                   usePreview={true}
