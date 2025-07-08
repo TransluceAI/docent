@@ -1,10 +1,11 @@
 'use client';
 import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
-import { useAppSelector } from '../store/hooks';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { SearchResultWithCitations } from '../types/collectionTypes';
 import { renderTextWithCitations } from '@/lib/renderCitations';
+import { openAgentRunInDashboard } from '../store/transcriptSlice';
 import { useMemo } from 'react';
 
 interface AgentRunCardProps {
@@ -189,12 +190,14 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 interface SearchResultsSectionProps {
   curSearchQuery: string;
   searchResults: SearchResultWithCitations[];
+  usePreview?: boolean;
 }
 
-export const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
+export const SearchResultsSection = ({
   curSearchQuery,
   searchResults,
-}) => {
+  usePreview = true,
+}: SearchResultsSectionProps) => {
   if (searchResults.length === 0) {
     return null;
   }
@@ -214,17 +217,22 @@ export const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
           key={idx}
           curSearchQuery={curSearchQuery}
           searchResult={searchResult}
+          usePreview={usePreview}
         />
       ))}
     </div>
   );
 };
 
-export const SearchResultCard: React.FC<{
+interface SearchResultCardProps {
   curSearchQuery: string;
   searchResult: SearchResultWithCitations;
-}> = ({ curSearchQuery, searchResult }) => {
+  usePreview: boolean;
+}
+
+export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: SearchResultCardProps) => {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const collectionId = useAppSelector((state) => state.collection.collectionId);
 
   const resultText = searchResult.value;
@@ -239,17 +247,31 @@ export const SearchResultCard: React.FC<{
     <div
       className="group bg-indigo-bg rounded-md p-1 text-xs text-primary leading-snug mt-1 hover:border-indigo-border transition-colors cursor-pointer border border-transparent"
       onMouseDown={(e) => {
+        e.stopPropagation();
         const firstCitation = citations.length > 0 ? citations[0] : null;
-        navToAgentRun(
-          e,
-          router,
-          window,
-          agentRunId,
-          firstCitation?.transcript_idx ?? undefined,
-          firstCitation?.block_idx,
-          collectionId,
-          curSearchQuery
-        );
+
+        if (e.metaKey || e.ctrlKey || e.button === 1 || !usePreview) {
+          // Open in new tab - use original navigation
+          navToAgentRun(
+            e,
+            router,
+            window,
+            agentRunId,
+            firstCitation?.transcript_idx ?? undefined,
+            firstCitation?.block_idx,
+            collectionId,
+            curSearchQuery
+          );
+        } else if (e.button === 0 && usePreview) {
+          // Open in dashboard - use new mechanism
+          dispatch(
+            openAgentRunInDashboard({
+              agentRunId,
+              blockIdx: firstCitation?.block_idx,
+              transcriptIdx: firstCitation?.transcript_idx ?? undefined,
+            })
+          );
+        }
       }}
     >
       <div className="flex flex-col">
@@ -262,7 +284,8 @@ export const SearchResultCard: React.FC<{
               router,
               window,
               curSearchQuery,
-              collectionId
+              collectionId,
+              dispatch
             )}
           </p>
         </div>

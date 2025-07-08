@@ -230,6 +230,7 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
                 <SearchResultsSection
                   searchResults={clusterSearchResults}
                   curSearchQuery={searchQuery}
+                  usePreview={true}
                 />
               </div>
             )}
