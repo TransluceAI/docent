@@ -55,8 +55,7 @@ def get_cors_configuration() -> dict[str, Any]:
             )
             return _get_development_cors_config()
 
-        # Log production configuration
-        logger.info(f"🔒 Production CORS mode: Using exact origins {origins}")
+        logger.info(f"🔒 CORS prod mode: {origins}")
         return {
             "allow_origins": origins,
             "allow_credentials": True,
@@ -65,7 +64,7 @@ def get_cors_configuration() -> dict[str, Any]:
         }
     else:
         # Development mode: Use regex for flexible localhost support
-        logger.info("🔧 Development CORS mode: Using regex pattern for localhost origins")
+        logger.info("🔧 CORS dev mode: localhost origins")
         return _get_development_cors_config()
 
 
