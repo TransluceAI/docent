@@ -138,7 +138,7 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
                 e.stopPropagation();
                 const firstCitation = citations.length > 0 ? citations[0] : null;
 
-                if (e.metaKey || e.ctrlKey || e.button === 1 || !usePreview) {
+                if (e.metaKey || e.ctrlKey || !usePreview) {
                     // Open in new tab - use original navigation
                     navToAgentRun(
                         e,

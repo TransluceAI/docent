@@ -19,7 +19,7 @@ export default function AgentRunPage() {
   const dispatch = useAppDispatch();
 
   const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const curAgentRun = useAppSelector((state) => state.transcript.curAgentRun);
+  const curAgentRun = useAppSelector((state) => state.transcript?.curAgentRun);
 
   const params = useParams();
   const searchParams = useSearchParams();
@@ -51,11 +51,20 @@ export default function AgentRunPage() {
   useEffect(() => {
     if (alreadyScrolledRef.current) return;
 
-    // We wait until hasInitSearchQuery is known before continuing
-    if (hasInitSearchQuery === undefined) return;
-    // If there is an initial search query, then we wait until the search has populated
+    // Only wait for search results if there's actually a search query
     if (hasInitSearchQuery === true && !searchResultMap) return;
-    // Else, if it's false, then we don't need to wait
+
+    // If hasInitSearchQuery is undefined, we can still proceed if there's no search query in the URL
+    // This handles the case where we're navigating via citations
+    if (hasInitSearchQuery === undefined) {
+      // Check if there are search params that would indicate we need to wait
+      const urlSearchParams = new URLSearchParams(window.location.search);
+      if (urlSearchParams.has('searchQuery')) {
+        // There's a search query in the URL, so we should wait for hasInitSearchQuery to be set
+        return;
+      }
+      // No search query in URL, safe to proceed
+    }
 
     if (
       agentRunViewerRef.current &&
@@ -96,6 +105,17 @@ export default function AgentRunPage() {
       agentRunViewerRef.current?.scrollToBlock(blockIdx, transcriptIdx || 0, 0);
     }
   };
+
+  // Show loading state while transcript is being fetched
+  const isLoading = !collectionId || !curAgentRun || curAgentRun.id !== agentRunId;
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-muted-foreground">Loading agent run...</div>
+      </div>
+    );
+  }
 
   return (
     <Suspense>

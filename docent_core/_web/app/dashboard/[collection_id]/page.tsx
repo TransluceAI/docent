@@ -37,13 +37,17 @@ export default function DocentDashboard() {
       curAgentRun &&
       dashboardScrollToBlockIdx !== undefined
     ) {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         agentRunViewerRef.current?.scrollToBlock(
           dashboardScrollToBlockIdx,
           dashboardScrollToTranscriptIdx || 0,
           0
         );
       }, 100); // Small delay to allow for DOM rendering
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
     }
   }, [
     isDashboardAgentRunView,
