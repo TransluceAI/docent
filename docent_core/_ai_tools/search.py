@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from docent._log_util import get_logger
-from docent.data_models._tiktoken_util import MAX_TOKENS, get_token_count
+from docent.data_models._tiktoken_util import MAX_TOKENS
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.citation import Citation, parse_citations_single_run
 from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
@@ -170,11 +170,10 @@ async def execute_search(
     logger.critical(f"time to get texts: {mid_time - start_time}")
 
     # Try to search over all short AgentRuns first, since we can stream those immediately
-    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
+    short_indices = [i for i in range(len(texts)) if len(texts[i]) <= 4 * MAX_TOKENS]
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
-    logger.critical(f"time to tokenize: {perf_counter() - mid_time}")
     llm_callback = (
         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
         if search_result_callback is not None
@@ -309,11 +308,10 @@ async def execute_search(
 #     logger.critical(f"time to get texts: {mid_time - start_time}")
 
 #     # Try to search over all short AgentRuns first, since we can stream those immediately
-#     short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
+#     short_indices = [i for i in range(len(texts)) if len(texts[i]) <= 4 * MAX_TOKENS]
 #     short_ids = [ids[i] for i in short_indices]
 #     short_texts = [texts[i] for i in short_indices]
 
-#     logger.critical(f"time to tokenize: {perf_counter() - mid_time}")
 #     llm_callback = (
 #         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
 #         if search_result_callback is not None
@@ -393,11 +391,10 @@ async def execute_search_2(
     logger.critical(f"time to get texts: {mid_time - start_time}")
 
     # Try to search over all short AgentRuns first, since we can stream those immediately
-    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
+    short_indices = [i for i in range(len(texts)) if len(texts[i]) <= 4 * MAX_TOKENS]
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
-    logger.critical(f"time to tokenize: {perf_counter() - mid_time}")
     llm_callback = (
         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
         if search_result_callback is not None
@@ -428,7 +425,7 @@ async def execute_search_2(
     for i, output in enumerate(outputs):
         ans[short_indices[i]] = _parse_llm_output(output)
 
-    return ans
+    return ans, outputs
 
 
 SEARCH_PROMPT_3 = f"""
@@ -497,11 +494,10 @@ async def execute_search_3(
     logger.critical(f"time to get texts: {mid_time - start_time}")
 
     # Try to search over all short AgentRuns first, since we can stream those immediately
-    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
+    short_indices = [i for i in range(len(texts)) if len(texts[i]) <= 4 * MAX_TOKENS]
     short_ids = [ids[i] for i in short_indices]
     short_texts = [texts[i] for i in short_indices]
 
-    logger.critical(f"time to tokenize: {perf_counter() - mid_time}")
     llm_callback = (
         _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
         if search_result_callback is not None
