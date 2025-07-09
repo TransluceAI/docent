@@ -10,9 +10,9 @@ export const renderTextWithCitations = (
   dataId: string,
   router: AppRouterInstance,
   window: Window,
+  dispatch: AppDispatch,
   searchQuery?: string,
   collectionId?: string,
-  dispatch?: AppDispatch
 ) => {
   if (!citations.length) {
     return text;
@@ -55,31 +55,18 @@ export const renderTextWithCitations = (
               citation.transcript_idx ?? undefined,
               citation.block_idx,
               collectionId,
-              searchQuery
+              searchQuery,
+              true
             );
           } else if (e.button === 0) {
             // Open in dashboard - use new mechanism if dispatch is available
-            if (dispatch) {
-              dispatch(
-                openAgentRunInDashboard({
-                  agentRunId: dataId,
-                  blockIdx: citation.block_idx,
-                  transcriptIdx: citation.transcript_idx ?? undefined,
-                })
-              );
-            } else {
-              // Fall back to navigation if dispatch not available
-              navToAgentRun(
-                e,
-                router,
-                window,
-                dataId,
-                citation.transcript_idx ?? undefined,
-                citation.block_idx,
-                collectionId,
-                searchQuery
-              );
-            }
+            dispatch(
+              openAgentRunInDashboard({
+                agentRunId: dataId,
+                blockIdx: citation.block_idx,
+                transcriptIdx: citation.transcript_idx ?? undefined,
+              })
+            );
           }
         }}
       >

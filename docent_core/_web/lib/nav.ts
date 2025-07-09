@@ -43,7 +43,8 @@ export const navToAgentRun = (
   transcriptIdx?: number,
   blockIdx?: number,
   collectionId?: string,
-  searchQuery?: string
+  searchQuery?: string,
+  openInNewTab?: boolean
 ) => {
   e.stopPropagation();
   if (!collectionId) {
@@ -51,29 +52,20 @@ export const navToAgentRun = (
     return;
   }
 
-  if (e.metaKey || e.ctrlKey || e.button === 1) {
-    // Open in new tab
-    const url = getAgentRunUrl(
-      collectionId,
-      agentRunId,
-      transcriptIdx,
-      blockIdx,
-      undefined,
-      undefined,
-      searchQuery
-    );
+  openInNewTab = openInNewTab ?? false;
+
+  const url = getAgentRunUrl(
+    collectionId,
+    agentRunId,
+    transcriptIdx,
+    blockIdx,
+    undefined,
+    undefined,
+    searchQuery
+  );
+  if (openInNewTab) {
     window.open(url, '_blank');
-  } else if (e.button === 0) {
-    // Open in same tab
-    const url = getAgentRunUrl(
-      collectionId,
-      agentRunId,
-      transcriptIdx,
-      blockIdx,
-      undefined,
-      undefined,
-      undefined // When opening in same tab, don't need to pass the search query
-    );
+  } else {
     router.push(url);
   }
 };

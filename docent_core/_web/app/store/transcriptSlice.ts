@@ -29,7 +29,7 @@ export interface TranscriptState {
   curAgentRun?: AgentRun;
   altAgentRun?: AgentRun;
   // Dashboard agent run view
-  isDashboardAgentRunView?: boolean;
+  dashboardHasRunPreview?: boolean;
   dashboardScrollToBlockIdx?: number;
   dashboardScrollToTranscriptIdx?: number;
   // Actions summary
@@ -296,7 +296,7 @@ export const openAgentRunInDashboard = createAsyncThunk(
     // Then set the dashboard view state
     dispatch(
       setDashboardAgentRunView({
-        isDashboardAgentRunView: true,
+        dashboardHasRunPreview: true,
         blockIdx,
         transcriptIdx,
       })
@@ -658,17 +658,17 @@ export const transcriptSlice = createSlice({
     setDashboardAgentRunView: (
       state,
       action: PayloadAction<{
-        isDashboardAgentRunView: boolean;
+        dashboardHasRunPreview: boolean;
         blockIdx?: number;
         transcriptIdx?: number;
       }>
     ) => {
-      state.isDashboardAgentRunView = action.payload.isDashboardAgentRunView;
+      state.dashboardHasRunPreview = action.payload.dashboardHasRunPreview;
       state.dashboardScrollToBlockIdx = action.payload.blockIdx;
       state.dashboardScrollToTranscriptIdx = action.payload.transcriptIdx;
     },
     clearDashboardAgentRunView: (state) => {
-      state.isDashboardAgentRunView = false;
+      state.dashboardHasRunPreview = false;
       state.dashboardScrollToBlockIdx = undefined;
       state.dashboardScrollToTranscriptIdx = undefined;
     },

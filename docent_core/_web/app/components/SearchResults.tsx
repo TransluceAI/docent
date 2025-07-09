@@ -148,7 +148,8 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
                         firstCitation?.transcript_idx ?? undefined,
                         firstCitation?.block_idx,
                         collectionId,
-                        curSearchQuery
+                        curSearchQuery,
+                        true
                     );
                 } else if (e.button === 0 && usePreview) {
                     // Open in dashboard - use new mechanism
@@ -171,9 +172,9 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
                             agentRunId,
                             router,
                             window,
+                            dispatch,
                             curSearchQuery,
                             collectionId,
-                            dispatch
                         )}
                     </p>
                 </div>

@@ -3,9 +3,7 @@ import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
 import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
-import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-// import { SearchResultsList } from './SearchResults';
 
 interface AgentRunCardProps {
   agentRunId: string;
@@ -21,19 +19,6 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 
   // Search slice
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const searchResultMap = useAppSelector(
-    (state) => state.search.searchResultMap
-  );
-
-  // Get search results
-  const searchResults = useMemo(() => {
-    if (!curSearchQuery) return null;
-    const results = searchResultMap?.[agentRunId]?.[curSearchQuery].filter(
-      (attr) => attr.value !== null
-    );
-    if (results === undefined || results.length === 0) return null;
-    return results;
-  }, [curSearchQuery, searchResultMap, agentRunId]);
 
   return (
     <div
@@ -44,7 +29,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     >
       <div
         className="cursor-pointer"
-        onMouseDown={(e) =>
+        onMouseDown={(e) =>{
           navToAgentRun(
             e,
             router,
@@ -52,8 +37,11 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             agentRunId,
             undefined,
             undefined,
-            collectionId
+            collectionId,
+            undefined,
+            (e.button === 1 || e.metaKey || e.ctrlKey)
           )
+        }
         }
       >
         <div className="flex justify-between pb-0.5 items-center">
@@ -72,7 +60,8 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
                   undefined,
                   undefined,
                   collectionId,
-                  curSearchQuery
+                  curSearchQuery,
+                  (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}
             >
