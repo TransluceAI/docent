@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +50,49 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
     (state) => state.search.activeClusterTaskId
   );
   const hasWritePermission = useHasCollectionWritePermission();
+
+  // Get all search results for the current search query
+  const allSearchResults = useMemo(() => {
+    if (!searchQuery || !searchResultMap) return [];
+
+    const allResults: SearchResultWithCitations[] = [];
+
+    // Iterate through all agent runs in the search result map
+    Object.values(searchResultMap).forEach((agentRunResults) => {
+      if (agentRunResults && agentRunResults[searchQuery]) {
+        const results = agentRunResults[searchQuery].filter(
+          (attr) => attr.value !== null
+        );
+        allResults.push(...results);
+      }
+    });
+
+    return allResults;
+  }, [searchQuery, searchResultMap]);
+
+  // Get search result IDs that are assigned to clusters
+  const assignedSearchResultIds = useMemo(() => {
+    if (!clusteredSearchResults) return new Set<string>();
+
+    const assignedIds = new Set<string>();
+
+    for (const [centroid, assignments] of Object.entries(clusteredSearchResults)) {
+      assignments.forEach((assignment: StreamedSearchResultClusterAssignment) => {
+        if (assignment.decision) {
+          assignedIds.add(assignment.search_result_id);
+        }
+      });
+    }
+
+    return assignedIds;
+  }, [clusteredSearchResults]);
+
+  // Get residual search results (not assigned to any cluster)
+  const residualSearchResults = useMemo(() => {
+    return allSearchResults.filter(
+      (result) => !assignedSearchResultIds.has(result.id)
+    );
+  }, [allSearchResults, assignedSearchResultIds]);
 
   // Create clusters dynamically from streaming data
   const clusters: SearchCluster[] = React.useMemo(() => {
@@ -153,12 +196,63 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
           <div className="animate-spin rounded-full h-3 w-3 border-2 border-border border-t-gray-500" />
           Loading clusters...
         </div>
+        {/* Show all search results while clustering is in progress */}
+        {allSearchResults.length > 0 && (
+          <div className="pt-1 mt-1 border-t border-border text-xs">
+            <div className="flex items-center mb-1 justify-between shrink-0">
+              <div className="flex items-center">
+                <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+                <span className="text-xs font-medium text-primary">
+                  Search results
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {allSearchResults.length} hits for current query
+              </span>
+            </div>
+            <div className="overflow-y-auto space-y-1 custom-scrollbar">
+              <SearchResultsList
+                searchResults={allSearchResults}
+                curSearchQuery={searchQuery}
+                usePreview={true}
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  // If no clusters exist, show all search results
   if (clusters.length === 0) {
-    return null;
+    if (allSearchResults.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-2">
+        <div className="pt-1 mt-1 border-t border-border text-xs">
+          <div className="flex items-center mb-1 justify-between shrink-0">
+            <div className="flex items-center">
+              <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
+              <span className="text-xs font-medium text-primary">
+                Search results
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {allSearchResults.length} hits for current query
+            </span>
+          </div>
+          <div className="overflow-y-auto space-y-1 custom-scrollbar">
+            <SearchResultsList
+              searchResults={allSearchResults}
+              curSearchQuery={searchQuery}
+              usePreview={true}
+            />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -237,6 +331,32 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
           </div>
         );
       })}
+
+      {/* Residuals section - show search results not assigned to any cluster */}
+      {residualSearchResults.length > 0 && (
+        <div className="space-y-2">
+          <div className="pt-1 mt-1 border-t border-border text-xs">
+            <div className="flex items-center mb-1 justify-between shrink-0">
+              <div className="flex items-center">
+                <div className="h-2 w-2 rounded-full bg-gray-500 mr-1.5"></div>
+                <span className="text-xs font-medium text-primary">
+                  Other search results
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {residualSearchResults.length} unclustered result{residualSearchResults.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="overflow-y-auto space-y-1 custom-scrollbar">
+              <SearchResultsList
+                searchResults={residualSearchResults}
+                curSearchQuery={searchQuery}
+                usePreview={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

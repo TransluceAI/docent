@@ -22,8 +22,6 @@ export interface ExperimentViewerState {
   regexSnippets?: Record<string, RegexSnippet[]>;
   // Graph state
   charts?: ChartSpec[];
-  // Hover state for highlighting agent run cards
-  hoveredAgentRunId?: string;
 }
 
 const initialState: ExperimentViewerState = {};
@@ -112,9 +110,6 @@ export const experimentViewerSlice = createSlice({
     setCharts: (state, action: PayloadAction<ChartSpec[]>) => {
       state.charts = action.payload;
     },
-    setHoveredAgentRunId: (state, action: PayloadAction<string | undefined>) => {
-      state.hoveredAgentRunId = action.payload;
-    },
     resetExperimentViewerSlice: () => initialState,
   },
 });
@@ -132,7 +127,6 @@ export const {
   setDimIdsToFilterIds,
   setFiltersMap,
   setCharts,
-  setHoveredAgentRunId,
 } = experimentViewerSlice.actions;
 
 export default experimentViewerSlice.reducer;

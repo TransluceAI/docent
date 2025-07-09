@@ -25,14 +25,6 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     (state) => state.search.searchResultMap
   );
 
-  // Hover state
-  const hoveredAgentRunId = useAppSelector(
-    (state) => state.experimentViewer.hoveredAgentRunId
-  );
-  const isHighlighted = hoveredAgentRunId === agentRunId;
-
-
-
   // Get search results
   const searchResults = useMemo(() => {
     if (!curSearchQuery) return null;
@@ -47,9 +39,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     <div
       className={cn(
         'flex flex-col p-1 border rounded text-xs min-w-0 overflow-x-hidden transition-all duration-200',
-        isHighlighted
-          ? 'bg-indigo-bg border-indigo-border shadow-md'
-          : 'bg-secondary/30 hover:bg-secondary border-border'
+        'bg-secondary/30 hover:bg-secondary border-border'
       )}
     >
       <div

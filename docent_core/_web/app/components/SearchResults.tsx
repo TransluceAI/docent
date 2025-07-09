@@ -5,8 +5,8 @@ import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { SearchResultWithCitations } from '../types/collectionTypes';
 import { renderTextWithCitations } from '@/lib/renderCitations';
 import { openAgentRunInDashboard } from '../store/transcriptSlice';
-import { setHoveredAgentRunId } from '../store/experimentViewerSlice';
 import { useMemo } from 'react';
+import { cn } from '@/lib/utils';
 
 
 export function SearchResultsSection() {
@@ -66,40 +66,49 @@ export const SearchResultsList = ({
     searchResults,
     usePreview = true,
 }: SearchResultsListProps) => {
+    // Group search results by agent run ID
+    const groupedResults = useMemo(() => {
+        const groups: { [agentRunId: string]: SearchResultWithCitations[] } = {};
+
+        searchResults.forEach((result) => {
+            const agentRunId = result.agent_run_id;
+            if (!groups[agentRunId]) {
+                groups[agentRunId] = [];
+            }
+            groups[agentRunId].push(result);
+        });
+
+        return groups;
+    }, [searchResults]);
+
     if (searchResults.length === 0) {
         return null;
     }
 
-    // const currentSearchHitCount = useAppSelector(
-    //     (state) => state.search.currentSearchHitCount
-    // );
-
     return (
-        <div className="pt-1 mt-1 border-t border-border text-xs">
-            {/* Fixed header */}
-            <div className="flex items-center mb-1 justify-between shrink-0">
-                <div className="flex items-center">
-                <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-                <span className="text-xs font-medium text-primary">
-                    Search results
-                </span>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                    {searchResults.length} hits for current query
-                </span>
-            </div>
+        <div className={cn(
+            "overflow-y-auto space-y-2 custom-scrollbar transition-all duration-200",
+            searchResults.length >= 5 ? "h-96" : "h-48"
+        )}>
+            {Object.entries(groupedResults).map(([agentRunId, results]) => {
+                return (
+                    <div key={agentRunId} className="space-y-1 border-b border-dashed pb-2 relative last:border-b-0">
+                        {/* Agent run bullet point */}
 
-            {/* Scrollable results container */}
-            <div className="h-96 overflow-y-auto space-y-1 custom-scrollbar">
-                {searchResults.map((searchResult, idx) => (
-                    <SearchResultCard
-                        key={idx}
-                        curSearchQuery={curSearchQuery}
-                        searchResult={searchResult}
-                        usePreview={usePreview}
-                    />
-                ))}
-            </div>
+                        {/* Search results for this agent run */}
+                        <div className="space-y-1">
+                            {results.map((searchResult, idx) => (
+                                <SearchResultCard
+                                    key={`${agentRunId}-${idx}`}
+                                    curSearchQuery={curSearchQuery}
+                                    searchResult={searchResult}
+                                    usePreview={usePreview}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 };
@@ -126,8 +135,6 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
     return (
         <div
             className="group bg-indigo-bg rounded-md p-1 text-xs text-primary leading-snug mt-1 hover:border-indigo-border transition-colors cursor-pointer border border-transparent"
-            onMouseEnter={() => dispatch(setHoveredAgentRunId(agentRunId))}
-            onMouseLeave={() => dispatch(setHoveredAgentRunId(undefined))}
             onMouseDown={(e) => {
                 e.stopPropagation();
                 const firstCitation = citations.length > 0 ? citations[0] : null;
