@@ -141,7 +141,6 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
                 if (e.metaKey || e.ctrlKey || !usePreview) {
                     // Open in new tab - use original navigation
                     navToAgentRun(
-                        e,
                         router,
                         window,
                         agentRunId,
@@ -149,7 +148,7 @@ export const SearchResultCard = ({ curSearchQuery, searchResult, usePreview }: S
                         firstCitation?.block_idx,
                         collectionId,
                         curSearchQuery,
-                        true
+                        false
                     );
                 } else if (e.button === 0 && usePreview) {
                     // Open in dashboard - use new mechanism

@@ -48,7 +48,6 @@ export const renderTextWithCitations = (
           if (e.ctrlKey || e.metaKey) {
             // Open in new tab - use original navigation
             navToAgentRun(
-              e,
               router,
               window,
               dataId,
@@ -56,7 +55,7 @@ export const renderTextWithCitations = (
               citation.block_idx,
               collectionId,
               searchQuery,
-              true
+              false
             );
           } else if (e.button === 0) {
             // Open in dashboard - use new mechanism if dispatch is available

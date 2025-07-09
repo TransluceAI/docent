@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '../../components/ui/button';
-import { X, ExternalLink } from 'lucide-react';
+import { X, Maximize2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { clearDashboardAgentRunView } from '../store/transcriptSlice';
 import { navToAgentRun } from '../../lib/nav';
@@ -57,22 +57,15 @@ export default function AgentRunPreview() {
 
   const handleOpenInNewTab = () => {
     if (curAgentRun && collectionId) {
-      // Create a fake event to trigger new tab behavior
-      const fakeEvent = {
-        metaKey: true,
-        ctrlKey: false,
-        button: 0,
-        stopPropagation: () => {},
-      } as React.MouseEvent;
-
       navToAgentRun(
-        fakeEvent,
         router,
         window,
         curAgentRun.id,
         dashboardScrollToTranscriptIdx,
         dashboardScrollToBlockIdx,
-        collectionId
+        collectionId,
+        undefined,
+        false
       );
     }
   };
@@ -100,7 +93,7 @@ export default function AgentRunPreview() {
             className="h-8 w-8 p-0 hover:bg-primary/10"
             title="Open in new tab"
           >
-            <ExternalLink className="h-4 w-4" />
+            <Maximize2 className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"

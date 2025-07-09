@@ -36,7 +36,6 @@ export const getAgentRunUrl = (
 };
 
 export const navToAgentRun = (
-  e: React.MouseEvent,
   router: AppRouterInstance,
   window: Window,
   agentRunId: string,
@@ -46,7 +45,6 @@ export const navToAgentRun = (
   searchQuery?: string,
   openInNewTab?: boolean
 ) => {
-  e.stopPropagation();
   if (!collectionId) {
     console.error('collectionId is required');
     return;

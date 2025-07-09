@@ -30,8 +30,8 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
       <div
         className="cursor-pointer"
         onMouseDown={(e) =>{
+          e.stopPropagation();
           navToAgentRun(
-            e,
             router,
             window,
             agentRunId,
@@ -52,8 +52,8 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             <span
               className="text-blue-text font-medium hover:text-blue-text/80"
               onMouseDown={(e) => {
+                e.stopPropagation();
                 navToAgentRun(
-                  e,
                   router,
                   window,
                   agentRunId,
@@ -61,7 +61,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
                   undefined,
                   collectionId,
                   curSearchQuery,
-                  (e.button === 1 || e.metaKey || e.ctrlKey)
+                  // (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}
             >
