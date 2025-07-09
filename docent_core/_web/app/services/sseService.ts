@@ -1,6 +1,7 @@
 import { BASE_URL } from '../constants';
-import store from '../store/store';
 import { setToastNotification } from '../store/toastSlice';
+// Remove the store import to avoid circular dependency
+// import store from '../store/store';
 
 // Map to store active EventSource instances
 const eventSourcesMap: Record<string, EventSource> = {};
@@ -17,17 +18,14 @@ const generateTaskId = (): string => {
  * @param url The URL to connect to (must start with a leading slash)
  * @param onMessage Function to handle incoming messages
  * @param onFinish Function called when the connection is closed
+ * @param dispatch Redux dispatch function for error handling
  * @returns An object containing the EventSource and a function to cancel the connection
  */
 const createEventSource = (
   url: string,
   onMessage: (data: any) => void,
   onFinish: () => void,
-  onToast?: (
-    title: string,
-    description: string,
-    variant: 'default' | 'destructive'
-  ) => void // TODO(mengk): deprecated; remove this
+  dispatch: (action: any) => void // Add dispatch parameter
 ): { eventSource: EventSource; onCancel: () => void } => {
   // Generate a unique task ID
   const taskId = generateTaskId();
@@ -53,7 +51,7 @@ const createEventSource = (
       onMessage(data);
     } catch (error) {
       console.error('Error parsing SSE data:', error);
-      store.dispatch(
+      dispatch(
         setToastNotification({
           title: 'Error parsing data',
           description: 'Failed to parse server-sent event data',
@@ -66,7 +64,7 @@ const createEventSource = (
   // Define the error handler
   eventSource.onerror = (error) => {
     console.error('EventSource error:', error);
-    store.dispatch(
+    dispatch(
       setToastNotification({
         title: 'Connection error',
         description: 'Server-sent event connection failed',

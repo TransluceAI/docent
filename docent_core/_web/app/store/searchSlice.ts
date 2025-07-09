@@ -165,15 +165,7 @@ export const computeSearch = createAsyncThunk(
           dispatch(setLoadingSearchQuery(undefined));
           dispatch(setActiveSearchTaskId(undefined));
         },
-        (title, description, variant) => {
-          dispatch(
-            setToastNotification({
-              title,
-              description,
-              variant,
-            })
-          );
-        }
+        dispatch // Pass dispatch function to handle errors
       );
 
       // Get existing clusters if they exist
@@ -248,15 +240,7 @@ export const requestClusters = createAsyncThunk(
         () => {
           dispatch(setActiveClusterTaskId(undefined));
         },
-        (title, description, variant) => {
-          dispatch(
-            setToastNotification({
-              title,
-              description,
-              variant,
-            })
-          );
-        }
+        dispatch // Pass dispatch function to handle errors
       );
 
       // Store the cancel function for potential cleanup

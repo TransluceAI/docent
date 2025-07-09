@@ -1,4 +1,3 @@
-import { TranscriptDiff } from '../store/diffSliceOld';
 import { SearchResultWithCitations, MetadataType } from './collectionTypes';
 
 // export interface PaginationState {
@@ -70,12 +69,12 @@ export interface EvidenceWithCitation {
   citations: Citation[];
 }
 
-export interface StreamedDiffs {
-  data_id_1: string | null;
-  data_id_2: string | null;
-  claim: string[] | null;
-  evidence: EvidenceWithCitation[] | null;
-  num_pairs_done: number;
-  num_pairs_total: number;
-  transcript_diff: TranscriptDiff;
-}
+// export interface StreamedDiffs {
+//   data_id_1: string | null;
+//   data_id_2: string | null;
+//   claim: string[] | null;
+//   evidence: EvidenceWithCitation[] | null;
+//   num_pairs_done: number;
+//   num_pairs_total: number;
+//   transcript_diff: TranscriptDiff;
+// }

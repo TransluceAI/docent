@@ -14,7 +14,10 @@ import {
   TaMessage,
 } from '../types/transcriptTypes';
 
-import { getAgentRunMetadata, getAgentRunMetadataFields } from './collectionSlice';
+import {
+  getAgentRunMetadata,
+  getAgentRunMetadataFields,
+} from './collectionSlice';
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
 
@@ -101,15 +104,7 @@ export const getActionsSummary = createAsyncThunk(
         () => {
           dispatch(onFinishLoadingActionsSummary());
         },
-        (title, description, variant) => {
-          dispatch(
-            setToastNotification({
-              title,
-              description,
-              variant,
-            })
-          );
-        }
+        dispatch // Pass dispatch function to handle errors
       );
 
       // Store the cancel function for potential cleanup
@@ -178,15 +173,7 @@ export const getSolutionSummary = createAsyncThunk(
         () => {
           dispatch(onFinishLoadingSolutionSummary());
         },
-        (title, description, variant) => {
-          dispatch(
-            setToastNotification({
-              title,
-              description,
-              variant,
-            })
-          );
-        }
+        dispatch // Pass dispatch function to handle errors
       );
 
       // Store the cancel function for potential cleanup
@@ -487,16 +474,8 @@ export const sendTaMessage = createAsyncThunk(
           dispatch(setLoadingTaResponse(false));
           dispatch(setTaMessageTaskId(undefined));
         },
-        // onToast
-        (title, description, variant) => {
-          dispatch(
-            setToastNotification({
-              title,
-              description,
-              variant,
-            })
-          );
-        }
+        // Pass dispatch function to handle errors
+        dispatch
       );
 
       // Store the cancel function for potential cleanup

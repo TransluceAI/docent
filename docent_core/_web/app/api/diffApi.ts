@@ -43,7 +43,8 @@ export const diffApi = createApi({
           () =>
             updateCachedData((draft) => {
               draft.isSSEConnected = false;
-            })
+            }),
+          dispatch
         );
 
         // Suspends until the query completes
