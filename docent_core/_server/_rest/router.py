@@ -1184,7 +1184,7 @@ class ShareWithEmailRequest(BaseModel):
 #     return {"status": "success"}
 
 
-@user_router.post("/collections/{collection_id}/make_public")
+@user_router.post("/{collection_id}/make_public")
 async def make_collection_public(
     collection_id: str,
     user: User = Depends(get_user_anonymous_ok),
@@ -1208,7 +1208,7 @@ async def make_collection_public(
     return {"status": "success", "message": "Collection is now public"}
 
 
-@user_router.post("/collections/{collection_id}/share_with_email")
+@user_router.post("/{collection_id}/share_with_email")
 async def share_collection_with_email(
     collection_id: str,
     request: ShareWithEmailRequest,

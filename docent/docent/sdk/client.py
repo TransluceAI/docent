@@ -327,7 +327,14 @@ class Docent:
         url = f"{self._server_url}/{collection_id}/share_with_email"
         payload = {"email": email}
         response = self._session.post(url, json=payload)
-        response.raise_for_status()
+
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError:
+            if response.status_code == 404:
+                raise ValueError(f"The user you are trying to share with ({email}) does not exist.")
+            else:
+                raise  # Re-raise the original exception
 
         logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
         return response.json()
