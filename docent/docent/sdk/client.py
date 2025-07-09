@@ -307,7 +307,7 @@ class Docent:
         url = f"{self._server_url}/{collection_id}/make_public"
         response = self._session.post(url)
         response.raise_for_status()
-        
+
         logger.info(f"Successfully made Collection '{collection_id}' public")
         return response.json()
 
@@ -328,6 +328,6 @@ class Docent:
         payload = {"email": email}
         response = self._session.post(url, json=payload)
         response.raise_for_status()
-        
+
         logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
         return response.json()

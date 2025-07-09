@@ -1201,7 +1201,9 @@ async def make_collection_public(
     )
 
     # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.MAKE_COLLECTION_PUBLIC, user, collection_id)
+    await track_endpoint_with_user(
+        mono_svc, EndpointType.MAKE_COLLECTION_PUBLIC, user, collection_id
+    )
 
     return {"status": "success", "message": "Collection is now public"}
 
@@ -1217,10 +1219,7 @@ async def share_collection_with_email(
     """Share a collection with a specific user by email address."""
     target_user = await mono_svc.get_user_by_email(request.email)
     if target_user is None:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"User with email {request.email} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"User with email {request.email} not found")
 
     await mono_svc.set_acl_permission(
         subject_type=SubjectType.USER,
@@ -1231,7 +1230,9 @@ async def share_collection_with_email(
     )
 
     # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.SHARE_COLLECTION_WITH_EMAIL, user, collection_id)
+    await track_endpoint_with_user(
+        mono_svc, EndpointType.SHARE_COLLECTION_WITH_EMAIL, user, collection_id
+    )
 
     return {"status": "success", "message": f"Collection shared with {request.email}"}
 
