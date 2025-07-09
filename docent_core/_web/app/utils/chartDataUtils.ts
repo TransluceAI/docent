@@ -47,8 +47,10 @@ export function getScoreFromStats(
     return { score: 0, scoreKey: scoreKey || '' };
   }
 
+  const roundedScore = Math.round((stats[scoreKey].mean as number) * 100000) / 100000;
+
   return {
-    score: stats[scoreKey].mean as number,
+    score: roundedScore,
     n: stats[scoreKey].n,
     ci: stats[scoreKey].ci,
     scoreKey,

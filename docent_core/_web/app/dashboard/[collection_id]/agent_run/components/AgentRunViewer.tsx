@@ -56,7 +56,7 @@ const formatMetadataValue = (value: any): string => {
 const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
   ({ secondary, otherAgentRunRef }, ref) => {
     const agentRun = useAppSelector((state) =>
-      secondary ? state.transcript.altAgentRun : state.transcript.curAgentRun
+      secondary ? state.transcript.altAgentRun : state.transcript?.curAgentRun
     );
 
     // Add state for selected transcript key

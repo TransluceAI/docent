@@ -18,8 +18,14 @@ import AgentRunViewer, {
 export default function AgentRunPage() {
   const dispatch = useAppDispatch();
 
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const curAgentRun = useAppSelector((state) => state.transcript.curAgentRun);
+  const collectionId = useAppSelector((state) => state.collection?.collectionId);
+  const curAgentRun = useAppSelector((state) => state.transcript?.curAgentRun);
+  const hasInitSearchQuery = useAppSelector(
+    (state) => state.collection?.hasInitSearchQuery
+  );
+  const searchResultMap = useAppSelector(
+    (state) => state.search?.searchResultMap
+  );
 
   const params = useParams();
   const searchParams = useSearchParams();
@@ -35,33 +41,37 @@ export default function AgentRunPage() {
     return Array.isArray(agentRunIdRaw) ? agentRunIdRaw[0] : agentRunIdRaw;
   }, [agentRunIdRaw]);
 
-  /**
-   * Handle scrolling to the block
-   */
-
   const agentRunViewerRef = useRef<AgentRunViewerHandle>(null);
 
+  useEffect(() => {
+    if (!collectionId || !agentRunId) {
+      return;
+    }
+
+    if (curAgentRun?.id === agentRunId) {
+      return;
+    }
+
+    dispatch(getCurAgentRun(agentRunId));
+  }, [collectionId, agentRunId, dispatch]);
+
   const alreadyScrolledRef = useRef(false);
-  const hasInitSearchQuery = useAppSelector(
-    (state) => state.collection.hasInitSearchQuery
-  );
-  const searchResultMap = useAppSelector(
-    (state) => state.search.searchResultMap
-  );
+
+  useEffect(() => {
+    alreadyScrolledRef.current = false;
+  }, [agentRunId]);
+
   useEffect(() => {
     if (alreadyScrolledRef.current) return;
 
-    // We wait until hasInitSearchQuery is known before continuing
-    if (hasInitSearchQuery === undefined) return;
-    // If there is an initial search query, then we wait until the search has populated
-    if (hasInitSearchQuery === true && !searchResultMap) return;
-    // Else, if it's false, then we don't need to wait
+    if (!curAgentRun || curAgentRun.id !== agentRunId) {
+      return;
+    }
 
-    if (
-      agentRunViewerRef.current &&
-      curAgentRun?.id === agentRunId &&
-      blockIdx !== undefined
-    ) {
+    if (hasInitSearchQuery === undefined) return;
+    if (hasInitSearchQuery === true && !searchResultMap) return;
+
+    if (blockIdx !== undefined && agentRunViewerRef.current) {
       alreadyScrolledRef.current = true;
       setTimeout(() => {
         console.log('Scrolling to block', blockIdx, transcriptIdx);
@@ -70,22 +80,9 @@ export default function AgentRunPage() {
           transcriptIdx || 0,
           0
         );
-      }, 100); // Small delay to allow for DOM rendering
+      }, 100);
     }
-  }, [curAgentRun, blockIdx, agentRunId, hasInitSearchQuery, searchResultMap]);
-
-  /**
-   * Fetch agent run once
-   */
-
-  const fetchRef = useRef(false);
-  useEffect(() => {
-    if (fetchRef.current || collectionId === undefined) return;
-    if (curAgentRun?.id !== agentRunId) {
-      dispatch(getCurAgentRun(agentRunId));
-      fetchRef.current = true;
-    }
-  }, [collectionId, agentRunId, blockIdx, dispatch, curAgentRun?.id]);
+  }, [curAgentRun, agentRunId, blockIdx, transcriptIdx, hasInitSearchQuery, searchResultMap]);
 
   const onShowAgentRun = (agentRunId: string, blockIdx?: number) => {
     if (agentRunId !== curAgentRun?.id) {
@@ -108,9 +105,6 @@ export default function AgentRunPage() {
               <TabsTrigger value="agent" className="text-xs">
                 Agent Summary
               </TabsTrigger>
-              {/* <TabsTrigger value="task" className="text-xs">
-                Task Summary
-              </TabsTrigger> */}
               <TabsTrigger value="chat" className="text-xs">
                 Transcript Chat
               </TabsTrigger>
@@ -121,12 +115,6 @@ export default function AgentRunPage() {
                 <AgentSummary onCitationClick={onShowAgentRun} />
               </ScrollArea>
             </TabsContent>
-
-            {/* <TabsContent value="task" className="flex-1 mt-0">
-              <ScrollArea className="h-full px-1 py-2">
-                <TaskSummary />
-              </ScrollArea>
-            </TabsContent> */}
 
             <TabsContent value="chat" className="flex-1 mt-0 overflow-hidden">
               <div className="h-full px-1 py-2">

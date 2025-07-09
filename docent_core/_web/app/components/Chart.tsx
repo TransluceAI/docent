@@ -134,6 +134,7 @@ function BarChart({ chartData }: { chartData: ChartData }) {
         indexBy={chartData.xKey}
         labelSkipWidth={12}
         labelSkipHeight={12}
+        theme={chartTheme}
         legends={[
           {
             dataFrom: 'keys',
@@ -145,7 +146,11 @@ function BarChart({ chartData }: { chartData: ChartData }) {
             itemHeight: 16,
           },
         ]}
-        axisBottom={{ legend: chartData.xKey, legendOffset: 32 }}
+        axisBottom={{
+          legend: chartData.xKey,
+          legendOffset: 32,
+          tickValues: getTickValues(chartData.xValues)
+        }}
         axisLeft={{ legend: chartData.yKey, legendOffset: -40 }}
         margin={{ top: 20, right: 130, bottom: 50, left: 60 }}
         groupMode="grouped"
@@ -186,6 +191,7 @@ function LineChart({ chartData }: { chartData: ChartData }) {
         animate={false}
         data={data}
         margin={{ top: 20, right: 110, bottom: 50, left: 60 }}
+        theme={chartTheme}
         yScale={{
           type: 'linear',
           min: 'auto',
@@ -193,7 +199,11 @@ function LineChart({ chartData }: { chartData: ChartData }) {
           stacked: false,
           reverse: false,
         }}
-        axisBottom={{ legend: chartData.xKey, legendOffset: 36 }}
+        axisBottom={{
+          legend: chartData.xKey,
+          legendOffset: 36,
+          tickValues: getTickValues(chartData.xValues)
+        }}
         axisLeft={{ legend: chartData.yKey, legendOffset: -40 }}
         pointSize={10}
         pointColor={{ theme: 'background' }}
@@ -215,4 +225,38 @@ function LineChart({ chartData }: { chartData: ChartData }) {
       />
     </ChartContainer>
   );
+}
+
+const getTickValues = (values: (string | number)[]) => {
+  if (values.length <= 20) return values;
+  const step = Math.ceil(values.length / 20);
+  return values.filter((_, index) => index % step === 0);
+};
+
+const chartTheme = {
+  axis: {
+    ticks: {
+      text: {
+        fill: 'hsl(var(--muted-foreground))',
+      },
+    },
+    legend: {
+      text: {
+        fill: 'hsl(var(--foreground))',
+      },
+    },
+  },
+  legends: {
+    text: {
+      fill: 'hsl(var(--muted-foreground))',
+    },
+  },
+  tooltip: {
+    container: {
+      background: 'hsl(var(--card))',
+      color: 'hsl(var(--card-foreground))',
+      border: '1px solid hsl(var(--border))',
+      borderRadius: '6px',
+    },
+  },
 }

@@ -3,9 +3,7 @@ import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
 import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
-import { SearchResultWithCitations } from '../types/collectionTypes';
-import { renderTextWithCitations } from '@/lib/renderCitations';
-import { useMemo } from 'react';
+import { cn } from '@/lib/utils';
 
 interface AgentRunCardProps {
   agentRunId: string;
@@ -21,36 +19,29 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 
   // Search slice
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const searchResultMap = useAppSelector(
-    (state) => state.search.searchResultMap
-  );
-
-
-
-  // Get search results
-  const searchResults = useMemo(() => {
-    if (!curSearchQuery) return null;
-    const results = searchResultMap?.[agentRunId]?.[curSearchQuery].filter(
-      (attr) => attr.value !== null
-    );
-    if (results === undefined || results.length === 0) return null;
-    return results;
-  }, [curSearchQuery, searchResultMap, agentRunId]);
 
   return (
-    <div className="flex flex-col p-1 border rounded text-xs bg-secondary/30 hover:bg-secondary min-w-0 overflow-x-hidden">
+    <div
+      className={cn(
+        'flex flex-col p-1 border rounded text-xs min-w-0 overflow-x-hidden transition-all duration-200',
+        'bg-secondary/30 hover:bg-secondary border-border'
+      )}
+    >
       <div
         className="cursor-pointer"
-        onMouseDown={(e) =>
+        onMouseDown={(e) =>{
+          e.stopPropagation();
           navToAgentRun(
-            e,
             router,
             window,
             agentRunId,
             undefined,
             undefined,
-            collectionId
+            collectionId,
+            undefined,
+            (e.button === 1 || e.metaKey || e.ctrlKey)
           )
+        }
         }
       >
         <div className="flex justify-between pb-0.5 items-center">
@@ -61,15 +52,16 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             <span
               className="text-blue-text font-medium hover:text-blue-text/80"
               onMouseDown={(e) => {
+                e.stopPropagation();
                 navToAgentRun(
-                  e,
                   router,
                   window,
                   agentRunId,
                   undefined,
                   undefined,
                   collectionId,
-                  curSearchQuery
+                  curSearchQuery,
+                  // (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}
             >
@@ -87,13 +79,12 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 
       {/* <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} /> */}
 
-      {/* Replace the inline attribute section with the new component */}
-      {searchResults && curSearchQuery && (
-        <SearchResultsSection
+      {/* {searchResults && curSearchQuery && (
+        <SearchResultsList
           curSearchQuery={curSearchQuery}
           searchResults={searchResults}
         />
-      )}
+      )} */}
     </div>
   );
 }
@@ -185,91 +176,3 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
 //     return <p className="text-xs text-destructive">Error rendering snippet</p>;
 //   }
 // };
-
-interface SearchResultsSectionProps {
-  curSearchQuery: string;
-  searchResults: SearchResultWithCitations[];
-}
-
-export const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
-  curSearchQuery,
-  searchResults,
-}) => {
-  if (searchResults.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="pt-1 mt-1 border-t border-border text-xs space-y-1">
-      <div className="flex items-center mb-1">
-        <div className="h-2 w-2 rounded-full bg-indigo-500 mr-1.5"></div>
-        <span className="text-xs font-medium text-primary">
-          Search results
-        </span>
-      </div>
-
-      {/* Render only the attributes for the current query */}
-      {searchResults.map((searchResult, idx) => (
-        <SearchResultCard
-          key={idx}
-          curSearchQuery={curSearchQuery}
-          searchResult={searchResult}
-        />
-      ))}
-    </div>
-  );
-};
-
-export const SearchResultCard: React.FC<{
-  curSearchQuery: string;
-  searchResult: SearchResultWithCitations;
-}> = ({ curSearchQuery, searchResult }) => {
-  const router = useRouter();
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
-
-  const resultText = searchResult.value;
-  if (!resultText) {
-    return null;
-  }
-  const agentRunId = searchResult.agent_run_id;
-  const citations = searchResult.citations || [];
-  // const currentVote = voteState?.[dataId]?.[attributeText];
-
-  return (
-    <div
-      className="group bg-indigo-bg rounded-md p-1 text-xs text-primary leading-snug mt-1 hover:border-indigo-border transition-colors cursor-pointer border border-transparent"
-      onMouseDown={(e) => {
-        const firstCitation = citations.length > 0 ? citations[0] : null;
-        navToAgentRun(
-          e,
-          router,
-          window,
-          agentRunId,
-          firstCitation?.transcript_idx ?? undefined,
-          firstCitation?.block_idx,
-          collectionId,
-          curSearchQuery
-        );
-      }}
-    >
-      <div className="flex flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <p className="mb-0.5 flex-1">
-            {renderTextWithCitations(
-              resultText,
-              citations,
-              agentRunId,
-              router,
-              window,
-              curSearchQuery,
-              collectionId
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] text-primary mt-1">
-          <span className="opacity-70">{curSearchQuery}</span>
-        </div>
-      </div>
-    </div>
-  );
-};

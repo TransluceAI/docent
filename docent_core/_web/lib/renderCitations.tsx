@@ -1,6 +1,8 @@
-import { Citation } from '@/app/types/experimentViewerTypes';
+import { Citation } from '../app/types/experimentViewerTypes';
 import { navToAgentRun } from './nav';
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { openAgentRunInDashboard } from '../app/store/transcriptSlice';
+import { AppDispatch } from '../app/store/store';
 
 export const renderTextWithCitations = (
   text: string,
@@ -8,8 +10,9 @@ export const renderTextWithCitations = (
   dataId: string,
   router: AppRouterInstance,
   window: Window,
+  dispatch: AppDispatch,
   searchQuery?: string,
-  collectionId?: string
+  collectionId?: string,
 ) => {
   if (!citations.length) {
     return text;
@@ -40,16 +43,30 @@ export const renderTextWithCitations = (
         key={`citation-${i}`}
         className="px-0.5 py-0.25 bg-indigo-muted text-primary rounded hover:bg-indigo-muted/50 transition-colors font-medium"
         onMouseDown={(e) => {
-          navToAgentRun(
-            e,
-            router,
-            window,
-            dataId,
-            citation.transcript_idx ?? undefined,
-            citation.block_idx,
-            collectionId,
-            searchQuery
-          );
+          e.stopPropagation();
+
+          if (e.ctrlKey || e.metaKey) {
+            // Open in new tab - use original navigation
+            navToAgentRun(
+              router,
+              window,
+              dataId,
+              citation.transcript_idx ?? undefined,
+              citation.block_idx,
+              collectionId,
+              searchQuery,
+              false
+            );
+          } else if (e.button === 0) {
+            // Open in dashboard - use new mechanism if dispatch is available
+            dispatch(
+              openAgentRunInDashboard({
+                agentRunId: dataId,
+                blockIdx: citation.block_idx,
+                transcriptIdx: citation.transcript_idx ?? undefined,
+              })
+            );
+          }
         }}
       >
         {citedText}

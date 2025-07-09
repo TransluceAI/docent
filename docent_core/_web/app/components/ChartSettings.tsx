@@ -118,7 +118,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
 
   return (
     <div className="flex flex-col lg:flex-row items-start sm:items-center gap-2 p-2">
-      <div className="flex items-center space-x-1 overflow-x-auto min-w-0 w-full">
+      <div className="flex items-center space-x-1 py-0.5 overflow-x-auto min-w-0 w-full">
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Type:
         </span>

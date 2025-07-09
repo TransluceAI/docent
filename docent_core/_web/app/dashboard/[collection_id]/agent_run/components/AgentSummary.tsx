@@ -537,12 +537,12 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
 }) => {
   const dispatch = useAppDispatch();
 
-  const agentRun = useAppSelector((state) => state.transcript.curAgentRun);
+  const agentRun = useAppSelector((state) => state.transcript?.curAgentRun);
   const actionsSummary = useAppSelector(
-    (state) => state.transcript.actionsSummary
+    (state) => state.transcript?.actionsSummary
   );
   const loadingActionsSummaryForTranscriptId = useAppSelector(
-    (state) => state.transcript.loadingActionsSummaryForTranscriptId
+    (state) => state.transcript?.loadingActionsSummaryForTranscriptId
   );
 
   // Add state to track expanded high-level actions

@@ -28,6 +28,10 @@ export const getTaSessionStorageKey = (agentRunId: string) =>
 export interface TranscriptState {
   curAgentRun?: AgentRun;
   altAgentRun?: AgentRun;
+  // Dashboard agent run view
+  dashboardHasRunPreview?: boolean;
+  dashboardScrollToBlockIdx?: number;
+  dashboardScrollToTranscriptIdx?: number;
   // Actions summary
   actionsSummary?: ActionsSummary;
   loadingActionsSummaryForTranscriptId?: string;
@@ -269,6 +273,34 @@ export const getCurAgentRun = createAsyncThunk(
       );
       throw error;
     }
+  }
+);
+
+export const openAgentRunInDashboard = createAsyncThunk(
+  'transcript/openAgentRunInDashboard',
+  async (
+    {
+      agentRunId,
+      blockIdx,
+      transcriptIdx,
+    }: {
+      agentRunId: string;
+      blockIdx?: number;
+      transcriptIdx?: number;
+    },
+    { dispatch, getState }
+  ) => {
+    // First, load the agent run
+    await dispatch(getCurAgentRun(agentRunId));
+
+    // Then set the dashboard view state
+    dispatch(
+      setDashboardAgentRunView({
+        dashboardHasRunPreview: true,
+        blockIdx,
+        transcriptIdx,
+      })
+    );
   }
 );
 
@@ -623,6 +655,23 @@ export const transcriptSlice = createSlice({
     setTaMessageTaskId: (state, action: PayloadAction<string | undefined>) => {
       state.taMessageTaskId = action.payload;
     },
+    setDashboardAgentRunView: (
+      state,
+      action: PayloadAction<{
+        dashboardHasRunPreview: boolean;
+        blockIdx?: number;
+        transcriptIdx?: number;
+      }>
+    ) => {
+      state.dashboardHasRunPreview = action.payload.dashboardHasRunPreview;
+      state.dashboardScrollToBlockIdx = action.payload.blockIdx;
+      state.dashboardScrollToTranscriptIdx = action.payload.transcriptIdx;
+    },
+    clearDashboardAgentRunView: (state) => {
+      state.dashboardHasRunPreview = false;
+      state.dashboardScrollToBlockIdx = undefined;
+      state.dashboardScrollToTranscriptIdx = undefined;
+    },
     resetTranscriptSlice: () => initialState,
   },
 });
@@ -643,6 +692,8 @@ export const {
   setTaMessages,
   setLoadingTaResponse,
   setTaMessageTaskId,
+  setDashboardAgentRunView,
+  clearDashboardAgentRunView,
   resetTranscriptSlice,
 } = transcriptSlice.actions;
 

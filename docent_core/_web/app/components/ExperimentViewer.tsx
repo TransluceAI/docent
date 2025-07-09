@@ -51,9 +51,6 @@ export default function ExperimentViewer() {
     (state) => state.search.loadingSearchQuery
   );
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const currentSearchHitCount = useAppSelector(
-    (state) => state.search.currentSearchHitCount
-  );
   const attributeMap = useAppSelector((state) => state.search.searchResultMap);
 
   const experimentViewerScrollPosition = useAppSelector(
@@ -215,7 +212,7 @@ export default function ExperimentViewer() {
   }
 
   return (
-    <Card className="flex-1 p-3 flex flex-col min-w-0 space-y-3">
+    <Card className="flex-1 p-3 flex flex-col h-full min-w-0 space-y-3">
       {/* Header with organization dropdown - always visible */}
       <div className="flex justify-between items-center shrink-0">
         <div className="flex flex-col">
@@ -234,9 +231,6 @@ export default function ExperimentViewer() {
           <div className="text-sm font-semibold">Agent Run List</div>
           <div className="text-xs text-muted-foreground">
             {agentRunIds?.length || 0} agent runs matching the current view
-            {curSearchQuery && (
-              <span>, {currentSearchHitCount} hits for current query</span>
-            )}
           </div>
         </div>
 
