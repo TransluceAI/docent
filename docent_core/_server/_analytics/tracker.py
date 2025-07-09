@@ -4,7 +4,7 @@ from typing import Optional
 
 from docent_core._db_service.schemas.auth_models import User
 from docent_core._db_service.schemas.tables import EndpointType, SQLAAnalyticsEvent
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 
 
 def extract_user_id(user: Optional[User]) -> Optional[str]:
@@ -13,7 +13,7 @@ def extract_user_id(user: Optional[User]) -> Optional[str]:
 
 
 async def track_endpoint_usage(
-    db: DBService,
+    mono_svc: MonoService,
     endpoint: EndpointType,
     collection_id: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -36,7 +36,7 @@ async def track_endpoint_usage(
         )
 
         # Save to database
-        async with db.db.session() as session:
+        async with mono_svc.db.session() as session:
             session.add(event)
             await session.commit()
 
@@ -50,7 +50,7 @@ async def track_endpoint_usage(
 
 
 async def track_endpoint_with_user(
-    db: DBService,
+    db: MonoService,
     endpoint: EndpointType,
     user: Optional[User] = None,
     collection_id: Optional[str] = None,

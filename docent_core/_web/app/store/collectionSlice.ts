@@ -6,7 +6,7 @@ import {
 
 import { apiRestClient } from '../services/apiService';
 import socketService from '../services/socketService';
-import { TranscriptMetadataField as AgentRunMetadataField } from '../types/experimentViewerTypes';
+import { TranscriptMetadataField } from '../types/experimentViewerTypes';
 import {
   ComplexFilter,
   CollectionDimension,
@@ -32,7 +32,7 @@ export interface CollectionState {
   filtersMap?: Record<string, CollectionFilter>;
   baseFilter?: ComplexFilter;
   // Metadata
-  agentRunMetadataFields?: AgentRunMetadataField[];
+  agentRunMetadataFields?: TranscriptMetadataField[];
   agentRunMetadata?: Record<string, Record<string, BaseAgentRunMetadata>>;
   // Global variables
   collectionId?: string;
@@ -252,7 +252,10 @@ export const getDimensions = createAsyncThunk(
 
 export const deleteSearch = createAsyncThunk(
   'collection/deleteSearch',
-  async ({ searchQueryId, job }: { searchQueryId: string; job: Job }, { dispatch, getState }) => {
+  async (
+    { searchQueryId, job }: { searchQueryId: string; job: Job },
+    { dispatch, getState }
+  ) => {
     const state = getState() as { collection: CollectionState };
     const collectionId = state.collection.collectionId;
 
@@ -268,10 +271,10 @@ export const deleteSearch = createAsyncThunk(
     }
 
     try {
-      if (job.status === "running") {
+      if (job.status === 'running') {
         await apiRestClient.post(`/${job.id}/cancel_compute_search`);
       }
-      console.log("deleting search", searchQueryId, job);
+      console.log('deleting search', searchQueryId, job);
       await apiRestClient.delete(
         `/${collectionId}/search?search_query_id=${searchQueryId}`
       );
@@ -404,7 +407,7 @@ export const collectionSlice = createSlice({
     },
     setAgentRunMetadataFields: (
       state,
-      action: PayloadAction<AgentRunMetadataField[]>
+      action: PayloadAction<TranscriptMetadataField[]>
     ) => {
       state.agentRunMetadataFields = action.payload;
     },

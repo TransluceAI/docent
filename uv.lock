@@ -729,7 +729,7 @@ requires-dist = [
 
 [[package]]
 name = "docent-python"
-version = "0.1.0a8"
+version = "0.1.0a9"
 source = { editable = "docent" }
 dependencies = [
     { name = "pydantic" },

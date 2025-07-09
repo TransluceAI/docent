@@ -3,15 +3,17 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
 import anyio
+import sentry_sdk
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
 from docent_core._server._broker.router import broker_router
-from docent_core._server._rest.router import public_router, user_router
+from docent_core._server._rest._all_routers import REST_ROUTERS
 
 logger = get_logger(__name__)
 
@@ -53,8 +55,7 @@ def get_cors_configuration() -> dict[str, Any]:
             )
             return _get_development_cors_config()
 
-        # Log production configuration
-        logger.info(f"🔒 Production CORS mode: Using exact origins {origins}")
+        logger.info(f"🔒 CORS prod mode: {origins}")
         return {
             "allow_origins": origins,
             "allow_credentials": True,
@@ -63,7 +64,7 @@ def get_cors_configuration() -> dict[str, Any]:
         }
     else:
         # Development mode: Use regex for flexible localhost support
-        logger.info("🔧 Development CORS mode: Using regex pattern for localhost origins")
+        logger.info("🔧 CORS dev mode: localhost origins")
         return _get_development_cors_config()
 
 
@@ -123,14 +124,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 async def periodic_cleanup_task():
     """Background task that periodically cleans up old chat sessions."""
-    from docent_core._db_service.service import DBService
+    from docent_core._db_service.service import MonoService
 
     while True:
         await anyio.sleep(24 * 3600)  # once a day
 
         try:
-            db = await DBService.init()
-            deleted_count = await db.cleanup_old_chat_sessions()
+            mono_svc = await MonoService.init()
+            deleted_count = await mono_svc.cleanup_old_chat_sessions()
             logger.info(f"Periodic cleanup: deleted {deleted_count} old chat sessions")
 
         except Exception as e:
@@ -161,31 +162,19 @@ asgi_app.add_middleware(SessionAuthMiddleware)
 cors_config = get_cors_configuration()
 asgi_app.add_middleware(CORSMiddleware, **cors_config)
 
-# Include routers with clear separation
-asgi_app.include_router(public_router, prefix="/rest")
-asgi_app.include_router(user_router, prefix="/rest")
+# Include broker router
 asgi_app.include_router(broker_router, prefix="/broker")
+# Include all REST routers (different ones for different features)
+for router in REST_ROUTERS:
+    asgi_app.include_router(router["router"], prefix=router["prefix"])
 
 # If running in production, add Sentry middleware
-# import sentry_sdk
-# from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
-# if ENV.ENV_TYPE == "prod" or os.environ.get("ENABLE_SENTRY", False):
-#     logger.info("Initializing Sentry for production")
-#     sentry_sdk.init(  # type: ignore
-#         dsn="https://c5f049f4a74b7cd17fbf688db7f4838a@o4509013218689024.ingest.us.sentry.io/4509013219803136",
-#         # Add data like request headers and IP for users,
-#         # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-#         send_default_pii=True,
-#     )
-#     asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
+if ENV.get("ENVIRONMENT") == "prod" and (dsn := ENV.get("SENTRY_DSN")) is not None:
+    sentry_sdk.init(dsn=dsn, send_default_pii=True)  # type: ignore
+    asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
+    logger.info("Initialized Sentry for production")
 
 
 @asgi_app.get("/")
 async def root():
     return "clarity has been achieved"
-
-
-@asgi_app.get("/eval_ids")
-async def get_eval_ids():
-    # TODO(mengk): remove this deprecated endpoint
-    return list[str]()

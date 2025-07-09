@@ -14,7 +14,7 @@ from docent._log_util import get_logger
 from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
 from docent_core._server._broker.redis_client import publish_collection_update
 from docent_core._server._rest.send_state import publish_searches
@@ -33,14 +33,14 @@ REDIS = ArqRedis(
 
 
 async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool):
-    db = await DBService.init()
-    result = await db.get_search_job_and_query(job_id)
+    mono_svc = await MonoService.init()
+    result = await mono_svc.get_search_job_and_query(job_id)
     if result is None:
         logger.error(f"Search job {job_id} not found")
         return
     _job, query = result
 
-    await db.set_job_status(job_id, JobStatus.RUNNING)
+    await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
 
     async def _search_result_callback(
         search_results: list[SearchResult] | None,
@@ -51,18 +51,18 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
                 {"results": json.dumps(to_jsonable_python(search_results))},
             )
             with anyio.CancelScope(shield=True):
-                await publish_searches(db, view_ctx)
+                await publish_searches(mono_svc, view_ctx)
 
     canceled = False
 
     async def run(tg: TaskGroup):
         nonlocal canceled
         try:
-            async with db.advisory_lock(
+            async with mono_svc.advisory_lock(
                 view_ctx.collection_id + "__search__" + query.search_query,
                 action_id="mutation",
             ):
-                await db.compute_search(
+                await mono_svc.compute_search(
                     view_ctx,
                     query.search_query,
                     _search_result_callback,
@@ -76,12 +76,12 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
             with anyio.CancelScope(shield=True):
                 if canceled:
                     logger.highlight(f"Job {job_id} canceled", color="red")
-                    await db.set_job_status(job_id, JobStatus.CANCELED)
+                    await mono_svc.set_job_status(job_id, JobStatus.CANCELED)
                 else:
                     logger.highlight(f"Job {job_id} finished", color="green")
-                    await db.set_job_status(job_id, JobStatus.COMPLETED)
+                    await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
 
-                await publish_searches(db, view_ctx)
+                await publish_searches(mono_svc, view_ctx)
                 await REDIS.delete(f"results_{job_id}")
 
     async def await_commands(tg: TaskGroup):
@@ -116,8 +116,8 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
     """
     logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
 
-    db = await DBService.init()
-    job = await db.get_job(job_id)
+    mono_svc = await MonoService.init()
+    job = await mono_svc.get_job(job_id)
 
     if job is None:
         logger.error(f"Embedding job {job_id} not found")
@@ -129,7 +129,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
 
     # Wait for any running embedding jobs
     while (
-        await db.get_embedding_job_count(
+        await mono_svc.get_embedding_job_count(
             view_ctx.collection_id,
             _where_clause=SQLAJob.status == JobStatus.RUNNING,
         )
@@ -142,7 +142,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
 
     should_index = job.job_json["should_index"]
 
-    await db.set_job_status(job_id, JobStatus.RUNNING)
+    await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
 
     # Track completion states
     errored = False
@@ -175,7 +175,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         while not indexing_completed:
             await asyncio.sleep(1)
 
-            phase, percent = await db.get_indexing_progress(view_ctx.collection_id)
+            phase, percent = await mono_svc.get_indexing_progress(view_ctx.collection_id)
             if phase is None:
                 continue
 
@@ -201,9 +201,11 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
         nonlocal embedding_completed, indexing_completed, errored
 
         try:
-            async with db.advisory_lock(view_ctx.collection_id, action_id="compute_embeddings"):
+            async with mono_svc.advisory_lock(
+                view_ctx.collection_id, action_id="compute_embeddings"
+            ):
                 # Compute embeddings
-                embedding_status = await db.compute_embeddings(view_ctx, _progress_callback)
+                embedding_status = await mono_svc.compute_embeddings(view_ctx, _progress_callback)
 
                 if not embedding_status:
                     errored = True
@@ -229,7 +231,7 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
                 )
 
                 # Compute index
-                await db.compute_ivfflat_index(view_ctx)
+                await mono_svc.compute_ivfflat_index(view_ctx)
                 indexing_completed = True
                 logger.info(f"Indexing completed for job {job_id}")
 
@@ -242,10 +244,10 @@ async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id:
             with anyio.CancelScope(shield=True):
                 if errored:
                     logger.highlight(f"Job {job_id} canceled", color="red")
-                    await db.set_job_status(job_id, JobStatus.CANCELED)
+                    await mono_svc.set_job_status(job_id, JobStatus.CANCELED)
                 else:
                     logger.highlight(f"Job {job_id} finished", color="green")
-                    await db.set_job_status(job_id, JobStatus.COMPLETED)
+                    await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
                     # Send completion message via websocket
                     await publish_collection_update(
                         view_ctx.collection_id,

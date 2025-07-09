@@ -20,14 +20,15 @@ import { cn } from '@/lib/utils';
 
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 
-import DimensionSelector from './DimensionSelector';
-import GraphArea from './GraphArea';
-import TableArea from './TableArea';
+import { ChartsArea } from './ChartsArea';
 import AgentRunCard from './AgentRunCard';
 import UploadRunsButton from './UploadRunsButton';
 import UploadRunsDialog from './UploadRunsDialog';
 
-import { getAgentRunMetadata, getAgentRunMetadataFields } from '../store/collectionSlice';
+import {
+  getAgentRunMetadata,
+  getAgentRunMetadataFields,
+} from '../store/collectionSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
@@ -64,7 +65,6 @@ export default function ExperimentViewer() {
   const rawAgentRunIds = useAppSelector(
     (state) => state.experimentViewer.agentRunIds
   );
-  const chartType = useAppSelector((state) => state.experimentViewer.chartType);
 
   /**
    * Scrolling
@@ -96,18 +96,21 @@ export default function ExperimentViewer() {
     setDraggedFile(null);
   }, []);
 
-  const handleUploadSuccess = useCallback((result: {
-    status: string;
-    message: string;
-    num_runs_imported: number;
-    filename: string;
-    task_id?: string;
-    model?: string;
-  }) => {
-    dispatch(getAgentRunMetadataFields());
+  const handleUploadSuccess = useCallback(
+    (result: {
+      status: string;
+      message: string;
+      num_runs_imported: number;
+      filename: string;
+      task_id?: string;
+      model?: string;
+    }) => {
+      dispatch(getAgentRunMetadataFields());
 
-    fetchedAgentRunIdsRef.current.clear();
-  }, [dispatch]);
+      fetchedAgentRunIdsRef.current.clear();
+    },
+    [dispatch]
+  );
 
   // Use debouncing to prevent too many updates
   useEffect(() => {
@@ -221,42 +224,9 @@ export default function ExperimentViewer() {
             Select fields to group by, and click to filter
           </div>
         </div>
-        {/* Place dimension selector and chart type selector in the header */}
-        <div className="flex items-center gap-4">
-          <DimensionSelector />
-          {/* <div className="flex items-center space-x-1">
-            <span className="text-xs text-muted-foreground">Chart:</span>
-            <Select
-              value={chartType || 'table'}
-              onValueChange={(value: 'bar' | 'line' | 'table') =>
-                dispatch(setChartType(value))
-              }
-            >
-              <SelectTrigger className="h-7 w-16 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="table" className="text-xs">
-                  Table
-                </SelectItem>
-                <SelectItem value="bar" className="text-xs">
-                  Bar
-                </SelectItem>
-                <SelectItem value="line" className="text-xs">
-                  Line
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div> */}
-        </div>
       </div>
 
-      {/* Dimension scores table or graph - conditional based on chart type */}
-      {chartType === 'table' ? (
-        <TableArea />
-      ) : chartType === 'bar' || chartType === 'line' ? (
-        <GraphArea />
-      ) : null}
+      <ChartsArea />
 
       {/* Agent run list */}
       <div className="flex flex-row items-center justify-between">

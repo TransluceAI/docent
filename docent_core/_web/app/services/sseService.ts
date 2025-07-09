@@ -1,4 +1,6 @@
 import { BASE_URL } from '../constants';
+import store from '../store/store';
+import { setToastNotification } from '../store/toastSlice';
 
 // Map to store active EventSource instances
 const eventSourcesMap: Record<string, EventSource> = {};
@@ -21,11 +23,11 @@ const createEventSource = (
   url: string,
   onMessage: (data: any) => void,
   onFinish: () => void,
-  onToast: (
+  onToast?: (
     title: string,
     description: string,
     variant: 'default' | 'destructive'
-  ) => void
+  ) => void // TODO(mengk): deprecated; remove this
 ): { eventSource: EventSource; onCancel: () => void } => {
   // Generate a unique task ID
   const taskId = generateTaskId();
@@ -51,10 +53,12 @@ const createEventSource = (
       onMessage(data);
     } catch (error) {
       console.error('Error parsing SSE data:', error);
-      onToast(
-        'Error parsing data',
-        'Failed to parse server-sent event data',
-        'destructive'
+      store.dispatch(
+        setToastNotification({
+          title: 'Error parsing data',
+          description: 'Failed to parse server-sent event data',
+          variant: 'destructive',
+        })
       );
     }
   };
@@ -62,10 +66,12 @@ const createEventSource = (
   // Define the error handler
   eventSource.onerror = (error) => {
     console.error('EventSource error:', error);
-    onToast(
-      'Connection error',
-      'Server-sent event connection failed',
-      'destructive'
+    store.dispatch(
+      setToastNotification({
+        title: 'Connection error',
+        description: 'Server-sent event connection failed',
+        variant: 'destructive',
+      })
     );
     closeConnection();
   };

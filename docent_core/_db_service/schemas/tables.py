@@ -43,8 +43,6 @@ TABLE_SEARCH_QUERIES = "search_queries"
 TABLE_FILTER = "filters"
 TABLE_JUDGMENT = "judgments"
 TABLE_JOB = "jobs"
-TABLE_DIFF_ATTRIBUTE = "diff_attributes"
-TABLE_DIFF_CLUSTER = "diff_clusters"
 TABLE_TRANSCRIPT = "transcripts"
 TABLE_USER = "users"
 TABLE_SESSION = "sessions"
@@ -59,6 +57,7 @@ TABLE_SEARCH_RESULT_CLUSTER = "search_result_clusters"
 TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
+TABLE_CHART = "charts"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -405,75 +404,6 @@ class SQLAJob(SQLABase):
     status = mapped_column(Enum(JobStatus), default=JobStatus.PENDING)
 
 
-class SQLADiffAttribute(SQLABase):
-    __tablename__ = TABLE_DIFF_ATTRIBUTE
-
-    id = mapped_column(String(36), primary_key=True)
-    collection_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
-    )
-
-    # Location of the diff attribute
-    data_id_1 = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
-    )
-    data_id_2 = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
-    )
-    attribute = mapped_column(Text, nullable=False, index=True)
-    attribute_idx = mapped_column(Integer, index=True)
-
-    # Null indicates no values for this (data_id_1, data_id_2, attribute) pair
-    claim = mapped_column(Text)
-    evidence = mapped_column(Text)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "collection_id",
-            "data_id_1",
-            "data_id_2",
-            "attribute",
-            "attribute_idx",
-            name="uq_diff_attribute_key_combination",
-        ),
-    )
-
-    @classmethod
-    def from_diff_attribute(
-        cls,
-        data_id_1: str,
-        data_id_2: str,
-        attribute: str,
-        attribute_idx: int | None,
-        claim: str | None,
-        evidence: str | None,
-        collection_id: str,
-    ):
-        return cls(
-            id=str(uuid4()),
-            collection_id=collection_id,
-            data_id_1=data_id_1,
-            data_id_2=data_id_2,
-            attribute=attribute,
-            attribute_idx=attribute_idx,
-            claim=claim,
-            evidence=evidence,
-        )
-
-    def to_diff_attribute(self):
-        from docent_core._ai_tools.diff import DiffAttribute
-
-        return DiffAttribute(
-            id=self.id,
-            data_id_1=self.data_id_1,
-            data_id_2=self.data_id_2,
-            attribute=self.attribute,
-            attribute_idx=self.attribute_idx,
-            claim=self.claim,
-            evidence=self.evidence,
-        )
-
-
 class SQLAUser(SQLABase):
     __tablename__ = TABLE_USER
 
@@ -651,6 +581,9 @@ class EndpointType(enum.Enum):
     START_COMPUTE_DIFFS = "start_compute_diffs"
     COMPUTE_DIFF_CLUSTERS = "compute_diff_clusters"
     GET_TRANSCRIPT_DIFF = "get_transcript_diff"
+    CREATE_CHART = "create_chart"
+    UPDATE_CHART = "update_chart"
+    DELETE_CHART = "delete_chart"
 
 
 class SQLAChatSession(SQLABase):
@@ -726,3 +659,39 @@ class SQLAApiKey(SQLABase):
     @property
     def is_active(self) -> bool:
         return self.disabled_at is None
+
+
+class SQLAChart(SQLABase):
+    __tablename__ = TABLE_CHART
+
+    id = mapped_column(String(36), primary_key=True)
+    name = mapped_column(Text, nullable=False)
+
+    # Foreign keys
+    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
+    created_by = mapped_column(
+        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
+    )
+
+    # Chart configuration
+    series_key = mapped_column(Text, nullable=True)
+    x_key = mapped_column(Text, nullable=True)
+    y_key = mapped_column(Text, nullable=True)
+    sql_query = mapped_column(Text, nullable=True)
+
+    # Chart visualization settings
+    chart_type = mapped_column(Text, nullable=False, default="bar")  # 'bar', 'line', 'table'
+
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    updated_at = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
+        nullable=False,
+    )
+
+    # Relationships
+    creator: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
+    view: Mapped["SQLAView"] = relationship("SQLAView", lazy="select")

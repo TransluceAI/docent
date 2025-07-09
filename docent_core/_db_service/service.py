@@ -32,8 +32,14 @@ from sqlalchemy.orm import selectinload
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript
-from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
-from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
+from docent_core._ai_tools.clustering.cluster_assigner import (
+    DEFAULT_ASSIGNER,
+    assign_with_backend,
+)
+from docent_core._ai_tools.clustering.cluster_generator import (
+    ClusterFeedback,
+    propose_clusters,
+)
 from docent_core._ai_tools.search import (
     SearchResult,
     SearchResultStreamingCallback,
@@ -91,7 +97,7 @@ class _NotGiven:
 NOT_GIVEN = _NotGiven()
 
 
-class DBService:
+class MonoService:
     def __init__(self, db: DocentDB):
         self.db = db
 
@@ -375,6 +381,7 @@ class DBService:
         agent_run_ids: list[str] | None = None,
         _where_clause: ColumnElement[bool] | None = None,
         _limit: int | None = None,
+        apply_base_where_clause: bool = True,
     ) -> list[AgentRun]:
         """
         Get all agent runs for a given Collection ID.
@@ -390,9 +397,9 @@ class DBService:
 
                 for i in range(0, len(agent_run_ids), batch_size):
                     batch_ids = agent_run_ids[i : i + batch_size]
-                    query = select(SQLAAgentRun).where(
-                        ctx.get_base_where_clause(SQLAAgentRun), SQLAAgentRun.id.in_(batch_ids)
-                    )
+                    query = select(SQLAAgentRun).where(SQLAAgentRun.id.in_(batch_ids))
+                    if apply_base_where_clause:
+                        query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
                     if _where_clause is not None:
                         query = query.where(_where_clause)
                     if _limit is not None:
@@ -407,7 +414,9 @@ class DBService:
                     agent_runs_raw.extend(batch_agent_runs)
 
             else:
-                query = select(SQLAAgentRun).where(ctx.get_base_where_clause(SQLAAgentRun))
+                query = select(SQLAAgentRun)
+                if apply_base_where_clause:
+                    query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
                 if agent_run_ids is not None:
                     query = query.where(SQLAAgentRun.id.in_(agent_run_ids))
                 if _where_clause is not None:
@@ -459,12 +468,24 @@ class DBService:
         logger.info(f"get_agent_runs: Returning {len(final_result)} agent runs with transcripts")
         return final_result
 
-    async def get_agent_run(self, ctx: ViewContext, agent_run_id: str) -> AgentRun | None:
+    async def get_agent_run(
+        self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = True
+    ) -> AgentRun | None:
         """
         Get an AgentRun from the database by its ID.
+
+        Args:
+            ctx: The ViewContext to use for the query.
+            agent_run_id: The ID of the agent run to get.
+            apply_base_where_clause: Whether to apply the base where clause to the query.
+
+        Returns:
+            The agent run.
         """
         agent_runs = await self.get_agent_runs(
-            ctx, _where_clause=SQLAAgentRun.id.in_([agent_run_id])
+            ctx,
+            _where_clause=SQLAAgentRun.id.in_([agent_run_id]),
+            apply_base_where_clause=apply_base_where_clause,
         )
         assert len(agent_runs) <= 1, f"Found {len(agent_runs)} AgentRuns with ID {agent_run_id}"
         return agent_runs[0] if agent_runs else None
@@ -1021,8 +1042,8 @@ class DBService:
         reranked_agent_runs = [id_to_agent_run[ar_id] for ar_id in ordered_agent_run_ids]
 
         if len(reranked_agent_runs) != len(agent_runs):
-            logger.critical(
-                f"Reranked {len(reranked_agent_runs)} agent runs, but expected {len(agent_runs)}"
+            logger.error(
+                f"Reranked to {len(reranked_agent_runs)} agent runs, but expected {len(agent_runs)}"
             )
 
         logger.info(f"Reranked to {len(reranked_agent_runs)}")
@@ -1243,7 +1264,7 @@ class DBService:
                 extra_instructions_list=[guidance],
             )
 
-        logger.critical(f"centroids: {centroids}")
+        logger.info(f"centroids: {centroids}")
 
         # store clusters in the database
         centroid_to_id: dict[str, str] = {}

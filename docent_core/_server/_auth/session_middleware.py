@@ -11,7 +11,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 
 logger = get_logger(__name__)
 
@@ -36,8 +36,8 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
         # Get the user from session_id
         if session_id := request.cookies.get("docent_session_id"):
-            db = await DBService.init()
-            user = await db.get_user_by_session_id(session_id)
+            mono_svc = await MonoService.init()
+            user = await mono_svc.get_user_by_session_id(session_id)
 
             if user:
                 # Attach user information to request state

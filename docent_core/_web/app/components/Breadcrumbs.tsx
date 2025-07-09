@@ -34,7 +34,9 @@ const Breadcrumbs: React.FC = () => {
   const pathname = usePathname();
   const [isConnected, setIsConnected] = useState(false);
 
-  const collectionId = useSelector((state: RootState) => state.collection.collectionId);
+  const collectionId = useSelector(
+    (state: RootState) => state.collection.collectionId
+  );
 
   // Get the current page information
   const agentRunId = params?.agent_run_id as string | undefined;
@@ -71,7 +73,7 @@ const Breadcrumbs: React.FC = () => {
               className="h-7 text-xs whitespace-nowrap px-2 py-0 flex items-center gap-x-1"
               onClick={() => router.push('/dashboard')}
             >
-              <Layers size={12} />
+              <Layers size={14} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -82,7 +84,8 @@ const Breadcrumbs: React.FC = () => {
         {/* Breadcrumbs */}
         <div className="flex gap-x-1 items-center">
           {/* Home link */}
-          {collectionId && (agentRunId || sampleId || isDiffPage || isForestPage) ? (
+          {collectionId &&
+          (agentRunId || sampleId || isDiffPage || isForestPage) ? (
             <Link
               href={`${BASE_DOCENT_PATH}/${collectionId}`}
               className="text-blue-text hover:underline"
@@ -97,7 +100,9 @@ const Breadcrumbs: React.FC = () => {
           {agentRunId && (
             <>
               <ChevronRight size={18} />
-              <span className="text-muted-foreground">Agent run {agentRunId}</span>
+              <span className="text-muted-foreground">
+                Agent run {agentRunId}
+              </span>
             </>
           )}
 
@@ -105,7 +110,9 @@ const Breadcrumbs: React.FC = () => {
           {isForestPage && sampleId && (
             <>
               <ChevronRight size={18} />
-              <span className="text-muted-foreground">Sample {sampleId} tree</span>
+              <span className="text-muted-foreground">
+                Sample {sampleId} tree
+              </span>
             </>
           )}
 
@@ -132,7 +139,7 @@ const Breadcrumbs: React.FC = () => {
             target="_blank"
             className="flex items-center gap-x-2"
           >
-            <BookText size={12} />
+            <BookText size={14} />
             Docs
           </Link>
         </Button>

@@ -8,30 +8,228 @@ import IPython
 IPython.get_ipython().run_line_magic("load_ext", "autoreload")
 IPython.get_ipython().run_line_magic("autoreload", "2")
 
+
+# %%
+
+
+async def setup():
+    from docent_core._db_service.db import DocentDB
+    from docent_core._db_service.service import MonoService
+    from docent_core.services.setup import SetupService
+
+    db = await DocentDB.init()
+    mono_svc = await MonoService.init()
+    async with db.session() as s:
+        ds = SetupService(s, mono_svc)
+        return await ds.setup_dummy_user()
+
+
+result = await setup()
+result
+
+
 # %%
 
 from docent_core._db_service.db import DocentDB
-from docent_core._db_service.service import DBService
-from docent_core.app.services.diff import DiffService
+from docent_core._db_service.service import MonoService
+from docent_core.services.diff import DiffService
 
 db = await DocentDB.init()
-service = await DBService.init()
-ds = DiffService(db, service)
+service = await MonoService.init()
+
+
+# %%
+
+fg_id = "0e4a0318-e072-4dce-ac41-ba97d988b903"
+user = await service.get_user_by_email("a@b.com")
+ctx = await service.get_default_view_ctx(fg_id, user)
 
 
 # %%
 
 
-# %%
+from docent_core._ai_tools.diff.diff import DiffQuery
 
 
-ds.compute_paired_search(
-    ctx,
+async def execute_diff(query: DiffQuery):
+    async with db.session() as session:
+        ds = DiffService(session, db.session, service)
+        query_id = await ds.add_diff_query(ctx, query)
+        print(query_id)
+        await session.commit()
+        # query_id = "a8639497-2297-4863-92d5-5dda651927a3"
+        results = await ds.compute_diff(ctx, query_id)
+        return results
+
+
+query = DiffQuery(
     grouping_md_fields=["sample_id"],
-    identifying_md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
-    identifying_md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
-    shared_context="Both agents knew the name of the specific file or function they needed to find.",
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    focus="exploration strategies",
 )
+query = DiffQuery(
+    grouping_md_fields=["task_id"],
+    md_field_value_1=("step", 65),
+    md_field_value_2=("step", 85),
+    focus=None,
+)
+query = DiffQuery(
+    grouping_md_fields=["task_id"],
+    md_field_value_1=("model", "harmony_v4.0.15_berry_v3_1mil_orion_no_budget"),
+    md_field_value_2=(
+        "model",
+        "harmony_v4.0.16_berry_v3_1mil_orion_lpe_no_budget_commentary_cs_cross_msg_msc",
+    ),
+    # focus="high level problem solving strategies",
+    focus=None,
+)
+
+results = await execute_diff(query)
+results
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    results = await ds.get_diff_results("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+    from pprint import pprint
+
+    for result in results:
+        print(result.agent_run_1_id, result.agent_run_2_id)
+        for instance in result.instances:
+            pprint(instance.model_dump())
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    await ds.propose_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    await ds.delete_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    claims = await ds.get_diff_claims("9194af28-8f63-4a7c-b3f0-46e0ad81372f")
+
+
+from pprint import pprint
+
+for instance in claims.instances:
+    pprint(instance.model_dump())
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    await ds.compute_paired_search(ctx, claims.instances[0].id)
+
+
+# %%
+
+
+async with db.session() as session:
+    ds = DiffService(session, db.session, service)
+    results = await ds.get_paired_search_results(claims.instances[0].id)
+    print(results)
+
+
+# %%
+
+
+# %%
+
+
+from docent_core._ai_tools.search_paired import SearchPairedQuery
+
+
+async def execute_query(query: SearchPairedQuery):
+    async with db.session() as session:
+        ds = DiffService(session, db.session, service)
+        query_id = await ds.add_paired_search_query(ctx, query)
+        print(query_id)
+        await session.commit()
+        results = await ds.compute_paired_search(ctx, query_id)
+        return results
+
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents knew the name of the specific file or function they needed to find.",
+    action_1="Agent used tools like grep or find to search for the object",
+    action_2="Agent searched manually without tools",
+)
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents were trying to use/call the same function",
+    action_1="Agent looked up documentation for the function",
+    action_2="Agent guessed arguments to the function",
+)
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents had just been given a task that involves debugging an issue",
+    action_1="Agent reproduced the issue",
+    action_2="Agent began fixing the issue without reproducing it",
+)
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents were trying to fix the same issue",
+    action_1="Agent modified existing functions",
+    action_2="Agent created new functions that were not present in the original codebase",
+)
+
+query = SearchPairedQuery(
+    grouping_md_fields=["sample_id"],
+    md_field_value_1=("model", "anthropic/claude-3-7-sonnet-latest"),
+    md_field_value_2=("model", "anthropic/claude-3-5-sonnet-latest"),
+    context="Both agents are given a specific file or function to modify",
+    # action_1="Agent jumps directly to the relevant code without exploring the repository",
+    # action_2="Agent explores the repository first, including files that are not obviously relevant",
+    action_1="Agent 1 explores more files than agent 2",
+    action_2="Agent 2 explores more files than agent 1",
+)
+
+await execute_query(query)
+
+
+# %%
+
+
+await ds.get_paired_search_results(query_id)
+
+
+# %%
+
+
+query_id
 
 
 # %%

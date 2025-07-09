@@ -1,6 +1,6 @@
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { cn } from '@/lib/utils';
-import { DiffTheme, focusCluster } from '../store/diffSlice';
+import { DiffTheme, focusCluster } from '../store/diffSliceOld';
 import { DiffReportConfig } from './DiffReportConfig';
 
 const DiffsClusters = () => {
@@ -21,12 +21,12 @@ const DiffsClusters = () => {
     >
       <DiffReportConfig />
       {clusters && (
-          <p className="text-xs text-muted-foreground mt-2">
-            {' '}
-            We looked at all the observed differences between the paired
-            transcripts and found the following themes.{' '}
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground mt-2">
+          {' '}
+          We looked at all the observed differences between the paired
+          transcripts and found the following themes.{' '}
+        </p>
+      )}
       <div className="flex items-center justify-between mb-4">
         {clusters && <h3 className="font-bold text-foreground">Themes</h3>}
         {selectedCluster && (
@@ -39,7 +39,6 @@ const DiffsClusters = () => {
             Show All
           </button>
         )}
-
       </div>
 
       {clusters ? (

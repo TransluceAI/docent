@@ -7,11 +7,12 @@ from sqlalchemy.inspection import inspect as sqla_inspect
 from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import SQLAAgentRun
-from docent_core._db_service.service import DBService
+from docent_core._db_service.service import MonoService
 from docent_core._server._broker.redis_client import (
     publish_to_broker,
     publish_view_update,
 )
+from docent_core.services.charts import ChartsService
 
 logger = get_logger(__name__)
 
@@ -29,10 +30,10 @@ class CollectionDimension(BaseModel):
     binIds: list[dict[str, Any]] | None = None
 
 
-async def publish_binnable_keys(db: DBService, ctx: ViewContext):
+async def publish_binnable_keys(mono_svc: MonoService, ctx: ViewContext):
     """Publish keys that can be set as the io bin keys"""
 
-    bin_keys = await db.get_binnable_keys(ctx)
+    bin_keys = await mono_svc.get_binnable_keys(ctx)
 
     # Convert to CollectionDimension objects
     dimensions = [
@@ -60,7 +61,7 @@ async def publish_binnable_keys(db: DBService, ctx: ViewContext):
     )
 
 
-async def publish_base_filter(db: DBService, ctx: ViewContext):
+async def publish_base_filter(db: MonoService, ctx: ViewContext):
     await publish_view_update(
         ctx.collection_id,
         ctx.view_id,
@@ -71,8 +72,8 @@ async def publish_base_filter(db: DBService, ctx: ViewContext):
     )
 
 
-async def publish_io_bin_keys(db: DBService, ctx: ViewContext):
-    io_dims = await db.get_io_bin_keys(ctx)
+async def publish_io_bin_keys(mono_svc: MonoService, ctx: ViewContext):
+    io_dims = await mono_svc.get_io_bin_keys(ctx)
     inner_bin_key, outer_bin_key = io_dims if io_dims is not None else (None, None)
 
     await publish_view_update(
@@ -90,27 +91,52 @@ async def publish_io_bin_keys(db: DBService, ctx: ViewContext):
     return inner_bin_key, outer_bin_key
 
 
-async def publish_searches(db: DBService, ctx: ViewContext):
+async def publish_searches(mono_svc: MonoService, ctx: ViewContext):
     await publish_view_update(
         ctx.collection_id,
         ctx.view_id,
         {
             "action": "searches",
-            "payload": await db.get_searches_with_result_counts(ctx),
+            "payload": await mono_svc.get_searches_with_result_counts(ctx),
+        },
+    )
+
+
+async def publish_charts(mono_svc: MonoService, ctx: ViewContext):
+    """Publish charts for the view."""
+    async with mono_svc.db.session() as session:
+        charts_service = ChartsService(session, mono_svc)
+        charts = await charts_service.get_charts(ctx)
+
+    # Convert SQLAlchemy objects to dictionaries
+    chart_data = [
+        {c.key: getattr(chart, c.key) for c in sqla_inspect(chart).mapper.column_attrs}
+        for chart in charts
+    ]
+
+    chart_data.sort(key=lambda x: x["created_at"])
+
+    await publish_view_update(
+        ctx.collection_id,
+        ctx.view_id,
+        {
+            "action": "charts",
+            "payload": chart_data,
         },
     )
 
 
 async def publish_bin_stats_and_agent_runs(
-    db: DBService,
+    mono_svc: MonoService,
     ctx: ViewContext,
     inner_bin_key: str | None,
     outer_bin_key: str | None,
+    y_key: str | None,
 ):
     """Publish homepage binStats and agentRunIds"""
 
     # Get all agent run IDs for this view
-    all_agent_run_ids = await db.get_agent_run_ids(ctx)
+    all_agent_run_ids = await mono_svc.get_agent_run_ids(ctx)
 
     # If no bin keys are set, we still need to publish agent run IDs for the frontend
     # if no agent runs, we publish empty binStats and agentRunIds
@@ -148,7 +174,7 @@ async def publish_bin_stats_and_agent_runs(
     where_clause = str(compiled_where)
 
     # Build the SQL query to compute statistics directly
-    async with db.db.session() as session:
+    async with mono_svc.db.session() as session:
         # Build the GROUP BY clause based on the number of bins
         if len(bin_keys) == 1:
             # 1D case: group by single dimension
@@ -274,9 +300,34 @@ async def publish_bin_stats_and_agent_runs(
     )
 
 
-async def publish_collections(db: DBService):
+async def publish_agent_runs(mono_svc: MonoService, ctx: ViewContext):
+    """Publish agent run IDs for the view"""
+
+    # Get all agent run IDs for this view
+    all_agent_run_ids = await mono_svc.get_agent_run_ids(ctx)
+
+    payload: dict[str, Any] = {
+        "request_type": "comb_stats",
+        "result": {
+            "binStats": {},
+            "agentRunIds": all_agent_run_ids,
+        },
+    }
+    await publish_view_update(
+        ctx.collection_id,
+        ctx.view_id,
+        {
+            "action": "specific_bins",
+            "payload": payload,
+        },
+    )
+
+    return
+
+
+async def publish_collections(mono_svc: MonoService):
     """Publish updated collections to all connected clients."""
-    sqla_collections = await db.get_collections()
+    sqla_collections = await mono_svc.get_collections()
     collections = [
         # Get all columns from the SQLAlchemy object
         {c.key: getattr(obj, c.key) for c in sqla_inspect(obj).mapper.column_attrs}
@@ -292,20 +343,28 @@ async def publish_collections(db: DBService):
     )
 
 
-async def publish_homepage_state(db: DBService, ctx: ViewContext):
+async def publish_homepage_state(mono_svc: MonoService, ctx: ViewContext):
     """Publish homepage state for a specific view. Always requires ViewProvider since base filters are view-scoped."""
 
     # Publish base filter
-    await publish_base_filter(db, ctx)
+    await publish_base_filter(mono_svc, ctx)
 
     # Publish dimensions
-    await publish_binnable_keys(db, ctx)
+    await publish_binnable_keys(mono_svc, ctx)
 
-    # Publish current bin keys
-    inner_bin_key, outer_bin_key = await publish_io_bin_keys(db, ctx)
+    await publish_agent_runs(mono_svc, ctx)
 
-    # Publish bin stats and agent runs
-    await publish_bin_stats_and_agent_runs(db, ctx, inner_bin_key, outer_bin_key)
+    # FIXME(ryanbloom): this is pretty inefficient
+    async with mono_svc.db.session() as session:
+        charts_service = ChartsService(session, mono_svc)
+        charts = await charts_service.get_charts(ctx)
+    for chart in charts:
+        await publish_bin_stats_and_agent_runs(
+            mono_svc, ctx, chart.x_key, chart.series_key, chart.y_key
+        )
 
     # Publish searches
-    await publish_searches(db, ctx)
+    await publish_searches(mono_svc, ctx)
+
+    # Publish charts
+    await publish_charts(mono_svc, ctx)

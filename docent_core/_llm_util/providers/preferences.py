@@ -239,6 +239,26 @@ class ProviderPreferences(BaseModel):
         ]
 
     @cached_property
+    def execute_diff(self) -> list[ModelOption]:
+        """Get model options for the execute_diff function.
+
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(
+                provider="openai",
+                model_name="o3",
+                reasoning_effort="medium",
+            ),
+            ModelOption(
+                provider="anthropic",
+                model_name="claude-3-7-sonnet-20250219",
+                reasoning_effort="medium",
+            ),
+        ]
+
+    @cached_property
     def cluster_assign_o3_mini(self) -> list[ModelOption]:
         """Get model options for the cluster_assign_o3-mini function.
 

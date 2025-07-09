@@ -3,7 +3,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { useAppSelector } from '../store/hooks';
-import { Claim, TranscriptDiff } from '../store/diffSlice';
+import { Claim, TranscriptDiff } from '../store/diffSliceOld';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import React, { useCallback, useState } from 'react';
 import { ChevronRight, Info, FileText } from 'lucide-react';
@@ -178,9 +178,7 @@ export const TranscriptDiffSummary = ({ diffKey }: Props) => {
         >
           Transcript Differences for Task
         </h2>
-        <h1 className="text-sm mb-1 text-foreground">
-          {diff.title}
-        </h1>
+        <h1 className="text-sm mb-1 text-foreground">{diff.title}</h1>
       </div>
       <CardContent className="space-y-1">
         <div className={cn('grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2')}>
@@ -258,11 +256,7 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
                 e.stopPropagation();
               }}
             >
-              <span
-                className={cn(
-                  'text-primary text-xs text-left'
-                )}
-              >
+              <span className={cn('text-primary text-xs text-left')}>
                 {interpolateAgentBadges(claim.claim_summary)}
               </span>
             </button>
@@ -296,12 +290,7 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
         >
           {/* Shared context */}
           {claim.shared_context && (
-            <div
-              className={cn(
-                'text-xs text-muted-foreground italic',
-                'mb-2'
-              )}
-            >
+            <div className={cn('text-xs text-muted-foreground italic', 'mb-2')}>
               {claim.shared_context}
             </div>
           )}
@@ -312,39 +301,39 @@ const DiffClaimView = ({ claim, transcriptDiff }: ClaimProps) => {
               'divide-y sm:divide-y-0 sm:divide-x divide-gray-200'
             )}
           >
-                          <div className="flex-1 py-2 sm:py-0 sm:pr-4">
-                <div className="text-xs font-medium text-orange-text mb-1">
-                  {agentBadge('Agent 1')}
-                </div>
-                <div className="text-xs text-foreground whitespace-pre-line">
-                  {claim.agent_1_action}
-                </div>
+            <div className="flex-1 py-2 sm:py-0 sm:pr-4">
+              <div className="text-xs font-medium text-orange-text mb-1">
+                {agentBadge('Agent 1')}
               </div>
-              <div className="flex-1 py-2 sm:py-0 sm:pl-4">
-                <div className="text-xs font-medium text-blue-text mb-1">
-                  {agentBadge('Agent 2')}
-                </div>
-                <div className="text-xs text-foreground whitespace-pre-line">
-                  {claim.agent_2_action}
-                </div>
+              <div className="text-xs text-foreground whitespace-pre-line">
+                {claim.agent_1_action}
               </div>
+            </div>
+            <div className="flex-1 py-2 sm:py-0 sm:pl-4">
+              <div className="text-xs font-medium text-blue-text mb-1">
+                {agentBadge('Agent 2')}
+              </div>
+              <div className="text-xs text-foreground whitespace-pre-line">
+                {claim.agent_2_action}
+              </div>
+            </div>
           </div>
           {/* Evidence toggle */}
           {claim.evidence_with_citations && (
             <div className="mt-2">
-                              <button
-                  className={cn(
-                    'text-xs font-medium underline text-indigo-text',
-                    'hover:text-indigo-text transition-colors',
-                    'focus:outline-none'
-                  )}
-                  onClick={() => setShowEvidence((v) => !v)}
-                  aria-expanded={showEvidence}
-                >
-                  {showEvidence ? 'Hide Evidence' : 'Show Evidence'}
-                </button>
-                {showEvidence && (
-                  <div className="mt-1 text-xs text-muted-foreground bg-indigo-bg rounded p-2 whitespace-pre-line">
+              <button
+                className={cn(
+                  'text-xs font-medium underline text-indigo-text',
+                  'hover:text-indigo-text transition-colors',
+                  'focus:outline-none'
+                )}
+                onClick={() => setShowEvidence((v) => !v)}
+                aria-expanded={showEvidence}
+              >
+                {showEvidence ? 'Hide Evidence' : 'Show Evidence'}
+              </button>
+              {showEvidence && (
+                <div className="mt-1 text-xs text-muted-foreground bg-indigo-bg rounded p-2 whitespace-pre-line">
                   <CitationRenderer
                     text={claim.evidence_with_citations.evidence}
                     citations={claim.evidence_with_citations.citations || []}

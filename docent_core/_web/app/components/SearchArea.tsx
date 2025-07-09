@@ -289,7 +289,9 @@ const SearchArea = () => {
    * Handle share button
    */
   const handleShare = async (searchQuery: string) => {
-    const response = await apiRestClient.post(`/${collectionId}/clone_own_view`);
+    const response = await apiRestClient.post(
+      `/${collectionId}/clone_own_view`
+    );
     const success = await copyToClipboard(
       `${window.location.origin}${window.location.pathname}?viewId=${response.data.view_id}&searchQuery=${encodeURIComponent(searchQuery)}`
     );
@@ -325,9 +327,11 @@ const SearchArea = () => {
         </div>
 
         <div className="border rounded-sm bg-secondary p-2 space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <div className="text-primary mb-1">Search query</div>
-            {curSearchQuery && loadingProgress && !loadingSearchQuery && (
+          <div className="flex items-center justify-between text-xs text-primary">
+            Enter search query here
+          </div>
+          {curSearchQuery && loadingProgress && !loadingSearchQuery && (
+            <div className="flex items-center justify-between text-xs">
               <div className="text-secondary">
                 {loadingProgress[0]} searches finished
                 {loadingProgress[1] - loadingProgress[0] > 0 && (
@@ -342,8 +346,8 @@ const SearchArea = () => {
                   </>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
           {curSearchQuery ? (
             <div className="space-y-2">
               <div className="flex items-center">
@@ -473,7 +477,7 @@ const SearchArea = () => {
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <div className="flex flex-wrap gap-x-2 gap-y-1">
+                <div className="flex flex-wrap gap-1">
                   {PRESET_QUERIES.map((preset) => {
                     const IconComponent = preset.icon;
                     return (
@@ -482,7 +486,7 @@ const SearchArea = () => {
                         onClick={() => handleSelectPreset(preset.query)}
                         onMouseEnter={() => handlePresetHover(preset.query)}
                         onMouseLeave={handlePresetLeave}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded-full text-xs font-medium text-primary disabled:opacity-50 hover:bg-secondary hover:border-border transition-colors"
+                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded-md text-xs font-medium text-primary disabled:opacity-50 hover:bg-secondary hover:border-border transition-colors"
                         disabled={!hasWritePermission}
                       >
                         <IconComponent className={`h-3 w-3 ${preset.color}`} />
@@ -704,14 +708,17 @@ const SearchArea = () => {
 
       {/* Paired search */}
       {/* <div className="space-y-2">
-          <div>
-            <div className="text-sm font-semibold">Paired Search</div>
-            <div className="text-xs">
-              Compare pairs of agent runs for behavioral differences
-            </div>
+        <div>
+          <div className="text-sm font-semibold">Paired Search</div>
+          <div className="text-xs">
+            Compare pairs of agent runs for behavioral differences
           </div>
-          Not implemented yet
-        </div> */}
+        </div>
+        Not implemented yet
+      </div> */}
+
+      {/* Diffing */}
+      {/* <DiffSelector /> */}
     </Card>
   );
 };
