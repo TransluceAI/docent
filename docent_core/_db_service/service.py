@@ -1484,6 +1484,12 @@ class MonoService:
                 update(SQLAJob).filter(SQLAJob.id == job_id).values(status=status)
             )
 
+    async def set_job_json(self, job_id: str, job_json: dict[str, Any]):
+        async with self.db.session() as session:
+            await session.execute(
+                update(SQLAJob).filter(SQLAJob.id == job_id).values(job_json=job_json)
+            )
+
     async def get_search_job_and_query(
         self, job_id: str
     ) -> tuple[dict[Any, Any], SQLASearchQuery] | None:

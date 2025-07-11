@@ -1,11 +1,12 @@
 import re
-from typing import cast
+from typing import Protocol
+from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from docent._log_util import get_logger
-from docent.data_models._tiktoken_util import MAX_TOKENS, get_token_count
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.citation import Citation, parse_citations_single_run
 from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
@@ -47,6 +48,7 @@ description
 
 
 class Rubric(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
     high_level_description: str
     inclusion_rules: list[str]
     exclusion_rules: list[str]
@@ -70,29 +72,75 @@ def _parse_llm_output(output: LLMOutput) -> list[str] | None:
         return [str(match.group(1).strip()) for match in matches]
 
 
+class JudgeResult(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    agent_run_id: str
+    rubric_id: str
+    value: str | None = None
+
+
+class JudgeResultWithCitations(JudgeResult):
+    citations: list[Citation] | None
+
+    @classmethod
+    def from_judge_result(cls, result: JudgeResult) -> "JudgeResultWithCitations":
+        return cls(
+            **result.model_dump(),
+            citations=(
+                parse_citations_single_run(result.value) if result.value is not None else None
+            ),
+        )
+
+
+class JudgeResultStreamingCallback(Protocol):
+    """Supports batched streaming for cases where many search results are pre-computed.
+    This avoids invoking the callback separately for each datapoint.
+    """
+
+    async def __call__(
+        self,
+        judge_results: list[JudgeResult] | None,
+    ) -> None: ...
+
+
+def _get_llm_callback(
+    rubric_id: str,
+    agent_run_ids: list[str],
+    callback: JudgeResultStreamingCallback,
+):
+    async def _llm_callback(batch_index: int, llm_output: LLMOutput):
+        results = _parse_llm_output(llm_output)
+
+        # Return nothing if the LLM call failed (hence None)
+        if results is None:
+            await callback(None)
+        else:
+            await callback(
+                [
+                    JudgeResult(
+                        agent_run_id=agent_run_ids[batch_index],
+                        rubric_id=rubric_id,
+                        value=value,
+                    )
+                    # If there were no matches, return a single None result
+                    # Otherwise, return all results
+                    for value in (results if len(results) > 0 else [None])
+                ]
+            )
+
+    return _llm_callback
+
+
 async def evaluate_rubric(
     agent_runs: list[AgentRun],
     rubric: Rubric,
     model_options: list[ModelOption],
-    # search_result_callback: SearchResultStreamingCallback | None = None,
+    callback: JudgeResultStreamingCallback | None = None,
 ):
-    # ids = [ar.id for ar in agent_runs]
+    ids = [ar.id for ar in agent_runs]
     texts = [ar.text for ar in agent_runs]
 
-    # Try to search over all short AgentRuns first, since we can stream those immediately
-    short_indices = [i for i in range(len(texts)) if get_token_count(texts[i]) <= MAX_TOKENS]
-    # short_ids = [ids[i] for i in short_indices]
-    short_texts = [texts[i] for i in short_indices]
-
-    # llm_callback = (
-    #     _get_llm_streaming_callback(search_query, short_ids, search_result_callback)
-    #     if search_result_callback is not None
-    #     else None
-    # )
-
-    prompts = [
-        RUBRIC_PROMPT.format(rubric=rubric.text, agent_run=agent_run) for agent_run in short_texts
-    ]
+    prompts = [RUBRIC_PROMPT.format(rubric=rubric.text, agent_run=agent_run) for agent_run in texts]
     outputs = await get_llm_completions_async(
         [
             [
@@ -107,62 +155,62 @@ async def evaluate_rubric(
         max_new_tokens=8192,
         timeout=180.0,
         use_cache=True,
-        # completion_callback=llm_callback,
+        completion_callback=(
+            _get_llm_callback(rubric.id, ids, callback) if callback is not None else None
+        ),
     )
 
     ans: list[list[str] | None] = [
         None,
     ] * len(texts)
     for i, output in enumerate(outputs):
-        ans[short_indices[i]] = _parse_llm_output(output)
+        ans[i] = _parse_llm_output(output)
 
-    # next we search over long AgentRuns, which need to be sharded to within context length
-    # these can't be streamed immediately since we need to search over all shards first
+    # # next we search over long AgentRuns, which need to be sharded to within context length
+    # # these can't be streamed immediately since we need to search over all shards first
 
-    long_indices = [i for i in range(len(texts)) if i not in short_indices]
+    # long_indices = [i for i in range(len(texts)) if i not in short_indices]
     # long_ids = [ids[i] for i in long_indices]
-    long_texts = [agent_runs[i].to_text(100_000) for i in long_indices]
-    flattened_long_texts = [text for run in long_texts for text in run]
-    prompts = [
-        RUBRIC_PROMPT.format(rubric=rubric.text, agent_run=agent_run)
-        for agent_run in flattened_long_texts
-    ]
+    # long_texts = [agent_runs[i].to_text(100_000) for i in long_indices]
+    # flattened_long_texts = [text for run in long_texts for text in run]
+    # prompts = [
+    #     RUBRIC_PROMPT.format(rubric=rubric.text, agent_run=agent_run)
+    #     for agent_run in flattened_long_texts
+    # ]
 
-    logger.info(f"Searching over {len(prompts)} long agent runs")
-    outputs = await get_llm_completions_async(
-        [
-            [
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ]
-            for prompt in prompts
-        ],
-        model_options,
-        max_new_tokens=8192,
-        timeout=180.0,
-        use_cache=True,
-    )
+    # logger.info(f"Searching over {len(prompts)} long agent runs")
+    # outputs = await get_llm_completions_async(
+    #     [
+    #         [
+    #             {
+    #                 "role": "user",
+    #                 "content": prompt,
+    #             },
+    #         ]
+    #         for prompt in prompts
+    #     ],
+    #     model_options,
+    #     max_new_tokens=8192,
+    #     timeout=180.0,
+    #     use_cache=True,
+    # )
 
-    grouped_outputs: list[list[LLMOutput]] = []
-    index = 0
-    for long_text in long_texts:
-        grouped_outputs.append(outputs[index : index + len(long_text)])
-        index += len(long_text)
+    # grouped_outputs: list[list[LLMOutput]] = []
+    # index = 0
+    # for long_text in long_texts:
+    #     grouped_outputs.append(outputs[index : index + len(long_text)])
+    #     index += len(long_text)
 
-    for i, output_group in enumerate(grouped_outputs):
-        results = [_parse_llm_output(output) for output in output_group]
-        if any(result is None for result in results):
-            ans[long_indices[i]] = None
-        else:
-            flattened_results = [r for result in results for r in cast(list[str], result)]
-            ans[long_indices[i]] = flattened_results
+    # for i, output_group in enumerate(grouped_outputs):
+    #     results = [_parse_llm_output(output) for output in output_group]
+    #     if any(result is None for result in results):
+    #         ans[long_indices[i]] = None
+    #     else:
+    #         flattened_results = [r for result in results for r in cast(list[str], result)]
+    #         ans[long_indices[i]] = flattened_results
 
-    # if search_result_callback is not None:
-    #     long_llm_callback = _get_llm_streaming_callback_for_sharded_search(
-    #         search_query, long_ids, search_result_callback
-    #     )
+    # if callback is not None:
+    #     long_llm_callback = _get_llm_callback(rubric.id, long_ids, callback)
     #     callbacks = [
     #         long_llm_callback(i, output_group) for i, output_group in enumerate(grouped_outputs)
     #     ]

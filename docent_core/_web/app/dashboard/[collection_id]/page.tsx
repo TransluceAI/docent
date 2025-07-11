@@ -2,10 +2,10 @@
 
 import React, { Suspense } from 'react';
 
-import SearchArea from '../../components/SearchArea';
 import ExperimentViewer from '../../components/ExperimentViewer';
 import AgentRunPreview from '../../components/AgentRunPreview';
 import { useAppSelector } from '../../store/hooks';
+import SearchArea from '@/app/components/SearchArea';
 
 export default function DocentDashboard() {
   const dashboardHasRunPreview = useAppSelector(
@@ -22,6 +22,7 @@ export default function DocentDashboard() {
             <ExperimentViewer />
           </div>
         )}
+        {/* <RubricArea /> */}
         <SearchArea />
       </div>
       {/* <Dashboard /> */}

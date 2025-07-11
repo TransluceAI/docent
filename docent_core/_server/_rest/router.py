@@ -1395,13 +1395,14 @@ async def start_compute_search(
     new, job_id = await mono_svc.add_search_job(query_id)
     if new:
         # When we enqueue the job, check if the user has write perms
-        write_allowed = await mono_svc.has_permission(
-            user=user,
-            resource_type=ResourceType.COLLECTION,
-            resource_id=collection_id,
-            permission=Permission.WRITE,
-        )
-        await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
+        # write_allowed = await mono_svc.has_permission(
+        #     user=user,
+        #     resource_type=ResourceType.COLLECTION,
+        #     resource_id=collection_id,
+        #     permission=Permission.WRITE,
+        # )
+        # await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
+        await enqueue_search_job(ctx, job_id)
 
     # Track analytics
     await track_endpoint_with_user(
@@ -1524,13 +1525,14 @@ async def resume_compute_search(
     query = await mono_svc.get_search_query(query_id)
     if new:
         # When we enqueue the job, check if the user has write perms
-        write_allowed = await mono_svc.has_permission(
-            user=user,
-            resource_type=ResourceType.COLLECTION,
-            resource_id=query.collection_id,
-            permission=Permission.WRITE,
-        )
-        await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
+        # write_allowed = await mono_svc.has_permission(
+        #     user=user,
+        #     resource_type=ResourceType.COLLECTION,
+        #     resource_id=query.collection_id,
+        #     permission=Permission.WRITE,
+        # )
+        # await enqueue_search_job(ctx, job_id, read_only=not write_allowed)
+        await enqueue_search_job(ctx, job_id)
 
     # Track analytics
     await track_endpoint_with_user(

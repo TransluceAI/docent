@@ -5,8 +5,12 @@ import redis.asyncio as redis
 from arq import ArqRedis
 from fastapi.encoders import jsonable_encoder
 
+from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
 from docent_core._env_util import ENV
+from docent_core._worker.constants import WORKER_QUEUE_NAME
+
+logger = get_logger(__name__)
 
 
 def _get_redis_client():
@@ -80,10 +84,41 @@ async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: An
     print(f"Enqueued job {j} to {queue_name} with func {func_name}")
 
 
-async def enqueue_search_job(view_ctx: ViewContext, job_id: str, read_only: bool) -> None:
-    await _enqueue_job("embedding_and_search_queue", "compute_search", view_ctx, job_id, read_only)
+async def enqueue_search_job(view_ctx: ViewContext, job_id: str) -> None:
+    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
 
 
 async def enqueue_embedding_job(view_ctx: ViewContext, job_id: str) -> None:
     """Enqueue an embedding computation job to the worker."""
-    await _enqueue_job("embedding_and_search_queue", "compute_embeddings", view_ctx, job_id)
+    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
+
+
+async def enqueue_rubric_job(view_ctx: ViewContext, job_id: str) -> None:
+    """Enqueue an rubric job to the worker."""
+    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
+
+
+async def cancel_job(job_id: str) -> None:
+    """Cancel a job and wait for confirmation that the cancellation was processed."""
+    # Queue names
+    command_queue = f"commands_{job_id}"
+    response_queue = f"cancel_response_{job_id}"
+
+    # Send the cancel command with the response ID
+    await REDIS.rpush(command_queue, "cancel")  # type: ignore
+
+    # Wait for confirmation from the worker
+    try:
+        # Wait up to T seconds for cancellation confirmation
+        result = await REDIS.blpop(response_queue, timeout=10)  # type: ignore
+        if result is None:
+            raise TimeoutError(f"Timeout waiting for cancellation confirmation for job {job_id}")
+
+        _queue_name, response = result  # type: ignore
+        logger.info(f"Received cancellation confirmation for job {job_id}: {response}")
+
+    except Exception as e:
+        logger.error(f"Error waiting for cancellation confirmation for job {job_id}: {e}")
+
+    finally:
+        await REDIS.delete(response_queue)  # type: ignore

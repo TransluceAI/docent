@@ -13,6 +13,8 @@ import createWebSocketMiddleware from './webSocketMiddleware';
 import { collabApi } from '@/lib/permissions/collabSlice';
 import { experimentViewerApi } from '../api/experimentViewerApi';
 import { diffApi } from '../api/diffApi';
+import { rubricApi } from '../api/rubricApi';
+import rubricReducer from './rubricSlice';
 
 // Create a custom error logger middleware
 const errorLogger = () => (next: any) => (action: any) => {
@@ -33,6 +35,7 @@ const store = configureStore({
   reducer: {
     experimentViewer: experimentViewerReducer,
     search: searchReducer,
+    rubric: rubricReducer,
     embed: embedReducer,
     diff: diffReducer,
     collection: collectionReducer,
@@ -41,6 +44,7 @@ const store = configureStore({
     [collabApi.reducerPath]: collabApi.reducer,
     [experimentViewerApi.reducerPath]: experimentViewerApi.reducer,
     [diffApi.reducerPath]: diffApi.reducer,
+    [rubricApi.reducerPath]: rubricApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware()
@@ -48,7 +52,8 @@ const store = configureStore({
       .concat(errorLogger)
       .concat(collabApi.middleware)
       .concat(experimentViewerApi.middleware)
-      .concat(diffApi.middleware),
+      .concat(diffApi.middleware)
+      .concat(rubricApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

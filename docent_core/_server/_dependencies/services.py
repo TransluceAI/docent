@@ -10,6 +10,8 @@ from docent_core._server._dependencies.database import (
     get_session_cm_factory,
 )
 from docent_core.services.diff import DiffService
+from docent_core.services.job import JobService
+from docent_core.services.rubric import RubricService
 
 
 def get_diff_service(
@@ -20,3 +22,22 @@ def get_diff_service(
     ),
 ) -> DiffService:
     return DiffService(session, session_cm_factory, mono_svc)
+
+
+def get_rubric_service(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    session: AsyncSession = Depends(get_session),
+    session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]] = Depends(
+        get_session_cm_factory
+    ),
+) -> RubricService:
+    return RubricService(session, session_cm_factory, mono_svc)
+
+
+def get_job_service(
+    session: AsyncSession = Depends(get_session),
+    session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]] = Depends(
+        get_session_cm_factory
+    ),
+) -> JobService:
+    return JobService(session, session_cm_factory)

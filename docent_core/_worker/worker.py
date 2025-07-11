@@ -1,5 +1,4 @@
-import asyncio
-import json
+import traceback
 from typing import Any
 
 import anyio
@@ -8,16 +7,15 @@ from anyio.abc import TaskGroup
 from arq import ArqRedis
 from arq.connections import RedisSettings
 from arq.worker import run_worker
-from pydantic_core import to_jsonable_python
 
 from docent._log_util import get_logger
-from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.contexts import ViewContext
+from docent_core._db_service.db import DocentDB
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
-from docent_core._server._broker.redis_client import publish_collection_update
-from docent_core._server._rest.send_state import publish_searches
+from docent_core._worker.constants import WORKER_QUEUE_NAME, WorkerFunction
+from docent_core.services.rubric import RubricService
 
 logger = get_logger(__name__)
 
@@ -32,48 +30,72 @@ REDIS = ArqRedis(
 )
 
 
-async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, read_only: bool):
+async def rubric_job(ctx: ViewContext, job: SQLAJob):
+    db = await DocentDB.init()
     mono_svc = await MonoService.init()
-    result = await mono_svc.get_search_job_and_query(job_id)
-    if result is None:
-        logger.error(f"Search job {job_id} not found")
-        return
-    _job, query = result
 
-    await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
+    # Communicate the total number of agent runs
+    # TODO(mengk): slightly hacky, not sure what's better tho
+    await mono_svc.set_job_json(
+        job.id, job.job_json | {"total_agent_runs": await mono_svc.count_base_agent_runs(ctx)}
+    )
 
-    async def _search_result_callback(
-        search_results: list[SearchResult] | None,
-    ) -> None:
-        if search_results or search_results is None:
-            await REDIS.xadd(
-                f"results_{job_id}",
-                {"results": json.dumps(to_jsonable_python(search_results))},
-            )
-            with anyio.CancelScope(shield=True):
-                await publish_searches(mono_svc, view_ctx)
+    async with db.session() as session:
+        rs = RubricService(session, db.session, mono_svc)
+        await rs.run_rubric_job(ctx, job)
 
+
+async def run_job(_: Any, ctx: ViewContext, job_id: str):
+    mono_svc = await MonoService.init()
     canceled = False
 
-    async def run(tg: TaskGroup):
+    async def _run(tg: TaskGroup):
         nonlocal canceled
+
         try:
-            async with mono_svc.advisory_lock(
-                view_ctx.collection_id + "__search__" + query.search_query,
-                action_id="mutation",
-            ):
-                await mono_svc.compute_search(
-                    view_ctx,
-                    query.search_query,
-                    _search_result_callback,
-                    read_only,
-                )
-                tg.cancel_scope.cancel()
-        except:
+            #########
+            # Setup #
+            #########
+
+            # Get the job
+            job = await mono_svc.get_job(job_id)
+            if job is None:
+                raise ValueError(f"Job {job_id} not found")
+
+            # If it's canceled, just return
+            if job.status == JobStatus.CANCELED:
+                raise RuntimeError("Job was already canceled")
+            elif job.status == JobStatus.COMPLETED:
+                raise RuntimeError("Job was already completed")
+
+            # Mark it as running
+            await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
+
+            ##################
+            # Core execution #
+            ##################
+
+            logger.info(f"Starting job {job_id}")
+
+            # Run the job with the appropriate function
+            if job.type == WorkerFunction.RUBRIC_JOB.value:
+                await rubric_job(ctx, job)
+            # elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
+            #     await compute_search(job_id)
+            # elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
+            #     await compute_embeddings(job_id)
+            else:
+                raise ValueError(f"Unknown job type: {job.type}")
+        except anyio.get_cancelled_exc_class():
+            canceled = True
+            raise
+        except Exception as e:
+            logger.error(f"Job {job_id} failed: {e}. Traceback: {traceback.format_exc()}")
             canceled = True
             raise
         finally:
             with anyio.CancelScope(shield=True):
+                # Update the job status
                 if canceled:
                     logger.highlight(f"Job {job_id} canceled", color="red")
                     await mono_svc.set_job_status(job_id, JobStatus.CANCELED)
@@ -81,8 +103,10 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
                     logger.highlight(f"Job {job_id} finished", color="green")
                     await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
 
-                await publish_searches(mono_svc, view_ctx)
-                await REDIS.delete(f"results_{job_id}")
+                # Send immediate cancellation confirmation to caller
+                response_queue = f"cancel_response_{job_id}"
+                await REDIS.rpush(response_queue, "cancelled")  # type: ignore
+                logger.info(f"Sent cancellation confirmation for job {job_id} to {response_queue}")
 
     async def await_commands(tg: TaskGroup):
         nonlocal canceled
@@ -91,185 +115,29 @@ async def compute_search(_: dict[Any, Any], view_ctx: ViewContext, job_id: str, 
         while True:
             _queue, command = await REDIS.blpop(q)  # type: ignore
             logger.info(f"{job_id} received {command}")
+            assert isinstance(command, str)
 
-            match command:  # type: ignore
+            # Handle cancel command with optional response ID
+            match command:
                 case "cancel":
-                    # The search task may internally prevent cancellation requests from bubbling all
-                    # the way up, so explicitly note down the cancellation if we do it ourselves.
-                    canceled = True
-
                     tg.cancel_scope.cancel()
+                case _:
+                    logger.error(f"Unknown command received for job {job_id}: {str(command)}")  # type: ignore
 
     async with anyio.create_task_group() as tg:
-        tg.start_soon(run, tg)
+        tg.start_soon(_run, tg)
         tg.start_soon(await_commands, tg)
 
 
-async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
-    """
-    Worker function to compute embeddings for agent runs.
-
-    Args:
-        ctx: Worker context (unused but required by arq)
-        view_ctx: The view context containing collection information
-        job_id: The ID of the embedding job
-    """
-    logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
-
-    mono_svc = await MonoService.init()
-    job = await mono_svc.get_job(job_id)
-
-    if job is None:
-        logger.error(f"Embedding job {job_id} not found")
-        return
-
-    if job.type != "compute_embeddings":
-        logger.error(f"Job {job_id} is not an embedding job (type: {job.type})")
-        return
-
-    # Wait for any running embedding jobs
-    while (
-        await mono_svc.get_embedding_job_count(
-            view_ctx.collection_id,
-            _where_clause=SQLAJob.status == JobStatus.RUNNING,
-        )
-        >= 1
-    ):
-        logger.info(
-            f"Job {job_id} waiting for existing embedding job to complete for collection_id {view_ctx.collection_id}"
-        )
-        await asyncio.sleep(5)
-
-    should_index = job.job_json["should_index"]
-
-    await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
-
-    # Track completion states
-    errored = False
-    embedding_completed = False
-    indexing_completed = False
-
-    async def _progress_callback(progress: int):
-        """Callback for embedding computation progress"""
-        progress_data = {
-            "indexing_phase": "pending" if should_index else "not_required",
-            "embedding_progress": progress,
-            "indexing_progress": 0,
-        }
-
-        # Send via websocket instead of Redis stream
-        await publish_collection_update(
-            view_ctx.collection_id,
-            {"action": "embedding_progress", "payload": progress_data},
-        )
-
-    async def _poll_indexing_status():
-        nonlocal embedding_completed, indexing_completed
-
-        """Poll and report indexing progress after embeddings complete"""
-        # Wait for embeddings to complete before starting to poll
-        while not embedding_completed:
-            await asyncio.sleep(1)
-
-        # Now start polling for indexing progress
-        while not indexing_completed:
-            await asyncio.sleep(1)
-
-            phase, percent = await mono_svc.get_indexing_progress(view_ctx.collection_id)
-            if phase is None:
-                continue
-
-            progress_data = {
-                "indexing_phase": phase,
-                "embedding_progress": 100,
-                "indexing_progress": percent or 0,
-            }
-
-            # Send via websocket instead of Redis stream
-            await publish_collection_update(
-                view_ctx.collection_id,
-                {"action": "embedding_progress", "payload": progress_data},
-            )
-
-            # If indexing is complete (100%), we can stop polling
-            if percent is not None and percent >= 100:
-                indexing_completed = True
-                break
-
-    async def run():
-        """Main embedding computation logic"""
-        nonlocal embedding_completed, indexing_completed, errored
-
-        try:
-            async with mono_svc.advisory_lock(
-                view_ctx.collection_id, action_id="compute_embeddings"
-            ):
-                # Compute embeddings
-                embedding_status = await mono_svc.compute_embeddings(view_ctx, _progress_callback)
-
-                if not embedding_status:
-                    errored = True
-                    return
-
-                embedding_completed = True
-                logger.info(f"Embeddings computation completed for job {job_id}")
-
-                if not should_index:
-                    indexing_completed = True
-                    return
-
-                # Report that we're starting indexing
-                progress_data = {
-                    "indexing_phase": "starting",
-                    "embedding_progress": 100,
-                    "indexing_progress": 0,
-                }
-                # Send via websocket instead of Redis stream
-                await publish_collection_update(
-                    view_ctx.collection_id,
-                    {"action": "embedding_progress", "payload": progress_data},
-                )
-
-                # Compute index
-                await mono_svc.compute_ivfflat_index(view_ctx)
-                indexing_completed = True
-                logger.info(f"Indexing completed for job {job_id}")
-
-        except Exception as e:
-            logger.error(f"Error computing embeddings for job {job_id}: {e}")
-            errored = True
-            raise
-
-        finally:
-            with anyio.CancelScope(shield=True):
-                if errored:
-                    logger.highlight(f"Job {job_id} canceled", color="red")
-                    await mono_svc.set_job_status(job_id, JobStatus.CANCELED)
-                else:
-                    logger.highlight(f"Job {job_id} finished", color="green")
-                    await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
-                    # Send completion message via websocket
-                    await publish_collection_update(
-                        view_ctx.collection_id,
-                        {"action": "embedding_complete", "payload": {}},
-                    )
-
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(run)
-        if should_index:
-            tg.start_soon(_poll_indexing_status)
-
-
 def run():
-    """Run a single worker that processes both search and embedding jobs."""
-
+    # This was already checked and is for type checking
     assert REDIS_HOST is not None and REDIS_PORT is not None
 
     run_worker(
         {
-            "functions": [compute_search, compute_embeddings],
+            "functions": [run_job],
             "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
-            "queue_name": "embedding_and_search_queue",
-            "max_jobs": 5,  # Allow up to 5 concurrent jobs per worker
+            "queue_name": WORKER_QUEUE_NAME,
+            "max_jobs": 5,  # per worker
         }
     )
