@@ -15,6 +15,8 @@ from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
 from docent_core._worker.constants import WORKER_QUEUE_NAME, WorkerFunction
+from docent_core._worker.embedding_worker import compute_embeddings
+from docent_core._worker.search_worker import compute_search
 from docent_core.services.rubric import RubricService
 
 logger = get_logger(__name__)
@@ -80,10 +82,10 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
             # Run the job with the appropriate function
             if job.type == WorkerFunction.RUBRIC_JOB.value:
                 await rubric_job(ctx, job)
-            # elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
-            #     await compute_search(job_id)
-            # elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
-            #     await compute_embeddings(job_id)
+            elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
+                await compute_search(ctx, job_id, read_only=False, REDIS=REDIS)
+            elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
+                await compute_embeddings(ctx, job_id)
             else:
                 raise ValueError(f"Unknown job type: {job.type}")
         except anyio.get_cancelled_exc_class():
@@ -94,6 +96,7 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
             canceled = True
             raise
         finally:
+            tg.cancel_scope.cancel()
             with anyio.CancelScope(shield=True):
                 # Update the job status
                 if canceled:

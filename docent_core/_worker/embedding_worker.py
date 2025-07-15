@@ -1,5 +1,4 @@
 import asyncio
-from typing import Any
 
 import anyio
 
@@ -12,7 +11,7 @@ from docent_core._server._broker.redis_client import publish_collection_update
 logger = get_logger(__name__)
 
 
-async def compute_embeddings(ctx: dict[Any, Any], view_ctx: ViewContext, job_id: str):
+async def compute_embeddings(view_ctx: ViewContext, job_id: str):
     logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
 
     mono_svc = await MonoService.init()
