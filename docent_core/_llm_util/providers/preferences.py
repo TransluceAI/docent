@@ -204,7 +204,7 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="anthropic",
                 model_name="claude-3-7-sonnet-20250219",
-                reasoning_effort="medium",
+                reasoning_effort=None,
             ),
             ModelOption(
                 provider="google",
