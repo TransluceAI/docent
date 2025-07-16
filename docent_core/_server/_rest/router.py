@@ -660,7 +660,7 @@ async def join(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    if not await mono_svc.fg_exists(collection_id):
+    if not await mono_svc.collection_exists(collection_id):
         raise HTTPException(status_code=404, detail=f"Collection with ID {collection_id} not found")
 
     # Track analytics

@@ -50,6 +50,9 @@ dependencies = [
     "arq>=0.26.3",
     "passlib[argon2]>=1.7.4",
     "python-multipart>=0.0.20",
+    "opentelemetry-api>=1.35.0",
+    "opentelemetry-proto>=1.35.0",
+    "protobuf>=6.31.1",
 ]
 
 [project.scripts]

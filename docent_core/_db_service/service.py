@@ -167,7 +167,7 @@ class MonoService:
             )
         logger.info(f"Updated Collection {collection_id} with values: {values_to_update}")
 
-    async def fg_exists(self, collection_id: str) -> bool:
+    async def collection_exists(self, collection_id: str) -> bool:
         async with self.db.session() as session:
             result = await session.execute(
                 select(exists().where(SQLACollection.id == collection_id))

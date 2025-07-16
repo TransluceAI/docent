@@ -27,7 +27,7 @@ async def get_session_cm_factory(
 
 
 async def require_collection_exists(collection_id: str, db: MonoService = Depends(get_mono_svc)):
-    if not await db.fg_exists(collection_id):
+    if not await db.collection_exists(collection_id):
         raise HTTPException(status_code=404, detail=f"Collection {collection_id} not found")
 
     return collection_id
