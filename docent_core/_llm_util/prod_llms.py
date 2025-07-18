@@ -13,6 +13,7 @@ from functools import partial
 from typing import Any, AsyncContextManager, Coroutine, Literal, Sequence, cast
 
 import anyio
+from anyio.abc import TaskGroup
 from tqdm.auto import tqdm
 
 from docent._log_util import get_logger
@@ -113,7 +114,7 @@ async def _parallelize_calls(
     scopes_lock = anyio.Lock()
 
     async def _limited_task(
-        i: int, messages: list[ChatMessage], cancellation_event: anyio.Event | None
+        i: int, messages: list[ChatMessage], cancellation_event: anyio.Event | None, tg: TaskGroup
     ):
         nonlocal responses, pbar, active_scopes
 
@@ -184,8 +185,8 @@ async def _parallelize_calls(
 
                 # Set the result in either case
                 responses[i] = result
-                if pbar is not None:
-                    pbar.update(1)
+                if pbar is None or pbar.n == pbar.total:
+                    tg.cancel_scope.cancel()
 
     async def _cancellation_monitor():
         """Monitor the cancellation event and cancel all active scopes when it's set."""
@@ -240,7 +241,7 @@ async def _parallelize_calls(
 
             # Start all the individual tasks
             for i, messages in enumerate(messages_list):
-                tg.start_soon(_limited_task, i, messages, cancellation_event)
+                tg.start_soon(_limited_task, i, messages, cancellation_event, tg)
 
     # Cache what we have so far if something got cancelled
     except anyio.get_cancelled_exc_class():

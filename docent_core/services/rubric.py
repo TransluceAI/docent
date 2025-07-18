@@ -176,7 +176,7 @@ class RubricService:
                     [SQLAJudgeResult.from_pydantic(judge_result) for judge_result in judge_results]
                 )
 
-            if num_results >= MAX_RUBRIC_RESULTS:
+            if num_results >= MAX_RUBRIC_RESULTS and not cancellation_event.is_set():
                 cancellation_event.set()
 
         # Run the search, saving data to the database as we go
