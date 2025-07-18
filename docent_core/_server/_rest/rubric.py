@@ -218,7 +218,7 @@ async def clear_centroids(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     """Clear all centroids for a rubric."""
-    await rubric_svc.clear_centroids_and_cancel_active_assignment_job(rubric_id)
+    await rubric_svc.clear_centroids(rubric_id)
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/assign-centroids")

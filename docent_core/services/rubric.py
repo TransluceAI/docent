@@ -9,6 +9,7 @@ from docent._log_util import get_logger
 from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
 from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
 from docent_core._ai_tools.rubric.rubric import JudgeResult, Rubric, evaluate_rubric
+from docent_core._db_service.batched_writer import BatchedWriter
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.rubric import (
     SQLAJudgeResult,
@@ -63,12 +64,9 @@ class RubricService:
     async def update_rubric(self, rubric_id: str, rubric: Rubric):
         """Update a rubric."""
 
-        # Clear centroids and results (should cascade to assignments)
+        # Cancel jobs and clear centroids and results (should cascade to assignments)
         await self.clear_rubric_results(rubric_id)
-        await self.clear_centroids_and_cancel_active_assignment_job(rubric_id)
-
-        # Cancel any running or pending rubric evaluation jobs
-        await self.cancel_active_rubric_eval_job(rubric_id)
+        await self.clear_centroids(rubric_id)
 
         # Finally, update the rubric
         await self.session.execute(
@@ -163,30 +161,30 @@ class RubricService:
         num_results = 0
         cancellation_event = anyio.Event()
 
-        async def _callback(judge_results: list[JudgeResult] | None):
-            if judge_results is None:
-                return
+        async with BatchedWriter(self.session_cm_factory) as writer:
 
-            nonlocal num_results
-            num_results += sum(1 for j in judge_results if j.value is not None)
+            async def _callback(judge_results: list[JudgeResult] | None):
+                if judge_results is None:
+                    return
 
-            # Use the session_cm_factory to get a session that commits immediately
-            async with self.session_cm_factory() as writer_session:
-                writer_session.add_all(
+                nonlocal num_results
+                num_results += sum(1 for j in judge_results if j.value is not None)
+
+                await writer.add_all(
                     [SQLAJudgeResult.from_pydantic(judge_result) for judge_result in judge_results]
                 )
 
-            if num_results >= MAX_RUBRIC_RESULTS and not cancellation_event.is_set():
-                cancellation_event.set()
+                if num_results >= MAX_RUBRIC_RESULTS and not cancellation_event.is_set():
+                    cancellation_event.set()
 
-        # Run the search, saving data to the database as we go
-        await evaluate_rubric(
-            agent_runs,
-            rubric.to_pydantic(),
-            model_options=PROVIDER_PREFERENCES.execute_search,
-            callback=_callback,
-            cancellation_event=cancellation_event,
-        )
+            # Run the search, saving data to the database as we go
+            await evaluate_rubric(
+                agent_runs,
+                rubric.to_pydantic(),
+                model_options=PROVIDER_PREFERENCES.execute_search,
+                callback=_callback,
+                cancellation_event=cancellation_event,
+            )
 
     async def get_active_job_for_rubric(self, rubric_id: str) -> SQLAJob | None:
         return await self._get_active_rubric_job(self.session, rubric_id)
@@ -239,6 +237,9 @@ class RubricService:
 
     async def clear_rubric_results(self, rubric_id: str):
         """Clear all results for a rubric."""
+        # First cancel any jobs involving this rubric
+        await self.cancel_active_rubric_eval_job(rubric_id)
+
         result = await self.session.execute(
             select(SQLAJudgeResult).where(SQLAJudgeResult.rubric_id == rubric_id)
         )
@@ -269,7 +270,7 @@ class RubricService:
 
         # Delete existing centroids (cascade) and cancel jobs, but save the strings
         cur_centroid_strs = [c.centroid for c in cur_sqla_centroids]
-        await self.clear_centroids_and_cancel_active_assignment_job(sqla_rubric.id)
+        await self.clear_centroids(sqla_rubric.id)
         await self.session.flush()
 
         # Get all non-null judge results for this rubric
@@ -323,7 +324,7 @@ class RubricService:
         )
         return result.scalars().all()
 
-    async def clear_centroids_and_cancel_active_assignment_job(self, rubric_id: str):
+    async def clear_centroids(self, rubric_id: str):
         """Clear all centroids for a rubric along with their assignments (cascaded)."""
 
         # First cancel the job so it doesn't try to assign non-existent centroids
@@ -418,12 +419,12 @@ class RubricService:
             sqla_centroid.centroid: sqla_centroid.id for sqla_centroid in sqla_centroids
         }
 
-        async def record_assignment(batch_index: int, assignment: tuple[bool, str] | None):
-            if assignment is None:
-                return
+        async with BatchedWriter(self.session_cm_factory) as writer:
 
-            # Use a separate session that self-commits, so results are immediately available
-            async with self.session_cm_factory() as session:
+            async def record_assignment(batch_index: int, assignment: tuple[bool, str] | None):
+                if assignment is None:
+                    return
+
                 judge_result_cluster = SQLAJudgeResultCentroid(
                     id=str(uuid4()),
                     judge_result_id=result_ids_to_assign[batch_index],
@@ -431,14 +432,14 @@ class RubricService:
                     decision=assignment[0],
                     reason=assignment[1],
                 )
-                session.add(judge_result_cluster)
+                await writer.add_all([judge_result_cluster])
 
-        await assign_with_backend(
-            DEFAULT_ASSIGNER,
-            results_to_assign,
-            centroids_to_assign,
-            assignment_callback=record_assignment,
-        )
+            await assign_with_backend(
+                DEFAULT_ASSIGNER,
+                results_to_assign,
+                centroids_to_assign,
+                assignment_callback=record_assignment,
+            )
 
     async def get_centroid_assignments(self, rubric_id: str) -> dict[str, list[str]]:
         """Get centroid assignments for a rubric.
