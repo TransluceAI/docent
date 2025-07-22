@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 
-
 import {
   FileSearch,
   Search,
@@ -12,7 +11,8 @@ import {
 } from 'lucide-react';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
-const DEFAULT_PLACEHOLDER_TEXT = 'Describe an agent behavior of interest...';
+const DEFAULT_PLACEHOLDER_TEXT =
+  'Describe an agent behavior you want to explore...';
 const PRESET_QUERIES = [
   {
     id: 'env',
