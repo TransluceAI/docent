@@ -1,4 +1,4 @@
-"""feat: refinement tables
+"""feat: charts
 
 Revision ID: e68cf49cd5a2
 Revises: d095fe14bb18
