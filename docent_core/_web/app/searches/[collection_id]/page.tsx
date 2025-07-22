@@ -84,7 +84,8 @@ export default function JobsPage() {
             console.log(search);
             const done = search.num_judgments_computed;
             const total = search.num_total;
-            const completionPercentage = total > 0 ? Math.min((done / total) * 100, 100) : 0;
+            const completionPercentage =
+              total > 0 ? Math.min((done / total) * 100, 100) : 0;
             const isComplete = false;
             return (
               <TableRow key={search.job.id}>
@@ -112,7 +113,9 @@ export default function JobsPage() {
                   {search.job.status === 'running' ? (
                     <Button onClick={cancelJob(search.job.id)}>cancel</Button>
                   ) : search.job.status === 'canceled' ? (
-                    <Button onClick={resumeJob(search.search_id)}>resume</Button>
+                    <Button onClick={resumeJob(search.search_id)}>
+                      resume
+                    </Button>
                   ) : null}
                 </TableCell>
                 <TableCell>{search.search_query}</TableCell>

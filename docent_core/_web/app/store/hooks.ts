@@ -14,14 +14,13 @@ type SelectorReturnTypes<T extends SelectorFunction<any>[]> = {
   [K in keyof T]: T[K] extends SelectorFunction<infer R> ? R : never;
 };
 
-export function createAppSelector<
-  T extends ((state: RootState) => any)[],
-  R
->(
+export function createAppSelector<T extends ((state: RootState) => any)[], R>(
   selectors: [...T],
   outputSelector: (...args: { [K in keyof T]: ReturnType<T[K]> }) => R
 ): (state: RootState) => R {
-    return createSelector(...selectors, outputSelector) as unknown as (state: RootState) => R
+  return createSelector(...selectors, outputSelector) as unknown as (
+    state: RootState
+  ) => R;
 }
 
 /*

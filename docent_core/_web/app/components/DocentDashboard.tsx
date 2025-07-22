@@ -35,7 +35,10 @@ import {
   resetSearchSlice,
 } from '../store/searchSlice';
 import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
-import { fetchCollections, resetCollectionSlice } from '../store/collectionSlice';
+import {
+  fetchCollections,
+  resetCollectionSlice,
+} from '../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
 import { useRequireUserContext } from '../contexts/UserContext';
@@ -52,7 +55,8 @@ export default function DocentDashboard() {
   const dispatch = useAppDispatch();
 
   // New collection dialog state
-  const [isNewCollectionDialogOpen, setIsNewCollectionDialogOpen] = useState(false);
+  const [isNewCollectionDialogOpen, setIsNewCollectionDialogOpen] =
+    useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
@@ -114,7 +118,10 @@ export default function DocentDashboard() {
                 Docent Dashboard
               </div>
               <div className="text-xs text-muted-foreground">
-                Welcome {user.email}! {user.is_anonymous ? 'Make an account to create new Collections.' : 'Create a new Collection for each benchmark or set of experiments.'}
+                Welcome {user.email}!{' '}
+                {user.is_anonymous
+                  ? 'Make an account to create new Collections.'
+                  : 'Create a new Collection for each benchmark or set of experiments.'}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -153,7 +160,10 @@ export default function DocentDashboard() {
       </div>
 
       {/* Create New Collection Dialog */}
-      <Dialog open={isNewCollectionDialogOpen} onOpenChange={setIsNewCollectionDialogOpen}>
+      <Dialog
+        open={isNewCollectionDialogOpen}
+        onOpenChange={setIsNewCollectionDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Collection</DialogTitle>
@@ -190,7 +200,10 @@ export default function DocentDashboard() {
             >
               Cancel
             </Button>
-            <Button onClick={handleCreateCollection} disabled={isCreatingCollection}>
+            <Button
+              onClick={handleCreateCollection}
+              disabled={isCreatingCollection}
+            >
               {isCreatingCollection ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

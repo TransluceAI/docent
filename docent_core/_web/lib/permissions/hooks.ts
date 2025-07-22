@@ -20,7 +20,8 @@ export const useHasCollectionPermission = (
   collectionIdParam?: string
 ) => {
   const collectionId =
-    useAppSelector((state) => state.collection.collectionId) || collectionIdParam;
+    useAppSelector((state) => state.collection.collectionId) ||
+    collectionIdParam;
   const { data: permissions } = useGetCollectionPermissionsQuery(
     collectionId || '',
     { skip: !collectionId }

@@ -29,7 +29,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     >
       <div
         className="cursor-pointer"
-        onMouseDown={(e) =>{
+        onMouseDown={(e) => {
           e.stopPropagation();
           navToAgentRun(
             router,
@@ -39,10 +39,9 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             undefined,
             collectionId,
             undefined,
-            (e.button === 1 || e.metaKey || e.ctrlKey)
-          )
-        }
-        }
+            e.button === 1 || e.metaKey || e.ctrlKey
+          );
+        }}
       >
         <div className="flex justify-between pb-0.5 items-center">
           <span className="text-primary">
@@ -60,7 +59,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
                   undefined,
                   undefined,
                   collectionId,
-                  curSearchQuery,
+                  curSearchQuery
                   // (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}

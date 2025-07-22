@@ -1,5 +1,5 @@
-import React from "react";
-import { cn } from "@/lib/utils";
+import React from 'react';
+import { cn } from '@/lib/utils';
 
 export interface Citation {
   start_idx: number;
@@ -47,12 +47,12 @@ export const CitationRenderer: React.FC<CitationRendererProps> = ({
       <button
         key={`citation-${i}`}
         className={cn(
-          "px-1 rounded font-medium text-xs",
-          "bg-purple-200/50 dark:bg-purple-800/50",
-          "text-purple-800 dark:text-purple-200",
-          "hover:bg-purple-400/50 dark:hover:bg-purple-600/50",
-          "hover:text-white dark:hover:text-white",
-          "transition-colors"
+          'px-1 rounded font-medium text-xs',
+          'bg-purple-200/50 dark:bg-purple-800/50',
+          'text-purple-800 dark:text-purple-200',
+          'hover:bg-purple-400/50 dark:hover:bg-purple-600/50',
+          'hover:text-white dark:hover:text-white',
+          'transition-colors'
         )}
         onClick={(e) => {
           e.stopPropagation();

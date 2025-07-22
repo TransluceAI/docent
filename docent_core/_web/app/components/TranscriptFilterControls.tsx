@@ -30,9 +30,13 @@ import { v4 as uuid4 } from 'uuid';
 
 export const TranscriptFilterControls = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const baseFilter = useSelector((state: RootState) => state.collection.baseFilter);
+  const baseFilter = useSelector(
+    (state: RootState) => state.collection.baseFilter
+  );
   const agentRunMetadataFields =
-    useSelector((state: RootState) => state.collection.agentRunMetadataFields) || [];
+    useSelector(
+      (state: RootState) => state.collection.agentRunMetadataFields
+    ) || [];
   const collectionId = useSelector(
     (state: RootState) => state.collection.collectionId
   );

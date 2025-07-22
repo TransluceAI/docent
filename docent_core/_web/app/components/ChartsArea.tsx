@@ -3,7 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import Chart from './Chart';
-import { ChartColumn, ChartLine, Plus, Table, X, RefreshCw } from 'lucide-react';
+import {
+  ChartColumn,
+  ChartLine,
+  Plus,
+  Table,
+  X,
+  RefreshCw,
+} from 'lucide-react';
 import ChartSettings from './ChartSettings';
 import {
   useCreateChartMutation,
@@ -37,7 +44,9 @@ export function ChartsArea() {
   const dispatch = useAppDispatch();
 
   const handleRefresh = () => {
-    dispatch(chartApi.util.invalidateTags(['Charts', 'ChartData', 'ChartMetadata']));
+    dispatch(
+      chartApi.util.invalidateTags(['Charts', 'ChartData', 'ChartMetadata'])
+    );
   };
 
   const [activeTabId, setActiveTabId] = useState('');

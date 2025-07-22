@@ -79,9 +79,7 @@ const SearchArea = () => {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const { collectionId } = useSelector(
-    (state: RootState) => state.collection
-  );
+  const { collectionId } = useSelector((state: RootState) => state.collection);
   const {
     curSearchQuery,
     activeClusterTaskId,
@@ -440,7 +438,9 @@ const SearchArea = () => {
                 ) : (
                   <Sparkles className="text-indigo-text/70 h-3 w-3 mr-2" />
                 )}
-                {hasClusters ? 'Re-cluster with feedback' : 'Cluster matching results'}
+                {hasClusters
+                  ? 'Re-cluster with feedback'
+                  : 'Cluster matching results'}
               </Button>
 
               {/* Feedback input for re-clustering - only show when requested */}

@@ -1,4 +1,4 @@
-import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeProvider } from '@/components/theme-provider';
 import type { Metadata } from 'next';
 import { Open_Sans, JetBrains_Mono } from 'next/font/google';
 import { cn } from '@/lib/utils';

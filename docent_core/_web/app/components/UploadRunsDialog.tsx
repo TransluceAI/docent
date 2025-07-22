@@ -154,7 +154,10 @@ export default function UploadRunsDialog({
           description: `${previewResult?.would_import.num_agent_runs ?? 0} runs have been imported successfully. Embeddings computation started.`,
         });
       } catch (embeddingError: any) {
-        console.error('Failed to start embeddings computation:', embeddingError.response?.data || embeddingError);
+        console.error(
+          'Failed to start embeddings computation:',
+          embeddingError.response?.data || embeddingError
+        );
         toast({
           title: 'Runs Imported',
           description: `${previewResult?.would_import.num_agent_runs ?? 0} runs have been imported successfully. Embeddings computation failed to start - you can manually trigger it later.`,
@@ -165,7 +168,10 @@ export default function UploadRunsDialog({
         onImportSuccess({
           status: response.data.status || 'success',
           message: response.data.message || 'Import completed successfully',
-          num_runs_imported: response.data.num_runs_imported || previewResult?.would_import.num_agent_runs || 0,
+          num_runs_imported:
+            response.data.num_runs_imported ||
+            previewResult?.would_import.num_agent_runs ||
+            0,
           filename: response.data.filename || file.name,
           task_id: response.data.task_id,
           model: response.data.model,

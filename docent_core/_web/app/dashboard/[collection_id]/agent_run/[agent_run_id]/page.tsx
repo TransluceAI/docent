@@ -18,7 +18,9 @@ import AgentRunViewer, {
 export default function AgentRunPage() {
   const dispatch = useAppDispatch();
 
-  const collectionId = useAppSelector((state) => state.collection?.collectionId);
+  const collectionId = useAppSelector(
+    (state) => state.collection?.collectionId
+  );
   const curAgentRun = useAppSelector((state) => state.transcript?.curAgentRun);
   const hasInitSearchQuery = useAppSelector(
     (state) => state.collection?.hasInitSearchQuery
@@ -82,7 +84,14 @@ export default function AgentRunPage() {
         );
       }, 100);
     }
-  }, [curAgentRun, agentRunId, blockIdx, transcriptIdx, hasInitSearchQuery, searchResultMap]);
+  }, [
+    curAgentRun,
+    agentRunId,
+    blockIdx,
+    transcriptIdx,
+    hasInitSearchQuery,
+    searchResultMap,
+  ]);
 
   const onShowAgentRun = (agentRunId: string, blockIdx?: number) => {
     if (agentRunId !== curAgentRun?.id) {

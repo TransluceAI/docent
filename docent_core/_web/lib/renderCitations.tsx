@@ -12,7 +12,7 @@ export const renderTextWithCitations = (
   window: Window,
   dispatch: AppDispatch,
   searchQuery?: string,
-  collectionId?: string,
+  collectionId?: string
 ) => {
   if (!citations.length) {
     return text;

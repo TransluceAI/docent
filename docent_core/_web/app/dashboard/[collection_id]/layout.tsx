@@ -38,7 +38,8 @@ export default async function DocentDashboardLayout({
     );
 
     // Check if user has read access to this collection
-    const userLevel = permissions.collection_permissions[collectionId] || 'none';
+    const userLevel =
+      permissions.collection_permissions[collectionId] || 'none';
 
     const hasReadAccess =
       PERMISSION_LEVELS[userLevel as keyof typeof PERMISSION_LEVELS] >=
