@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "lint-fix": "eslint . --ext .ts,.tsx --fix"
+    "lint-fix": "eslint . --ext .ts,.tsx --fix --quiet"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",

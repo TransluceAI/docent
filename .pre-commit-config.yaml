@@ -53,3 +53,20 @@ repos:
       - id: pyright
         files: ^(docent/|docent_core/).*\.py$
         args: ["--pythonpath", ".venv/bin/python"]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        name: prettier
+        args: [--semi=true, --single-quote=true, --tab-width=2, --trailing-comma=es5]
+        files: ^docent_core/_web/.*\.(ts|tsx|js|jsx)$
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd docent_core/_web && npm run lint-fix'
+        language: system
+        files: ^docent_core/_web/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
