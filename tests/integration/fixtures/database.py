@@ -108,7 +108,6 @@ async def test_collection_id(
         user=test_user,
     )
     yield collection_id
-    await mono_service.delete_collection(collection_id)
 
 
 @pytest_asyncio.fixture(scope="function")

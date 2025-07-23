@@ -1,26 +1,36 @@
+import httpx
 import pytest
 
-from docent_core._db_service.schemas.auth_models import User
-from docent_core._db_service.service import MonoService
-from docent_core.services.charts import ChartsService
 
-
-@pytest.mark.asyncio
 @pytest.mark.integration
-async def test_create_chart(
-    mono_service: MonoService,
-    charts_service: ChartsService,
-    test_user: User,
+async def test_default_chart(
+    authed_client: httpx.AsyncClient,
     test_collection_id: str,
 ):
-    view_ctx = await mono_service.get_default_view_ctx(test_collection_id, test_user)
-
-    await charts_service.create_chart(
-        ctx=view_ctx,
-        name="test_chart",
-        series_key="test_series_key",
-        x_key="test_x_key",
-        y_key="test_y_key",
-        chart_type="test_chart_type",
-        rubric_filter="test_rubric_filter",
+    # Upload a bit of data
+    with open("tests/integration/test_data/ctf.json", "rb") as f:
+        file_content = f.read()
+    response = await authed_client.post(
+        f"/rest/{test_collection_id}/import_runs_from_file",
+        files={"file": ("abc.json", file_content, "application/json")},
     )
+
+    # Create a chart, leave default settings
+    response = await authed_client.post(
+        f"/rest/chart/{test_collection_id}/create",
+        json={},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    chart_id = data["id"]
+    assert chart_id is not None
+
+    # Backend should choose default settings that show us some sort of data
+    response = await authed_client.get(
+        f"/rest/chart/{test_collection_id}/{chart_id}/data",
+    )
+    assert response.status_code == 200
+    data = response.json()
+    stats = data["result"]["binStats"]
+
+    assert stats != {}
