@@ -25,15 +25,15 @@ import AgentRunCard from './AgentRunCard';
 import UploadRunsButton from './UploadRunsButton';
 import UploadRunsDialog from './UploadRunsDialog';
 
-import {
-  getAgentRunMetadata,
-  getAgentRunMetadataFields,
-} from '../store/collectionSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
+import {
+  useGetAgentRunIdsQuery,
+  useGetAgentRunMetadataQuery,
+} from '../api/collectionApi';
 
 // Constants for magic numbers
 const PAGINATION_LIMIT = 100;
@@ -55,7 +55,17 @@ export default function ExperimentViewer() {
     (state) => state.experimentViewer.experimentViewerScrollPosition
   );
   const rawAgentRunIds = useAppSelector(
-    (state) => state.experimentViewer.agentRunIds
+    (state) => state.collection.agentRunIds
+  );
+
+  // Fetch agent run IDs
+  useGetAgentRunIdsQuery(
+    {
+      collectionId: collectionId!,
+    },
+    {
+      skip: !collectionId,
+    }
   );
 
   /**
@@ -97,11 +107,9 @@ export default function ExperimentViewer() {
       task_id?: string;
       model?: string;
     }) => {
-      dispatch(getAgentRunMetadataFields());
-
       fetchedAgentRunIdsRef.current.clear();
     },
-    [dispatch]
+    []
   );
 
   // Use debouncing to prevent too many updates
@@ -164,22 +172,14 @@ export default function ExperimentViewer() {
     [agentRunIds, startIndex, endIndex]
   );
 
-  // When the page changes, request metadata for the new page
-  useEffect(() => {
-    if (!collectionId || !currentPageItems.length) return;
-
-    // Only fetch metadata for agent run IDs that haven't been fetched before
-    const agentRunIdsToFetch = currentPageItems.filter(
-      (id) => id && !fetchedAgentRunIdsRef.current.has(id)
-    );
-
-    if (agentRunIdsToFetch.length === 0) return;
-
-    // Mark these IDs as fetched
-    agentRunIdsToFetch.forEach((id) => fetchedAgentRunIdsRef.current.add(id));
-
-    dispatch(getAgentRunMetadata(agentRunIdsToFetch));
-  }, [currentPageItems, dispatch, collectionId]);
+  // Fetch agent run metadata when the agent run IDs change
+  const { data: agentRunMetadata } = useGetAgentRunMetadataQuery(
+    {
+      collectionId: collectionId!,
+      agent_run_ids: currentPageItems,
+    },
+    { skip: !collectionId }
+  );
 
   // Clear fetched IDs when the overall agent run list changes
   useEffect(() => {
@@ -253,7 +253,11 @@ export default function ExperimentViewer() {
 
           {(agentRunIds?.length || 0) > 0 ? (
             currentPageItems.map((agentRunId) => (
-              <AgentRunCard key={agentRunId} agentRunId={agentRunId} />
+              <AgentRunCard
+                key={agentRunId}
+                agentRunId={agentRunId}
+                metadata={agentRunMetadata?.[agentRunId]}
+              />
             ))
           ) : (
             <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs">

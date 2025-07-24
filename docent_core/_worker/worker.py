@@ -2,9 +2,7 @@ import traceback
 from typing import Any
 
 import anyio
-import redis.asyncio as redis
 from anyio.abc import TaskGroup
-from arq import ArqRedis
 from arq.connections import RedisSettings
 from arq.worker import run_worker
 
@@ -14,22 +12,13 @@ from docent_core._db_service.db import DocentDB
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
+from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import WORKER_QUEUE_NAME, WorkerFunction
 from docent_core._worker.embedding_worker import compute_embeddings
 from docent_core._worker.search_worker import compute_search
 from docent_core.services.rubric import RubricService
 
 logger = get_logger(__name__)
-
-
-# Initialize Redis connection
-REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
-REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
-if REDIS_HOST is None or REDIS_PORT is None:
-    raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
-REDIS = ArqRedis(
-    connection_pool=redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-)
 
 
 async def rubric_job(ctx: ViewContext, job: SQLAJob):
@@ -62,6 +51,8 @@ async def centroid_assignment_job(ctx: ViewContext, job: SQLAJob):
 async def run_job(_: Any, ctx: ViewContext, job_id: str):
     mono_svc = await MonoService.init()
     canceled = False
+
+    REDIS = await get_redis_client()
 
     async def _run(tg: TaskGroup):
         nonlocal canceled
@@ -152,13 +143,35 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
 
 
 def run():
-    # This was already checked and is for type checking
-    assert REDIS_HOST is not None and REDIS_PORT is not None
+    REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
+    REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
+    REDIS_USER = ENV.get("DOCENT_REDIS_USER")
+    REDIS_PASSWORD = ENV.get("DOCENT_REDIS_PASSWORD")
+    REDIS_TLS = ENV.get("DOCENT_REDIS_TLS", "false").strip().lower() == "true"
+
+    if REDIS_HOST is None or REDIS_PORT is None:
+        raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
+
+    # Build Redis settings with optional authentication and TLS
+    if REDIS_USER is not None and REDIS_PASSWORD is not None:
+        redis_settings = RedisSettings(
+            host=REDIS_HOST,
+            port=int(REDIS_PORT),
+            username=REDIS_USER,
+            password=REDIS_PASSWORD,
+            ssl=REDIS_TLS,
+        )
+    else:
+        redis_settings = RedisSettings(
+            host=REDIS_HOST,
+            port=int(REDIS_PORT),
+            ssl=REDIS_TLS,
+        )
 
     run_worker(
         {
             "functions": [run_job],
-            "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
+            "redis_settings": redis_settings,
             "queue_name": WORKER_QUEUE_NAME,
             "max_jobs": 5,  # per worker
         }

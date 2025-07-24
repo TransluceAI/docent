@@ -13,9 +13,7 @@ from docent_core._env_util import ENV
 
 ENVIRONMENT = ENV.get("ENVIRONMENT")
 if ENVIRONMENT is None or ENVIRONMENT == "":
-    raise ValueError(
-        "Must set ENVIRONMENT environment variable. Look at .env.template for an example."
-    )
+    raise ValueError("ENVIRONMENT is not set. Look at .env.template for an example.")
 
 if ENVIRONMENT == "local":
     cookie_secure = False
@@ -24,6 +22,10 @@ if ENVIRONMENT == "local":
 elif ENVIRONMENT == "dev":
     cookie_secure = True
     cookie_domain = "dev.transluce.org"
+    cookie_samesite: Literal["lax", "strict", "none"] = "none"
+elif ENVIRONMENT == "staging":
+    cookie_secure = True
+    cookie_domain = "staging.transluce.org"
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
 elif ENVIRONMENT == "prod":
     cookie_secure = True

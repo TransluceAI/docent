@@ -21,10 +21,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import { deleteCollection, fetchCollections } from '../store/collectionSlice';
-import { useAppDispatch } from '../store/hooks';
-
 import CollectionRow from './CollectionRow';
+import { useDeleteCollectionMutation } from '../api/collectionApi';
 
 interface CollectionsTableProps {
   collections?: Collection[];
@@ -35,8 +33,6 @@ export function CollectionsTable({
   collections,
   isLoading,
 }: CollectionsTableProps) {
-  const dispatch = useAppDispatch();
-
   // Delete dialog state – kept here so multiple rows can reuse shared dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingCollection, setDeletingCollection] =
@@ -47,12 +43,11 @@ export function CollectionsTable({
     setIsDeleteDialogOpen(true);
   };
 
+  const [deleteCollection] = useDeleteCollectionMutation();
+
   const handleDeleteCollection = () => {
     if (!deletingCollection) return;
-
-    dispatch(deleteCollection(deletingCollection.id)).then(() => {
-      dispatch(fetchCollections());
-    });
+    deleteCollection(deletingCollection.id);
     setIsDeleteDialogOpen(false);
   };
 

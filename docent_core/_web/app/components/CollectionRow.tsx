@@ -20,9 +20,9 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import { cn, copyToClipboard } from '@/lib/utils';
 
-import { updateCollection } from '../store/collectionSlice';
 import { useAppDispatch } from '../store/hooks';
 import { useHasCollectionPermission } from '@/lib/permissions/hooks';
+import { useUpdateCollectionMutation } from '../api/collectionApi';
 
 interface CollectionRowProps {
   collection: Collection;
@@ -86,17 +86,17 @@ export default function CollectionRow({
     setDescription(collection.description ?? '');
   };
 
+  const [updateCollection] = useUpdateCollectionMutation();
+
   const saveChanges = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isEditing) return;
 
-    dispatch(
-      updateCollection({
-        collection_id: collection.id,
-        name,
-        description,
-      })
-    );
+    updateCollection({
+      collection_id: collection.id,
+      name,
+      description,
+    });
 
     toast({
       title: 'Collection Updated',

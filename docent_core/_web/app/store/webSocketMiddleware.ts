@@ -4,12 +4,7 @@ import socketService from '../services/socketService';
 
 import { setSearchesWithStats, handleSearchUpdate } from './searchSlice';
 import { setAgentRunIds } from './experimentViewerSlice';
-import {
-  setBaseFilter,
-  setAgentRunMetadataFields,
-  updateAgentRunMetadata,
-  setCollections,
-} from './collectionSlice';
+import { updateAgentRunMetadata } from './collectionSlice';
 import { AppDispatch } from './store';
 import { chartApi } from '../api/chartApi';
 import {
@@ -34,19 +29,6 @@ export const createWebSocketMiddleware = (): Middleware => {
       // Handle different types of messages from the server
       const dispatch = store.dispatch as AppDispatch;
       switch (data.action) {
-        case 'collections_updated':
-          dispatch(setCollections(data.payload));
-          break;
-        case 'collection_deleted':
-          // If the current collection is deleted, we could potentially redirect to the home page
-          // This would be handled by a different part of the app
-          break;
-        case 'base_filter':
-          dispatch(setBaseFilter(data.payload));
-          break;
-        case 'transcript_metadata_fields':
-          dispatch(setAgentRunMetadataFields(data.payload.fields));
-          break;
         case 'datapoint_metadata':
           dispatch(updateAgentRunMetadata(data.payload.metadata));
           break;

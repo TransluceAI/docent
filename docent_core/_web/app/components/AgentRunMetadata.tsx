@@ -1,5 +1,4 @@
-import { useAppSelector } from '../store/hooks';
-import { RootState } from '../store/store';
+import { BaseAgentRunMetadata } from '../types/collectionTypes';
 const formatMetadataValue = (value: any): string => {
   if (typeof value === 'object' && value !== null) {
     return JSON.stringify(value, null, 2);
@@ -8,14 +7,10 @@ const formatMetadataValue = (value: any): string => {
 };
 
 type Props = {
-  agentRunId: string;
+  metadata: BaseAgentRunMetadata;
 };
 
-export function AgentRunMetadata({ agentRunId }: Props) {
-  const metadata = useAppSelector(
-    (state: RootState) => state.collection.agentRunMetadata?.[agentRunId]
-  );
-
+export function AgentRunMetadata({ metadata }: Props) {
   if (!metadata) {
     return null;
   }

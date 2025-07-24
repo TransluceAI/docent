@@ -9,7 +9,6 @@ from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import JobStatus
 from docent_core._db_service.service import MonoService
-from docent_core._server._rest.send_state import publish_searches
 
 logger = get_logger(__name__)
 
@@ -35,8 +34,8 @@ async def compute_search(view_ctx: ViewContext, job_id: str, read_only: bool, RE
                 f"results_{job_id}",
                 {"results": json.dumps(to_jsonable_python(search_results))},
             )
-            with anyio.CancelScope(shield=True):
-                await publish_searches(mono_svc, view_ctx)
+            # with anyio.CancelScope(shield=True):
+            # await publish_searches(mono_svc, view_ctx)
 
     async with mono_svc.advisory_lock(
         view_ctx.collection_id + "__search__" + query.id,
@@ -50,5 +49,5 @@ async def compute_search(view_ctx: ViewContext, job_id: str, read_only: bool, RE
         )
     with anyio.CancelScope(shield=True):
 
-        await publish_searches(mono_svc, view_ctx)
+        # await publish_searches(mono_svc, view_ctx)
         await REDIS.delete(f"results_{job_id}")

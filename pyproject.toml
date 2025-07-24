@@ -6,12 +6,7 @@ classifiers = ["Private :: Do Not Upload"]
 
 requires-python = ">=3.11"
 dependencies = [
-    # Dev
     "python-dotenv>=1.1.1",
-    "pre-commit>=4.2.0",
-    "pyright>=1.1.0",
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.26.0",
     "typer>=0.16.0",
     # Eval harness (for easy ingestion of inspect logs)
     "inspect-ai>=0.3.93",
@@ -30,28 +25,37 @@ dependencies = [
     "greenlet>=3.2.1",
     "alembic>=1.16.4",
     "passlib[argon2]>=1.7.4",
-    # Cluster assignment
-    "modal>=0.64.213",
-    "torch",
-    "transformers>=4.48.0",
-    # Viz
-    "plotly>=6.0.0",
-    "matplotlib",
-    "jupyter>=1.0.0",
+    # # Cluster assignment
+    # "modal>=0.64.213",
+    # "torch",
+    # "transformers>=4.48.0",
     # LLM
     "openai>=1.68.0",
     "anthropic>=0.47.0",
     "google-genai>=1.16.1",
     "backoff>=2.2.1",
-    # Docs
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.14",
-    "mkdocstrings-python>=1.16.10",
     # SDK
     "docent-python",
     # Uncategorized
     "python-multipart>=0.0.20",
 ]
+
+[project.optional-dependencies]
+dev = [
+    # Dev
+    "pre-commit>=4.2.0",
+    "pyright>=1.1.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.26.0",
+    # Docs
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.14",
+    "mkdocstrings-python>=1.16.10",
+    # Viz
+    "matplotlib",
+    "jupyter>=1.0.0",
+]
+
 
 [project.scripts]
 docent_core = "docent_core.cli:app"

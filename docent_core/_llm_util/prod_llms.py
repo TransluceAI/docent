@@ -273,8 +273,8 @@ class LLMManager:
         # TODO(mengk): make this more robust, possibly move to a NoSQL database or something
         try:
             self.cache = LLMCache() if use_cache else None
-        except RuntimeError as e:
-            logger.error(f"Disabling LLM cache due to initialization error: {e}")
+        except ValueError as e:
+            logger.warning(f"Disabling LLM cache due to init error: {e}")
             self.cache = None
 
         self.model_options = model_options

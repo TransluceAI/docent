@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
 
       - name: Install npm dependencies
         run: |
@@ -24,5 +24,5 @@ jobs:
 
       - name: Setup uv and run pre-commit
         run: |
-          uv sync
+          uv sync --extra dev
           uv run pre-commit run --all-files --verbose

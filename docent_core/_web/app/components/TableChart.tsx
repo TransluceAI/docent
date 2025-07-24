@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { v4 as uuid4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { PrimitiveFilter } from '../types/collectionTypes';
-import { addBaseFilter, addBaseFilters } from '../store/searchSlice';
+import { addFilters } from '../store/collectionSlice';
 import { cn } from '@/lib/utils';
 import { ChartData, getScoreAt } from '../utils/chartDataUtils';
 import ChartContainer from './ChartContainer';
@@ -130,7 +130,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                     if (tableData.is2d && tableData.colDimId) {
                       const filter = createFilter(tableData.colDimId, colValue);
                       if (filter) {
-                        dispatch(addBaseFilter(filter));
+                        dispatch(addFilters([filter]));
                       }
                     }
                   }}
@@ -157,7 +157,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                     if (tableData.rowDimId) {
                       const filter = createFilter(tableData.rowDimId, rowValue);
                       if (filter) {
-                        dispatch(addBaseFilter(filter));
+                        dispatch(addFilters([filter]));
                       }
                     }
                   }}
@@ -201,11 +201,11 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                               colValue
                             );
                             if (rowFilter && colFilter) {
-                              dispatch(addBaseFilters([rowFilter, colFilter]));
+                              dispatch(addFilters([rowFilter, colFilter]));
                             } else if (rowFilter) {
-                              dispatch(addBaseFilter(rowFilter));
+                              dispatch(addFilters([rowFilter]));
                             } else if (colFilter) {
-                              dispatch(addBaseFilter(colFilter));
+                              dispatch(addFilters([colFilter]));
                             }
                           } else {
                             // 1D case: add single filter
@@ -214,7 +214,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                               rowValue
                             );
                             if (filter) {
-                              dispatch(addBaseFilter(filter));
+                              dispatch(addFilters([filter]));
                             }
                           }
                         }

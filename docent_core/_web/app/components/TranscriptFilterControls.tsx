@@ -19,27 +19,34 @@ import {
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import {
-  clearSearch,
-  addBaseFilter,
-  clearBaseFilters,
-  removeBaseFilter,
-} from '../store/searchSlice';
+import { clearSearch } from '../store/searchSlice';
 import { toast } from '@/hooks/use-toast';
 import { v4 as uuid4 } from 'uuid';
+import {
+  useGetAgentRunMetadataFieldsQuery,
+  useGetBaseFilterQuery,
+} from '../api/collectionApi';
+import {
+  addFilters,
+  clearFilters,
+  removeFilter,
+} from '../store/collectionSlice';
 
 export const TranscriptFilterControls = () => {
   const dispatch = useDispatch<AppDispatch>();
   const baseFilter = useSelector(
     (state: RootState) => state.collection.baseFilter
   );
-  const agentRunMetadataFields =
-    useSelector(
-      (state: RootState) => state.collection.agentRunMetadataFields
-    ) || [];
   const collectionId = useSelector(
     (state: RootState) => state.collection.collectionId
   );
+  const { data: metadataFieldsData } = useGetAgentRunMetadataFieldsQuery(
+    collectionId!,
+    {
+      skip: !collectionId,
+    }
+  );
+  const agentRunMetadataFields = metadataFieldsData?.fields;
 
   const [metadataKey, setMetadataKey] = useState('');
   const [metadataValue, setMetadataValue] = useState('');
@@ -47,6 +54,15 @@ export const TranscriptFilterControls = () => {
     undefined
   );
   const [metadataOp, setMetadataOp] = useState<string>('==');
+
+  // Get the filter state
+  useGetBaseFilterQuery(collectionId!, {
+    skip: !collectionId,
+  });
+
+  /**
+   * Functions to modify filters
+   */
 
   const onUpdateMetadataFilter = (value: string) => {
     if (!collectionId) return;
@@ -80,16 +96,19 @@ export const TranscriptFilterControls = () => {
         }
       }
       dispatch(clearSearch());
+
       dispatch(
-        addBaseFilter({
-          type: 'primitive',
-          key_path: parsedKey.split('.'),
-          value: parsedValue,
-          op: metadataOp,
-          id: uuid4(),
-          name: null,
-          supports_sql: true,
-        } as PrimitiveFilter)
+        addFilters([
+          {
+            type: 'primitive',
+            key_path: parsedKey.split('.'),
+            value: parsedValue,
+            op: metadataOp,
+            id: uuid4(),
+            name: null,
+            supports_sql: true,
+          } as PrimitiveFilter,
+        ])
       );
     }
     setMetadataKey('');
@@ -274,7 +293,7 @@ export const TranscriptFilterControls = () => {
                 }
               })()}
               <button
-                onClick={() => dispatch(removeBaseFilter(subFilter.id))}
+                onClick={() => dispatch(removeFilter(subFilter.id))}
                 className="p-0.5 text-primary hover:text-primary/50 transition-colors"
               >
                 <CircleX size={10} />
@@ -282,7 +301,7 @@ export const TranscriptFilterControls = () => {
             </div>
           ))}
           <button
-            onClick={() => dispatch(clearBaseFilters())}
+            onClick={() => dispatch(clearFilters())}
             className="inline-flex items-center gap-x-1 text-[11px] bg-red-bg text-primary border border-red-border px-1.5 py-0.5 rounded-md hover:bg-red-bg/50 transition-colors"
           >
             Clear

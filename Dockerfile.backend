@@ -1,12 +1,10 @@
-FROM python:3.12
+FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install git (needed if pip install pulls git repositories)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # Install uv - it's way faster than pip
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -17,12 +15,18 @@ COPY docent docent
 RUN uv pip install --system .
 
 # Copy the application code
-COPY . .
-
+# TODO(mengk): ignore the _web folder
+COPY docent_core docent_core
 # Install the project in editable mode
 RUN uv pip install --system -e .
 
-# Create and set the docent user
+# Copy .env and scripts for startup
+COPY .env .env
+COPY scripts scripts
+
+# Create and set the docent user; avoid running container as root
 RUN groupadd -r docent && useradd -r -g docent docent
-RUN chown -R docent:docent /app
 USER docent
+
+# By default, run the ECR entrypoint script that modulates between server and worker via $SERVICE
+CMD ["/app/scripts/ecr_entrypoint.sh"]

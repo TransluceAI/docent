@@ -7,7 +7,6 @@ import {
   useSearchParams,
   usePathname,
 } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import { BASE_DOCENT_PATH } from '@/app/constants';
@@ -18,10 +17,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-import {
-  addConnectionStatusListener,
-  removeConnectionStatusListener,
-} from '../services/socketService';
 import { RootState } from '../store/store';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
@@ -32,7 +27,6 @@ const Breadcrumbs: React.FC = () => {
   const params = useParams();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const [isConnected, setIsConnected] = useState(false);
 
   const collectionId = useSelector(
     (state: RootState) => state.collection.collectionId
@@ -49,17 +43,17 @@ const Breadcrumbs: React.FC = () => {
   const datapoint2 = searchParams?.get('datapoint2');
 
   // Listen for connection status changes
-  useEffect(() => {
-    const handleConnectionStatus = (status: boolean) => {
-      setIsConnected(status);
-    };
+  // useEffect(() => {
+  //   const handleConnectionStatus = (status: boolean) => {
+  //     setIsConnected(status);
+  //   };
 
-    addConnectionStatusListener(handleConnectionStatus);
+  //   addConnectionStatusListener(handleConnectionStatus);
 
-    return () => {
-      removeConnectionStatusListener(handleConnectionStatus);
-    };
-  }, []);
+  //   return () => {
+  //     removeConnectionStatusListener(handleConnectionStatus);
+  //   };
+  // }, []);
 
   return (
     <div className="_Breadcrumbs text-sm flex items-center justify-between w-full">
@@ -151,7 +145,7 @@ const Breadcrumbs: React.FC = () => {
         <EmbeddingsPopover />
 
         {/* Connection status */}
-        <Button
+        {/* <Button
           variant="outline"
           size="sm"
           className="gap-x-2 h-7 cursor-default px-2 pointer-events-none"
@@ -160,7 +154,7 @@ const Breadcrumbs: React.FC = () => {
             className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-text' : 'bg-red-text'}`}
           />
           {isConnected ? 'Connected' : 'Disconnected'}
-        </Button>
+        </Button> */}
         <ModeToggle />
         <UserProfile />
       </div>

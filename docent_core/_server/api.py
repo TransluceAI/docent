@@ -12,7 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
-from docent_core._server._broker.router import broker_router
+
+# from docent_core._server._broker.router import broker_router
 from docent_core._server._rest._all_routers import REST_ROUTERS
 
 logger = get_logger(__name__)
@@ -163,7 +164,7 @@ cors_config = get_cors_configuration()
 asgi_app.add_middleware(CORSMiddleware, **cors_config)
 
 # Include broker router
-asgi_app.include_router(broker_router, prefix="/broker")
+# asgi_app.include_router(broker_router, prefix="/broker")
 # Include all REST routers (different ones for different features)
 for router in REST_ROUTERS:
     asgi_app.include_router(router["router"], prefix=router["prefix"])

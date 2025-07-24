@@ -15,6 +15,7 @@ import { chartApi } from '../api/chartApi';
 import { diffApi } from '../api/diffApi';
 import { rubricApi } from '../api/rubricApi';
 import rubricReducer from './rubricSlice';
+import { collectionApi } from '../api/collectionApi';
 
 // Create a custom error logger middleware
 const errorLogger = () => (next: any) => (action: any) => {
@@ -45,6 +46,7 @@ const store = configureStore({
     [chartApi.reducerPath]: chartApi.reducer,
     [diffApi.reducerPath]: diffApi.reducer,
     [rubricApi.reducerPath]: rubricApi.reducer,
+    [collectionApi.reducerPath]: collectionApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware()
@@ -53,7 +55,8 @@ const store = configureStore({
       .concat(collabApi.middleware)
       .concat(chartApi.middleware)
       .concat(diffApi.middleware)
-      .concat(rubricApi.middleware),
+      .concat(rubricApi.middleware)
+      .concat(collectionApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

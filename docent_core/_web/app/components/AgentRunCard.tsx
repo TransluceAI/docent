@@ -4,18 +4,20 @@ import { useRouter } from 'next/navigation';
 import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { cn } from '@/lib/utils';
+import { BaseAgentRunMetadata } from '../types/collectionTypes';
 
 interface AgentRunCardProps {
   agentRunId: string;
+  metadata?: BaseAgentRunMetadata;
 }
 
-export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
+export default function AgentRunCard({
+  agentRunId,
+  metadata,
+}: AgentRunCardProps) {
   const router = useRouter();
   // Collection slice
   const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const agentRunMetadata = useAppSelector(
-    (state) => state.collection.agentRunMetadata
-  );
 
   // Search slice
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
@@ -70,9 +72,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
         </div>
         <div>
           {/* Display metadata if available */}
-          {agentRunMetadata && agentRunMetadata[agentRunId] && (
-            <AgentRunMetadata agentRunId={agentRunId} />
-          )}
+          {metadata && <AgentRunMetadata metadata={metadata} />}
         </div>
       </div>
 
