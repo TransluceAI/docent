@@ -72,7 +72,7 @@ from docent.data_models.citation import (
 def test_valid_citations(
     parser_func: Callable[[str], list[Citation]],
     text: str,
-    expected_citations: list[tuple[int, int, int]],
+    expected_citations: list[tuple[int, ...]],
     test_description: str,
 ):
     """Test parsing of valid citation patterns."""

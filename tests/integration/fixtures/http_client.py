@@ -23,7 +23,6 @@ async def authed_client(test_user: User) -> AsyncGenerator[httpx.AsyncClient, No
     async with httpx.AsyncClient(
         transport=ASGITransport(app=asgi_app), base_url="http://test"
     ) as client:
-        print(test_user.id)
         resp = await client.post(
             "/rest/login",
             json={"email": "pytest_integration@example.com", "password": "test_password_123"},

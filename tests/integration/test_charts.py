@@ -45,6 +45,7 @@ async def test_default_chart(
         f"/rest/{test_collection_id}/agent_runs",
         files={"file": ("abc.json", file_content, "application/json")},
     )
+    assert response.status_code == 200
 
     # Create a chart, leave default settings
     response = await authed_client.post(
