@@ -171,7 +171,7 @@ for router in REST_ROUTERS:
 
 # If running in production or staging, add Sentry middleware
 cur_env = get_deployment_environment()
-if cur_env in ["app", "staging"]:
+if cur_env == "prod" or cur_env == "staging":
     dsn = ENV.get("SENTRY_DSN")
     if not dsn:
         raise ValueError(f"SENTRY_DSN is required for {cur_env}, it isn't set")

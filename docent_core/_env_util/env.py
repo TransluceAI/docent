@@ -57,10 +57,10 @@ def load_dotenv():
 ENV = load_dotenv()
 
 
-def get_deployment_environment() -> Literal["app", "staging", "local"]:
+def get_deployment_environment() -> Literal["prod", "staging", "local"]:
     env = ENV.get("ENVIRONMENT")
     if not env:
         raise ValueError("ENVIRONMENT is not set")
-    if env not in ["app", "staging", "local"]:
+    if env not in ["prod", "staging", "local"]:
         raise ValueError(f"Invalid environment: {env}")
-    return cast(Literal["app", "staging", "local"], env)
+    return cast(Literal["prod", "staging", "local"], env)

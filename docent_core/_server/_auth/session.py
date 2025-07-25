@@ -18,11 +18,11 @@ if ENVIRONMENT == "local":
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 elif ENVIRONMENT == "staging":
     cookie_secure = True
-    cookie_domain = "staging.docent.transluce.org"
+    cookie_domain = "docent-staging.transluce.org"
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
-elif ENVIRONMENT == "app":
+elif ENVIRONMENT == "prod":
     cookie_secure = True
-    cookie_domain = "app.docent.transluce.org"
+    cookie_domain = "docent.transluce.org"
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
 else:
     raise ValueError(f"Invalid environment: {ENVIRONMENT}")

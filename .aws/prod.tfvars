@@ -1,4 +1,4 @@
-environment = "app"
+environment = "prod"
 rds_instance_class = "db.m5.8xlarge"
 elasticache_node_type = "cache.m6g.large"
 # db_password = ...  # you need to set this in the environment variables
