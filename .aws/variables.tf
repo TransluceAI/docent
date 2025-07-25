@@ -7,13 +7,22 @@ variable "aws_region" {
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "staging"
 }
 
 variable "project_name" {
   description = "Project name"
   type        = string
   default     = "docent"
+}
+
+variable "elasticache_node_type" {
+  description = "Elasticache node type"
+  type        = string
+}
+
+variable "rds_instance_class" {
+  description = "RDS instance class"
+  type        = string
 }
 
 variable "db_username" {
@@ -61,5 +70,4 @@ variable "ecs_memory" {
 variable "worker_desired_count" {
   description = "Desired number of worker tasks"
   type        = number
-  default     = 5
 }

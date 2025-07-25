@@ -10,7 +10,7 @@ from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
-from docent_core._env_util import ENV
+from docent_core._env_util import ENV, get_deployment_environment
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
 
 # from docent_core._server._broker.router import broker_router
@@ -169,13 +169,16 @@ asgi_app.add_middleware(CORSMiddleware, **cors_config)
 for router in REST_ROUTERS:
     asgi_app.include_router(router["router"], prefix=router["prefix"])
 
-# If running in prod or staging, add Sentry middleware
-if (cur_env := ENV.get("ENVIRONMENT")) in ("prod", "staging") and (
-    dsn := ENV.get("SENTRY_DSN")
-) is not None:
-    sentry_sdk.init(dsn=dsn, environment=cur_env, send_default_pii=True)  # type: ignore
-    asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
-    logger.info(f"Initialized Sentry for {cur_env}")
+# If running in production or staging, add Sentry middleware
+cur_env = get_deployment_environment()
+if cur_env in ["app", "staging"]:
+    dsn = ENV.get("SENTRY_DSN")
+    if not dsn:
+        raise ValueError(f"SENTRY_DSN is required for {cur_env}, it isn't set")
+    else:
+        sentry_sdk.init(dsn=dsn, environment=cur_env, send_default_pii=True)  # type: ignore
+        asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
+        logger.info(f"Initialized Sentry for {cur_env}")
 
 
 @asgi_app.get("/")

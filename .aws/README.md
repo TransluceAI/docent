@@ -28,42 +28,59 @@ The infrastructure includes:
 2. Terraform >= 1.0 installed
 3. Docker images built and pushed to ECR repositories
 
+## Environment Switching
+
+This setup supports multiple environments (app, staging) with separate state files to prevent conflicts.
+
+### Switching to App Environment
+```bash
+./switch-to-app.sh
+terraform plan -var-file=app.tfvars
+terraform apply -var-file=app.tfvars
+```
+
+### Switching to Staging Environment
+```bash
+./switch-to-staging.sh
+terraform plan -var-file=staging.tfvars
+terraform apply -var-file=staging.tfvars
+```
+
+Each environment maintains its own state file in S3, preventing conflicts when switching between environments.
+
 ## Deployment
 
-1. Copy the example variables file:
+1. Choose your environment and switch to it:
    ```bash
-   cp terraform.tfvars.example terraform.tfvars
+   # For app environment
+   ./switch-to-app.sh
+
+   # For staging environment
+   ./switch-to-staging.sh
    ```
 
-2. Set database password securely:
+2. Set database password securely (if not already set in .tfvars):
    ```bash
    # Option 1: Environment variable (recommended)
    export TF_VAR_db_password="your-secure-password"
-
-   # Option 2: Add to terraform.tfvars (less secure)
-   echo 'db_password = "your-secure-password"' >> terraform.tfvars
    ```
 
-3. Edit `terraform.tfvars` with other configuration:
+3. Plan the deployment:
    ```bash
-   # Optional: Adjust settings as needed
-   aws_region = "us-east-1"
-   environment = "dev"
+   # For app environment
+   terraform plan -var-file=app.tfvars
+
+   # For staging environment
+   terraform plan -var-file=staging.tfvars
    ```
 
-3. Initialize Terraform:
+4. Apply the configuration:
    ```bash
-   terraform init
-   ```
+   # For app environment
+   terraform apply -var-file=app.tfvars
 
-4. Plan the deployment:
-   ```bash
-   terraform plan
-   ```
-
-5. Apply the configuration:
-   ```bash
-   terraform apply
+   # For staging environment
+   terraform apply -var-file=staging.tfvars
    ```
 
 ## Container Images

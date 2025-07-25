@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 from dotenv import dotenv_values
 
@@ -54,3 +55,12 @@ def load_dotenv():
 
 
 ENV = load_dotenv()
+
+
+def get_deployment_environment() -> Literal["app", "staging", "local"]:
+    env = ENV.get("ENVIRONMENT")
+    if not env:
+        raise ValueError("ENVIRONMENT is not set")
+    if env not in ["app", "staging", "local"]:
+        raise ValueError(f"Invalid environment: {env}")
+    return cast(Literal["app", "staging", "local"], env)

@@ -29,7 +29,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
   engine               = "redis"
   engine_version       = "7.0"
-  node_type            = "cache.t3.micro"
+  node_type            = var.elasticache_node_type
   port                 = 6379
 
   num_cache_clusters = 2
