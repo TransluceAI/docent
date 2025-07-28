@@ -49,7 +49,6 @@ class AnalyticsClient:
                 },
             },
         )
-        self.ph.flush()
         return user.id
 
     def track_event(self, event_name: str, properties: Optional[Dict[str, Any]] = None) -> None:
@@ -67,6 +66,3 @@ class AnalyticsClient:
 
         event_properties = properties or {}
         self.ph.capture(event=event_name, properties=event_properties)
-        self.ph.flush()
-
-        logger.info(f"Tracked event {event_name} with properties {event_properties}")
