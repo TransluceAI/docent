@@ -18,7 +18,7 @@ class AnalyticsClient:
         if ENVIRONMENT == "prod" or ENVIRONMENT == "staging":
             if not POSTHOG_API_KEY:
                 raise ValueError("POSTHOG_API_KEY is required for prod and staging, but is not set")
-            self.ph = Posthog(project_api_key=POSTHOG_API_KEY, host="https://us.i.ph.com")
+            self.ph = Posthog(project_api_key=POSTHOG_API_KEY, host="https://us.i.posthog.com")
         else:
             self.ph = None
 
