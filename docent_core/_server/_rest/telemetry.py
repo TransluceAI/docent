@@ -154,7 +154,7 @@ async def trace_endpoint(
         # print(f"Headers: {dict(request.headers)}")
 
         # Store the raw telemetry data for request
-        await mono_svc.store_telemetry_log(user.id, trace_data)
+        # await mono_svc.store_telemetry_log(user.id, trace_data)
 
         # Extract spans from trace data
         spans = await extract_spans(trace_data)
