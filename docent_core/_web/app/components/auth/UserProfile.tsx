@@ -72,7 +72,7 @@ export const UserProfile = () => {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => window.location.href = '/settings/api_keys'}
+          onClick={() => (window.location.href = '/settings/api_keys')}
           className="text-sm"
         >
           API Keys

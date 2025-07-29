@@ -1,3 +1,5 @@
+# TODO(mengk): this is a very very bloated image, slim it down
+
 FROM python:3.12
 
 ENV DEBIAN_FRONTEND=noninteractive

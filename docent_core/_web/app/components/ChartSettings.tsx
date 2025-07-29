@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/select';
 
 import { useAppSelector } from '../store/hooks';
-import { ChartSpec } from '../types/collectionTypes';
-import { getFieldsByPrefix } from '../utils/chartDataUtils';
+import { ChartSpec, ChartDimension } from '../types/collectionTypes';
+import { useGetChartMetadataQuery } from '../api/chartApi';
 
 interface ChartSettingsProps {
   chart: ChartSpec;
@@ -27,7 +27,7 @@ function DimensionSelect({
 }: {
   dim: string | null;
   onChange: (dim: string) => void;
-  fields: string[];
+  fields: ChartDimension[];
   allowNone?: boolean;
 }) {
   return (
@@ -41,9 +41,9 @@ function DimensionSelect({
             None
           </SelectItem>
         )}
-        {fields.map((key) => (
-          <SelectItem key={key} value={key} className="text-xs">
-            {key}
+        {fields.map((field) => (
+          <SelectItem key={field.key} value={field.key} className="text-xs">
+            {field.name}
           </SelectItem>
         ))}
       </SelectContent>
@@ -52,68 +52,74 @@ function DimensionSelect({
 }
 
 export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
-  const { xKey, yKey, seriesKey } = chart;
+  const { x_key, y_key, series_key } = chart;
   const collectionId = useAppSelector((state) => state.collection.collectionId);
 
-  // Read agentRunMetadataFields from Redux
-  const agentRunMetadataFields =
-    useAppSelector((state) => state.collection.agentRunMetadataFields) || [];
+  // Get chart metadata (fields + search queries) in one request
+  const { data: chartMetadata } = useGetChartMetadataQuery(
+    { collectionId: collectionId! },
+    { skip: !collectionId }
+  );
 
   // In the new system, innerBinKey and outerBinKey are metadata keys directly
   const innerDim = useMemo(() => {
-    if (!xKey) return null;
-    return xKey;
-  }, [xKey]);
+    if (!x_key) return null;
+    return x_key;
+  }, [x_key]);
 
   const outerDim = useMemo(() => {
-    if (!seriesKey) return null;
-    return seriesKey;
-  }, [seriesKey]);
+    if (!series_key) return null;
+    return series_key;
+  }, [series_key]);
 
   const handleInnerDimChange = (value: string) => {
     if (!collectionId) return;
-    onChange({ ...chart, xKey: value, seriesKey });
+    onChange({ ...chart, x_key: value, series_key });
   };
 
   const handleOuterDimChange = (value: string) => {
     if (!collectionId) return;
 
     if (value === 'None') {
-      onChange({ ...chart, xKey, seriesKey: undefined });
+      onChange({ ...chart, x_key, series_key: null });
     } else {
-      onChange({ ...chart, xKey, seriesKey: value });
+      onChange({ ...chart, x_key, series_key: value });
     }
   };
 
   const handleSwapDimensions = () => {
-    if (xKey && seriesKey) {
+    if (x_key && series_key) {
       onChange({
         ...chart,
-        xKey: seriesKey,
-        seriesKey: xKey,
+        x_key: series_key,
+        series_key: x_key,
       });
     }
   };
 
   const showSwapButton = innerDim && outerDim && outerDim !== 'None';
 
-  const metadataKeys = useMemo(
-    () => getFieldsByPrefix(agentRunMetadataFields, 'metadata.'),
-    // .filter((field) => !field.name.includes('run_id')) // Filter out run_id because too high cardinality
-    [agentRunMetadataFields]
-  );
+  const metadataKeys = chartMetadata?.fields?.dimensions || [];
 
-  const scoreKeys = useMemo(
-    () => getFieldsByPrefix(agentRunMetadataFields, 'metadata.scores.'),
-    [agentRunMetadataFields]
-  );
+  const scoreKeys = chartMetadata?.fields?.measures || [];
 
   function handleChartTypeChange(value: string) {
-    onChange({ ...chart, chartType: value as 'bar' | 'line' | 'table' });
+    onChange({ ...chart, chart_type: value as 'bar' | 'line' | 'table' });
   }
 
   function handleYDimChange(value: string) {
-    onChange({ ...chart, yKey: value });
+    onChange({ ...chart, y_key: value });
+  }
+
+  function handleRubricFilterChange(rubricFilter: string) {
+    if (rubricFilter === 'None') {
+      onChange({ ...chart, rubric_filter: null });
+    } else {
+      onChange({
+        ...chart,
+        rubric_filter: rubricFilter,
+      });
+    }
   }
 
   return (
@@ -122,7 +128,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Type:
         </span>
-        <Select value={chart.chartType} onValueChange={handleChartTypeChange}>
+        <Select value={chart.chart_type} onValueChange={handleChartTypeChange}>
           <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
             <SelectValue />
           </SelectTrigger>
@@ -136,6 +142,29 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             <SelectItem value="table" className="text-xs">
               Table
             </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          Filter:
+        </span>
+
+        <Select
+          value={chart.rubric_filter || 'None'}
+          onValueChange={handleRubricFilterChange}
+        >
+          <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="None" className="text-xs">
+              All Data
+            </SelectItem>
+            {chartMetadata?.rubrics.map((rubric) => (
+              <SelectItem key={rubric.id} value={rubric.id} className="text-xs">
+                {rubric.description.slice(0, 60)}...
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -172,14 +201,14 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Y:
         </span>
-        <Select value={yKey} onValueChange={handleYDimChange}>
+        <Select value={y_key} onValueChange={handleYDimChange}>
           <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {scoreKeys.map((key) => (
-              <SelectItem key={key} value={key} className="text-xs">
-                {key}
+            {scoreKeys.map((field) => (
+              <SelectItem key={field.key} value={field.key} className="text-xs">
+                {field.name}
               </SelectItem>
             ))}
           </SelectContent>

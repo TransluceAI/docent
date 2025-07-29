@@ -2,6 +2,7 @@ import re
 from typing import Protocol
 from uuid import uuid4
 
+import anyio
 from pydantic import BaseModel, Field
 
 from docent._log_util import get_logger
@@ -136,6 +137,7 @@ async def evaluate_rubric(
     rubric: Rubric,
     model_options: list[ModelOption],
     callback: JudgeResultStreamingCallback | None = None,
+    cancellation_event: anyio.Event | None = None,
 ):
     ids = [ar.id for ar in agent_runs]
     texts = [ar.text for ar in agent_runs]
@@ -158,6 +160,7 @@ async def evaluate_rubric(
         completion_callback=(
             _get_llm_callback(rubric.id, ids, callback) if callback is not None else None
         ),
+        cancellation_event=cancellation_event,
     )
 
     ans: list[list[str] | None] = [

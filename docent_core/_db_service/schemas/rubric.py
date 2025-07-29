@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +10,8 @@ from docent_core._db_service.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLEC
 
 TABLE_RUBRIC = "rubrics"
 TABLE_JUDGE_RESULT = "judge_results"
+TABLE_RUBRIC_CENTROID = "rubric_centroids"
+TABLE_JUDGE_RESULT_CENTROIDS = "judge_result_centroids"
 
 
 class SQLARubric(SQLABase):
@@ -28,6 +30,12 @@ class SQLARubric(SQLABase):
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
 
+    # Relationship to centroids with cascade delete
+    centroids: Mapped[list["SQLARubricCentroid"]] = relationship(
+        "SQLARubricCentroid",
+        back_populates="rubric",
+        cascade="all, delete-orphan",
+    )
     # Relationship to judge results with cascade delete
     judge_results: Mapped[list["SQLAJudgeResult"]] = relationship(
         "SQLAJudgeResult",
@@ -71,6 +79,12 @@ class SQLAJudgeResult(SQLABase):
         "SQLARubric",
         back_populates="judge_results",
     )
+    # Relationship to centroids through junction table
+    centroid_assignments: Mapped[list["SQLAJudgeResultCentroid"]] = relationship(
+        "SQLAJudgeResultCentroid",
+        back_populates="judge_result",
+        cascade="all, delete-orphan",
+    )
 
     @classmethod
     def from_pydantic(cls, judge_result: JudgeResult) -> "SQLAJudgeResult":
@@ -88,3 +102,62 @@ class SQLAJudgeResult(SQLABase):
             rubric_id=self.rubric_id,
             value=self.value,
         )
+
+
+class SQLARubricCentroid(SQLABase):
+    __tablename__ = TABLE_RUBRIC_CENTROID
+
+    id = mapped_column(String(36), primary_key=True)
+    collection_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
+    )
+    rubric_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_RUBRIC}.id"), nullable=False, index=True
+    )
+    centroid: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Relationship to rubric
+    rubric: Mapped["SQLARubric"] = relationship(
+        "SQLARubric",
+        back_populates="centroids",
+    )
+    # Relationship to judge results through junction table
+    judge_result_centroids: Mapped[list["SQLAJudgeResultCentroid"]] = relationship(
+        "SQLAJudgeResultCentroid",
+        back_populates="centroid",
+        cascade="all, delete-orphan",
+    )
+
+
+class SQLAJudgeResultCentroid(SQLABase):
+    """Junction table for many-to-many relationship between judge results and centroids."""
+
+    __tablename__ = TABLE_JUDGE_RESULT_CENTROIDS
+
+    id = mapped_column(String(36), primary_key=True)
+    judge_result_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_JUDGE_RESULT}.id"), nullable=False, index=True
+    )
+    centroid_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_RUBRIC_CENTROID}.id"), nullable=False, index=True
+    )
+    decision = mapped_column(Boolean, nullable=False)
+    reason = mapped_column(Text, nullable=False)
+
+    # Relationships
+    judge_result: Mapped["SQLAJudgeResult"] = relationship(
+        "SQLAJudgeResult",
+        back_populates="centroid_assignments",
+    )
+    centroid: Mapped["SQLARubricCentroid"] = relationship(
+        "SQLARubricCentroid",
+        back_populates="judge_result_centroids",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "judge_result_id",
+            "centroid_id",
+            name="uq_judge_result_centroid",
+        ),
+    )

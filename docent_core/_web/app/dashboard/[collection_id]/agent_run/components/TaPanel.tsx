@@ -51,8 +51,8 @@ function MessageBubble({
       >
         <div className="text-sm leading-normal whitespace-pre-wrap break-words">
           {message.role === 'assistant' &&
-            message.citations &&
-            message.citations.length > 0 ? (
+          message.citations &&
+          message.citations.length > 0 ? (
             <>
               {message.citations.reduce((acc, citation, i) => {
                 const parts = [];
@@ -301,7 +301,9 @@ export default function TaPanel({ onShowAgentRun }: TaPanelProps) {
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <h4 className="font-semibold text-sm">Transcript Chat</h4>
-          <span className="text-xs text-muted-foreground">Ask questions about transcript</span>
+          <span className="text-xs text-muted-foreground">
+            Ask questions about transcript
+          </span>
         </div>
         <Button
           variant="outline"
@@ -377,7 +379,9 @@ export default function TaPanel({ onShowAgentRun }: TaPanelProps) {
                 type="submit"
                 size="sm"
                 className="absolute bottom-2 right-2 h-7 w-8 p-0"
-                disabled={inputValue === '' || !taSessionId || loadingTaResponse}
+                disabled={
+                  inputValue === '' || !taSessionId || loadingTaResponse
+                }
               >
                 <CornerDownLeft className="size-4" />
               </Button>

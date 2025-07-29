@@ -14,10 +14,6 @@ import {
   TaMessage,
 } from '../types/transcriptTypes';
 
-import {
-  getAgentRunMetadata,
-  getAgentRunMetadataFields,
-} from './collectionSlice';
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
 
@@ -29,6 +25,7 @@ export const getTaSessionStorageKey = (agentRunId: string) =>
   `ta-session-${agentRunId}`;
 
 export interface TranscriptState {
+  // Cur
   curAgentRun?: AgentRun;
   altAgentRun?: AgentRun;
   // Dashboard agent run view
@@ -351,13 +348,13 @@ export const handleAgentRunsUpdated = createAsyncThunk(
     }
 
     // Refresh transcript metadata
-    const transcriptMetadata = state.collection.agentRunMetadata;
-    if (transcriptMetadata !== undefined) {
-      dispatch(getAgentRunMetadata(Object.keys(transcriptMetadata)));
-    }
+    // const transcriptMetadata = state.collection.agentRunMetadata;
+    // if (transcriptMetadata !== undefined) {
+    //   dispatch(getAgentRunMetadata(Object.keys(transcriptMetadata)));
+    // }
 
     // Refresh transcript metadata fields
-    dispatch(getAgentRunMetadataFields());
+    // dispatch(getAgentRunMetadataFields());
 
     // Show a toast
     dispatch(

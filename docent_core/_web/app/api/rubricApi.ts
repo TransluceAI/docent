@@ -6,8 +6,12 @@ import {
   setIsPollingResults,
   setTotalAgentRuns,
   Rubric,
-  setActiveJobId,
+  setActiveRubricJobId,
+  setCentroidAssignments,
+  setIsPollingAssignments,
+  setActiveCentroidAssignmentJob,
 } from '@/app/store/rubricSlice';
+import { chartApi } from './chartApi';
 import sseService from '../services/sseService';
 
 // Types based on the backend models
@@ -43,6 +47,32 @@ export interface RubricJobDetails {
 export interface JudgeResultsPayload {
   results: JudgeResult[];
   total_agent_runs: number | null;
+  job_id: string;
+}
+
+// Clustering types
+export interface RubricCentroid {
+  id: string;
+  collection_id: string;
+  rubric_id: string;
+  centroid: string;
+}
+
+export interface CentroidsResponse {
+  centroids: RubricCentroid[];
+}
+
+export interface CentroidAssignmentsResponse {
+  assignments: Record<string, string[]>; // centroid_id -> judge_result_ids
+}
+
+export interface CentroidAssignmentsPayload {
+  assignments: Record<string, string[]>;
+  job_id: string;
+}
+
+export interface ProposeCentroidsRequest {
+  feedback?: string;
 }
 
 export const rubricApi = createApi({
@@ -51,7 +81,13 @@ export const rubricApi = createApi({
     baseUrl: `${BASE_URL}/rest/rubric`,
     credentials: 'include',
   }),
-  tagTypes: ['Rubric', 'EvalJob', 'JudgeResult'],
+  tagTypes: [
+    'Rubric',
+    'EvalJob',
+    'JudgeResult',
+    'Centroid',
+    'CentroidAssignment',
+  ],
   endpoints: (build) => ({
     getRubrics: build.query<Rubric[], { collectionId: string }>({
       query: ({ collectionId }) => ({
@@ -124,6 +160,15 @@ export const rubricApi = createApi({
         { type: 'EvalJob', id: rubricId },
       ],
     }),
+    cancelAssignment: build.mutation<
+      { message: string },
+      { collectionId: string; rubricId: string; jobId: string }
+    >({
+      query: ({ collectionId, jobId }) => ({
+        url: `/${collectionId}/jobs/${jobId}`,
+        method: 'DELETE',
+      }),
+    }),
     getRubricJobStatus: build.query<
       RubricJobDetails | null,
       { collectionId: string; rubricId: string }
@@ -159,10 +204,17 @@ export const rubricApi = createApi({
             });
             dispatch(setJudgeResults(data.results));
             dispatch(setTotalAgentRuns(data.total_agent_runs));
+            dispatch(setActiveRubricJobId(data.job_id));
+            // Invalidate chart data when judge results stream in
+            dispatch(chartApi.util.invalidateTags(['ChartData']));
           },
           () => {
             dispatch(setIsPollingResults(false));
-            dispatch(setActiveJobId(null));
+            dispatch(setActiveRubricJobId(null));
+            // Invalidate EvalJob tags to refresh job status
+            dispatch(
+              rubricApi.util.invalidateTags([{ type: 'EvalJob', id: rubricId }])
+            );
           },
           dispatch
         );
@@ -172,6 +224,110 @@ export const rubricApi = createApi({
         onCancel();
       },
       providesTags: ['JudgeResult'],
+    }),
+    // Clustering endpoints
+    proposeCentroids: build.mutation<
+      CentroidsResponse,
+      { collectionId: string; rubricId: string; feedback?: string }
+    >({
+      query: ({ collectionId, rubricId, feedback }) => ({
+        url: `/${collectionId}/${rubricId}/propose-centroids`,
+        method: 'POST',
+        body: {
+          feedback: feedback || null,
+        },
+      }),
+      invalidatesTags: (result, error, { rubricId }) => [
+        { type: 'Centroid', id: rubricId },
+      ],
+    }),
+    getCentroids: build.query<
+      CentroidsResponse,
+      { collectionId: string; rubricId: string }
+    >({
+      query: ({ collectionId, rubricId }) => ({
+        url: `/${collectionId}/${rubricId}/centroids`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, { rubricId }) => [
+        { type: 'Centroid', id: rubricId },
+      ],
+    }),
+    clearCentroids: build.mutation<
+      { message: string },
+      { collectionId: string; rubricId: string }
+    >({
+      query: ({ collectionId, rubricId }) => ({
+        url: `/${collectionId}/${rubricId}/centroids`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (result, error, { rubricId }) => [
+        { type: 'Centroid', id: rubricId },
+        { type: 'CentroidAssignment', id: rubricId },
+      ],
+    }),
+    startCentroidAssignment: build.mutation<
+      StartEvalJobResponse,
+      { collectionId: string; rubricId: string }
+    >({
+      query: ({ collectionId, rubricId }) => ({
+        url: `/${collectionId}/${rubricId}/assign-centroids`,
+        method: 'POST',
+      }),
+      invalidatesTags: (result, error, { rubricId }) => [
+        { type: 'CentroidAssignment', id: rubricId },
+      ],
+    }),
+    getCentroidAssignments: build.query<
+      CentroidAssignmentsResponse,
+      { collectionId: string; rubricId: string }
+    >({
+      query: ({ collectionId, rubricId }) => ({
+        url: `/${collectionId}/${rubricId}/assignments`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, { rubricId }) => [
+        { type: 'CentroidAssignment', id: rubricId },
+      ],
+    }),
+    listenForCentroidAssignments: build.query<
+      { assignments: Record<string, string[]> | null },
+      { collectionId: string; rubricId: string }
+    >({
+      queryFn: () => ({ data: { assignments: null } }),
+      keepUnusedDataFor: 0, // Ensures that the SSE is killed by the cache clear immediately when the component unmounts
+      async onCacheEntryAdded(
+        { collectionId, rubricId },
+        { dispatch, updateCachedData, cacheEntryRemoved }
+      ) {
+        const url = `/rest/rubric/${collectionId}/${rubricId}/assignments/poll`;
+
+        // Set polling to true when we start the SSE connection
+        dispatch(setIsPollingAssignments(true));
+
+        const { onCancel } = sseService.createEventSource(
+          url,
+          (data: CentroidAssignmentsPayload) => {
+            updateCachedData((draft) => {
+              draft.assignments = data.assignments;
+            });
+            dispatch(setCentroidAssignments(data.assignments));
+            dispatch(setActiveCentroidAssignmentJob(data.job_id));
+            // Invalidate chart data when cluster assignments stream in
+            dispatch(chartApi.util.invalidateTags(['ChartData']));
+          },
+          () => {
+            dispatch(setIsPollingAssignments(false));
+            dispatch(setActiveCentroidAssignmentJob(null));
+          },
+          dispatch
+        );
+
+        // Suspends until the query completes
+        await cacheEntryRemoved;
+        onCancel();
+      },
+      providesTags: ['CentroidAssignment'],
     }),
   }),
 });
@@ -183,6 +339,14 @@ export const {
   useDeleteRubricMutation,
   useStartEvaluationMutation,
   useCancelEvaluationMutation,
+  useCancelAssignmentMutation,
   useGetRubricJobStatusQuery,
   useListenForJudgeResultsQuery,
+  useProposeCentroidsMutation,
+  useGetCentroidsQuery,
+  useLazyGetCentroidsQuery,
+  useClearCentroidsMutation,
+  useStartCentroidAssignmentMutation,
+  useGetCentroidAssignmentsQuery,
+  useListenForCentroidAssignmentsQuery,
 } = rubricApi;

@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 from dotenv import dotenv_values
 
@@ -9,19 +10,21 @@ logger = get_logger(__name__)
 
 
 def load_dotenv():
-    if (custom_env_path := os.getenv("DOCENT_ENV_PATH")) is not None:
-        fpath = Path(custom_env_path)
-        if not fpath.is_absolute():
-            raise ValueError(f"DOCENT_ENV_PATH must be absolute, got: {custom_env_path}")
-    else:
-        # Navigate to project root (3 levels up) by default
-        fpath = Path(__file__).parent.parent.parent.absolute() / ".env"
-
+    # Navigate to project root (3 levels up) by default
+    fpath = Path(__file__).parent.parent.parent.absolute() / ".env"
     if not fpath.exists():
         raise FileNotFoundError(
             f"No .env file found at {fpath}. "
             "Make sure you've created one, then put it at project root."
         )
+
+    # Determine how to resolve conflicts between .env and os.environ
+    env_resolution_strategy = os.getenv("ENV_RESOLUTION_STRATEGY", "exception")
+    if env_resolution_strategy not in ["exception", "dotenv", "os_environ"]:
+        raise ValueError(f"Invalid ENV_RESOLUTION_STRATEGY: {env_resolution_strategy}")
+    logger.info(
+        f"Using strategy={env_resolution_strategy} to resolve conflicts between .env and os.environ"
+    )
 
     # Load the .env file and ensure all values are strings
     env_dict = dotenv_values(fpath)
@@ -29,7 +32,21 @@ def load_dotenv():
         if v is None:
             logger.warning(f"Skipping {k} because it is not set in the .env file")
         elif k in os.environ and os.environ[k] != v:
-            logger.warning(f"Overwriting {k}, which is already set in the environment")
+            if env_resolution_strategy == "exception":
+                raise ValueError(
+                    f"Conflict found for {k}: {v} in .env and {os.environ[k]} in environment"
+                )
+            elif env_resolution_strategy == "dotenv":
+                logger.warning(
+                    f"Found conflict for {k}: {v} in .env and {os.environ[k]} in environment. "
+                    f"Using .env value: {v}"
+                )
+                os.environ[k] = v
+            elif env_resolution_strategy == "os_environ":
+                logger.warning(
+                    f"Found conflict for {k}: {v} in .env and {os.environ[k]} in environment. "
+                    f"Using environment value: {os.environ[k]}"
+                )
         else:
             os.environ[k] = v
     logger.info(f"Loaded .env file from {fpath}")
@@ -38,3 +55,12 @@ def load_dotenv():
 
 
 ENV = load_dotenv()
+
+
+def get_deployment_environment() -> Literal["prod", "staging", "local"]:
+    env = ENV.get("ENVIRONMENT")
+    if not env:
+        raise ValueError("ENVIRONMENT is not set")
+    if env not in ["prod", "staging", "local"]:
+        raise ValueError(f"Invalid environment: {env}")
+    return cast(Literal["prod", "staging", "local"], env)

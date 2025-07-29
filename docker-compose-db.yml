@@ -19,6 +19,7 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # Intentionally disabled for now
   # otel-collector:
   #   image: otel/opentelemetry-collector-contrib
   #   volumes:

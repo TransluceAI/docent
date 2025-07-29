@@ -2,10 +2,7 @@
 
 import { Plus, Pencil, Play, FileText, Trash2, Pause } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import {
-  setEditingRubricId,
-  type Rubric,
-} from '@/app/store/rubricSlice';
+import { setEditingRubricId, type Rubric } from '@/app/store/rubricSlice';
 import { Button } from '@/components/ui/button';
 import {
   useGetRubricsQuery,
@@ -16,6 +13,7 @@ import {
   useCancelEvaluationMutation,
 } from '@/app/api/rubricApi';
 import { toast } from '@/hooks/use-toast';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 interface RubricListProps {
   handleEvaluate: (rubricId: string, activateUi?: boolean) => Promise<void>;
@@ -29,6 +27,7 @@ interface RubricCardProps {
   handleEvaluate: (rubricId: string, activateUi?: boolean) => Promise<void>;
   handleDelete: (rubricId: string) => Promise<void>;
   isDeletingRubric: boolean;
+  hasWritePermission: boolean;
 }
 
 function RubricCard({
@@ -39,6 +38,7 @@ function RubricCard({
   handleEvaluate,
   handleDelete,
   isDeletingRubric,
+  hasWritePermission,
 }: RubricCardProps) {
   const dispatch = useAppDispatch();
 
@@ -101,7 +101,7 @@ function RubricCard({
         }`}
       onClick={() => handleEvaluate(rubric.id)}
     >
-      <div className="p-2.5 pr-28">
+      <div className={`p-2.5 ${hasWritePermission ? 'pr-28' : 'pr-12'}`}>
         {/* Icon and Description */}
         <div className="flex items-start gap-2">
           <FileText className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
@@ -140,21 +140,23 @@ function RubricCard({
 
       {/* Action buttons */}
       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-        <button
-          className={`p-1.5 rounded transition-colors
-            ${
-              isEditing
-                ? 'bg-blue-bg text-blue-text'
-                : 'hover:bg-secondary text-muted-foreground hover:text-primary'
-            }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            dispatch(setEditingRubricId(rubric.id));
-          }}
-          title="Edit rubric"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
+        {hasWritePermission && (
+          <button
+            className={`p-1.5 rounded transition-colors
+              ${
+                isEditing
+                  ? 'bg-blue-bg text-blue-text'
+                  : 'hover:bg-secondary text-muted-foreground hover:text-primary'
+              }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              dispatch(setEditingRubricId(rubric.id));
+            }}
+            title="Edit rubric"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        )}
         <button
           className={`p-1.5 rounded transition-colors
             ${
@@ -181,17 +183,19 @@ function RubricCard({
             <Play className="h-3 w-3" />
           )}
         </button>
-        <button
-          className="p-1.5 rounded transition-colors hover:bg-red-bg/50 text-muted-foreground hover:text-red-text"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDelete(rubric.id);
-          }}
-          title="Delete rubric"
-          disabled={isDeletingRubric}
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {hasWritePermission && (
+          <button
+            className="p-1.5 rounded transition-colors hover:bg-red-bg/50 text-muted-foreground hover:text-red-text"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(rubric.id);
+            }}
+            title="Delete rubric"
+            disabled={isDeletingRubric}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -206,6 +210,9 @@ export default function RubricList({ handleEvaluate }: RubricListProps) {
     (state) => state.rubric.editingRubricId
   );
   const activeRubricId = useAppSelector((state) => state.rubric.activeRubricId);
+
+  // Check write permissions
+  const hasWritePermission = useHasCollectionWritePermission();
 
   // Fetch rubrics using the new API
   const { data: fetchedRubrics, isLoading: isLoadingRubrics } =
@@ -241,6 +248,11 @@ export default function RubricList({ handleEvaluate }: RubricListProps) {
       // The rubric will be automatically added to the store via extraReducers
     } catch (error) {
       console.error('Failed to create rubric:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create rubric',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -266,17 +278,24 @@ export default function RubricList({ handleEvaluate }: RubricListProps) {
     <div className="space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Saved Rubrics</div>
-        <Button
-          onClick={handleAddNew}
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1 text-xs"
-          disabled={isCreatingRubric}
-        >
-          <Plus className="h-3 w-3" />
-          {isCreatingRubric ? 'Creating...' : 'New Rubric'}
-        </Button>
+        <div className="flex flex-col">
+          <div className="text-sm font-semibold">Saved Rubrics</div>
+          <div className="text-xs text-muted-foreground">
+            Run and modify previously-created rubrics
+          </div>
+        </div>
+        {hasWritePermission && (
+          <Button
+            onClick={handleAddNew}
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 text-xs"
+            disabled={isCreatingRubric}
+          >
+            <Plus className="h-3 w-3 -ml-1" />
+            {isCreatingRubric ? 'Creating...' : 'Rubric'}
+          </Button>
+        )}
       </div>
 
       {/* Rubrics List */}
@@ -300,6 +319,7 @@ export default function RubricList({ handleEvaluate }: RubricListProps) {
               handleEvaluate={handleEvaluate}
               handleDelete={handleDelete}
               isDeletingRubric={isDeletingRubric}
+              hasWritePermission={hasWritePermission}
             />
           ))
         )}

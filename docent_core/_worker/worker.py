@@ -2,9 +2,7 @@ import traceback
 from typing import Any
 
 import anyio
-import redis.asyncio as redis
 from anyio.abc import TaskGroup
-from arq import ArqRedis
 from arq.connections import RedisSettings
 from arq.worker import run_worker
 
@@ -14,20 +12,13 @@ from docent_core._db_service.db import DocentDB
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV
+from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import WORKER_QUEUE_NAME, WorkerFunction
+from docent_core._worker.embedding_worker import compute_embeddings
+from docent_core._worker.search_worker import compute_search
 from docent_core.services.rubric import RubricService
 
 logger = get_logger(__name__)
-
-
-# Initialize Redis connection
-REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
-REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
-if REDIS_HOST is None or REDIS_PORT is None:
-    raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
-REDIS = ArqRedis(
-    connection_pool=redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-)
 
 
 async def rubric_job(ctx: ViewContext, job: SQLAJob):
@@ -45,9 +36,23 @@ async def rubric_job(ctx: ViewContext, job: SQLAJob):
         await rs.run_rubric_job(ctx, job)
 
 
+async def centroid_assignment_job(ctx: ViewContext, job: SQLAJob):
+    db = await DocentDB.init()
+    mono_svc = await MonoService.init()
+
+    async with db.session() as session:
+        rs = RubricService(session, db.session, mono_svc)
+        sqla_rubric = await rs.get_rubric(job.job_json["rubric_id"])
+        if sqla_rubric is None:
+            raise ValueError(f"Rubric {job.job_json['rubric_id']} not found")
+        await rs.assign_centroids(sqla_rubric)
+
+
 async def run_job(_: Any, ctx: ViewContext, job_id: str):
     mono_svc = await MonoService.init()
     canceled = False
+
+    REDIS = await get_redis_client()
 
     async def _run(tg: TaskGroup):
         nonlocal canceled
@@ -80,10 +85,12 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
             # Run the job with the appropriate function
             if job.type == WorkerFunction.RUBRIC_JOB.value:
                 await rubric_job(ctx, job)
-            # elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
-            #     await compute_search(job_id)
-            # elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
-            #     await compute_embeddings(job_id)
+            elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
+                await compute_search(ctx, job_id, read_only=False, REDIS=REDIS)
+            elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
+                await compute_embeddings(ctx, job_id)
+            elif job.type == WorkerFunction.CENTROID_ASSIGNMENT_JOB.value:
+                await centroid_assignment_job(ctx, job)
             else:
                 raise ValueError(f"Unknown job type: {job.type}")
         except anyio.get_cancelled_exc_class():
@@ -94,6 +101,9 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
             canceled = True
             raise
         finally:
+            # If the job finishes normally, we need to cancel the `await_commands` loop
+            tg.cancel_scope.cancel()
+
             with anyio.CancelScope(shield=True):
                 # Update the job status
                 if canceled:
@@ -104,9 +114,12 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
                     await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
 
                 # Send immediate cancellation confirmation to caller
-                response_queue = f"cancel_response_{job_id}"
-                await REDIS.rpush(response_queue, "cancelled")  # type: ignore
-                logger.info(f"Sent cancellation confirmation for job {job_id} to {response_queue}")
+                if canceled:
+                    response_queue = f"cancel_response_{job_id}"
+                    await REDIS.rpush(response_queue, "cancelled")  # type: ignore
+                    logger.info(
+                        f"Sent cancellation confirmation for job {job_id} to {response_queue}"
+                    )
 
     async def await_commands(tg: TaskGroup):
         nonlocal canceled
@@ -130,13 +143,35 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
 
 
 def run():
-    # This was already checked and is for type checking
-    assert REDIS_HOST is not None and REDIS_PORT is not None
+    REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
+    REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")
+    REDIS_USER = ENV.get("DOCENT_REDIS_USER")
+    REDIS_PASSWORD = ENV.get("DOCENT_REDIS_PASSWORD")
+    REDIS_TLS = ENV.get("DOCENT_REDIS_TLS", "false").strip().lower() == "true"
+
+    if REDIS_HOST is None or REDIS_PORT is None:
+        raise ValueError("DOCENT_REDIS_HOST and DOCENT_REDIS_PORT must be set")
+
+    # Build Redis settings with optional authentication and TLS
+    if REDIS_USER is not None and REDIS_PASSWORD is not None:
+        redis_settings = RedisSettings(
+            host=REDIS_HOST,
+            port=int(REDIS_PORT),
+            username=REDIS_USER,
+            password=REDIS_PASSWORD,
+            ssl=REDIS_TLS,
+        )
+    else:
+        redis_settings = RedisSettings(
+            host=REDIS_HOST,
+            port=int(REDIS_PORT),
+            ssl=REDIS_TLS,
+        )
 
     run_worker(
         {
             "functions": [run_job],
-            "redis_settings": RedisSettings(host=REDIS_HOST, port=int(REDIS_PORT)),
+            "redis_settings": redis_settings,
             "queue_name": WORKER_QUEUE_NAME,
             "max_jobs": 5,  # per worker
         }

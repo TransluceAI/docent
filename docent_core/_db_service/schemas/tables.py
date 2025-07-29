@@ -57,7 +57,6 @@ TABLE_SEARCH_RESULT_CLUSTER = "search_result_clusters"
 TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
-TABLE_CHART = "charts"
 TABLE_TELEMETRY_LOG = "telemetry_logs"
 
 
@@ -268,7 +267,10 @@ class SQLASearchCluster(SQLABase):
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     centroid = mapped_column(Text, nullable=False)
-    search_query = mapped_column(Text, nullable=False, index=True)
+    search_query_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_SEARCH_QUERIES}.id"), nullable=True, index=True
+    )
+    search_query = mapped_column(Text, nullable=True)  # bwd compat
 
     created_at = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
@@ -321,9 +323,10 @@ class SQLASearchResult(SQLABase):
     agent_run_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
     )
-    search_query = mapped_column(
-        Text, nullable=False, index=True
-    )  # TODO(mengk): FK to the search query table
+    search_query_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_SEARCH_QUERIES}.id"), nullable=True, index=True
+    )
+    search_query = mapped_column(Text, nullable=True)  # bwd compat
     search_result_idx = mapped_column(Integer, index=True)
 
     # Null indicates no values for this (datapoint, search_query) pair
@@ -337,7 +340,7 @@ class SQLASearchResult(SQLABase):
         UniqueConstraint(
             "collection_id",
             "agent_run_id",
-            "search_query",
+            "search_query_id",
             "search_result_idx",
             name="uq_search_result_key_combination",
         ),
@@ -356,7 +359,7 @@ class SQLASearchResult(SQLABase):
             id=search_result.id,
             collection_id=collection_id,
             agent_run_id=search_result.agent_run_id,
-            search_query=search_result.search_query,
+            search_query_id=search_result.search_query_id,
             search_result_idx=search_result.search_result_idx,
             value=value,
         )
@@ -365,7 +368,7 @@ class SQLASearchResult(SQLABase):
         return SearchResult(
             id=self.id,
             agent_run_id=self.agent_run_id,
-            search_query=self.search_query,
+            search_query_id=self.search_query_id,
             search_result_idx=self.search_result_idx,
             value=self.value,
         )
@@ -563,8 +566,6 @@ class EndpointType(enum.Enum):
     GET_AGENT_RUN = "get_agent_run"
     POST_AGENT_RUNS = "post_agent_runs"
     JOIN = "join"
-    SET_IO_BIN_KEYS = "set_io_bin_keys"
-    SET_IO_BIN_KEY_WITH_METADATA_KEY = "set_io_bin_key_with_metadata_key"
     POST_BASE_FILTER = "post_base_filter"
     CLONE_OWN_VIEW = "clone_own_view"
     APPLY_EXISTING_VIEW = "apply_existing_view"
@@ -662,42 +663,6 @@ class SQLAApiKey(SQLABase):
     @property
     def is_active(self) -> bool:
         return self.disabled_at is None
-
-
-class SQLAChart(SQLABase):
-    __tablename__ = TABLE_CHART
-
-    id = mapped_column(String(36), primary_key=True)
-    name = mapped_column(Text, nullable=False)
-
-    # Foreign keys
-    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
-    created_by = mapped_column(
-        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
-    )
-
-    # Chart configuration
-    series_key = mapped_column(Text, nullable=True)
-    x_key = mapped_column(Text, nullable=True)
-    y_key = mapped_column(Text, nullable=True)
-    sql_query = mapped_column(Text, nullable=True)
-
-    # Chart visualization settings
-    chart_type = mapped_column(Text, nullable=False, default="bar")  # 'bar', 'line', 'table'
-
-    created_at = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
-    )
-    updated_at = mapped_column(
-        DateTime,
-        default=lambda: datetime.now(UTC).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
-        nullable=False,
-    )
-
-    # Relationships
-    creator: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
-    view: Mapped["SQLAView"] = relationship("SQLAView", lazy="select")
 
 
 class SQLATelemetryLog(SQLABase):

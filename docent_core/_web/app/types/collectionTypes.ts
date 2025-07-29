@@ -65,11 +65,24 @@ export type ChartType = 'bar' | 'line' | 'table';
 export interface ChartSpec {
   id: string;
   name: string;
-  chartType: ChartType;
-  seriesKey?: string;
-  xKey: string;
-  yKey: string;
+  series_key: string | null;
+  x_key?: string;
+  y_key?: string;
+
+  x_label?: string;
+  y_label?: string;
+  series_label?: string;
+
+  rubric_filter: string | null;
+
+  chart_type: ChartType;
 }
+
+export type ChartDimension = {
+  key: string;
+  name: string;
+  extra: Record<string, any>;
+};
 
 export type CollectionFilter =
   | PrimitiveFilter
@@ -187,7 +200,6 @@ export interface AccessControlEntry {
 
 export interface CollectionState {
   collectionId?: string;
-  dimensionsMap?: Record<string, CollectionDimension>;
   filtersMap?: Record<string, CollectionFilter>;
   baseFilter?: ComplexFilter;
   inner_bin_key?: string | null;

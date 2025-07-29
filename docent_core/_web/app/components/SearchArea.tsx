@@ -17,7 +17,7 @@ import {
   Pause,
   Check,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 
@@ -44,6 +44,7 @@ import { ProgressBar } from './ProgressBar';
 import { apiRestClient } from '../services/apiService';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { copyToClipboard } from '@/lib/utils';
+import { useGetChartMetadataQuery } from '../api/chartApi';
 
 // Preset search queries with custom icons
 const PRESET_QUERIES = [
@@ -78,9 +79,7 @@ const SearchArea = () => {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const { collectionId, dimensionsMap } = useSelector(
-    (state: RootState) => state.collection
-  );
+  const { collectionId } = useSelector((state: RootState) => state.collection);
   const {
     curSearchQuery,
     activeClusterTaskId,
@@ -93,13 +92,20 @@ const SearchArea = () => {
     paused,
   } = useSelector((state: RootState) => state.search);
 
+  // Get chart metadata including search queries
+  const { data: chartMetadata } = useGetChartMetadataQuery(
+    { collectionId: collectionId! },
+    { skip: !collectionId }
+  );
+
   // Pull out the search query associated with the current search query
-  const activeSearchQuery = useMemo(() => {
-    if (!curSearchQuery || !dimensionsMap) return undefined;
-    return Object.values(dimensionsMap).find(
-      (dim) => dim.search_query === curSearchQuery
-    );
-  }, [dimensionsMap, curSearchQuery]);
+  const activeSearchQuery = undefined;
+  // const activeSearchQuery = useMemo(() => {
+  //   if (!curSearchQuery || !chartMetadata?.search_queries) return undefined;
+  //   return chartMetadata.search_queries.find(
+  //     (searchQuery) => searchQuery.query === curSearchQuery
+  //   );
+  // }, [chartMetadata?.search_queries, curSearchQuery]);
 
   // State variables to control cluster button behavior
   const hasClusters = useMemo(() => {
@@ -116,16 +122,16 @@ const SearchArea = () => {
     return loadingSearchQuery !== undefined;
   }, [loadingSearchQuery]);
 
-  useEffect(() => {
-    if (activeSearchQuery && activeClusterTaskId == null) {
-      dispatch(
-        requestClusters({
-          searchQuery: activeSearchQuery.search_query || activeSearchQuery.id,
-          feedback: '',
-        })
-      );
-    }
-  }, [activeSearchQuery, dispatch, activeClusterTaskId]);
+  // useEffect(() => {
+  //   if (activeSearchQuery && activeClusterTaskId == null) {
+  //     dispatch(
+  //       requestClusters({
+  //         searchQuery: activeSearchQuery.query,
+  //         feedback: '',
+  //       })
+  //     );
+  //   }
+  // }, [activeSearchQuery, dispatch, activeClusterTaskId]);
 
   /**
    * Local state for UI components
@@ -427,14 +433,12 @@ const SearchArea = () => {
                 onClick={handleRequestClusters}
                 disabled={shouldDisableClusterButton}
               >
-                {activeSearchQuery && activeSearchQuery.loading_clusters ? (
+                {isProcessingClusters ? (
                   <Loader2 className="h-3 w-3 mr-2 animate-spin" />
                 ) : (
                   <Sparkles className="text-indigo-text/70 h-3 w-3 mr-2" />
                 )}
-                {activeSearchQuery &&
-                activeSearchQuery.bins &&
-                activeSearchQuery.bins.length > 0
+                {hasClusters
                   ? 'Re-cluster with feedback'
                   : 'Cluster matching results'}
               </Button>

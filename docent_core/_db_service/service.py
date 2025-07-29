@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 from typing import (
     Any,
     AsyncIterator,
-    Literal,
     ParamSpec,
     Sequence,
     TypeVar,
@@ -387,10 +386,6 @@ class MonoService:
         """
         Get all agent runs for a given Collection ID.
         """
-        logger.info(
-            f"get_agent_runs called with ctx.collection_id={ctx.collection_id}, agent_run_ids={len(agent_run_ids) if agent_run_ids else None}, _limit={_limit}"
-        )
-
         async with self.db.session() as session:
             if agent_run_ids is not None and len(agent_run_ids) > 10_000:
                 agent_runs_raw: list[SQLAAgentRun] = []
@@ -428,8 +423,6 @@ class MonoService:
                 result = await session.execute(query)
                 agent_runs_raw = list(result.scalars().all())
 
-            logger.info(f"get_agent_runs: Found {len(agent_runs_raw)} agent runs")
-
             # Get transcripts for those runs
             agent_run_ids = [ar.id for ar in agent_runs_raw]
             if agent_run_ids:
@@ -444,13 +437,8 @@ class MonoService:
                     )
                     batch_transcripts = result.scalars().all()
                     transcripts_raw.extend(batch_transcripts)
-
-                logger.info(
-                    f"get_agent_runs: Found {len(transcripts_raw)} transcripts for {len(agent_run_ids)} agent runs (processed in {len(agent_run_ids) // batch_size + 1} batches)"
-                )
             else:
                 transcripts_raw = []
-                logger.info("get_agent_runs: No agent runs found, no transcripts to fetch")
 
         # Collate run_id -> transcripts
         agent_run_transcripts: dict[str, list[tuple[str, Transcript]]] = {}
@@ -466,7 +454,6 @@ class MonoService:
             for ar_raw in agent_runs_raw
         ]
 
-        logger.info(f"get_agent_runs: Returning {len(final_result)} agent runs with transcripts")
         return final_result
 
     async def get_agent_run(
@@ -670,91 +657,6 @@ class MonoService:
         )
         return new_ctx
 
-    async def set_io_bin_key_with_metadata_key(
-        self, ctx: ViewContext, metadata_key: str, type: Literal["inner", "outer"]
-    ):
-        """Set inner or outer bin key to a metadata key.
-
-        This is now much simpler - we just store the metadata key as the bin key.
-        """
-        # Update the view with the metadata key as the bin key
-        async with self.db.session() as session:
-            await session.execute(
-                update(SQLAView)
-                .where(SQLAView.id == ctx.view_id)
-                .values(**{f"{type}_bin_key": metadata_key})
-            )
-
-    async def set_io_bin_keys(
-        self, ctx: ViewContext, inner_bin_key: str | None, outer_bin_key: str | None
-    ):
-        """Set inner and outer bin keys.
-
-        Now bin keys are just string keys (metadata keys).
-        """
-        # Validate that the bin key IDs are valid metadata keys
-        if inner_bin_key or outer_bin_key:
-            metadata_keys = await self.get_binnable_keys(ctx)
-
-            if inner_bin_key and inner_bin_key not in metadata_keys:
-                raise ValueError(
-                    f"Invalid inner_bin_key '{inner_bin_key}'. Available metadata keys: {metadata_keys}"
-                )
-
-            if outer_bin_key and outer_bin_key not in metadata_keys:
-                raise ValueError(
-                    f"Invalid outer_bin_key '{outer_bin_key}'. Available metadata keys: {metadata_keys}"
-                )
-
-        async with self.db.session() as session:
-            await session.execute(
-                update(SQLAView)
-                .where(SQLAView.id == ctx.view_id)
-                .values(inner_bin_key=inner_bin_key, outer_bin_key=outer_bin_key)
-            )
-
-    async def get_io_bin_keys(self, ctx: ViewContext) -> tuple[str | None, str | None] | None:
-        """Get inner and outer bin keys.
-
-        Returns metadata keys as bin keys.
-        """
-
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLAView.inner_bin_key, SQLAView.outer_bin_key).where(
-                    SQLAView.id == ctx.view_id
-                )
-            )
-            row = result.one_or_none()
-            if row is None:
-                logger.warning(f"get_io_bin_keys: no view found for view_id={ctx.view_id}")
-                return None
-
-            inner_bin_key, outer_bin_key = row
-
-        return (inner_bin_key, outer_bin_key)
-
-    async def get_binnable_keys(self, ctx: ViewContext, include_bins: bool = True) -> list[str]:
-        """Get the available bin keys used for this view."""
-
-        async with self.db.session() as session:
-            # Use SQL to extract all unique metadata keys directly
-            query = text(
-                """
-                SELECT DISTINCT jsonb_object_keys(metadata_json) as key
-                FROM agent_runs
-                WHERE metadata_json IS NOT NULL
-                AND metadata_json != 'null'::jsonb
-                AND metadata_json != '{}'::jsonb
-                AND collection_id = :collection_id
-            """
-            )
-
-            result = await session.execute(query, {"collection_id": ctx.collection_id})
-            bin_keys = [row.key for row in result]
-
-            return bin_keys
-
     ###########
     # Filters #
     ###########
@@ -789,23 +691,21 @@ class MonoService:
         Returns:
             True if the search query was found and deleted, False otherwise
         """
-        # Delete search
         async with self.db.session() as session:
-            # TODO(mengk): this is a hack!!!!!!
-            # Remove this once we do the FK relationship
-
-            # Get the search query
-            search_query = await session.execute(
-                select(SQLASearchQuery.search_query).where(SQLASearchQuery.id == search_query_id)
+            # Get the search query object
+            search_query_obj = await session.execute(
+                select(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
             )
-            search_query = search_query.scalar_one()
+            search_query_obj = search_query_obj.scalar_one_or_none()
+            if search_query_obj is None:
+                return False
 
-            # First, delete all search result cluster assignments that reference search results with this query
+            # Delete all search result cluster assignments that reference search results with this query
             await session.execute(
                 delete(SQLASearchResultCluster).where(
                     SQLASearchResultCluster.search_result_id.in_(
                         select(SQLASearchResult.id).where(
-                            SQLASearchResult.search_query == search_query
+                            SQLASearchResult.search_query_id == search_query_id
                         )
                     )
                 )
@@ -815,19 +715,20 @@ class MonoService:
             await session.execute(
                 delete(SQLASearchCluster).where(
                     SQLASearchCluster.collection_id == collection_id,
-                    SQLASearchCluster.search_query == search_query,
+                    SQLASearchCluster.search_query_id == search_query_id,
                 )
             )
 
             # Delete search results
             await session.execute(
-                delete(SQLASearchResult).where(SQLASearchResult.search_query == search_query)
+                delete(SQLASearchResult).where(SQLASearchResult.search_query_id == search_query_id)
             )
 
-            # Finally, delete the search query itself
+            # Delete the search query itself
             await session.execute(
                 delete(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
             )
+            return True
 
     async def get_searches_with_result_counts(self, ctx: ViewContext) -> list[dict[str, Any]]:
         # Get search result queries
@@ -847,15 +748,15 @@ class MonoService:
         async with self.db.session() as session:
             query = (
                 select(
-                    SQLASearchResult.search_query,
+                    SQLASearchResult.search_query_id,
                     func.count(distinct(SQLASearchResult.agent_run_id)),
                 )
-                .where(SQLASearchResult.search_query.in_(search_queries))
+                .where(SQLASearchResult.search_query_id.in_(search_queries))
                 .join(SQLAAgentRun, SQLASearchResult.agent_run_id == SQLAAgentRun.id)
                 .where(
                     ctx.get_base_where_clause(SQLAAgentRun),
                 )
-                .group_by(SQLASearchResult.search_query)
+                .group_by(SQLASearchResult.search_query_id)
             )
             result = await session.execute(query)
 
@@ -880,25 +781,25 @@ class MonoService:
         return searches
 
     async def _get_agent_runs_without_search_results(
-        self, ctx: ViewContext, search_query: str
+        self, ctx: ViewContext, search_query_id: str
     ) -> list[AgentRun]:
         where_clause = ~exists().where(
             SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-            SQLASearchResult.search_query == search_query,
+            SQLASearchResult.search_query_id == search_query_id,
         )
         return await self.get_agent_runs(ctx, _where_clause=where_clause)
 
     async def get_search_results(
         self,
         ctx: ViewContext,
-        search_query: str,
+        search_query_id: str,
     ) -> list[SearchResult]:
-        return await self._get_search_results(ctx, search_query, ensure_fresh=False)
+        return await self._get_search_results(ctx, search_query_id, ensure_fresh=False)
 
     async def _get_search_results(
         self,
         ctx: ViewContext,
-        search_query: str,
+        search_query_id: str,
         search_result_callback: SearchResultStreamingCallback | None = None,
         ensure_fresh: bool = True,
     ) -> list[SearchResult]:
@@ -906,14 +807,14 @@ class MonoService:
         if ensure_fresh:
             await self.compute_search(
                 ctx,
-                search_query,
+                search_query_id,
                 search_result_callback=search_result_callback,
             )
 
         async with self.db.session() as session:
             query = (
                 select(SQLASearchResult)
-                .where(SQLASearchResult.search_query == search_query)
+                .where(SQLASearchResult.search_query_id == search_query_id)
                 .join(SQLAAgentRun, SQLASearchResult.agent_run_id == SQLAAgentRun.id)
                 .where(ctx.get_base_where_clause(SQLAAgentRun))
             )
@@ -924,7 +825,7 @@ class MonoService:
     async def compute_search(
         self,
         ctx: ViewContext,
-        search_query: str,
+        search_query_id: str,
         search_result_callback: SearchResultStreamingCallback | None = None,
         read_only: bool = False,
     ):
@@ -934,21 +835,23 @@ class MonoService:
         # So, retrieve them and send them
         if search_result_callback is not None:
             existing_search_results = await self._get_search_results(
-                ctx, search_query, ensure_fresh=False
+                ctx, search_query_id, ensure_fresh=False
             )
             if existing_search_results:
                 await search_result_callback(existing_search_results)
 
         # Figure out which runs don't have search results computed
-        agent_runs = await self._get_agent_runs_without_search_results(ctx, search_query)
+        agent_runs = await self._get_agent_runs_without_search_results(ctx, search_query_id)
         if not agent_runs:
-            logger.info(f"All agent runs already have results for {search_query}")
+            logger.info(f"All agent runs already have results for {search_query_id}")
             return
         else:
             logger.info(f"Computing results for {len(agent_runs)} agent runs")
 
         if await self.fg_has_embeddings(ctx.collection_id):
-            agent_runs = await self._rerank_agent_runs_by_embeddings(ctx, agent_runs, search_query)
+            agent_runs = await self._rerank_agent_runs_by_embeddings(
+                ctx, agent_runs, search_query_id
+            )
 
         async def _results_callback(search_results: list[SearchResult] | None):
             if search_result_callback:
@@ -973,7 +876,13 @@ class MonoService:
         if read_only:
             return
         # Otherwise, compute the search results
-        await execute_search(agent_runs, search_query, search_result_callback=_results_callback)
+        search_query = await self.get_search_query(search_query_id)
+        await execute_search(
+            agent_runs,
+            search_query_id,
+            search_query.search_query,
+            search_result_callback=_results_callback,
+        )
 
     ##############
     # Embeddings #
@@ -983,7 +892,7 @@ class MonoService:
         self,
         ctx: ViewContext,
         agent_runs: list[AgentRun],
-        search_query: str,
+        search_query_id: str,
     ) -> list[AgentRun]:
         """
         Rerank agent runs using pgvector cosine distance search if embeddings are available.
@@ -991,7 +900,10 @@ class MonoService:
         """
 
         try:
-            query_embeddings, _ = await get_chunked_openai_embeddings_async([search_query])
+            search_query = await self.get_search_query(search_query_id)
+            query_embeddings, _ = await get_chunked_openai_embeddings_async(
+                [search_query.search_query]
+            )
         except Exception as e:
             logger.warning(f"Failed to compute embeddings: {e}")
             return agent_runs
@@ -1006,7 +918,7 @@ class MonoService:
                     ctx.get_base_where_clause(SQLAAgentRun),
                     ~exists().where(
                         SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-                        SQLASearchResult.search_query == search_query,
+                        SQLASearchResult.search_query_id == search_query_id,
                     ),
                 )
             )
@@ -1025,7 +937,7 @@ class MonoService:
                     ctx.get_base_where_clause(SQLAAgentRun),
                     ~exists().where(
                         SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-                        SQLASearchResult.search_query == search_query,
+                        SQLASearchResult.search_query_id == search_query_id,
                     ),
                 )
                 .order_by(SQLATranscriptEmbedding.embedding.cosine_distance(query_embedding))
@@ -1224,6 +1136,20 @@ class MonoService:
             result = await session.execute(query)
             return result.scalar() or 0
 
+    async def get_oldest_active_embedding_job(self, collection_id: str) -> SQLAJob | None:
+        async with self.db.session() as session:
+            query = (
+                select(SQLAJob)
+                .where(
+                    SQLAJob.type == "compute_embeddings",
+                    SQLAJob.job_json["collection_id"].astext == collection_id,
+                    SQLAJob.status == JobStatus.RUNNING,
+                )
+                .order_by(SQLAJob.created_at.asc())
+            )
+            result = await session.execute(query)
+            return result.scalar_one_or_none()
+
     #########################################
     # Computing filters and clustering dims #
     #########################################
@@ -1231,13 +1157,15 @@ class MonoService:
     async def cluster_search_results(
         self,
         ctx: ViewContext,
-        search_query: str,
+        search_query_id: str,
         feedback: str | None = None,
         existing_clusters: list[dict[str, Any]] | None = None,
     ):
         """Cluster search results and store cluster information with the search results."""
+        search_query = await self.get_search_query(search_query_id)
+
         # Get all search results for this query
-        search_results = await self._get_search_results(ctx, search_query)
+        search_results = await self._get_search_results(ctx, search_query_id)
         # Filter out the search results that have a value of None
         search_results = [sr for sr in search_results if sr.value is not None]
         # Separate the values because clustering just takes the values
@@ -1245,7 +1173,7 @@ class MonoService:
             list[str], [sr.value for sr in search_results]
         )  # We already filtered out the None values
 
-        guidance = f"Specifically focus on the following attribute: {search_query}"
+        guidance = f"Specifically focus on the following attribute: {search_query.search_query}"
         if feedback is not None and feedback != "" and existing_clusters:
             centroids: list[str] = await propose_clusters(
                 search_result_values,
@@ -1275,7 +1203,7 @@ class MonoService:
                 cluster = SQLASearchCluster(
                     id=centroid_id,
                     collection_id=ctx.collection_id,
-                    search_query=search_query,
+                    search_query_id=search_query_id,
                     centroid=centroid,
                 )
                 session.add(cluster)
@@ -1318,14 +1246,14 @@ class MonoService:
         )
 
     async def get_existing_search_clusters(
-        self, ctx: ViewContext, search_query: str
+        self, ctx: ViewContext, search_query_id: str
     ) -> list[dict[str, Any]]:
         """Get existing clusters for a search query."""
         async with self.db.session() as session:
             result = await session.execute(
                 select(SQLASearchCluster.centroid, SQLASearchCluster.id).where(
                     SQLASearchCluster.collection_id == ctx.collection_id,
-                    SQLASearchCluster.search_query == search_query,
+                    SQLASearchCluster.search_query_id == search_query_id,
                 )
             )
             clusters = result.all()
@@ -1341,7 +1269,7 @@ class MonoService:
             )
             return [r.search_result.to_search_result() for r in result.scalars().all()]
 
-    async def clear_search_result_clusters(self, ctx: ViewContext, search_query: str):
+    async def clear_search_result_clusters(self, ctx: ViewContext, search_query_id: str):
         """Clear cluster assignments for search results."""
         async with self.db.session() as session:
             # Delete all cluster assignments for the clusters associated with this search query
@@ -1350,7 +1278,7 @@ class MonoService:
                     SQLASearchResultCluster.cluster_id.in_(
                         select(SQLASearchCluster.id).where(
                             SQLASearchCluster.collection_id == ctx.collection_id,
-                            SQLASearchCluster.search_query == search_query,
+                            SQLASearchCluster.search_query_id == search_query_id,
                         )
                     )
                 )
@@ -1360,7 +1288,7 @@ class MonoService:
             await session.execute(
                 delete(SQLASearchCluster).where(
                     SQLASearchCluster.collection_id == ctx.collection_id,
-                    SQLASearchCluster.search_query == search_query,
+                    SQLASearchCluster.search_query_id == search_query_id,
                 )
             )
 

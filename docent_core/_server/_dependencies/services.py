@@ -9,6 +9,7 @@ from docent_core._server._dependencies.database import (
     get_session,
     get_session_cm_factory,
 )
+from docent_core.services.charts import ChartsService
 from docent_core.services.diff import DiffService
 from docent_core.services.job import JobService
 from docent_core.services.rubric import RubricService
@@ -41,3 +42,10 @@ def get_job_service(
     ),
 ) -> JobService:
     return JobService(session, session_cm_factory)
+
+
+def get_chart_service(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    session: AsyncSession = Depends(get_session),
+) -> ChartsService:
+    return ChartsService(session, mono_svc)

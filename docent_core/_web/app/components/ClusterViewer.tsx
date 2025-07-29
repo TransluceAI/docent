@@ -76,12 +76,16 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
 
     const assignedIds = new Set<string>();
 
-    for (const [centroid, assignments] of Object.entries(clusteredSearchResults)) {
-      assignments.forEach((assignment: StreamedSearchResultClusterAssignment) => {
-        if (assignment.decision) {
-          assignedIds.add(assignment.search_result_id);
+    for (const [centroid, assignments] of Object.entries(
+      clusteredSearchResults
+    )) {
+      assignments.forEach(
+        (assignment: StreamedSearchResultClusterAssignment) => {
+          if (assignment.decision) {
+            assignedIds.add(assignment.search_result_id);
+          }
         }
-      });
+      );
     }
 
     return assignedIds;
@@ -214,7 +218,6 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
               <SearchResultsList
                 searchResults={allSearchResults}
                 curSearchQuery={searchQuery}
-
               />
             </div>
           </div>
@@ -247,7 +250,6 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
             <SearchResultsList
               searchResults={allSearchResults}
               curSearchQuery={searchQuery}
-
             />
           </div>
         </div>
@@ -267,48 +269,47 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
             <div className="text-xs p-1.5 bg-background rounded border border-border flex items-center gap-1.5">
               {/* Expand/collapse button on the left */}
 
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-5 w-5 flex-shrink-0"
-                  onClick={() => toggleClusterExpansion(cluster.id)}
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  )}
-                </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-5 w-5 flex-shrink-0"
+                onClick={() => toggleClusterExpansion(cluster.id)}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                )}
+              </Button>
 
               {/* Cluster count */}
 
-                <div className="flex-shrink-0 flex items-center">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-xs px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground cursor-default flex items-center min-w-[2rem] justify-center">
-                          {activeClusterTaskId &&
-                          clusterSearchResults.length === 0 ? (
-                            <div className="animate-spin rounded-full h-3 w-3 border-2 border-border border-t-gray-500" />
-                          ) : (
-                            <>
-                              {clusterSearchResults.length}
-                              {activeClusterTaskId && (
-                                <div className="animate-spin ml-1 rounded-full h-2 w-2 border-[1.5px] border-border border-t-gray-500 inline-block" />
-                              )}
-                            </>
-                          )}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
+              <div className="flex-shrink-0 flex items-center">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="text-xs px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground cursor-default flex items-center min-w-[2rem] justify-center">
                         {activeClusterTaskId &&
-                        clusterSearchResults.length === 0
-                          ? 'Clustering in progress...'
-                          : `${clusterSearchResults.length} search result${clusterSearchResults.length !== 1 ? 's' : ''} in this cluster`}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                        clusterSearchResults.length === 0 ? (
+                          <div className="animate-spin rounded-full h-3 w-3 border-2 border-border border-t-gray-500" />
+                        ) : (
+                          <>
+                            {clusterSearchResults.length}
+                            {activeClusterTaskId && (
+                              <div className="animate-spin ml-1 rounded-full h-2 w-2 border-[1.5px] border-border border-t-gray-500 inline-block" />
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {activeClusterTaskId && clusterSearchResults.length === 0
+                        ? 'Clustering in progress...'
+                        : `${clusterSearchResults.length} search result${clusterSearchResults.length !== 1 ? 's' : ''} in this cluster`}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
 
               {/* Cluster centroid */}
               <div className="flex-1 text-xs text-primary ml-1">
@@ -324,7 +325,6 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
                 <SearchResultsList
                   searchResults={clusterSearchResults}
                   curSearchQuery={searchQuery}
-
                 />
               </div>
             )}
@@ -344,14 +344,14 @@ export default function ClusterViewer({ searchQuery }: ClusterViewerProps) {
                 </span>
               </div>
               <span className="text-xs text-muted-foreground">
-                {residualSearchResults.length} unclustered result{residualSearchResults.length !== 1 ? 's' : ''}
+                {residualSearchResults.length} unclustered result
+                {residualSearchResults.length !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="overflow-y-auto space-y-1 custom-scrollbar">
               <SearchResultsList
                 searchResults={residualSearchResults}
                 curSearchQuery={searchQuery}
-
               />
             </div>
           </div>

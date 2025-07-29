@@ -25,15 +25,15 @@ import AgentRunCard from './AgentRunCard';
 import UploadRunsButton from './UploadRunsButton';
 import UploadRunsDialog from './UploadRunsDialog';
 
-import {
-  getAgentRunMetadata,
-  getAgentRunMetadataFields,
-} from '../store/collectionSlice';
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
+import {
+  useGetAgentRunIdsQuery,
+  useGetAgentRunMetadataQuery,
+} from '../api/collectionApi';
 
 // Constants for magic numbers
 const PAGINATION_LIMIT = 100;
@@ -42,8 +42,6 @@ export default function ExperimentViewer() {
   const dispatch = useAppDispatch();
 
   // Get all state at the top level
-  const innerBinKey = useAppSelector((state) => state.collection.innerBinKey);
-  const outerBinKey = useAppSelector((state) => state.collection.outerBinKey);
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const baseFilter = useAppSelector((state) => state.collection.baseFilter);
 
@@ -56,11 +54,18 @@ export default function ExperimentViewer() {
   const experimentViewerScrollPosition = useAppSelector(
     (state) => state.experimentViewer.experimentViewerScrollPosition
   );
-  const rawBinStats = useAppSelector(
-    (state) => state.experimentViewer.binStats
-  );
   const rawAgentRunIds = useAppSelector(
-    (state) => state.experimentViewer.agentRunIds
+    (state) => state.collection.agentRunIds
+  );
+
+  // Fetch agent run IDs
+  useGetAgentRunIdsQuery(
+    {
+      collectionId: collectionId!,
+    },
+    {
+      skip: !collectionId,
+    }
   );
 
   /**
@@ -102,11 +107,9 @@ export default function ExperimentViewer() {
       task_id?: string;
       model?: string;
     }) => {
-      dispatch(getAgentRunMetadataFields());
-
       fetchedAgentRunIdsRef.current.clear();
     },
-    [dispatch]
+    []
   );
 
   // Use debouncing to prevent too many updates
@@ -169,22 +172,14 @@ export default function ExperimentViewer() {
     [agentRunIds, startIndex, endIndex]
   );
 
-  // When the page changes, request metadata for the new page
-  useEffect(() => {
-    if (!collectionId || !currentPageItems.length) return;
-
-    // Only fetch metadata for agent run IDs that haven't been fetched before
-    const agentRunIdsToFetch = currentPageItems.filter(
-      (id) => id && !fetchedAgentRunIdsRef.current.has(id)
-    );
-
-    if (agentRunIdsToFetch.length === 0) return;
-
-    // Mark these IDs as fetched
-    agentRunIdsToFetch.forEach((id) => fetchedAgentRunIdsRef.current.add(id));
-
-    dispatch(getAgentRunMetadata(agentRunIdsToFetch));
-  }, [currentPageItems, dispatch, collectionId]);
+  // Fetch agent run metadata when the agent run IDs change
+  const { data: agentRunMetadata } = useGetAgentRunMetadataQuery(
+    {
+      collectionId: collectionId!,
+      agent_run_ids: currentPageItems,
+    },
+    { skip: !collectionId }
+  );
 
   // Clear fetched IDs when the overall agent run list changes
   useEffect(() => {
@@ -199,26 +194,14 @@ export default function ExperimentViewer() {
     [totalPages]
   );
 
-  // If data isn't available, show a loading spinner
-  // But if both dimensions are None, we don't need stats, so we can show the agent run list
-  if (!rawBinStats && (outerBinKey || innerBinKey)) {
-    return (
-      <Card className="h-full flex-1 p-3">
-        <div className="flex-1 flex flex-col items-center justify-center space-y-2 h-full">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      </Card>
-    );
-  }
-
   return (
     <Card className="flex-1 p-3 flex flex-col h-full min-w-0 space-y-3">
       {/* Header with organization dropdown - always visible */}
       <div className="flex justify-between items-center shrink-0">
         <div className="flex flex-col">
-          <div className="text-sm font-semibold">Grouped Visualization</div>
+          <div className="text-sm font-semibold">Chart Visualization</div>
           <div className="text-xs text-muted-foreground">
-            Select fields to group by, and click to filter
+            Plot trends in your data
           </div>
         </div>
       </div>
@@ -270,7 +253,11 @@ export default function ExperimentViewer() {
 
           {(agentRunIds?.length || 0) > 0 ? (
             currentPageItems.map((agentRunId) => (
-              <AgentRunCard key={agentRunId} agentRunId={agentRunId} />
+              <AgentRunCard
+                key={agentRunId}
+                agentRunId={agentRunId}
+                metadata={agentRunMetadata?.[agentRunId]}
+              />
             ))
           ) : (
             <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs">

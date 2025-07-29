@@ -1,14 +1,11 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import {
   RegexSnippet,
-  TaskStats,
   TranscriptDiffViewport,
 } from '../types/experimentViewerTypes';
 import { ChartSpec, PrimitiveFilter } from '../types/collectionTypes';
 
 export interface ExperimentViewerState {
-  // Global binning results
-  binStats?: Record<string, Record<string, TaskStats>>;
   agentRunIds?: string[];
   dimIdsToFilterIds?: Record<string, string[]>;
   filtersMap?: Record<string, PrimitiveFilter>;
@@ -26,44 +23,12 @@ export interface ExperimentViewerState {
 
 const initialState: ExperimentViewerState = {};
 
-function parseKeys(binStats: Record<string, TaskStats>) {
-  const key = Object.keys(binStats)[0];
-  const pieces = key.split('|');
-  if (pieces.length == 1) {
-    const key1 = pieces[0].split(',')[0];
-    return key1;
-  }
-  const key1 = pieces[0].split(',')[0];
-  const key2 = pieces[1].split(',')[0];
-  return `${key1}|${key2}`;
-}
-
 export const experimentViewerSlice = createSlice({
   name: 'experimentViewer',
   initialState,
   reducers: {
     setAgentRunIds: (state, action: PayloadAction<string[]>) => {
       state.agentRunIds = action.payload;
-    },
-    setBinStats: (state, action: PayloadAction<any>) => {
-      let stats: Record<string, TaskStats> = {};
-      if (action.payload && typeof action.payload === 'object') {
-        if (
-          'binStats' in action.payload &&
-          typeof action.payload.binStats === 'object'
-        ) {
-          // The backend now sends computed statistics in the format: {bin_key: {score_key: {mean, ci, n}}}
-          stats = action.payload.binStats;
-        } else {
-          stats = action.payload;
-        }
-      }
-      if (!state.binStats) {
-        state.binStats = {};
-      }
-      if (Object.keys(stats).length > 0) {
-        state.binStats[parseKeys(stats)] = stats;
-      }
     },
     setDimIdsToFilterIds: (
       state,
@@ -116,7 +81,6 @@ export const experimentViewerSlice = createSlice({
 
 export const {
   setAgentRunIds,
-  setBinStats,
   setExperimentViewerScrollPosition,
   setSelectedDiffTranscript,
   setSelectedDiffSampleId,

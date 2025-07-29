@@ -88,9 +88,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
     if (value === null)
       return <span className="text-muted-foreground">null</span>;
     if (value === undefined)
-      return (
-        <span className="text-muted-foreground">undefined</span>
-      );
+      return <span className="text-muted-foreground">undefined</span>;
 
     const valueKey = `${key}-value`;
     const isCopied = copiedKey === valueKey;
@@ -148,9 +146,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
           </span>
         );
       case 'function':
-        return (
-          <span className="text-muted-foreground">Function</span>
-        );
+        return <span className="text-muted-foreground">Function</span>;
       case 'object': {
         const objectKey = key || `root-${depth}`;
         const isExpanded = expandedObjects.has(objectKey);
@@ -206,9 +202,7 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
         // Regular object
         const entries = Object.entries(value);
         if (entries.length === 0)
-          return (
-            <span className="text-muted-foreground">{'{}'}</span>
-          );
+          return <span className="text-muted-foreground">{'{}'}</span>;
 
         return (
           <span>
@@ -223,10 +217,8 @@ const DebugReduxState: React.FC<DebugReduxStateProps> = ({
                 {'{'}
                 {entries.map(([k, v], i) => (
                   <span key={k} className="ml-1 block">
-                    <span className="text-yellow-text">
-                      {k}
-                    </span>
-                    : {formatValue(v, depth + 1, maxDepth, `${objectKey}-${k}`)}
+                    <span className="text-yellow-text">{k}</span>:{' '}
+                    {formatValue(v, depth + 1, maxDepth, `${objectKey}-${k}`)}
                     {i < entries.length - 1 && ','}
                   </span>
                 ))}

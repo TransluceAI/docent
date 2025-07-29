@@ -1,59 +1,88 @@
 variable "aws_region" {
-  description = "AWS region to deploy into"
+  description = "AWS region"
   type        = string
-  default     = "us-west-1"
+  default     = "us-east-1"
 }
 
-variable "key_name" {
-  description = "Existing EC2 key pair name for SSH access"
+variable "environment" {
+  description = "Environment name"
+  type        = string
+}
+
+variable "project_name" {
+  description = "Project name"
   type        = string
   default     = "docent"
 }
 
-variable "instance_type" {
-  description = "EC2 instance type"
+variable "elasticache_node_type" {
+  description = "Elasticache node type"
   type        = string
-  default     = "m5.8xlarge"
 }
 
-variable "root_volume_size" {
-  description = "Size of the root EBS volume in GiB"
-  type        = number
-  default     = 200
-}
-
-variable "root_volume_type" {
-  description = "Type of root EBS volume (gp3, gp2, io1, io2)"
+variable "rds_instance_class" {
+  description = "RDS instance class"
   type        = string
-  default     = "gp3"
-}
-
-variable "root_volume_encrypted" {
-  description = "Whether to encrypt the root EBS volume"
-  type        = bool
-  default     = true
 }
 
 variable "db_username" {
-  description = "Master username for Postgres"
+  description = "Database username"
   type        = string
-  default     = "postgres"
+  default     = "docent_user"
 }
 
 variable "db_password" {
-  description = "Master password for Postgres"
+  description = "Database password - used only for RDS instance creation, not exposed in application environment variables"
   type        = string
   sensitive   = true
 }
 
-variable "db_instance_class" {
-  description = "RDS instance class"
+variable "db_name" {
+  description = "Database name"
   type        = string
-  default     = "db.m5.8xlarge"
+  default     = "docent_db"
 }
 
-variable "db_allocated_storage" {
-  description = "RDS storage (GiB)"
+variable "app_runner_cpu" {
+  description = "CPU units for App Runner (256, 512, 1024, 2048, 4096)"
   type        = number
-  default     = 200
+  default     = 4096
+}
+
+variable "app_runner_memory" {
+  description = "Memory for App Runner (512, 1024, 2048, 3072, 4096, 6144, 8192, 10240, 12288)"
+  type        = number
+  default     = 12288
+}
+
+variable "app_runner_max_concurrency" {
+  description = "Maximum concurrency for App Runner"
+  type        = number
+}
+
+variable "app_runner_min_size" {
+  description = "Minimum number of App Runner instances"
+  type        = number
+}
+
+variable "app_runner_max_size" {
+  description = "Maximum number of App Runner instances"
+  type        = number
+}
+
+variable "ecs_cpu" {
+  description = "CPU units for ECS Fargate (256, 512, 1024, 2048, 4096)"
+  type        = number
+  default     = 4096
+}
+
+variable "ecs_memory" {
+  description = "Memory for ECS Fargate (512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192)"
+  type        = number
+  default     = 8192
+}
+
+variable "worker_desired_count" {
+  description = "Desired number of worker tasks"
+  type        = number
 }

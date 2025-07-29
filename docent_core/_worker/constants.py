@@ -9,3 +9,4 @@ class WorkerFunction(str, Enum):
     COMPUTE_SEARCH = "compute_search"
     COMPUTE_EMBEDDINGS = "compute_embeddings"
     RUBRIC_JOB = "rubric_job"
+    CENTROID_ASSIGNMENT_JOB = "centroid_assignment_job"

@@ -1,13 +1,67 @@
-output "ec2_public_ip" {
-  description = "Public IP of the application server"
-  value       = aws_instance.app.public_ip
+output "vpc_id" {
+  description = "ID of the VPC"
+  value       = aws_vpc.main.id
+}
+
+output "public_subnet_ids" {
+  description = "IDs of the public subnets"
+  value       = aws_subnet.public[*].id
+}
+
+output "private_subnet_ids" {
+  description = "IDs of the private subnets"
+  value       = aws_subnet.private[*].id
 }
 
 output "rds_endpoint" {
-  description = "RDS endpoint (private)"
+  description = "RDS instance endpoint"
   value       = aws_db_instance.postgres.endpoint
+  sensitive   = true
 }
 
 output "rds_port" {
-  value = aws_db_instance.postgres.port
+  description = "RDS instance port"
+  value       = aws_db_instance.postgres.port
+}
+
+output "database_url" {
+  description = "Database connection URL"
+  value       = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.postgres.endpoint}:5432/docent"
+  sensitive   = true
+}
+
+output "redis_endpoint" {
+  description = "ElastiCache Redis primary endpoint"
+  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
+  sensitive   = true
+}
+
+output "redis_port" {
+  description = "ElastiCache Redis port"
+  value       = aws_elasticache_replication_group.redis.port
+}
+
+output "app_runner_service_url" {
+  description = "App Runner service URL"
+  value       = "https://${aws_apprunner_service.api.service_url}"
+}
+
+output "app_runner_service_arn" {
+  description = "App Runner service ARN"
+  value       = aws_apprunner_service.api.arn
+}
+
+output "backend_ecr_repository_url" {
+  description = "ECR repository URL for backend (server and worker)"
+  value       = aws_ecr_repository.backend.repository_url
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name"
+  value       = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  description = "ECS service name"
+  value       = aws_ecs_service.worker.name
 }

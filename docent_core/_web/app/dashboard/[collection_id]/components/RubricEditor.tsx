@@ -41,7 +41,7 @@ export default function RubricEditor({
     return JSON.parse(JSON.stringify(initRubric));
   });
 
-  // Update local state when initRubric changes
+  // When the initRubric changes, update the local state
   useEffect(() => {
     setRubric(JSON.parse(JSON.stringify(initRubric)));
   }, [initRubric]);

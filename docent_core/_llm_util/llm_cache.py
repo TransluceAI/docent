@@ -5,21 +5,24 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
+from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.llm_output import LLMOutput
+
+logger = get_logger(__name__)
 
 
 class LLMCache:
     def __init__(self, db_path: str | None = None):
         if db_path is None:
             llm_cache_path = ENV.get("LLM_CACHE_PATH")
-            if llm_cache_path is None:
-                raise RuntimeError("LLM_CACHE_PATH is not set in .env")
-
-            cache_dir = Path(llm_cache_path)
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(cache_dir / "llm_cache.db")
+            if llm_cache_path is None or llm_cache_path == "":
+                raise ValueError("LLM_CACHE_PATH is not set")
+            else:
+                cache_dir = Path(llm_cache_path)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(cache_dir / "llm_cache.db")
 
         self.db_path = db_path
         self._init_db()
@@ -89,6 +92,7 @@ class LLMCache:
         top_logprobs: int | None = None,
     ) -> LLMOutput | None:
         """Get cached completion for a conversation if it exists."""
+
         key = self._create_key(
             messages,
             model_name,
@@ -119,6 +123,7 @@ class LLMCache:
         top_logprobs: int | None = None,
     ) -> None:
         """Cache a completion for a conversation."""
+
         key = self._create_key(
             messages,
             model_name,
@@ -151,6 +156,7 @@ class LLMCache:
         top_logprobs: int | None = None,
     ) -> None:
         """Cache a completion for a conversation."""
+
         keys: list[str] = []
         for messages in messages_list:
             key = self._create_key(
@@ -177,6 +183,7 @@ class LLMCache:
 
     def clear(self) -> None:
         """Clear all cached completions."""
+
         with self._get_connection() as conn:
             conn.execute("DELETE FROM llm_cache")
             conn.commit()

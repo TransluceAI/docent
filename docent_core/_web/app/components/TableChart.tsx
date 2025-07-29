@@ -4,24 +4,25 @@ import { useCallback } from 'react';
 import { v4 as uuid4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { PrimitiveFilter } from '../types/collectionTypes';
-import { addBaseFilter, addBaseFilters } from '../store/searchSlice';
+import { addFilters } from '../store/collectionSlice';
 import { cn } from '@/lib/utils';
 import { ChartData, getScoreAt } from '../utils/chartDataUtils';
 import ChartContainer from './ChartContainer';
+import { useGetChartMetadataQuery } from '../api/chartApi';
 
 // Constants
 const MAX_DIMENSION_VALUES = 100;
 const HIGH_SCORE_THRESHOLD = 0.8;
 const LOW_SCORE_THRESHOLD = 0;
 
-const getScoreDisplay = (score: number | undefined, ci?: number | null) => {
+const getScoreDisplay = (score: number | null, ci?: number | null) => {
   if (typeof score !== 'number') return '';
   let display = score.toFixed(2);
   if (ci && ci > 0) display += ` ± ${ci.toFixed(3)}`;
   return display;
 };
 
-const getScoreClass = (score: number | undefined, n: number | undefined) => {
+const getScoreClass = (score: number | null, n: number | null) => {
   if (typeof score !== 'number' || n === undefined || n === 0)
     return 'bg-secondary hover:bg-muted';
   if (score >= HIGH_SCORE_THRESHOLD)
@@ -45,7 +46,13 @@ const getFilterTitle = (
 
 export default function TableChart({ chartData }: { chartData: ChartData }) {
   const dispatch = useAppDispatch();
-  const { dimensionsMap } = useAppSelector((state) => state.collection);
+  const { collectionId } = useAppSelector((state) => state.collection);
+
+  // Get chart metadata including dimensions
+  const { data: chartMetadata } = useGetChartMetadataQuery(
+    { collectionId: collectionId! },
+    { skip: !collectionId }
+  );
 
   const tableData = {
     rows: chartData.xValues,
@@ -59,18 +66,33 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
 
   // Helper function to create filters
   const createFilter = useCallback(
-    (dimId: string, value: string): PrimitiveFilter => ({
-      type: 'primitive',
-      key_path: dimensionsMap?.[dimId]?.metadata_key
-        ? ['metadata', ...dimensionsMap[dimId].metadata_key.split('.')]
-        : [],
-      value,
-      op: '==',
-      id: uuid4(),
-      name: null,
-      supports_sql: true,
-    }),
-    [dimensionsMap]
+    (dimId: string, value: string): PrimitiveFilter | undefined => {
+      // Find the dimension in the chart metadata
+      const allDimensions = [
+        ...(chartMetadata?.fields?.dimensions || []),
+        ...(chartMetadata?.fields?.measures || []),
+      ];
+      const dimension = allDimensions.find((dim) => dim.key === dimId);
+
+      // We can't filter on anything besides run metadata, e.g. cluster centroid
+      if (!dimension?.extra?.metadata_key) {
+        return undefined;
+      }
+
+      // Build key path from dimension metadata
+      const key_path = ['metadata', ...dimension.extra.metadata_key.split('.')];
+
+      return {
+        type: 'primitive',
+        key_path,
+        value,
+        op: '==',
+        id: uuid4(),
+        name: null,
+        supports_sql: true,
+      };
+    },
+    [chartMetadata?.fields?.dimensions, chartMetadata?.fields?.measures]
   );
 
   if (!tableData || !chartData.xKey) {
@@ -105,16 +127,20 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                       : undefined
                   }
                   onClick={() => {
-                    if (tableData.is2d && tableData.colDimId && dimensionsMap) {
+                    if (tableData.is2d && tableData.colDimId) {
                       const filter = createFilter(tableData.colDimId, colValue);
-                      dispatch(addBaseFilter(filter));
+                      if (filter) {
+                        dispatch(addFilters([filter]));
+                      }
                     }
                   }}
                 >
                   <span className="block truncate overflow-hidden text-ellipsis whitespace-nowrap">
-                    <span className="font-mono font-bold">
-                      {tableData.colDimId}:{' '}
-                    </span>
+                    {chartData.seriesLabel && (
+                      <span className="font-mono font-bold">
+                        {chartData.seriesLabel}:{' '}
+                      </span>
+                    )}
                     <span className="font-mono">{colValue}</span>
                   </span>
                 </th>
@@ -128,15 +154,17 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                   className="border-r border-border px-2 py-1 text-primary sticky left-0 bg-background cursor-pointer hover:bg-muted transition-colors relative z-[9] max-w-[200px]"
                   title={`Filter to ${tableData.rowDimId}: ${rowValue}`}
                   onClick={() => {
-                    if (tableData.rowDimId && dimensionsMap) {
+                    if (tableData.rowDimId) {
                       const filter = createFilter(tableData.rowDimId, rowValue);
-                      dispatch(addBaseFilter(filter));
+                      if (filter) {
+                        dispatch(addFilters([filter]));
+                      }
                     }
                   }}
                 >
                   <span className="block truncate pr-3 overflow-hidden text-ellipsis whitespace-nowrap">
                     <span className="font-mono font-bold">
-                      {tableData.rowDimId}:{' '}
+                      {chartData.xLabel}:{' '}
                     </span>
                     <span className="font-mono">{rowValue}</span>
                   </span>
@@ -144,7 +172,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                 {tableData.cols.map((colValue, colIdx) => {
                   const scoreData = getScoreAt(chartData, colValue, rowValue);
 
-                  const { score, n, ci, scoreKey } = scoreData || {};
+                  const { score, n, ci } = scoreData || {};
 
                   return (
                     <td
@@ -152,7 +180,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                       className={cn(
                         colIdx !== tableData.cols.length - 1 && 'border-r',
                         'border-border px-2 py-1 cursor-pointer transition-colors relative text-center',
-                        getScoreClass(score, n)
+                        getScoreClass(score ?? null, n ?? null)
                       )}
                       title={getFilterTitle(
                         tableData.rowDimId,
@@ -161,7 +189,7 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                         colValue
                       )}
                       onClick={() => {
-                        if (tableData.rowDimId && dimensionsMap) {
+                        if (tableData.rowDimId) {
                           if (tableData.is2d && tableData.colDimId) {
                             // 2D case: add both filters
                             const rowFilter = createFilter(
@@ -172,29 +200,39 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
                               tableData.colDimId,
                               colValue
                             );
-                            dispatch(addBaseFilters([rowFilter, colFilter]));
+                            if (rowFilter && colFilter) {
+                              dispatch(addFilters([rowFilter, colFilter]));
+                            } else if (rowFilter) {
+                              dispatch(addFilters([rowFilter]));
+                            } else if (colFilter) {
+                              dispatch(addFilters([colFilter]));
+                            }
                           } else {
                             // 1D case: add single filter
                             const filter = createFilter(
                               tableData.rowDimId,
                               rowValue
                             );
-                            dispatch(addBaseFilter(filter));
+                            if (filter) {
+                              dispatch(addFilters([filter]));
+                            }
                           }
                         }
                       }}
                     >
-                      {n !== undefined && n > 0 && (
+                      {score !== undefined && score !== null && (
                         <div className="flex flex-row gap-3 items-center justify-between text-[11px]">
-                          {scoreKey && (
+                          {chartData.yLabel && (
                             <div className="font-mono text-muted-foreground">
-                              {scoreKey}:{' '}
+                              {chartData.yLabel}:{' '}
                             </div>
                           )}
                           <div className="font-mono">
                             {getScoreDisplay(score, ci)}
                           </div>
-                          <div className="text-muted-foreground"> n={n}</div>
+                          {n !== null && n !== undefined && (
+                            <div className="text-muted-foreground"> n={n}</div>
+                          )}
                         </div>
                       )}
                     </td>

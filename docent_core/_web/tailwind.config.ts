@@ -114,7 +114,6 @@ const config: Config = {
         'purple-bg': 'hsl(var(--purple))',
         'purple-border': 'hsl(var(--purple-border))',
         'purple-text': 'hsl(var(--purple-text))',
-
       },
       fontSize: {
         '3xs': '0.5rem',

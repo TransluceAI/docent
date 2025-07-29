@@ -28,7 +28,6 @@ import { toast } from '@/hooks/use-toast';
 
 import { CollectionsTable } from '../components/CollectionsTable';
 import { UserProfile } from '../components/auth/UserProfile';
-import { apiRestClient } from '../services/apiService';
 import socketService from '../services/socketService';
 import {
   cancelCurrentSearch,
@@ -36,22 +35,20 @@ import {
   resetSearchSlice,
 } from '../store/searchSlice';
 import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
-import {
-  fetchCollections,
-  resetCollectionSlice,
-} from '../store/collectionSlice';
+import { resetCollectionSlice } from '../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetTranscriptSlice } from '../store/transcriptSlice';
 import { useRequireUserContext } from '../contexts/UserContext';
+import {
+  useCreateCollectionMutation,
+  useGetCollectionsQuery,
+} from '../api/collectionApi';
 
 export default function HomePage() {
   // User is guaranteed to be present in authenticated pages
   const { user } = useRequireUserContext();
 
   const collections = useAppSelector((state) => state.collection.collections);
-  const isLoadingCollections = useAppSelector(
-    (state) => state.collection.isLoadingCollections
-  );
   const dispatch = useAppDispatch();
 
   // New collection dialog state
@@ -59,12 +56,13 @@ export default function HomePage() {
     useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
-  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+
+  // RTK Query hooks
+  const { isLoading: isLoadingCollections } = useGetCollectionsQuery();
+  const [createCollection, { isLoading: isCreatingCollection }] =
+    useCreateCollectionMutation();
 
   useEffect(() => {
-    // Fetch data when component mounts
-    dispatch(fetchCollections());
-
     // Clear out old state
     socketService.closeSocket();
     dispatch(resetCollectionSlice());
@@ -77,14 +75,11 @@ export default function HomePage() {
   }, [dispatch]);
 
   const handleCreateCollection = async () => {
-    setIsCreatingCollection(true);
     try {
-      await apiRestClient.post('/create', {
+      await createCollection({
         name: newCollectionName,
         description: newCollectionDescription,
-      });
-
-      dispatch(fetchCollections());
+      }).unwrap();
 
       // Close dialog and reset form
       setIsNewCollectionDialogOpen(false);
@@ -102,8 +97,6 @@ export default function HomePage() {
         description: 'Failed to create new collection',
         variant: 'destructive',
       });
-    } finally {
-      setIsCreatingCollection(false);
     }
   };
 

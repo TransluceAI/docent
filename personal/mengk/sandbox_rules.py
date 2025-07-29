@@ -38,6 +38,60 @@ db, service, user, ctx, all_agent_runs = await setup()
 # %%
 
 
+from docent_core.services.rubric import RubricService
+
+rubric_id = "ef94b7b4-a094-4b84-8f46-42326fb0ca1e"
+collection_id = "f7fee42a-7fc8-485c-b508-f9f92b44b94c"
+
+
+# %%
+
+
+async with db.session() as session:
+    rs = RubricService(session, db.session, service)
+    await rs.start_or_get_centroid_assignment_job(ctx, rubric_id)
+
+
+# %%
+
+async with db.session() as session:
+    rs = RubricService(session, db.session, service)
+    async for x in rs.poll_for_centroid_assignments(rubric_id):
+        print(x)
+
+
+# %%
+
+
+async with db.session() as session:
+    rs = RubricService(session, db.session, service)
+
+    sqla_rubric = await rs.get_rubric(rubric_id)
+    if sqla_rubric is None:
+        raise ValueError("no rubric")
+
+    await rs.propose_centroids(sqla_rubric)
+
+    # await rs.assign_centroids(rubric_id)
+
+    centroids = await rs.get_centroids(rubric_id)
+    print(centroids)
+
+# %%
+
+async with db.session() as session:
+    rs = RubricService(session, db.session, service)
+
+    sqla_rubric = await rs.get_rubric(rubric_id)
+    if sqla_rubric is None:
+        raise ValueError("no rubric")
+
+    await rs.assign_centroids(sqla_rubric)
+
+
+# %%
+
+
 from docent_core._ai_tools.rubric.rubric import Rubric
 from docent_core.services.rubric import RubricService
 

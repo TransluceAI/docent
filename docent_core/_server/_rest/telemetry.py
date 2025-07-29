@@ -16,7 +16,7 @@ from docent.data_models.chat import ChatMessage, parse_chat_message
 from docent.data_models.chat.tool import ToolCall
 from docent_core._db_service.schemas.auth_models import User
 from docent_core._db_service.service import MonoService
-from docent_core._server._broker.redis_client import REDIS
+from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._server._dependencies.database import get_mono_svc
 from docent_core._server._dependencies.user import get_authenticated_user
 
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 # logger.setLevel(logging.DEBUG)
 
-
+REDIS = get_redis_client()
 # Redis key patterns for collection accumulation
 _COLLECTION_SPANS_KEY_PREFIX = "collection_spans:"
 _COLLECTION_TIMEOUT_KEY_PREFIX = "collection_timeout:"
@@ -66,13 +66,13 @@ async def _get_accumulated_spans(collection_id: str) -> List[Dict[str, Any]]:
 async def _remove_collection_from_accumulation(collection_id: str) -> None:
     """Remove a collection from accumulation in Redis."""
     collection_key = f"{_COLLECTION_SPANS_KEY_PREFIX}{collection_id}"
-    await REDIS.delete(collection_key)
+    await REDIS.delete(collection_key)  # type: ignore
 
 
 async def _cancel_collection_timeout(collection_id: str) -> None:
     """Cancel and remove a collection completion task from Redis."""
     timeout_key = f"{_COLLECTION_TIMEOUT_KEY_PREFIX}{collection_id}"
-    await REDIS.delete(timeout_key)
+    await REDIS.delete(timeout_key)  # type: ignore
 
 
 def schedule_collection_timeout(collection_id: str, user: User) -> None:

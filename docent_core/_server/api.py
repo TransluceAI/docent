@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
 import anyio
+import posthog
 import sentry_sdk
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +11,10 @@ from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
-from docent_core._env_util import ENV
+from docent_core._env_util import ENV, get_deployment_environment
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
-from docent_core._server._broker.router import broker_router
+
+# from docent_core._server._broker.router import broker_router
 from docent_core._server._rest._all_routers import REST_ROUTERS
 
 logger = get_logger(__name__)
@@ -149,12 +151,16 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down...")
         tg.cancel_scope.cancel()
 
+    # Make sure posthog is flushed
+    with anyio.CancelScope(shield=True):
+        posthog.flush()
+
 
 asgi_app = FastAPI()  # type: ignore
 
 # Add middlewares in order (they are processed in reverse order when handling responses)
 # 1. Request logging middleware first
-asgi_app.add_middleware(RequestLoggingMiddleware)
+# asgi_app.add_middleware(RequestLoggingMiddleware)
 # 2. Session authentication middleware second (after logging, before CORS)
 asgi_app.add_middleware(SessionAuthMiddleware)
 
@@ -163,18 +169,28 @@ cors_config = get_cors_configuration()
 asgi_app.add_middleware(CORSMiddleware, **cors_config)
 
 # Include broker router
-asgi_app.include_router(broker_router, prefix="/broker")
+# asgi_app.include_router(broker_router, prefix="/broker")
 # Include all REST routers (different ones for different features)
 for router in REST_ROUTERS:
     asgi_app.include_router(router["router"], prefix=router["prefix"])
 
-# If running in production, add Sentry middleware
-if ENV.get("ENVIRONMENT") == "prod" and (dsn := ENV.get("SENTRY_DSN")) is not None:
-    sentry_sdk.init(dsn=dsn, send_default_pii=True)  # type: ignore
-    asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
-    logger.info("Initialized Sentry for production")
+# If running in production or staging, add Sentry middleware
+cur_env = get_deployment_environment()
+if cur_env == "prod" or cur_env == "staging":
+    dsn = ENV.get("SENTRY_DSN")
+    if not dsn:
+        raise ValueError(f"SENTRY_DSN is required for {cur_env}, it isn't set")
+    else:
+        sentry_sdk.init(dsn=dsn, environment=cur_env, send_default_pii=True)  # type: ignore
+        asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
+        logger.info(f"Initialized Sentry for {cur_env}")
 
 
 @asgi_app.get("/")
 async def root():
     return "clarity has been achieved"
+
+
+@asgi_app.get("/test_error")
+async def test_error():
+    raise Exception("Test error")

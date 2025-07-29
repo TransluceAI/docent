@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import anyio
-from sqlalchemy import URL, text
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -16,6 +16,47 @@ from docent._log_util import get_logger
 from docent_core._env_util import ENV
 
 logger = get_logger(__name__)
+
+
+def get_pg_params():
+    pg_host, pg_port, pg_user, pg_password, pg_database = (
+        ENV.get("DOCENT_PG_HOST"),
+        ENV.get("DOCENT_PG_PORT"),
+        ENV.get("DOCENT_PG_USER"),
+        ENV.get("DOCENT_PG_PASSWORD"),
+        ENV.get("DOCENT_PG_DATABASE"),
+    )
+
+    # Check each database connection parameter individually
+    if not pg_host:
+        raise ValueError("Database host missing. Please ensure DOCENT_PG_HOST is set.")
+    if not pg_port:
+        raise ValueError("Database port missing. Please ensure DOCENT_PG_PORT is set.")
+    if not pg_user:
+        raise ValueError("Database user missing. Please ensure DOCENT_PG_USER is set.")
+    if not pg_password:
+        raise ValueError("Database password missing. Please ensure DOCENT_PG_PASSWORD is set.")
+    if not pg_database:
+        pg_database = "docent"
+        logger.info("No database name provided; using `docent` as default")
+
+    return pg_host, pg_port, pg_user, pg_password, pg_database
+
+
+def get_sync_engine():
+    """Only used for database migrations, since alembic doesn't have great async support"""
+    pg_host, pg_port, pg_user, pg_password, pg_database = get_pg_params()
+
+    return create_engine(
+        URL.create(
+            drivername="postgresql",
+            username=pg_user,
+            password=pg_password,
+            host=pg_host,
+            port=int(pg_port),
+            database=pg_database,
+        )
+    )
 
 
 class DocentDB:
@@ -45,28 +86,7 @@ class DocentDB:
             if cls._instance is not None:
                 return cls._instance
 
-            pg_host, pg_port, pg_user, pg_password, pg_database = (
-                ENV.get("DOCENT_PG_HOST"),
-                ENV.get("DOCENT_PG_PORT"),
-                ENV.get("DOCENT_PG_USER"),
-                ENV.get("DOCENT_PG_PASSWORD"),
-                ENV.get("DOCENT_PG_DATABASE"),
-            )
-
-            # Check each database connection parameter individually
-            if not pg_host:
-                raise ValueError("Database host missing. Please ensure DOCENT_PG_HOST is set.")
-            if not pg_port:
-                raise ValueError("Database port missing. Please ensure DOCENT_PG_PORT is set.")
-            if not pg_user:
-                raise ValueError("Database user missing. Please ensure DOCENT_PG_USER is set.")
-            if not pg_password:
-                raise ValueError(
-                    "Database password missing. Please ensure DOCENT_PG_PASSWORD is set."
-                )
-            if not pg_database:
-                pg_database = "docent"
-                logger.info("No database name provided; using `docent` as default")
+            pg_host, pg_port, pg_user, pg_password, pg_database = get_pg_params()
 
             # Check that the target database is not 'postgres'
             if (target_database := pg_database) == "postgres":

@@ -5,7 +5,9 @@ import { X, Maximize2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { clearDashboardAgentRunView } from '../store/transcriptSlice';
 import { navToAgentRun } from '../../lib/nav';
-import AgentRunViewer, { AgentRunViewerHandle } from '../dashboard/[collection_id]/agent_run/components/AgentRunViewer';
+import AgentRunViewer, {
+  AgentRunViewerHandle,
+} from '../dashboard/[collection_id]/agent_run/components/AgentRunViewer';
 
 export default function AgentRunPreview() {
   const dispatch = useAppDispatch();

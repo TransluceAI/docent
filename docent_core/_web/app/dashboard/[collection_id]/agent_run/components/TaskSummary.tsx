@@ -4,9 +4,7 @@ import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import {
-  getSolutionSummary,
-} from '@/app/store/transcriptSlice';
+import { getSolutionSummary } from '@/app/store/transcriptSlice';
 
 const TaskSummary: React.FC = () => {
   const dispatch = useAppDispatch();

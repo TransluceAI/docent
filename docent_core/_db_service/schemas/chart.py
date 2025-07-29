@@ -1,0 +1,52 @@
+from datetime import UTC, datetime
+
+from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from docent_core._db_service.schemas.base import SQLABase
+from docent_core._db_service.schemas.tables import (
+    TABLE_USER,
+    TABLE_VIEW,
+    SQLAUser,
+    SQLAView,
+)
+
+TABLE_CHART = "charts"
+
+
+class SQLAChart(SQLABase):
+    __tablename__ = TABLE_CHART
+
+    id = mapped_column(String(36), primary_key=True)
+    name = mapped_column(Text, nullable=False)
+
+    # Foreign keys
+    view_id = mapped_column(String(36), ForeignKey(f"{TABLE_VIEW}.id"), nullable=False, index=True)
+    created_by = mapped_column(
+        String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True
+    )
+
+    # Chart configuration
+    series_key = mapped_column(Text, nullable=True)
+    x_key = mapped_column(Text, nullable=True)
+    y_key = mapped_column(Text, nullable=True)
+
+    # If set, chart only shows results/judgements associated with this rubric
+    rubric_filter = mapped_column(Text, nullable=True)
+
+    # Chart visualization settings
+    chart_type = mapped_column(Text, nullable=False, default="bar")  # 'bar', 'line', 'table'
+
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    updated_at = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
+        nullable=False,
+    )
+
+    # Relationships
+    creator: Mapped["SQLAUser"] = relationship("SQLAUser", lazy="select")
+    view: Mapped["SQLAView"] = relationship("SQLAView", lazy="select")

@@ -72,11 +72,13 @@ from docent_core._server._auth.session import (
     invalidate_user_session,
 )
 from docent_core._server._broker.redis_client import (
-    REDIS,
     enqueue_search_job,
-    publish_to_broker,
+    get_redis_client,
 )
-from docent_core._server._dependencies.database import get_mono_svc, require_collection_exists
+from docent_core._server._dependencies.database import (
+    get_mono_svc,
+    require_collection_exists,
+)
 from docent_core._server._dependencies.permissions import (
     require_collection_permission,
     require_view_permission,
@@ -86,13 +88,7 @@ from docent_core._server._dependencies.user import (
     get_default_view_ctx,
     get_user_anonymous_ok,
 )
-from docent_core._server._rest.send_state import (
-    publish_collections,
-    publish_homepage_state,
-    publish_searches,
-)
 from docent_core._server.util import sse_event_stream
-from docent_core.services.charts import ChartsService
 
 logger = get_logger(__name__)
 
@@ -328,8 +324,6 @@ async def create_collection(
         name=request.name,
         description=request.description,
     )
-    # Publish updated collections list to all clients
-    await publish_collections(mono_svc)
 
     # Track analytics
     await track_endpoint_with_user(mono_svc, EndpointType.CREATE_FG, user, collection_id)
@@ -353,11 +347,6 @@ async def update_collection(
         collection_id, name=request.name, description=request.description
     )
 
-    # Publish updated collections list to all clients
-    await publish_collections(mono_svc)
-
-    return {"collection_id": collection_id}
-
 
 @user_router.delete("/{collection_id}/collection")
 async def delete_collection(
@@ -366,17 +355,6 @@ async def delete_collection(
     _: None = Depends(require_collection_permission(Permission.ADMIN)),
 ):
     await mono_svc.delete_collection(collection_id)
-    # Notify about the specific deleted collection
-    await publish_to_broker(
-        None,  # Broadcast to all connections
-        {
-            "action": "collection_deleted",
-            "payload": {"collection_id": collection_id},
-        },
-    )
-    # Also publish the updated list of collections
-    await publish_collections(mono_svc)
-    return {"status": "success", "collection_id": collection_id}
 
 
 ##############
@@ -552,10 +530,6 @@ async def import_runs_from_file(
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
         await mono_svc.add_agent_runs(ctx, agent_runs)
 
-        # Publish state of ALL views
-        for view_ctx in await mono_svc.get_all_view_ctxs(collection_id):
-            await publish_homepage_state(mono_svc, view_ctx)
-
     # Track analytics
     await track_endpoint_with_user(mono_svc, EndpointType.POST_AGENT_RUNS, ctx.user, collection_id)
 
@@ -610,6 +584,15 @@ async def get_agent_run(
     return await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause)
 
 
+@user_router.get("/{collection_id}/agent_run_ids")
+async def get_agent_run_ids(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    return await mono_svc.get_agent_run_ids(ctx)
+
+
 class AgentRunMetadataRequest(BaseModel):
     agent_run_ids: list[str]
 
@@ -639,10 +622,6 @@ async def post_agent_runs(
 ):
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
         await mono_svc.add_agent_runs(ctx, request.agent_runs)
-
-        # Publish state of ALL views
-        for ctx in await mono_svc.get_all_view_ctxs(collection_id):
-            await publish_homepage_state(mono_svc, ctx)
 
     # Track analytics - we need to get the user from the context
     await track_endpoint_with_user(mono_svc, EndpointType.POST_AGENT_RUNS, ctx.user, collection_id)
@@ -674,145 +653,9 @@ class SetIODimsRequest(BaseModel):
     outer_bin_key: str | None = None
 
 
-@user_router.post("/{collection_id}/set_io_bin_keys")
-async def set_io_bin_keys(
-    collection_id: str,
-    request: SetIODimsRequest,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        await mono_svc.set_io_bin_keys(ctx, request.inner_bin_key, request.outer_bin_key)
-        await publish_homepage_state(mono_svc, ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.SET_IO_BIN_KEYS, ctx.user, collection_id)
-
-
 class SetIODimWithMetadataKeyRequest(BaseModel):
     metadata_key: str
     type: Literal["inner", "outer"]
-
-
-@user_router.post("/{collection_id}/io_bin_key_with_metadata_key")
-async def set_io_bin_key_with_metadata_key_endpoint(
-    collection_id: str,
-    request: SetIODimWithMetadataKeyRequest,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        await mono_svc.set_io_bin_key_with_metadata_key(ctx, request.metadata_key, request.type)
-        await publish_homepage_state(mono_svc, ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(
-        mono_svc, EndpointType.SET_IO_BIN_KEY_WITH_METADATA_KEY, ctx.user, collection_id
-    )
-
-
-class CreateChartRequest(BaseModel):
-    name: str | None = None
-    series_key: str | None = None
-    x_key: str | None = None
-    y_key: str | None = None
-    sql_query: str | None = None
-    chart_type: str = "bar"
-
-
-@user_router.post("/{collection_id}/charts/create")
-async def create_chart(
-    collection_id: str,
-    request: CreateChartRequest,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        async with mono_svc.db.session() as session:
-            chart_service = ChartsService(session, mono_svc)
-            chart_id = await chart_service.create_chart(
-                ctx=ctx,
-                name=request.name,
-                series_key=request.series_key,
-                x_key=request.x_key,
-                y_key=request.y_key,
-                sql_query=request.sql_query,
-                chart_type=request.chart_type,
-            )
-
-    await publish_homepage_state(mono_svc, ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.CREATE_CHART, ctx.user, collection_id)
-
-    return {"chart_id": chart_id}
-
-
-class UpdateChartRequest(BaseModel):
-    chart_id: str
-    name: str | None = None
-    series_key: str | None = None
-    x_key: str | None = None
-    y_key: str | None = None
-    sql_query: str | None = None
-    chart_type: str = "bar"
-
-
-@user_router.post("/{collection_id}/charts")
-async def update_chart(
-    collection_id: str,
-    request: UpdateChartRequest,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    # Only include fields that were explicitly set in the request
-    update_fields = {
-        field: getattr(request, field)
-        for field in request.model_fields_set
-        if field not in {"chart_id"}  # Exclude fields with special handling
-    }
-
-    update_fields = request.model_dump()
-    del update_fields["chart_id"]
-
-    async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session, mono_svc)
-        async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-            await chart_service.update_chart(
-                ctx=ctx, chart_id=request.chart_id, updates=update_fields
-            )
-
-    await publish_homepage_state(mono_svc, ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.UPDATE_CHART, ctx.user, collection_id)
-
-    return {"status": "ok"}
-
-
-@user_router.delete("/{collection_id}/charts/{chart_id}")
-async def delete_chart(
-    collection_id: str,
-    chart_id: str,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session, mono_svc)
-        async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-            await chart_service.delete_chart(ctx, chart_id)
-
-    await publish_homepage_state(mono_svc, ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(mono_svc, EndpointType.DELETE_CHART, ctx.user, collection_id)
-
-    return {"status": "ok"}
 
 
 class PostBaseFilterRequest(BaseModel):
@@ -833,13 +676,18 @@ async def post_base_filter(
         else:
             new_ctx = await mono_svc.set_view_base_filter(ctx, request.filter)
 
-        # Publish the updated state
-        await publish_homepage_state(mono_svc, new_ctx)
-
     # Track analytics
     await track_endpoint_with_user(mono_svc, EndpointType.POST_BASE_FILTER, ctx.user, collection_id)
 
-    return {"status": "ok"}
+    return new_ctx.base_filter
+
+
+@user_router.get("/{collection_id}/base_filter")
+async def get_base_filter(
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.WRITE)),
+):
+    return ctx.base_filter
 
 
 @user_router.post("/{collection_id}/clone_own_view")
@@ -863,28 +711,27 @@ class ApplyExistingFilterRequest(BaseModel):
     view_id: str
 
 
-@user_router.post("/{collection_id}/apply_existing_view")
-async def apply_existing_view(
-    request: ApplyExistingFilterRequest,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    existing_view = await mono_svc.get_view(request.view_id)
-    ctx = await mono_svc.set_view_base_filter(ctx, existing_view.base_filter)
-    await mono_svc.set_io_bin_keys(ctx, existing_view.inner_bin_key, existing_view.outer_bin_key)
-    await publish_homepage_state(mono_svc, ctx)
+# @user_router.post("/{collection_id}/apply_existing_view")
+# async def apply_existing_view(
+#     request: ApplyExistingFilterRequest,
+#     mono_svc: MonoService = Depends(get_mono_svc),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.READ)),
+# ):
+#     existing_view = await mono_svc.get_view(request.view_id)
+#     ctx = await mono_svc.set_view_base_filter(ctx, existing_view.base_filter)
+#     await publish_homepage_state(mono_svc, ctx)
 
-    # Track analytics
-    await track_endpoint_with_user(
-        mono_svc, EndpointType.APPLY_EXISTING_VIEW, ctx.user, ctx.collection_id
-    )
+#     # Track analytics
+#     await track_endpoint_with_user(
+#         mono_svc, EndpointType.APPLY_EXISTING_VIEW, ctx.user, ctx.collection_id
+#     )
 
-    # Get the existing search query; tells frontend whether to load clusters
-    existing_search_query = await mono_svc.get_search_query_by_query(
-        ctx.collection_id, request.search_query
-    )
-    return existing_search_query is not None
+#     # Get the existing search query; tells frontend whether to load clusters
+#     existing_search_query = await mono_svc.get_search_query_by_query(
+#         ctx.collection_id, request.search_query
+#     )
+#     return existing_search_query is not None
 
 
 @user_router.get("/{collection_id}/get_existing_search_results")
@@ -894,12 +741,17 @@ async def get_existing_search_results(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    results = await mono_svc.get_search_results(ctx, search_query)
+    search_query_obj = await mono_svc.get_search_query_by_query(ctx.collection_id, search_query)
 
-    # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
+    if search_query_obj is None:
+        raise HTTPException(status_code=404, detail="Search query not found")
+
+    results = await mono_svc.get_search_results(ctx, search_query_obj.id)
+
+    # Construct a map from agent_run_id -> search query id -> list of SearchResultWithCitations
     data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
     for result in results:
-        data_dict.setdefault(result.agent_run_id, {}).setdefault(result.search_query, []).append(
+        data_dict.setdefault(result.agent_run_id, {}).setdefault(search_query, []).append(
             SearchResultWithCitations.from_search_result(result)
         )
 
@@ -966,13 +818,13 @@ async def get_existing_search_results(
 #     }
 
 
-@user_router.get("/{collection_id}/state")
-async def get_state(
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-    await publish_homepage_state(mono_svc, ctx)
+# @user_router.get("/{collection_id}/state")
+# async def get_state(
+#     mono_svc: MonoService = Depends(get_mono_svc),
+#     ctx: ViewContext = Depends(get_default_view_ctx),
+#     _: None = Depends(require_view_permission(Permission.READ)),
+# ):
+#     await publish_homepage_state(mono_svc, ctx)
 
 
 @user_router.get("/{collection_id}/searches")
@@ -994,9 +846,9 @@ async def delete_search(
 ):
     await mono_svc.delete_search_query(collection_id, search_query_id)
 
-    # Publish updated searches state to all views in this collection
-    for ctx in await mono_svc.get_all_view_ctxs(collection_id):
-        await publish_searches(mono_svc, ctx)
+    # # Publish updated searches state to all views in this collection
+    # for ctx in await mono_svc.get_all_view_ctxs(collection_id):
+    #     await publish_searches(mono_svc, ctx)
 
     return {"status": "success", "search_query_id": search_query_id}
 
@@ -1371,11 +1223,11 @@ class ComputeSearchRequest(BaseModel):
 
 
 class GetSearchResultsRequest(BaseModel):
-    search_query: str
+    search_query_id: str
 
 
 class ListSearchClustersRequest(BaseModel):
-    search_query: str
+    search_query_id: str
 
 
 class GetClusterMatchesRequest(BaseModel):
@@ -1448,6 +1300,8 @@ async def listen_compute_search(
         await send_stream.send(init_data)
         nonlocal num_done, num_errors, num_results
 
+        REDIS = await get_redis_client()
+
         try:
             last_id = 0
             while True:
@@ -1474,8 +1328,12 @@ async def listen_compute_search(
                     # Construct a map from agent_run_id -> search query -> list of SearchResultWithCitations
                     data_dict: dict[str, dict[str, list[SearchResultWithCitations]]] = {}
                     for result in results:
+                        # TODO(ryanbloom): this is wasteful
+                        result_search_query = await mono_svc.get_search_query(
+                            result.search_query_id
+                        )
                         data_dict.setdefault(result.agent_run_id, {}).setdefault(
-                            result.search_query, []
+                            result_search_query.search_query, []
                         ).append(SearchResultWithCitations.from_search_result(result))
 
                     # Each agent_run is only included in one callback
@@ -1509,6 +1367,7 @@ async def listen_compute_search(
 
 @user_router.post("/{job_id}/cancel_compute_search")
 async def cancel_compute_search(job_id: str):
+    REDIS = await get_redis_client()
     q = f"commands_{job_id}"
     await REDIS.rpush(q, "cancel")  # type: ignore
 
@@ -1681,7 +1540,7 @@ async def get_search_results(
     mono_svc: MonoService = Depends(get_mono_svc),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
-    results = await mono_svc.get_search_results(ctx, request.search_query)
+    results = await mono_svc.get_search_results(ctx, request.search_query_id)
     return [result.model_dump() for result in results]
 
 
@@ -1693,7 +1552,7 @@ async def list_search_clusters(
     mono_svc: MonoService = Depends(get_mono_svc),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
-    return await mono_svc.get_existing_search_clusters(ctx, request.search_query)
+    return await mono_svc.get_existing_search_clusters(ctx, request.search_query_id)
 
 
 @user_router.post("/{collection_id}/get_cluster_matches")
@@ -1722,6 +1581,9 @@ async def start_cluster_search_results(
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """Start clustering search results directly."""
+    search_query = await mono_svc.get_search_query_by_query(collection_id, request.search_query)
+    if search_query is None:
+        raise HTTPException(status_code=404, detail="Search query not found")
 
     # If not read_only, check if the user has write permission
     if not request.read_only:
@@ -1738,7 +1600,7 @@ async def start_cluster_search_results(
         "cluster_search_results",
         {
             "collection_id": collection_id,
-            "search_query": request.search_query,
+            "search_query_id": search_query.id,
             "feedback": request.feedback,
             "read_only": request.read_only,
         },
@@ -1769,9 +1631,9 @@ async def listen_cluster_search_results(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
     job = job.job_json
-    collection_id, search_query, feedback, read_only = (
+    collection_id, search_query_id, feedback, read_only = (
         job["collection_id"],
-        job["search_query"],
+        job["search_query_id"],
         job.get("feedback"),
         job["read_only"],
     )
@@ -1782,7 +1644,7 @@ async def listen_cluster_search_results(
 
     async def execute():
         async with mono_svc.advisory_lock(
-            collection_id + "__cluster_search__" + search_query, action_id="mutation"
+            collection_id + "__cluster_search__" + search_query_id, action_id="mutation"
         ):
             async with anyio.create_task_group() as tg:
                 done = False
@@ -1791,16 +1653,16 @@ async def listen_cluster_search_results(
                 if feedback is not None and feedback != "":
                     # record existing clusters for re-clustering
                     existing_clusters = await mono_svc.get_existing_search_clusters(
-                        ctx, search_query
+                        ctx, search_query_id
                     )
                     # delete existing clusters, so we don't send the old ones
-                    await mono_svc.clear_search_result_clusters(ctx, search_query)
+                    await mono_svc.clear_search_result_clusters(ctx, search_query_id)
 
                 async def _f():
                     nonlocal done
 
                     await mono_svc.cluster_search_results(
-                        ctx, search_query, feedback, existing_clusters
+                        ctx, search_query_id, feedback, existing_clusters
                     )
                     # Wait for the last assignments to be sent
                     await anyio.sleep(1)
@@ -1829,7 +1691,7 @@ async def listen_cluster_search_results(
                             )
                             .where(
                                 SQLASearchCluster.collection_id == ctx.collection_id,
-                                SQLASearchCluster.search_query == search_query,
+                                SQLASearchCluster.search_query_id == search_query_id,
                                 SQLASearchResultCluster.id.notin_(
                                     already_sent_search_result_assignments
                                 ),

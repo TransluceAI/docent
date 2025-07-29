@@ -4,6 +4,9 @@ from pathlib import Path
 
 import typer
 
+from docent._log_util import get_logger
+
+logger = get_logger(__name__)
 app = typer.Typer(add_completion=False)
 
 
@@ -15,6 +18,9 @@ def server(
     reload: bool = typer.Option(False, help="Enable auto-reload on code changes"),
     timeout_graceful_shutdown: int | None = typer.Option(
         None, help="Timeout in seconds for graceful shutdown when reloading"
+    ),
+    start_docent_worker: bool = typer.Option(
+        True, help="Start a worker process along with the server"
     ),
 ):
     # `cd` to the server directory; this is where we run uvicorn from (helps for autoreload)
@@ -34,15 +40,19 @@ def server(
     if timeout_graceful_shutdown is not None:
         cmd.extend(["--timeout-graceful-shutdown", str(timeout_graceful_shutdown)])
 
-    with subprocess.Popen(["docent_core", "worker"]):
+    if start_docent_worker:
+        logger.info("Starting Docent worker process along with server")
+        with subprocess.Popen(["docent_core", "worker"]):
+            subprocess.run(cmd, check=True)
+    else:
         subprocess.run(cmd, check=True)
 
 
 @app.command(help="Run a background job runner worker")
 def worker():
-    from docent_core._worker import worker
+    from docent_core._worker import worker as docent_worker
 
-    worker.run()
+    docent_worker.run()
 
 
 @app.command(help="Run the website")

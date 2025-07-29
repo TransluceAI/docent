@@ -7,13 +7,8 @@ import TableChart from './TableChart';
 import ChartContainer from './ChartContainer';
 import { ChartSpec } from '../types/collectionTypes';
 import { useAppSelector } from '../store/hooks';
-import { TaskStats } from '../types/experimentViewerTypes';
-import {
-  ChartData,
-  ScoreData,
-  getScoreFromStats,
-  getScoreAt,
-} from '../utils/chartDataUtils';
+import { ChartData, ScoreData, getScoreAt } from '../utils/chartDataUtils';
+import { useGetChartDataQuery } from '../api/chartApi';
 
 type GraphValue = string | number;
 
@@ -22,29 +17,40 @@ export interface GraphDatum {
 }
 
 export default function Chart({ chart }: { chart: ChartSpec }) {
-  const allBinStats = useAppSelector(
-    (state) => state.experimentViewer.binStats
+  const collectionId = useAppSelector((state) => state.collection.collectionId);
+
+  const {
+    data: chartDataResponse,
+    isLoading,
+    error,
+  } = useGetChartDataQuery(
+    {
+      collectionId: collectionId!,
+      chartId: chart.id,
+    },
+    {
+      skip: !collectionId,
+    }
   );
-  let binStats: Record<string, TaskStats> | undefined;
-  if (chart.seriesKey) {
-    binStats = allBinStats?.[`${chart.xKey}|${chart.seriesKey}`];
-  } else {
-    binStats = allBinStats?.[`${chart.xKey}`];
-  }
+
+  const relevantBinStats = chartDataResponse?.result?.binStats;
 
   const maxValues = 100;
 
   // Parse data once for all chart types
   const chartData: ChartData = useMemo(() => {
-    if (!binStats) {
+    if (!relevantBinStats) {
       return {
         data: {},
         xValues: [],
         seriesValues: [],
-        xKey: chart.xKey,
-        seriesKey: chart.seriesKey ?? 'Score',
-        yKey: chart.yKey,
-        is2d: Boolean(chart.seriesKey),
+        xKey: chart.x_key || '',
+        xLabel: chart.x_label || chart.x_key || '',
+        seriesKey: chart.series_key ?? 'Score',
+        seriesLabel: chart.series_label || chart.series_key || '',
+        yKey: chart.y_key || '',
+        yLabel: chart.y_label || chart.y_key || '',
+        is2d: Boolean(chart.series_key),
       };
     }
 
@@ -54,7 +60,7 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
     // Indexed like data[seriesValue][xValue]
     const parsedData: Record<string, Record<string, ScoreData>> = {};
 
-    Object.entries(binStats).forEach(([key, stats]) => {
+    Object.entries(relevantBinStats).forEach(([key, stats]) => {
       // Dimensions and values for this bin
       const dimensions: Record<string, string> = {};
 
@@ -67,18 +73,22 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
       }
 
       // If the chart doesn't have a seriesKey, there will be one series with a name equal to the yKey
-      const seriesValue = chart.seriesKey
-        ? dimensions[chart.seriesKey]
-        : chart.yKey;
+      const seriesValue = chart.series_key
+        ? dimensions[chart.series_key]
+        : chart.y_label;
 
-      const xValue = dimensions[chart.xKey];
+      const xValue = chart.x_key ? dimensions[chart.x_key] : undefined;
       if (!xValue || !seriesValue) return;
 
       xValueSet.add(xValue);
       seriesValueSet.add(seriesValue);
 
       if (!parsedData[seriesValue]) parsedData[seriesValue] = {};
-      parsedData[seriesValue][xValue] = getScoreFromStats(stats, chart.yKey);
+      parsedData[seriesValue][xValue] = {
+        score: stats.mean,
+        n: stats.n,
+        ci: stats.ci,
+      };
     });
 
     const xValues = Array.from(xValueSet).slice(0, maxValues);
@@ -88,18 +98,30 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
       data: parsedData,
       xValues,
       seriesValues,
-      xKey: chart.xKey,
-      seriesKey: chart.seriesKey ?? 'Score',
-      yKey: chart.yKey,
-      is2d: Boolean(chart.seriesKey),
+      xKey: chart.x_key || '',
+      xLabel: chart.x_label || chart.x_key || '',
+      seriesKey: chart.series_key ?? 'Score',
+      seriesLabel: chart.series_label || chart.series_key || '',
+      yKey: chart.y_key || '',
+      yLabel: chart.y_label || chart.y_key || '',
+      is2d: Boolean(chart.series_key),
     };
-  }, [binStats, chart.xKey, chart.yKey, chart.seriesKey]);
+  }, [relevantBinStats, chart.x_key, chart.y_key, chart.series_key]);
 
-  if (chart.chartType === 'bar') {
+  // Handle loading and error states after all hooks
+  if (isLoading) {
+    return <div>Loading chart data...</div>;
+  }
+
+  if (error) {
+    return <div>Error loading chart data</div>;
+  }
+
+  if (chart.chart_type === 'bar') {
     return <BarChart chartData={chartData} />;
-  } else if (chart.chartType === 'line') {
+  } else if (chart.chart_type === 'line') {
     return <LineChart chartData={chartData} />;
-  } else if (chart.chartType === 'table') {
+  } else if (chart.chart_type === 'table') {
     return <TableChart chartData={chartData} />;
   }
   return null;
@@ -135,24 +157,34 @@ function BarChart({ chartData }: { chartData: ChartData }) {
         labelSkipWidth={12}
         labelSkipHeight={12}
         theme={chartTheme}
-        legends={[
-          {
-            dataFrom: 'keys',
-            anchor: 'bottom-right',
-            direction: 'column',
-            translateX: 120,
-            itemsSpacing: 3,
-            itemWidth: 100,
-            itemHeight: 16,
-          },
-        ]}
+        legends={
+          chartData.seriesValues.length > 1
+            ? [
+                {
+                  dataFrom: 'keys',
+                  anchor: 'bottom-right',
+                  direction: 'column',
+                  translateX: 120,
+                  itemsSpacing: 3,
+                  itemWidth: 100,
+                  itemHeight: 16,
+                },
+              ]
+            : []
+        }
         axisBottom={{
-          legend: chartData.xKey,
+          tickRotation: -90,
+          legend: chartData.xLabel,
           legendOffset: 32,
-          tickValues: getTickValues(chartData.xValues)
+          tickValues: getTickValues(chartData.xValues),
         }}
-        axisLeft={{ legend: chartData.yKey, legendOffset: -40 }}
-        margin={{ top: 20, right: 130, bottom: 50, left: 60 }}
+        axisLeft={{ legend: chartData.yLabel, legendOffset: -40 }}
+        margin={{
+          top: 20,
+          right: chartData.seriesValues.length > 1 ? 130 : 20,
+          bottom: 50,
+          left: 60,
+        }}
         groupMode="grouped"
       />
     </ChartContainer>
@@ -161,20 +193,18 @@ function BarChart({ chartData }: { chartData: ChartData }) {
 
 type NivoLineSeries = {
   id: string;
-  data: { x: any; y: number }[];
+  data: { x: any; y: number | null }[];
 };
 
 function LineChart({ chartData }: { chartData: ChartData }) {
   const data: NivoLineSeries[] = useMemo(() => {
-    const seriesMap: Record<string, { x: any; y: number }[]> = {};
+    const seriesMap: Record<string, { x: any; y: number | null }[]> = {};
 
     chartData.seriesValues.forEach((seriesName) => {
       chartData.xValues.forEach((xValue) => {
         const scoreData = getScoreAt(chartData, seriesName, xValue);
-        if (scoreData) {
-          if (!seriesMap[seriesName]) seriesMap[seriesName] = [];
-          seriesMap[seriesName].push({ x: xValue, y: scoreData.score });
-        }
+        if (!seriesMap[seriesName]) seriesMap[seriesName] = [];
+        seriesMap[seriesName].push({ x: xValue, y: scoreData?.score ?? null });
       });
     });
 
@@ -190,7 +220,12 @@ function LineChart({ chartData }: { chartData: ChartData }) {
       <ResponsiveLine
         animate={false}
         data={data}
-        margin={{ top: 20, right: 110, bottom: 50, left: 60 }}
+        margin={{
+          top: 20,
+          right: chartData.seriesValues.length > 1 ? 110 : 20,
+          bottom: 50,
+          left: 60,
+        }}
         theme={chartTheme}
         yScale={{
           type: 'linear',
@@ -200,11 +235,12 @@ function LineChart({ chartData }: { chartData: ChartData }) {
           reverse: false,
         }}
         axisBottom={{
-          legend: chartData.xKey,
+          tickRotation: -90,
+          legend: chartData.xLabel,
           legendOffset: 36,
-          tickValues: getTickValues(chartData.xValues)
+          tickValues: getTickValues(chartData.xValues),
         }}
-        axisLeft={{ legend: chartData.yKey, legendOffset: -40 }}
+        axisLeft={{ legend: chartData.yLabel, legendOffset: -40 }}
         pointSize={10}
         pointColor={{ theme: 'background' }}
         pointBorderWidth={2}
@@ -212,16 +248,20 @@ function LineChart({ chartData }: { chartData: ChartData }) {
         pointLabelYOffset={-12}
         enableTouchCrosshair={true}
         useMesh={true}
-        legends={[
-          {
-            anchor: 'bottom-right',
-            direction: 'column',
-            translateX: 100,
-            itemWidth: 80,
-            itemHeight: 22,
-            symbolShape: 'circle',
-          },
-        ]}
+        legends={
+          chartData.seriesValues.length > 1
+            ? [
+                {
+                  anchor: 'bottom-right',
+                  direction: 'column',
+                  translateX: 100,
+                  itemWidth: 80,
+                  itemHeight: 22,
+                  symbolShape: 'circle',
+                },
+              ]
+            : []
+        }
       />
     </ChartContainer>
   );
@@ -259,4 +299,4 @@ const chartTheme = {
       borderRadius: '6px',
     },
   },
-}
+};

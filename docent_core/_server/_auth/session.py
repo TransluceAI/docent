@@ -9,25 +9,20 @@ from typing import Literal
 from fastapi import Response
 
 from docent_core._db_service.service import MonoService
-from docent_core._env_util import ENV
+from docent_core._env_util import get_deployment_environment
 
-ENVIRONMENT = ENV.get("ENVIRONMENT")
-if ENVIRONMENT is None or ENVIRONMENT == "":
-    raise ValueError(
-        "Must set ENVIRONMENT environment variable. Look at .env.template for an example."
-    )
-
+ENVIRONMENT = get_deployment_environment()
 if ENVIRONMENT == "local":
     cookie_secure = False
     cookie_domain = None
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
-elif ENVIRONMENT == "dev":
+elif ENVIRONMENT == "staging":
     cookie_secure = True
-    cookie_domain = "dev.transluce.org"
+    cookie_domain = "docent-staging.transluce.org"
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
 elif ENVIRONMENT == "prod":
     cookie_secure = True
-    cookie_domain = "transluce.org"
+    cookie_domain = "docent.transluce.org"
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
 else:
     raise ValueError(f"Invalid environment: {ENVIRONMENT}")

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export function useDragAndDrop(onFileDropped: (file: File) => void) {
-  const [dragState, setDragState] = useState<'none' | 'over-page' | 'over-zone'>('none');
+  const [dragState, setDragState] = useState<
+    'none' | 'over-page' | 'over-zone'
+  >('none');
   const dragCounterRef = useRef(0);
 
   useEffect(() => {
@@ -48,29 +50,35 @@ export function useDragAndDrop(onFileDropped: (file: File) => void) {
   }, []);
 
   const dropZoneHandlers = {
-    onDragOver: useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      const hasFiles = e.dataTransfer.types.includes('Files');
-      if (hasFiles && dragState === 'over-page') {
-        setDragState('over-zone');
-      }
-    }, [dragState]),
+    onDragOver: useCallback(
+      (e: React.DragEvent) => {
+        e.preventDefault();
+        const hasFiles = e.dataTransfer.types.includes('Files');
+        if (hasFiles && dragState === 'over-page') {
+          setDragState('over-zone');
+        }
+      },
+      [dragState]
+    ),
 
     onDragLeave: useCallback((e: React.DragEvent) => {
       e.preventDefault();
       setDragState('over-page');
     }, []),
 
-    onDrop: useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      dragCounterRef.current = 0;
-      setDragState('none');
+    onDrop: useCallback(
+      (e: React.DragEvent) => {
+        e.preventDefault();
+        dragCounterRef.current = 0;
+        setDragState('none');
 
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) {
-        onFileDropped(files[0]);
-      }
-    }, [onFileDropped]),
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+          onFileDropped(files[0]);
+        }
+      },
+      [onFileDropped]
+    ),
   };
 
   return {

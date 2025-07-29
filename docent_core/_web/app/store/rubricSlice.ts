@@ -20,24 +20,41 @@ export interface JudgeResultWithCitations extends JudgeResult {
   citations: Citation[] | null;
 }
 
+export interface RubricCentroid {
+  id: string;
+  collection_id: string;
+  rubric_id: string;
+  centroid: string;
+}
+
 export interface RubricState {
   activeRubricId: string | null;
   editingRubricId: string | null;
   rubricsMap: Record<string, Rubric>; // rubric_id -> Rubric
-  activeJobId: string | null;
-  judgeResultsMap: Record<string, JudgeResultWithCitations[]> | null; // agent_run_id -> JudgeResult[]
+  activeRubricJobId: string | null;
+  judgeResultsMap: Record<string, JudgeResultWithCitations>; // judge_result_id -> JudgeResult
   isPollingResults: boolean;
   totalAgentRuns: number | null;
+  // Clustering state
+  centroidsMap: Record<string, RubricCentroid>; // centroid_id -> centroid
+  centroidAssignments: Record<string, string[]>; // centroid_id -> judge_result_ids
+  isPollingAssignments: boolean;
+  activeCentroidAssignmentJobId: string | null;
 }
 
 const initialState: RubricState = {
   activeRubricId: null,
   editingRubricId: null,
   rubricsMap: {},
-  judgeResultsMap: null,
+  judgeResultsMap: {},
   isPollingResults: false,
   totalAgentRuns: null,
-  activeJobId: null,
+  activeRubricJobId: null,
+  // Clustering state
+  centroidsMap: {},
+  centroidAssignments: {},
+  isPollingAssignments: false,
+  activeCentroidAssignmentJobId: null,
 };
 
 // Helper function to convert rubrics array to map
@@ -50,6 +67,18 @@ const convertRubricsArrayToMap = (
       return acc;
     },
     {} as Record<string, Rubric>
+  );
+};
+
+const convertCentroidsArrayToMap = (
+  centroids: RubricCentroid[]
+): Record<string, RubricCentroid> => {
+  return centroids.reduce(
+    (acc, centroid) => {
+      acc[centroid.id] = centroid;
+      return acc;
+    },
+    {} as Record<string, RubricCentroid>
   );
 };
 
@@ -70,17 +99,17 @@ export const rubricSlice = createSlice({
       state.rubricsMap[action.payload.id] = action.payload;
     },
     setJudgeResults(state, action) {
-      // Convert into a map
       const judgeResultsList: JudgeResultWithCitations[] = action.payload;
-      state.judgeResultsMap = judgeResultsList.reduce<
-        Record<string, JudgeResultWithCitations[]>
-      >((acc, result) => {
-        (acc[result.agent_run_id] ??= []).push(result);
-        return acc;
-      }, {});
+      state.judgeResultsMap = judgeResultsList.reduce(
+        (acc, result) => {
+          acc[result.id] = result;
+          return acc;
+        },
+        {} as Record<string, JudgeResultWithCitations>
+      );
     },
     clearJudgeResults(state) {
-      state.judgeResultsMap = null;
+      state.judgeResultsMap = {};
       state.totalAgentRuns = null;
     },
     setIsPollingResults(state, action) {
@@ -89,8 +118,25 @@ export const rubricSlice = createSlice({
     setTotalAgentRuns(state, action) {
       state.totalAgentRuns = action.payload;
     },
-    setActiveJobId(state, action) {
-      state.activeJobId = action.payload;
+    setActiveRubricJobId(state, action) {
+      state.activeRubricJobId = action.payload;
+    },
+    // Clustering actions
+    setCentroids(state, action) {
+      state.centroidsMap = convertCentroidsArrayToMap(action.payload.centroids);
+    },
+    clearCentroids(state) {
+      state.centroidsMap = {};
+      state.centroidAssignments = {};
+    },
+    setCentroidAssignments(state, action) {
+      state.centroidAssignments = action.payload;
+    },
+    setIsPollingAssignments(state, action) {
+      state.isPollingAssignments = action.payload;
+    },
+    setActiveCentroidAssignmentJob(state, action) {
+      state.activeCentroidAssignmentJobId = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -140,7 +186,43 @@ export const rubricSlice = createSlice({
       .addMatcher(
         rubricApi.endpoints.startEvaluation.matchFulfilled,
         (state, action) => {
-          state.activeJobId = action.payload.job_id;
+          state.activeRubricJobId = action.payload.job_id;
+        }
+      )
+      // Handle clustering endpoints
+      .addMatcher(
+        rubricApi.endpoints.proposeCentroids.matchFulfilled,
+        (state, action) => {
+          state.centroidsMap = convertCentroidsArrayToMap(
+            action.payload.centroids
+          );
+        }
+      )
+      .addMatcher(
+        rubricApi.endpoints.getCentroids.matchFulfilled,
+        (state, action) => {
+          state.centroidsMap = convertCentroidsArrayToMap(
+            action.payload.centroids
+          );
+        }
+      )
+      .addMatcher(
+        rubricApi.endpoints.clearCentroids.matchFulfilled,
+        (state) => {
+          state.centroidsMap = {};
+          state.centroidAssignments = {};
+        }
+      )
+      .addMatcher(
+        rubricApi.endpoints.startCentroidAssignment.matchFulfilled,
+        (state, action) => {
+          state.activeCentroidAssignmentJobId = action.payload.job_id;
+        }
+      )
+      .addMatcher(
+        rubricApi.endpoints.getCentroidAssignments.matchFulfilled,
+        (state, action) => {
+          state.centroidAssignments = action.payload.assignments;
         }
       );
   },
@@ -155,7 +237,12 @@ export const {
   clearJudgeResults,
   setIsPollingResults,
   setTotalAgentRuns,
-  setActiveJobId,
+  setActiveRubricJobId,
+  setCentroids,
+  clearCentroids,
+  setCentroidAssignments,
+  setIsPollingAssignments,
+  setActiveCentroidAssignmentJob,
 } = rubricSlice.actions;
 
 export default rubricSlice.reducer;

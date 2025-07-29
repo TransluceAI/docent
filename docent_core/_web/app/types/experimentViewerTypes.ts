@@ -37,11 +37,9 @@ export interface StreamedSearchResultClusterAssignment {
 }
 
 export interface TaskStats {
-  [scoreKey: string]: {
-    mean: number | null;
-    ci: number | null;
-    n: number;
-  };
+  mean: number | null;
+  ci: number | null;
+  n: number;
 }
 
 export type OrganizationMethod = 'experiment' | 'sample';

@@ -4,18 +4,20 @@ import { useRouter } from 'next/navigation';
 import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { cn } from '@/lib/utils';
+import { BaseAgentRunMetadata } from '../types/collectionTypes';
 
 interface AgentRunCardProps {
   agentRunId: string;
+  metadata?: BaseAgentRunMetadata;
 }
 
-export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
+export default function AgentRunCard({
+  agentRunId,
+  metadata,
+}: AgentRunCardProps) {
   const router = useRouter();
   // Collection slice
   const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const agentRunMetadata = useAppSelector(
-    (state) => state.collection.agentRunMetadata
-  );
 
   // Search slice
   const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
@@ -29,7 +31,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
     >
       <div
         className="cursor-pointer"
-        onMouseDown={(e) =>{
+        onMouseDown={(e) => {
           e.stopPropagation();
           navToAgentRun(
             router,
@@ -39,10 +41,9 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
             undefined,
             collectionId,
             undefined,
-            (e.button === 1 || e.metaKey || e.ctrlKey)
-          )
-        }
-        }
+            e.button === 1 || e.metaKey || e.ctrlKey
+          );
+        }}
       >
         <div className="flex justify-between pb-0.5 items-center">
           <span className="text-primary">
@@ -60,7 +61,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
                   undefined,
                   undefined,
                   collectionId,
-                  curSearchQuery,
+                  curSearchQuery
                   // (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}
@@ -71,9 +72,7 @@ export default function AgentRunCard({ agentRunId }: AgentRunCardProps) {
         </div>
         <div>
           {/* Display metadata if available */}
-          {agentRunMetadata && agentRunMetadata[agentRunId] && (
-            <AgentRunMetadata agentRunId={agentRunId} />
-          )}
+          {metadata && <AgentRunMetadata metadata={metadata} />}
         </div>
       </div>
 

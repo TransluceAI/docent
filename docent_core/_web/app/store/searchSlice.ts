@@ -8,18 +8,11 @@ import {
   type PayloadAction,
   createAsyncThunk,
 } from '@reduxjs/toolkit';
-import { v4 as uuid4 } from 'uuid';
 
 import { apiRestClient } from '../services/apiService';
 import sseService from '../services/sseService';
-import {
-  SearchResultWithCitations,
-  ComplexFilter,
-  CollectionFilter,
-  PrimitiveFilter,
-} from '../types/collectionTypes';
+import { SearchResultWithCitations } from '../types/collectionTypes';
 
-import { clearRegexSnippets } from './experimentViewerSlice';
 import { RootState } from './store';
 import { setToastNotification } from './toastSlice';
 
@@ -311,133 +304,6 @@ export const cancelCurrentSearch = createAsyncThunk(
       dispatch(setActiveSearchTaskId(undefined));
       dispatch(setLoadingProgress(undefined));
     }
-  }
-);
-
-export const updateBaseFilter = createAsyncThunk(
-  'experimentViewer/updateBaseFilter',
-  async (filter: ComplexFilter | undefined, { dispatch, getState }) => {
-    const state = getState() as { collection: { collectionId?: string } };
-    const collectionId = state.collection.collectionId;
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      await apiRestClient.post(`/${collectionId}/base_filter`, {
-        filter: filter ?? null,
-      });
-
-      // Also clear search query and regex snippets
-      dispatch(clearSearch());
-      dispatch(clearRegexSnippets());
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error updating base filter',
-          description: 'Failed to update base filter',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
-
-export const addBaseFilter = createAsyncThunk(
-  'experimentViewer/addBaseFilter',
-  async (filter: CollectionFilter, { dispatch }) => {
-    dispatch(addBaseFilters([filter]));
-  }
-);
-
-export const addBaseFilters = createAsyncThunk(
-  'experimentViewer/addBaseFilters',
-  async (filters: CollectionFilter[], { dispatch, getState }) => {
-    const state = getState() as RootState;
-
-    // Create new base filter with all filters added
-    const newBaseFilter: ComplexFilter = state.collection.baseFilter
-      ? {
-          ...state.collection.baseFilter,
-          filters: [...state.collection.baseFilter.filters, ...filters],
-        }
-      : {
-          filters: [...filters],
-          type: 'complex',
-          op: 'and',
-          id: uuid4(),
-          name: null,
-          supports_sql: true,
-        };
-
-    // Remove duplicate primitive filters
-    const seenFilterKeys = new Set<string>();
-    newBaseFilter.filters = newBaseFilter.filters.reduceRight((acc, filter) => {
-      if (filter.type === 'primitive') {
-        const primitiveFilter = filter as PrimitiveFilter;
-        const keyPath = primitiveFilter.key_path?.join('.') || '';
-        const value = primitiveFilter.value;
-        const op = primitiveFilter.op;
-        const filterKey = `${keyPath}:${value}:${op}`;
-
-        if (seenFilterKeys.has(filterKey)) {
-          return acc;
-        }
-        seenFilterKeys.add(filterKey);
-      }
-      return [filter, ...acc];
-    }, [] as CollectionFilter[]);
-
-    dispatch(updateBaseFilter(newBaseFilter));
-  }
-);
-
-export const removeBaseFilter = createAsyncThunk(
-  'experimentViewer/removeBaseFilter',
-  async (filterId: string, { dispatch, getState }) => {
-    const state = getState() as RootState;
-
-    if (!state.collection.baseFilter) {
-      return;
-    }
-
-    // Clone the current filter
-    let newBaseFilter: ComplexFilter | undefined = {
-      ...state.collection.baseFilter,
-      filters: [...state.collection.baseFilter.filters],
-    };
-
-    // Remove the internal filter from the base filter
-    const newSubFilters = newBaseFilter.filters.filter(
-      (f) => f.id !== filterId
-    );
-
-    // If there are still subfilters, update the base filter
-    // Otherwise, remove the base filter completely
-    if (newSubFilters && newSubFilters.length > 0) {
-      newBaseFilter.filters = newSubFilters;
-    } else {
-      newBaseFilter = undefined;
-    }
-
-    dispatch(updateBaseFilter(newBaseFilter));
-  }
-);
-
-export const clearBaseFilters = createAsyncThunk(
-  'experimentViewer/clearBaseFilters',
-  async (_, { dispatch }) => {
-    dispatch(updateBaseFilter(undefined));
-    dispatch(clearSearch());
   }
 );
 
