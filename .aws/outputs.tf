@@ -65,3 +65,13 @@ output "ecs_service_name" {
   description = "ECS service name"
   value       = aws_ecs_service.worker.name
 }
+
+output "bastion_public_ip" {
+  value       = aws_instance.bastion.public_ip
+  description = "Public IP address of the bastion host"
+}
+
+output "bastion_public_dns" {
+  value       = aws_instance.bastion.public_dns
+  description = "Public DNS name of the bastion host"
+}

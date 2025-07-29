@@ -86,3 +86,8 @@ variable "worker_desired_count" {
   description = "Desired number of worker tasks"
   type        = number
 }
+
+variable "bastion_public_key" {
+  description = "SSH public key for bastion host access (e.g., contents of ~/.ssh/id_rsa.pub)"
+  type        = string
+}
