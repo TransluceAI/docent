@@ -37,9 +37,38 @@ const CollapsibleResultsSection = ({
       .filter((result) => result !== null);
   }, [judgeResultIds, judgeResultsMap]);
 
+  // Group results by agent run ID
+  const groupedResults = useMemo(() => {
+    const groups: { [agentRunId: string]: typeof resultHits } = {};
+    resultHits.forEach((result) => {
+      if (!groups[result.agent_run_id]) {
+        groups[result.agent_run_id] = [];
+      }
+      groups[result.agent_run_id].push(result);
+    });
+    return groups;
+  }, [resultHits]);
+
   const isPollingAssignments = useAppSelector(
     (state) => state.rubric.isPollingAssignments
   );
+
+  const AgentRunGroupHeader = ({
+    agentRunId,
+    resultCount,
+  }: {
+    agentRunId: string;
+    resultCount: number;
+  }) => {
+    return (
+      <div className="text-[10px] text-muted-foreground font-medium px-2 py-1 bg-secondary/50 rounded-sm mb-1 flex items-center justify-between">
+        <span>Agent Run {agentRunId.slice(0, 8)}</span>
+        <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded">
+          {resultCount}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-2">
@@ -74,15 +103,25 @@ const CollapsibleResultsSection = ({
         </div>
       </div>
 
-      {/* Expanded results */}
+      {/* Expanded results grouped by agent run */}
       {isExpanded && resultHits.length > 0 && (
-        <div className="pl-4 space-y-1">
-          {resultHits.map((judgeResult, idx) => (
-            <JudgeResultCard
-              key={idx}
-              judgeResult={judgeResult}
-              usePreview={usePreview}
-            />
+        <div className="pl-4 space-y-2">
+          {Object.entries(groupedResults).map(([agentRunId, results]) => (
+            <div key={agentRunId} className="space-y-1">
+              <AgentRunGroupHeader
+                agentRunId={agentRunId}
+                resultCount={results.length}
+              />
+              <div className="space-y-1">
+                {results.map((judgeResult, idx) => (
+                  <JudgeResultCard
+                    key={`${agentRunId}-${idx}`}
+                    judgeResult={judgeResult}
+                    usePreview={usePreview}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
