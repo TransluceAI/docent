@@ -159,6 +159,9 @@ async def trace_endpoint(
         # Extract spans from trace data
         spans = await extract_spans(trace_data)
 
+        # Check permissions for all collections mentioned in spans
+        await _check_collection_permissions(spans, user, mono_svc)
+
         # Accumulate spans and check for trace completion
         await accumulate_and_check_completion(spans, user)
 
@@ -168,6 +171,58 @@ async def trace_endpoint(
     except Exception as e:
         logger.error(f"Error processing traces: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _check_collection_permissions(
+    spans: List[Dict[str, Any]], user: User, mono_svc: MonoService
+) -> None:
+    """
+    Check that the user has write permissions on all collections mentioned in the spans,
+    or that the collections don't exist yet (in which case they will be created).
+
+    Args:
+        spans: List of processed spans to check
+        user: The authenticated user
+        mono_svc: The database service
+
+    Raises:
+        HTTPException: If user lacks write permissions on any existing collection
+    """
+    from docent_core._db_service.schemas.auth_models import Permission, ResourceType
+
+    # Collect all unique collection IDs from spans
+    collection_ids: set[str] = set()
+    for span in spans:
+        span_attrs = span.get("attributes", {})
+        collection_id = span_attrs.get("collection_id")
+        if collection_id and isinstance(collection_id, str):
+            collection_ids.add(collection_id)
+
+    # Check permissions for each collection
+    for collection_id in collection_ids:
+        # Check if collection exists
+        collection_exists = await mono_svc.collection_exists(collection_id)
+
+        if collection_exists:
+            # Collection exists - check write permissions
+            has_write_permission = await mono_svc.has_permission(
+                user=user,
+                resource_type=ResourceType.COLLECTION,
+                resource_id=collection_id,
+                permission=Permission.WRITE,
+            )
+
+            if not has_write_permission:
+                logger.error(f"Permission denied for user {user.id} on collection {collection_id}")
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Write permission required on collection {collection_id}",
+                )
+        else:
+            # Collection doesn't exist - this is allowed, it will be created later
+            logger.info(
+                f"Collection {collection_id} doesn't exist yet, will be created during processing"
+            )
 
 
 def parse_protobuf_traces(body: bytes) -> Dict[str, Any]:
@@ -501,8 +556,6 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> None:
 
     # Process each collection and its agent runs
     total_agent_runs = 0
-
-    logger.info("Organized spans structure:\n%s", json.dumps(organized_spans, indent=2))
 
     for collection_id, agent_runs in organized_spans.items():
         # Extract service name from the first span in this collection
