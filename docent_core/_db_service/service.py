@@ -70,6 +70,7 @@ from docent_core._db_service.schemas.tables import (
     SQLASearchResult,
     SQLASearchResultCluster,
     SQLASession,
+    SQLATelemetryLog,
     SQLATranscript,
     SQLATranscriptEmbedding,
     SQLAUser,
@@ -166,7 +167,7 @@ class MonoService:
             )
         logger.info(f"Updated Collection {collection_id} with values: {values_to_update}")
 
-    async def fg_exists(self, collection_id: str) -> bool:
+    async def collection_exists(self, collection_id: str) -> bool:
         async with self.db.session() as session:
             result = await session.execute(
                 select(exists().where(SQLACollection.id == collection_id))
@@ -1980,3 +1981,66 @@ class MonoService:
                     return api_key.user.to_user()
 
             return None
+
+    ######################
+    # Telemetry Log #
+    ######################
+
+    async def store_telemetry_log(
+        self, user_id: str, json_data: dict[str, Any], collection_id: str | None = None
+    ) -> str:
+        """Store telemetry log data in the database."""
+        telemetry_id = str(uuid4())
+        async with self.db.session() as session:
+            session.add(
+                SQLATelemetryLog(
+                    id=telemetry_id,
+                    user_id=user_id,
+                    collection_id=collection_id,
+                    json_data=json_data,
+                )
+            )
+        return telemetry_id
+
+    async def update_telemetry_log_collection_id(self, telemetry_id: str, collection_id: str):
+        """Update the collection ID for a telemetry log entry."""
+        async with self.db.session() as session:
+            await session.execute(
+                update(SQLATelemetryLog)
+                .where(SQLATelemetryLog.id == telemetry_id)
+                .values(collection_id=collection_id)
+            )
+
+    async def get_telemetry_log(self, telemetry_id: str) -> SQLATelemetryLog | None:
+        """Get a telemetry log entry by ID."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLATelemetryLog).where(SQLATelemetryLog.id == telemetry_id)
+            )
+            return result.scalar_one_or_none()
+
+    async def get_telemetry_logs_by_user(
+        self, user_id: str, limit: int = 100
+    ) -> list[SQLATelemetryLog]:
+        """Get telemetry logs for a user, ordered by creation time (newest first)."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLATelemetryLog)
+                .where(SQLATelemetryLog.user_id == user_id)
+                .order_by(SQLATelemetryLog.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def get_telemetry_logs_by_collection(
+        self, collection_id: str, limit: int = 100
+    ) -> list[SQLATelemetryLog]:
+        """Get telemetry logs for a collection, ordered by creation time (newest first)."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLATelemetryLog)
+                .where(SQLATelemetryLog.collection_id == collection_id)
+                .order_by(SQLATelemetryLog.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())

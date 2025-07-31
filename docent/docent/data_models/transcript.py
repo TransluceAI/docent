@@ -151,7 +151,9 @@ class Transcript(BaseModel):
 
             # System messages are their own unit
             if role == "system":
-                assert not current_unit, "System message should be the first message"
+                # Start a new unit if there's a current unit in progress
+                if current_unit:
+                    _start_new_unit()
                 units.append([i])
 
             # User message always starts a new unit UNLESS the previous message was a user message

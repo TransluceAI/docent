@@ -6,6 +6,7 @@ from docent_core._server._rest.chart import chart_router
 from docent_core._server._rest.diff import diff_router
 from docent_core._server._rest.router import public_router, user_router
 from docent_core._server._rest.rubric import rubric_router
+from docent_core._server._rest.telemetry import telemetry_router
 
 
 class RouterSpec(TypedDict):
@@ -29,6 +30,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": rubric_router,
         "prefix": "/rest/rubric",
+    },
+    {
+        "router": telemetry_router,
+        "prefix": "/rest/telemetry",
     },
     {
         "router": chart_router,

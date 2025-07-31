@@ -14,6 +14,17 @@ dependencies = [
     "pyyaml>=6.0.2",
     "tiktoken>=0.7.0",
     "tqdm>=4.67.1",
+    # tracing
+    "opentelemetry-api>=1.35.0",
+    "opentelemetry-sdk>=1.35.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.35.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.35.0",
+    # instrumentation
+    "opentelemetry-instrumentation-threading>=0.56b0",
+    "opentelemetry-instrumentation-anthropic>=0.42.0",
+    "opentelemetry-instrumentation-openai>=0.42.0",
+    "opentelemetry-instrumentation-bedrock>=0.42.0",
+    "opentelemetry-instrumentation-langchain>=0.43.1",
 ]
 
 [build-system]

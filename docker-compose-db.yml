@@ -19,5 +19,18 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # Intentionally disabled for now
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib
+  #   volumes:
+  #     - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+  #     - ./data/:/data/
+  #   ports:
+  #     - 4317:4317 # OTLP gRPC receiver
+  #     - 4318:4318 # OTLP http receiver
+  #     - 13133:13133 # health_check extension
+  #   restart: unless-stopped
+
+
 volumes:
   pgdata:

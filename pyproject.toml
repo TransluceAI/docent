@@ -36,6 +36,10 @@ dependencies = [
     "backoff>=2.2.1",
     # SDK
     "docent-python",
+    # Tracing
+    "opentelemetry-api>=1.35.0",
+    "opentelemetry-proto>=1.35.0",
+    "protobuf>=6.31.1",
     # Uncategorized
     "python-multipart>=0.0.20",
     "posthog>=6.3.1",
@@ -55,6 +59,15 @@ dev = [
     # Viz
     "matplotlib",
     "jupyter>=1.0.0",
+    # Tracing
+    "opentelemetry-exporter-otlp-proto-grpc>=1.35.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.35.0",
+    # Instrumentation
+    "opentelemetry-instrumentation-threading>=0.56b0",
+    "opentelemetry-instrumentation-anthropic>=0.42.0",
+    "opentelemetry-instrumentation-openai>=0.42.0",
+    "opentelemetry-instrumentation-bedrock>=0.42.0",
+    "opentelemetry-instrumentation-langchain>=0.43.1",
 ]
 
 
