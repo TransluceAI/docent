@@ -72,7 +72,7 @@ resource "aws_apprunner_service" "api" {
         runtime_environment_variables = {
           SERVICE              = "server"  # Starts the uvicorn server, not the worker
           ENVIRONMENT          = var.environment
-          LLM_CACHE_PATH       = ""  # Disable cache
+          LLM_CACHE_PATH       = null  # Disable cache
           DOCENT_PG_HOST       = aws_db_instance.postgres.address
           DOCENT_PG_PORT       = aws_db_instance.postgres.port
           DOCENT_PG_DATABASE   = var.db_name
