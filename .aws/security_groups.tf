@@ -1,5 +1,5 @@
 resource "aws_security_group" "rds" {
-  name_prefix = "${var.project_name}-${var.environment}-rds-"
+  name_prefix = "${var.project_name}-${var.deployment}-rds-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -17,8 +17,8 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-rds-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-rds-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {
@@ -27,7 +27,7 @@ resource "aws_security_group" "rds" {
 }
 
 resource "aws_security_group" "elasticache" {
-  name_prefix = "${var.project_name}-${var.environment}-elasticache-"
+  name_prefix = "${var.project_name}-${var.deployment}-elasticache-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -45,8 +45,8 @@ resource "aws_security_group" "elasticache" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-elasticache-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-elasticache-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {
@@ -55,7 +55,7 @@ resource "aws_security_group" "elasticache" {
 }
 
 resource "aws_security_group" "app_runner" {
-  name_prefix = "${var.project_name}-${var.environment}-app-runner-"
+  name_prefix = "${var.project_name}-${var.deployment}-app-runner-"
   vpc_id      = aws_vpc.main.id
 
   egress {
@@ -66,8 +66,8 @@ resource "aws_security_group" "app_runner" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-app-runner-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-app-runner-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {
@@ -76,7 +76,7 @@ resource "aws_security_group" "app_runner" {
 }
 
 resource "aws_security_group" "ecs_tasks" {
-  name_prefix = "${var.project_name}-${var.environment}-ecs-tasks-"
+  name_prefix = "${var.project_name}-${var.deployment}-ecs-tasks-"
   vpc_id      = aws_vpc.main.id
 
   egress {
@@ -87,8 +87,8 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-ecs-tasks-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-ecs-tasks-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {
@@ -97,7 +97,7 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_security_group" "vpc_endpoints" {
-  name_prefix = "${var.project_name}-${var.environment}-vpc-endpoints-"
+  name_prefix = "${var.project_name}-${var.deployment}-vpc-endpoints-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -115,8 +115,8 @@ resource "aws_security_group" "vpc_endpoints" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-vpc-endpoints-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-vpc-endpoints-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {
@@ -125,7 +125,7 @@ resource "aws_security_group" "vpc_endpoints" {
 }
 
 resource "aws_security_group" "bastion" {
-  name_prefix = "${var.project_name}-${var.environment}-bastion-"
+  name_prefix = "${var.project_name}-${var.deployment}-bastion-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -144,8 +144,8 @@ resource "aws_security_group" "bastion" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-bastion-sg"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-bastion-sg"
+    Deployment = var.deployment
   }
 
   lifecycle {

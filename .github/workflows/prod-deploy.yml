@@ -7,7 +7,7 @@ on:
 
 env:
   PROJECT_NAME: docent
-  ENVIRONMENT: prod
+  DEPLOYMENT_ID: prod
   AWS_REGION: us-east-1
 
 jobs:
@@ -46,6 +46,6 @@ jobs:
       - name: Force ECS deployment
         run: |
           aws ecs update-service \
-            --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
-            --service ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-worker \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-cluster \
+            --service ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-worker \
             --force-new-deployment

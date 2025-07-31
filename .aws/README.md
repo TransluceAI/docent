@@ -97,7 +97,7 @@ The ECR repository URLs will be output after running `terraform apply`.
 The infrastructure automatically configures these environment variables:
 
 ### API Server (App Runner)
-- `ENVIRONMENT`: Environment name (dev/staging/prod)
+- `DEPLOYMENT_ID`: Used for Sentry environment
 - `DOCENT_DATABASE_HOST`: PostgreSQL host endpoint
 - `DOCENT_DATABASE_PORT`: PostgreSQL port (5432)
 - `DOCENT_DATABASE_NAME`: Database name (docent)
@@ -106,7 +106,6 @@ The infrastructure automatically configures these environment variables:
 - `DOCENT_CORS_ORIGINS`: CORS origins (empty for dev mode)
 
 ### Worker (ECS)
-- `ENVIRONMENT`: Environment name
 - `DOCENT_DATABASE_HOST`: PostgreSQL host endpoint
 - `DOCENT_DATABASE_PORT`: PostgreSQL port (5432)
 - `DOCENT_DATABASE_NAME`: Database name (docent)

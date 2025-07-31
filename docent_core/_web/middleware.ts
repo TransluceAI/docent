@@ -24,7 +24,8 @@ export async function middleware(request: NextRequest) {
           },
         }
       );
-      user = await anonResponse.json();
+      const anonData = await anonResponse.json();
+      user = anonData.user; // Extract user from new response format
 
       // Get the set-cookie header from the anonymous session response
       const setCookie = anonResponse.headers.get('set-cookie');

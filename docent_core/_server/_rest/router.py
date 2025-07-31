@@ -151,12 +151,13 @@ async def signup(
     user = await mono_svc.create_user(request.email, request.password)
 
     # Create a session for the new user
-    await create_user_session(user.id, response, mono_svc)
+    session_id = await create_user_session(user.id, response, mono_svc)
 
     # Track analytics
     await track_endpoint_with_user(mono_svc, EndpointType.SIGNUP, user)
 
-    return user
+    # Need to return session id in body so that Next.js app can set a cookie for its own domain
+    return {"user": user, "session_id": session_id}
 
 
 class LoginRequest(BaseModel):
@@ -185,9 +186,10 @@ async def login(
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Create a new session
-    await create_user_session(user.id, response, mono_svc)
+    session_id = await create_user_session(user.id, response, mono_svc)
 
-    return user
+    # Need to return session id in body so that Next.js app can set a cookie for its own domain
+    return {"user": user, "session_id": session_id}
 
 
 @public_router.post("/anonymous_session")
@@ -208,12 +210,13 @@ async def create_anonymous_session(
     anonymous_user = await mono_svc.create_anonymous_user()
 
     # Create a session for the anonymous user
-    await create_user_session(anonymous_user.id, response, mono_svc)
+    session_id = await create_user_session(anonymous_user.id, response, mono_svc)
 
     # Track analytics
     await track_endpoint_with_user(mono_svc, EndpointType.CREATE_ANONYMOUS_SESSION, anonymous_user)
 
-    return anonymous_user
+    # Need to return session id in body so that Next.js app can set a cookie for its own domain
+    return {"user": anonymous_user, "session_id": session_id}
 
 
 ###########################

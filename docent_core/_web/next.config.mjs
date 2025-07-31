@@ -15,6 +15,8 @@ const nextConfig = {
       },
     ];
   },
+  // Enable standalone output for Docker production builds
+  output: 'standalone',
 };
 
 export default nextConfig;

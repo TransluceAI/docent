@@ -1,16 +1,16 @@
 resource "aws_elasticache_subnet_group" "main" {
-  name       = "${var.project_name}-${var.environment}-cache-subnet-group"
+  name       = "${var.project_name}-${var.deployment}-cache-subnet-group"
   subnet_ids = aws_subnet.private[*].id
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-cache-subnet-group"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-cache-subnet-group"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_elasticache_parameter_group" "redis" {
   family = "redis7"
-  name   = "${var.project_name}-${var.environment}-redis-params"
+  name   = "${var.project_name}-${var.deployment}-redis-params"
 
   parameter {
     name  = "maxmemory-policy"
@@ -18,14 +18,14 @@ resource "aws_elasticache_parameter_group" "redis" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-redis-params"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-redis-params"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_elasticache_replication_group" "redis" {
-  replication_group_id       = "${var.project_name}-${var.environment}-redis"
-  description                = "Redis cluster for ${var.project_name} ${var.environment}"
+  replication_group_id       = "${var.project_name}-${var.deployment}-redis"
+  description                = "Redis cluster for ${var.project_name} ${var.deployment}"
 
   engine               = "redis"
   engine_version       = "7.0"
@@ -51,7 +51,7 @@ resource "aws_elasticache_replication_group" "redis" {
   multi_az_enabled          = true
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-redis"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-redis"
+    Deployment = var.deployment
   }
 }

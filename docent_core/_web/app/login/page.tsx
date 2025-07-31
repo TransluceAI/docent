@@ -36,10 +36,10 @@ function LoginPageContent() {
 
     setIsSubmitting(true);
     try {
-      const userData = await login(email.trim(), password.trim()); // Pure API call
+      const { user } = await login(email.trim(), password.trim()); // Pure API call
 
       // Set user in context immediately to prevent race condition
-      setUser(userData);
+      setUser(user);
 
       // Force a full page navigation to ensure cookie is processed
       const redirectUrl = redirectParam || '/dashboard';

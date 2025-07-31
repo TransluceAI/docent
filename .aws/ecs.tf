@@ -1,5 +1,5 @@
 resource "aws_ecs_cluster" "main" {
-  name = "${var.project_name}-${var.environment}-cluster"
+  name = "${var.project_name}-${var.deployment}-cluster"
 
   configuration {
     execute_command_configuration {
@@ -11,23 +11,23 @@ resource "aws_ecs_cluster" "main" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-cluster"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-cluster"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_cloudwatch_log_group" "ecs" {
-  name              = "/ecs/${var.project_name}-${var.environment}"
+  name              = "/ecs/${var.project_name}-${var.deployment}"
   retention_in_days = 7
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-ecs-logs"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-ecs-logs"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_iam_role" "ecs_task_execution" {
-  name = "${var.project_name}-${var.environment}-ecs-task-execution-role"
+  name = "${var.project_name}-${var.deployment}-ecs-task-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -43,8 +43,8 @@ resource "aws_iam_role" "ecs_task_execution" {
   })
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-ecs-task-execution-role"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-ecs-task-execution-role"
+    Deployment = var.deployment
   }
 }
 
@@ -55,7 +55,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
 
 
 resource "aws_iam_role" "ecs_task" {
-  name = "${var.project_name}-${var.environment}-ecs-task-role"
+  name = "${var.project_name}-${var.deployment}-ecs-task-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -71,13 +71,13 @@ resource "aws_iam_role" "ecs_task" {
   })
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-ecs-task-role"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-ecs-task-role"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_ecs_task_definition" "worker" {
-  family                   = "${var.project_name}-${var.environment}-worker"
+  family                   = "${var.project_name}-${var.deployment}-worker"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_cpu
@@ -96,8 +96,8 @@ resource "aws_ecs_task_definition" "worker" {
           value = "worker"  # Starts the worker, not the uvicorn server
         },
         {
-          name  = "ENVIRONMENT"
-          value = var.environment
+          name  = "DEPLOYMENT_ID"
+          value = var.deployment
         },
         {
           name  = "LLM_CACHE_PATH"
@@ -151,13 +151,13 @@ resource "aws_ecs_task_definition" "worker" {
   ])
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-worker-task"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-worker-task"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_ecs_service" "worker" {
-  name            = "${var.project_name}-${var.environment}-worker"
+  name            = "${var.project_name}-${var.deployment}-worker"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.worker.arn
   desired_count   = var.worker_desired_count
@@ -170,8 +170,8 @@ resource "aws_ecs_service" "worker" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-worker-service"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-worker-service"
+    Deployment = var.deployment
   }
 }
 
@@ -183,13 +183,13 @@ resource "aws_appautoscaling_target" "ecs_worker" {
   service_namespace  = "ecs"
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-worker-autoscaling-target"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-worker-autoscaling-target"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_appautoscaling_policy" "ecs_worker_cpu" {
-  name               = "${var.project_name}-${var.environment}-worker-cpu-scaling"
+  name               = "${var.project_name}-${var.deployment}-worker-cpu-scaling"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.ecs_worker.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_worker.scalable_dimension
@@ -204,7 +204,7 @@ resource "aws_appautoscaling_policy" "ecs_worker_cpu" {
 }
 
 resource "aws_appautoscaling_policy" "ecs_worker_memory" {
-  name               = "${var.project_name}-${var.environment}-worker-memory-scaling"
+  name               = "${var.project_name}-${var.deployment}-worker-memory-scaling"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.ecs_worker.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_worker.scalable_dimension

@@ -1,19 +1,19 @@
-name: Staging Deploy
+name: Bridgewater Deploy
 
 on:
   push:
-    branches: [staging]
+    branches: [bridgewater]
   workflow_dispatch:
 
 env:
   PROJECT_NAME: docent
-  DEPLOYMENT_ID: staging
+  DEPLOYMENT_ID: bwater
   AWS_REGION: us-east-1
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: bridgewater
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -31,15 +31,20 @@ jobs:
       - name: Create .env file
         run: |
           cat > .env << EOF
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-          DOCENT_PG_PASSWORD=${{ secrets.DOCENT_PG_PASSWORD }}
+          OPENAI_API_KEY=${{ secrets.BRIDGEWATER_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.BRIDGEWATER_ANTHROPIC_API_KEY }}
+          DOCENT_PG_PASSWORD=${{ secrets.BRIDGEWATER_DOCENT_PG_PASSWORD }}
           SENTRY_DSN=${{ vars.SENTRY_DSN }}
-          POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_API_KEY=${{ secrets.BRIDGEWATER_POSTHOG_API_KEY }}
           EOF
 
       - name: Build and push backend to ECR
         run: ./scripts/ecr_push_backend.sh
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Build and push frontend to ECR
+        run: ./scripts/ecr_push_frontend.sh
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 

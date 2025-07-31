@@ -9,23 +9,18 @@ from typing import Literal
 from fastapi import Response
 
 from docent_core._db_service.service import MonoService
-from docent_core._env_util import get_deployment_environment
+from docent_core._env_util import get_deployment_id
 
-ENVIRONMENT = get_deployment_environment()
-if ENVIRONMENT == "local":
+if get_deployment_id():
+    # Staging or production
+    cookie_secure = True
+    cookie_domain = None  # Auto-detect from request hostname
+    cookie_samesite: Literal["lax", "strict", "none"] = "none"
+else:
+    # Local deployment
     cookie_secure = False
     cookie_domain = None
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
-elif ENVIRONMENT == "staging":
-    cookie_secure = True
-    cookie_domain = "docent-staging.transluce.org"
-    cookie_samesite: Literal["lax", "strict", "none"] = "none"
-elif ENVIRONMENT == "prod":
-    cookie_secure = True
-    cookie_domain = "docent.transluce.org"
-    cookie_samesite: Literal["lax", "strict", "none"] = "none"
-else:
-    raise ValueError(f"Invalid environment: {ENVIRONMENT}")
 
 
 async def create_user_session(user_id: str, response: Response, mono_svc: MonoService) -> str:

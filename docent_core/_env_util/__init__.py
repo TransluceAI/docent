@@ -1,3 +1,3 @@
-__all__ = ["ENV", "get_deployment_environment"]
+__all__ = ["ENV", "get_deployment_id"]
 
-from .env import ENV, get_deployment_environment
+from .env import ENV, get_deployment_id

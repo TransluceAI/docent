@@ -75,3 +75,18 @@ output "bastion_public_dns" {
   value       = aws_instance.bastion.public_dns
   description = "Public DNS name of the bastion host"
 }
+
+output "frontend_ecr_repository_url" {
+  description = "ECR repository URL for frontend"
+  value       = aws_ecr_repository.frontend.repository_url
+}
+
+output "frontend_app_runner_service_url" {
+  description = "Frontend App Runner service URL"
+  value       = var.enable_frontend_app_runner ? "https://${aws_apprunner_service.frontend[0].service_url}" : null
+}
+
+output "frontend_app_runner_service_arn" {
+  description = "Frontend App Runner service ARN"
+  value       = var.enable_frontend_app_runner ? aws_apprunner_service.frontend[0].arn : null
+}

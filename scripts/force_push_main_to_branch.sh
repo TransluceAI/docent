@@ -2,12 +2,17 @@
 set -e
 
 # Parse arguments
-BRANCH=""
+TARGET_BRANCH=""
+SOURCE_BRANCH="main"
 
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-    -b|--branch)
-      BRANCH="$2"
+    -t|--target)
+      TARGET_BRANCH="$2"
+      shift 2
+      ;;
+    -s|--source)
+      SOURCE_BRANCH="$2"
       shift 2
       ;;
     *)
@@ -17,13 +22,13 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-if [ -z "$BRANCH" ]; then
-  echo "Error: You must specify a branch with -b or --branch"
+if [ -z "$TARGET_BRANCH" ]; then
+  echo "Error: You must specify a target branch with -t or --target"
   exit 1
 fi
 
 # Confirmation prompt - this is a destructive operation
-echo "⚠️  WARNING: This will completely overwrite branch '$BRANCH' with the contents of 'main'!"
+echo "⚠️  WARNING: This will completely overwrite branch '$TARGET_BRANCH' with the contents of '$SOURCE_BRANCH'!"
 read -p "Type 'FORCE PUSH' to confirm this destructive operation: " confirmation
 
 if [ "$confirmation" != "FORCE PUSH" ]; then
@@ -34,19 +39,19 @@ fi
 echo "Proceeding with force push operation..."
 
 # Sync branches
-git checkout main
-git pull origin main
-git checkout $BRANCH
-git pull origin $BRANCH
+git checkout $SOURCE_BRANCH
+git pull origin $SOURCE_BRANCH
+git checkout $TARGET_BRANCH
+git pull origin $TARGET_BRANCH
 
 # Create a backup branch with a timestamp
-BACKUP_BRANCH="${BRANCH}-backup-$(date +%Y%m%d%H%M%S)"
+BACKUP_BRANCH="${TARGET_BRANCH}-backup-$(date +%Y%m%d%H%M%S)"
 git checkout -b "$BACKUP_BRANCH"
 git push origin "$BACKUP_BRANCH"
 
-# Reset branch to match main
-git checkout $BRANCH
-git reset --hard main
+# Reset branch to match source
+git checkout $TARGET_BRANCH
+git reset --hard $SOURCE_BRANCH
 
 # Force push branch to remote
-git push origin $BRANCH --force
+git push origin $TARGET_BRANCH --force

@@ -5,17 +5,16 @@ from posthog import Posthog
 
 from docent._log_util import get_logger
 from docent_core._db_service.schemas.auth_models import User
-from docent_core._env_util import get_deployment_environment
+from docent_core._env_util import get_deployment_id
 
 logger = get_logger(__name__)
 
 POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY")
-ENVIRONMENT = get_deployment_environment()
 
 
 class AnalyticsClient:
     def __init__(self):
-        if ENVIRONMENT == "prod" or ENVIRONMENT == "staging":
+        if get_deployment_id():
             if not POSTHOG_API_KEY:
                 raise ValueError("POSTHOG_API_KEY is required for prod and staging, but is not set")
             self.ph = Posthog(project_api_key=POSTHOG_API_KEY, host="https://us.i.posthog.com")

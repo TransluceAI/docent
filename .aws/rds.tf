@@ -1,15 +1,15 @@
 resource "aws_db_subnet_group" "main" {
-  name       = "${var.project_name}-${var.environment}-db-subnet-group"
+  name       = "${var.project_name}-${var.deployment}-db-subnet-group"
   subnet_ids = aws_subnet.private[*].id
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-db-subnet-group"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-db-subnet-group"
+    Deployment = var.deployment
   }
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier = "${var.project_name}-${var.environment}-postgres"
+  identifier = "${var.project_name}-${var.deployment}-postgres"
 
   engine         = "postgres"
   engine_version = "15.12"
@@ -34,10 +34,10 @@ resource "aws_db_instance" "postgres" {
 
   deletion_protection = true
   skip_final_snapshot = false
-  final_snapshot_identifier = "${var.project_name}-${var.environment}-postgres-final-snapshot"
+  final_snapshot_identifier = "${var.project_name}-${var.deployment}-postgres-final-snapshot"
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-postgres"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-postgres"
+    Deployment = var.deployment
   }
 }

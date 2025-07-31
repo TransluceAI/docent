@@ -1,9 +1,9 @@
-deployment = "prod"
-frontend_domain = "docent.transluce.org"
+deployment = "bwater"
+frontend_domain = "docent-bridgewater.transluce.org"
 
 private_subnet_count = 2
-public_subnet_count = 2
-nat_gateway_count = 2
+public_subnet_count = 1
+nat_gateway_count = 1
 
 rds_instance_class = "db.m5.8xlarge"
 elasticache_node_type = "cache.m6g.large"

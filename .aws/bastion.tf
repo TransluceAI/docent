@@ -14,12 +14,13 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_key_pair" "bastion" {
-  key_name   = "${var.project_name}-${var.environment}-bastion-key"
+
+  key_name   = "${var.project_name}-${var.deployment}-bastion-key"
   public_key = var.bastion_public_key
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-bastion-key"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-bastion-key"
+    Deployment = var.deployment
   }
 }
 
@@ -32,8 +33,8 @@ resource "aws_instance" "bastion" {
   subnet_id              = aws_subnet.public[0].id
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-bastion"
-    Environment = var.environment
+    Name        = "${var.project_name}-${var.deployment}-bastion"
+    Deployment = var.deployment
   }
 
   lifecycle {
