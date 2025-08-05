@@ -54,6 +54,7 @@ from docent_core._db_service.schemas.auth_models import (
     SubjectType,
     User,
 )
+from docent_core._db_service.schemas.chart import SQLAChart
 from docent_core._db_service.schemas.tables import (
     EMBEDDING_DIM,
     TABLE_TRANSCRIPT_EMBEDDING,
@@ -263,6 +264,10 @@ class MonoService:
         # Delete views
         async with self.db.session() as session:
             await session.execute(delete(SQLAView).where(SQLAView.collection_id == collection_id))
+
+        # Delete charts
+        async with self.db.session() as session:
+            await session.execute(delete(SQLAChart).where(SQLAChart.collection_id == collection_id))
 
         # Finally delete the collection
         async with self.db.session() as session:

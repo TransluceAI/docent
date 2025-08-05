@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List
 from uuid import uuid4
@@ -31,6 +32,14 @@ class MetadataFieldType(str, Enum):
     NUMERIC = "numeric"
     TEXT = "text"
     BOOLEAN = "boolean"
+
+
+@dataclass
+class ChartKeys:
+    """Container for metadata/score keys in a collection that can be used in charts."""
+
+    metadata_keys: List[tuple[str, MetadataFieldType]]
+    score_keys: List[str]
 
 
 class ChartSpec(BaseModel):
@@ -227,6 +236,8 @@ class ChartsService:
     def __init__(self, session: AsyncSession, service: MonoService):
         self.session = session
         self.service = service
+        # Request-scoped cache for chart keys
+        self._chart_keys_cache: dict[str, ChartKeys] = {}
 
     async def _populate_chart_labels(self, ctx: ViewContext, chart_spec: ChartSpec) -> ChartSpec:
         """Populate x_label, y_label, and series_label from ChartDimension short_name."""
@@ -386,11 +397,10 @@ class ChartsService:
 
         await self.session.execute(delete(SQLAChart).where(SQLAChart.id == chart_id))
 
-    async def _get_metadata_keys(self, ctx: ViewContext) -> List[tuple[str, MetadataFieldType]]:
-        """Get metadata keys with their detected data types.
-
-        Returns list of (key, data_type) tuples where data_type is 'numeric', 'boolean', or 'text'.
-        """
+    async def _fetch_metadata_keys_from_db(
+        self, collection_id: str
+    ) -> List[tuple[str, MetadataFieldType]]:
+        """Fetch metadata keys directly from database."""
         query = text(
             """
             SELECT
@@ -419,7 +429,7 @@ class ChartsService:
         )
 
         try:
-            result = await self.session.execute(query, {"collection_id": ctx.collection_id})
+            result = await self.session.execute(query, {"collection_id": collection_id})
             excluded = {"_field_descriptions", "allow_fields_without_descriptions"}
             return [
                 (row.key, MetadataFieldType(row.data_type))
@@ -427,14 +437,12 @@ class ChartsService:
                 if row.key not in excluded
             ]
         except Exception as e:
-            logger.error(
-                f"Failed to get metadata keys for collection {ctx.collection_id}: {str(e)}"
-            )
-            # Return empty list as fallback - this will result in no dynamic metadata fields
+            logger.error(f"Failed to get metadata keys for collection {collection_id}: {str(e)}")
             return []
 
-    async def _get_score_keys(self, ctx: ViewContext) -> List[str]:
-        """Get all unique score keys for a collection."""
+    async def _fetch_score_keys_from_db(self, collection_id: str) -> List[str]:
+        """Fetch score keys directly from database."""
+
         # Only include score keys whose values are numeric or boolean across *all* occurrences
         # in the collection. This is enforced by checking the jsonb_typeof for every value
         # associated with each key and requiring that it is always either "number" or "boolean".
@@ -458,19 +466,30 @@ class ChartsService:
         )
 
         try:
-            result = await self.session.execute(query, {"collection_id": ctx.collection_id})
+            result = await self.session.execute(query, {"collection_id": collection_id})
             return [row.key for row in result]
         except Exception as e:
-            logger.error(f"Failed to get score keys for collection {ctx.collection_id}: {str(e)}")
-            # Return empty list as fallback - this will result in no dynamic score fields
+            logger.error(f"Failed to get score keys for collection {collection_id}: {str(e)}")
             return []
+
+    async def _get_chart_keys(self, ctx: ViewContext) -> ChartKeys:
+        """Get all chart keys for a collection with request-scoped caching."""
+        if ctx.collection_id in self._chart_keys_cache:
+            return self._chart_keys_cache[ctx.collection_id]
+
+        metadata_keys = await self._fetch_metadata_keys_from_db(ctx.collection_id)
+        score_keys = await self._fetch_score_keys_from_db(ctx.collection_id)
+
+        chart_keys = ChartKeys(metadata_keys=metadata_keys, score_keys=score_keys)
+        self._chart_keys_cache[ctx.collection_id] = chart_keys
+        return chart_keys
 
     async def get_available_dimensions(self, ctx: ViewContext) -> List[ChartDimension]:
         """Get available dimensions for a table type, including dynamic metadata fields."""
         # Add dynamic metadata fields with detected data types
-        metadata_keys_with_types = await self._get_metadata_keys(ctx)
+        chart_keys = await self._get_chart_keys(ctx)
         dynamic_metadata: List[ChartDimension] = []
-        for key, data_type in metadata_keys_with_types:
+        for key, data_type in chart_keys.metadata_keys:
             dimension = ChartDimension.create_json_field(
                 "ar.metadata_json",
                 key,
@@ -483,9 +502,9 @@ class ChartsService:
 
     async def get_available_measures(self, ctx: ViewContext) -> List[ChartDimension]:
         """Get available measures for a table type, including dynamic score fields."""
-        score_keys = await self._get_score_keys(ctx)
+        chart_keys = await self._get_chart_keys(ctx)
         dynamic_scores: List[ChartDimension] = []
-        for key in score_keys:
+        for key in chart_keys.score_keys:
             dimension = ChartDimension.create_json_field(
                 "ar.metadata_json",
                 f"scores.{key}",
