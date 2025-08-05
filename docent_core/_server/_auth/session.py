@@ -8,19 +8,27 @@ from typing import Literal
 
 from fastapi import Response
 
+from docent._log_util.logger import get_logger
 from docent_core._db_service.service import MonoService
-from docent_core._env_util import get_deployment_id
+from docent_core._env_util import ENV, get_deployment_id
 
-if get_deployment_id():
-    # Staging or production
+logger = get_logger(__name__)
+
+if deployment_id := get_deployment_id():
+    # Deployed
     cookie_secure = True
-    cookie_domain = None  # Auto-detect from request hostname
     cookie_samesite: Literal["lax", "strict", "none"] = "none"
+    if not (cookie_domain := ENV.get("COOKIE_DOMAIN")):
+        cookie_domain = None
 else:
     # Local deployment
     cookie_secure = False
-    cookie_domain = None
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    cookie_domain = None
+
+logger.info(
+    f"Cookie settings: secure={cookie_secure}, samesite={cookie_samesite}, domain={cookie_domain}"
+)
 
 
 async def create_user_session(user_id: str, response: Response, mono_svc: MonoService) -> str:

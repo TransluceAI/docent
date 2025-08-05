@@ -1,5 +1,4 @@
 deployment = "metr"
-frontend_domain = "id6xezmwng.us-east-1.awsapprunner.com"
 
 private_subnet_count = 2
 public_subnet_count = 1

@@ -1,5 +1,4 @@
 deployment = "prod"
-frontend_domain = "docent.transluce.org"
 
 private_subnet_count = 2
 public_subnet_count = 2

@@ -36,6 +36,8 @@ jobs:
           DOCENT_PG_PASSWORD=${{ secrets.METR_DOCENT_PG_PASSWORD }}
           SENTRY_DSN=${{ vars.SENTRY_DSN }}
           POSTHOG_API_KEY=${{ secrets.METR_POSTHOG_API_KEY }}
+          COOKIE_DOMAIN=${{ vars.COOKIE_DOMAIN }}
+          DOCENT_CORS_ORIGINS=${{ vars.DOCENT_CORS_ORIGINS }}
           EOF
 
       - name: Build and push backend to ECR

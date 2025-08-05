@@ -1,5 +1,4 @@
 deployment = "staging"
-frontend_domain = "docent-staging.transluce.org"
 
 private_subnet_count = 2
 public_subnet_count = 1

@@ -9,12 +9,6 @@ variable "deployment" {
   type        = string
 }
 
-variable "frontend_domain" {
-  description = "Frontend domain (used for CORS origins)"
-  type        = string
-  default     = ""
-}
-
 variable "project_name" {
   description = "Project name"
   type        = string

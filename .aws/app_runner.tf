@@ -81,7 +81,6 @@ resource "aws_apprunner_service" "api" {
           DOCENT_REDIS_HOST    = aws_elasticache_replication_group.redis.primary_endpoint_address
           DOCENT_REDIS_PORT    = aws_elasticache_replication_group.redis.port
           DOCENT_REDIS_TLS     = "true"
-          DOCENT_CORS_ORIGINS = "https://${var.frontend_domain}"
         }
       }
       image_repository_type = "ECR"

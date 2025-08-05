@@ -1,5 +1,4 @@
 deployment = "bwater"
-frontend_domain = "docent-bridgewater.transluce.org"
 
 private_subnet_count = 2
 public_subnet_count = 1
