@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 logging.disable()
 
 # Default configuration
-DEFAULT_ENDPOINT = "http://localhost:8889/rest/telemetry"
+DEFAULT_ENDPOINT = "https://api.docent.transluce.org/rest/telemetry"
 
 
 def _is_async_context() -> bool:
