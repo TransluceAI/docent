@@ -29,7 +29,8 @@ logger = get_logger(__name__)
 # Redis key patterns for collection accumulation
 _COLLECTION_SPANS_KEY_PREFIX = "collection_spans:"
 _COLLECTION_TIMEOUT_KEY_PREFIX = "collection_timeout:"
-_COLLECTION_TIMEOUT_SECONDS = 2 * 60  # Timeout for collection completion
+_COLLECTION_SCORES_KEY_PREFIX = "collection_scores:"
+_COLLECTION_METADATA_KEY_PREFIX = "collection_metadata:"
 
 
 telemetry_router = APIRouter()
@@ -109,6 +110,113 @@ async def trace_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@telemetry_router.post("/v1/trace-done")
+async def trace_done_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+):
+    """
+    Endpoint to signal that a trace is complete.
+
+    This is an alternative way to detect collection completion.
+    When called, we wait a bit to see if new spans come in, then process the trace.
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+        collection_id = body.get("collection_id")
+
+        if not collection_id:
+            raise HTTPException(status_code=400, detail="collection_id is required")
+
+        # Check if collection exists and user has permissions
+        await _check_single_collection_permission(collection_id, user)
+
+        # Schedule processing with a small delay to allow for late-arriving spans
+        asyncio.create_task(_process_trace_done_with_delay(collection_id, user, analytics))
+
+        return JSONResponse(
+            status_code=200, content={"status": "success", "collection_id": collection_id}
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing trace-done: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@telemetry_router.post("/v1/scores")
+async def add_score_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    """
+    Endpoint to add a score to an agent run.
+
+    The score will be stored in Redis and applied when the collection is processed.
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+        collection_id = body.get("collection_id")
+        agent_run_id = body.get("agent_run_id")
+        score_name = body.get("score_name")
+        score_value = body.get("score_value")
+
+        if not all([collection_id, agent_run_id, score_name, score_value is not None]):
+            raise HTTPException(
+                status_code=400,
+                detail="collection_id, agent_run_id, score_name, and score_value are required",
+            )
+
+        # Check if collection exists and user has permissions
+        await _check_single_collection_permission(collection_id, user)
+
+        # Store score in Redis
+        await _store_agent_run_score(collection_id, agent_run_id, score_name, score_value)
+
+        return JSONResponse(status_code=200, content={"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Error adding score: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@telemetry_router.post("/v1/metadata")
+async def add_metadata_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    """
+    Endpoint to add metadata to an agent run.
+
+    The metadata will be stored in Redis and applied when the collection is processed.
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+        collection_id = body.get("collection_id")
+        agent_run_id = body.get("agent_run_id")
+        metadata = body.get("metadata")
+
+        if not all([collection_id, agent_run_id, metadata]):
+            raise HTTPException(
+                status_code=400, detail="collection_id, agent_run_id, and metadata are required"
+            )
+
+        # Check if collection exists and user has permissions
+        await _check_single_collection_permission(collection_id, user)
+
+        # Store metadata in Redis
+        await _store_agent_run_metadata(collection_id, agent_run_id, metadata)
+
+        return JSONResponse(status_code=200, content={"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Error adding metadata: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def _ensure_collections_exists(
     collection_ids: set[str], collection_names: Dict[str, str], user: User, mono_svc: MonoService
 ) -> None:
@@ -142,14 +250,14 @@ async def _add_spans_to_accumulation(collection_id: str, spans: List[Dict[str, A
     """Add spans to accumulation using Redis."""
     redis_client = await get_redis_client()
     collection_key = f"{_COLLECTION_SPANS_KEY_PREFIX}{collection_id}"
-    redis_client = await get_redis_client()
 
     # Add spans to Redis list
     for span in spans:
         await redis_client.lpush(collection_key, json.dumps(span))  # type: ignore
 
-    # Set TTL for automatic cleanup if collection doesn't complete
-    await redis_client.expire(collection_key, _COLLECTION_TIMEOUT_SECONDS)  # type: ignore
+    # Note: We don't expire the collection_key because we need the spans to persist
+    # until we manually process and clean them up. The timeout mechanism controls
+    # when to process, not Redis TTL.
 
     logger.info(f"Added {len(spans)} spans to Redis for collection {collection_id}")
 
@@ -158,7 +266,6 @@ async def _get_accumulated_spans(collection_id: str) -> List[Dict[str, Any]]:
     """Get accumulated spans for a collection from Redis."""
     redis_client = await get_redis_client()
     collection_key = f"{_COLLECTION_SPANS_KEY_PREFIX}{collection_id}"
-    redis_client = await get_redis_client()
 
     # Get all spans from Redis list
     span_jsons = cast(List[str], await redis_client.lrange(collection_key, 0, -1))  # type: ignore
@@ -179,51 +286,177 @@ async def _remove_collection_from_accumulation(collection_id: str) -> None:
     redis_client = await get_redis_client()
     collection_key = f"{_COLLECTION_SPANS_KEY_PREFIX}{collection_id}"
     await redis_client.delete(collection_key)  # type: ignore
+    logger.info(f"Removed collection {collection_id} from accumulation")
 
 
-async def _cancel_collection_timeout(collection_id: str) -> None:
-    """Cancel and remove a collection completion task from Redis."""
+async def _store_agent_run_score(
+    collection_id: str, agent_run_id: str, score_name: str, score_value: Any
+) -> None:
+    """Store an agent run score in Redis using lists to support multiple scores."""
+    redis_client = await get_redis_client()
+    scores_key = f"{_COLLECTION_SCORES_KEY_PREFIX}{collection_id}"
+
+    # Store score as JSON in a list with agent_run_id as field
+    score_data = {
+        "agent_run_id": agent_run_id,
+        "score_name": score_name,
+        "score_value": score_value,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Use LPUSH to add to a list for this agent_run_id
+    list_key = f"{scores_key}:{agent_run_id}"
+    await redis_client.lpush(list_key, json.dumps(score_data))  # type: ignore
+
+    logger.info(
+        f"Stored score {score_name}={score_value} for agent_run_id {agent_run_id} in collection {collection_id}"
+    )
+
+
+async def _store_agent_run_metadata(
+    collection_id: str, agent_run_id: str, metadata: Dict[str, Any]
+) -> None:
+    """Store agent run metadata in Redis using lists to support multiple metadata calls."""
+    redis_client = await get_redis_client()
+    metadata_key = f"{_COLLECTION_METADATA_KEY_PREFIX}{collection_id}"
+
+    # Store metadata as JSON in a list with agent_run_id as field
+    metadata_data = {
+        "agent_run_id": agent_run_id,
+        "metadata": metadata,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Use LPUSH to add to a list for this agent_run_id
+    list_key = f"{metadata_key}:{agent_run_id}"
+    await redis_client.lpush(list_key, json.dumps(metadata_data))  # type: ignore
+
+    logger.info(f"Stored metadata for agent_run_id {agent_run_id} in collection {collection_id}")
+
+
+async def _get_collection_scores(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
+    """Get all scores for a collection from Redis."""
+    redis_client = await get_redis_client()
+    scores_key = f"{_COLLECTION_SCORES_KEY_PREFIX}{collection_id}"
+
+    # Get all keys that match the pattern for this collection
+    pattern = f"{scores_key}:*"
+    keys = await redis_client.keys(pattern)  # type: ignore
+
+    scores: Dict[str, List[Dict[str, Any]]] = {}
+    for key in keys:
+        try:
+            # Extract agent_run_id from key (format: collection_scores:collection_id:agent_run_id)
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            agent_run_id = key_str.split(":")[-1]
+
+            # Get all scores for this agent_run_id
+            score_jsons: List[bytes] = await redis_client.lrange(key, 0, -1)  # type: ignore
+
+            agent_scores: List[Dict[str, Any]] = []
+            for score_json in score_jsons:  # type: ignore
+                try:
+                    score_data = json.loads(
+                        score_json.decode() if isinstance(score_json, bytes) else str(score_json)  # type: ignore
+                    )
+                    agent_scores.append(score_data)
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to decode score data: {e}")
+                    continue
+
+            if agent_scores:
+                scores[agent_run_id] = agent_scores
+
+        except Exception as e:
+            logger.error(f"Failed to process scores for key {key}: {e}")
+            continue
+
+    return scores
+
+
+async def _get_collection_metadata(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
+    """Get all metadata for a collection from Redis."""
+    redis_client = await get_redis_client()
+    metadata_key = f"{_COLLECTION_METADATA_KEY_PREFIX}{collection_id}"
+
+    # Get all keys that match the pattern for this collection
+    pattern = f"{metadata_key}:*"
+    keys = await redis_client.keys(pattern)  # type: ignore
+
+    metadata: Dict[str, List[Dict[str, Any]]] = {}
+    for key in keys:
+        try:
+            # Extract agent_run_id from key (format: collection_metadata:collection_id:agent_run_id)
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            agent_run_id = key_str.split(":")[-1]
+
+            # Get all metadata for this agent_run_id
+            metadata_jsons: List[bytes] = await redis_client.lrange(key, 0, -1)  # type: ignore
+
+            agent_metadata: List[Dict[str, Any]] = []
+            for metadata_json in metadata_jsons:  # type: ignore
+                try:
+                    metadata_item = json.loads(
+                        metadata_json.decode()
+                        if isinstance(metadata_json, bytes)
+                        else str(metadata_json)  # type: ignore
+                    )
+                    agent_metadata.append(metadata_item)
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to decode metadata: {e}")
+                    continue
+
+            if agent_metadata:
+                metadata[agent_run_id] = agent_metadata
+
+        except Exception as e:
+            logger.error(f"Failed to process metadata for key {key}: {e}")
+            continue
+
+    return metadata
+
+
+async def _cleanup_collection_data(collection_id: str) -> None:
+    """Clean up all Redis data for a collection."""
+    await _remove_collection_from_accumulation(collection_id)
+
+    # Clean up timeout key and related data
     redis_client = await get_redis_client()
     timeout_key = f"{_COLLECTION_TIMEOUT_KEY_PREFIX}{collection_id}"
     await redis_client.delete(timeout_key)  # type: ignore
 
+    # Clean up score list keys (they have the pattern collection_scores:collection_id:agent_run_id)
+    scores_key = f"{_COLLECTION_SCORES_KEY_PREFIX}{collection_id}"
+    score_keys = await redis_client.keys(f"{scores_key}:*")  # type: ignore
+    for key in score_keys:
+        await redis_client.delete(key)  # type: ignore
 
-def schedule_collection_timeout(collection_id: str, user: User) -> None:
-    """Schedule a timeout task for collection completion using Redis."""
+    # Clean up metadata list keys (they have the pattern collection_metadata:collection_id:agent_run_id)
+    metadata_key = f"{_COLLECTION_METADATA_KEY_PREFIX}{collection_id}"
+    metadata_keys = await redis_client.keys(f"{metadata_key}:*")  # type: ignore
+    for key in metadata_keys:
+        await redis_client.delete(key)  # type: ignore
 
-    async def timeout_handler():
-        await asyncio.sleep(_COLLECTION_TIMEOUT_SECONDS)
+    logger.info(f"Cleaned up Redis data for collection {collection_id}")
 
-        # Check if collection still exists and hasn't been processed
-        timeout_key = f"{_COLLECTION_TIMEOUT_KEY_PREFIX}{collection_id}"
-        redis_client = await get_redis_client()
 
-        # Only process if this worker still owns the timeout
-        if await redis_client.exists(timeout_key):  # type: ignore
-            accumulated_spans = await _get_accumulated_spans(collection_id)
-            if accumulated_spans:
-                logger.info(f"Collection {collection_id} timed out, processing accumulated spans")
-                # Create analytics client for timeout handler since we don't have dependency injection here
-                analytics_client = AnalyticsClient()
-                # Identify the user to associate analytics events with them
-                analytics_client.identify_user(user)
-                await process_completed_collection(
-                    collection_id, accumulated_spans, user, analytics_client
-                )
+async def _process_trace_done_with_delay(
+    collection_id: str, user: User, analytics: AnalyticsClient
+) -> None:
+    """Process a trace-done event with a delay to allow for late-arriving spans."""
+    # Wait a bit to allow for late-arriving spans
+    await asyncio.sleep(5)  # 5 second delay
 
-        # Use Redis to ensure only one worker handles the timeout
+    # Get accumulated spans for this collection
+    accumulated_spans = await _get_accumulated_spans(collection_id)
 
-    async def _schedule_timeout():
-        timeout_key = f"{_COLLECTION_TIMEOUT_KEY_PREFIX}{collection_id}"
-        redis_client = await get_redis_client()
-
-        # Try to set the timeout key (only succeeds if it doesn't exist)
-        if await redis_client.set(timeout_key, "1", nx=True):  # type: ignore
-            # This worker owns the timeout, schedule the task
-            asyncio.create_task(timeout_handler())
-
-    # process the collection even if we don't get the collection done event
-    asyncio.create_task(_schedule_timeout())
+    if accumulated_spans:
+        logger.info(
+            f"Processing trace-done for collection {collection_id} with {len(accumulated_spans)} spans"
+        )
+        await process_completed_collection(collection_id, accumulated_spans, user, analytics)
+    else:
+        logger.warning(f"No spans found for trace-done collection {collection_id}")
 
 
 async def _check_collection_permissions(
@@ -268,6 +501,40 @@ async def _check_collection_permissions(
             logger.info(
                 f"Collection {collection_id} doesn't exist yet, will be created during processing"
             )
+
+
+async def _check_single_collection_permission(collection_id: str, user: User) -> None:
+    """
+    Check that the user has write permissions on a single collection,
+    or that the collection doesn't exist yet (in which case it will be created).
+
+    Args:
+        collection_id: The collection ID to check
+        user: The authenticated user
+
+    Raises:
+        HTTPException: If user lacks write permissions on the existing collection
+    """
+    mono_svc = await MonoService.init()
+    if await mono_svc.collection_exists(collection_id):
+        from docent_core._db_service.schemas.auth_models import Permission, ResourceType
+
+        has_write_permission = await mono_svc.has_permission(
+            user=user,
+            resource_type=ResourceType.COLLECTION,
+            resource_id=collection_id,
+            permission=Permission.WRITE,
+        )
+        if not has_write_permission:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Write permission required on collection {collection_id}",
+            )
+    else:
+        # Collection doesn't exist yet - this is allowed, it will be created during processing
+        logger.info(
+            f"Collection {collection_id} doesn't exist yet, will be created during processing"
+        )
 
 
 def parse_protobuf_traces(body: bytes) -> Dict[str, Any]:
@@ -518,8 +785,6 @@ async def check_completion(collection_id: str, user: User, analytics: AnalyticsC
     accumulated_spans = await _get_accumulated_spans(collection_id)
 
     if not is_collection_complete(accumulated_spans):
-        # If no completion found, schedule timeout for collection completion
-        schedule_collection_timeout(collection_id, user)
         return
 
     # Process the completed collection with all accumulated spans
@@ -563,9 +828,8 @@ async def process_completed_collection(
     # Process spans to create agent runs
     count_agent_runs = await store_spans(spans, user)
 
-    # Clean up using targeted locks
-    await _remove_collection_from_accumulation(collection_id)
-    await _cancel_collection_timeout(collection_id)
+    # Clean up all Redis data for this collection after processing is complete
+    await _cleanup_collection_data(collection_id)
 
     # Track with PostHog
     analytics.track_event(
@@ -603,10 +867,19 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
 
     for collection_id, spans_by_agent_run in spans_by_collection.items():
         # Ensure collection exists
-        await _ensure_collection_exists(collection_id, spans_by_agent_run, user, mono_svc)
+        if not await mono_svc.collection_exists(collection_id):
+            logger.error(
+                f"Collection {collection_id} does not exist but should have been created earlier"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection {collection_id} not found. It should have been created during trace processing.",
+            )
 
-        # Create agent runs for this collection
-        collection_agent_runs = await _create_agent_runs_from_spans(spans_by_agent_run)
+        # Create agent runs for this collection with stored scores and metadata
+        collection_agent_runs = await _create_agent_runs_from_spans(
+            spans_by_agent_run, collection_id
+        )
 
         # Add agent runs to this collection
         if collection_agent_runs:
@@ -664,33 +937,6 @@ def _organize_spans_by_collection(
         ).append(span)
 
     return organized_spans
-
-
-async def _ensure_collection_exists(
-    collection_id: str,
-    agent_runs: Dict[str, Dict[str, List[Dict[str, Any]]]],
-    user: User,
-    mono_svc: MonoService,
-) -> None:
-    """
-    Ensure a collection exists, creating it if necessary.
-
-    Args:
-        collection_id: The collection ID to ensure exists
-        agent_runs: Agent runs data (not used for collection creation anymore)
-        user: The user creating the collection
-        mono_svc: Database service instance
-    """
-    # Note: Collection creation is now handled in _ensure_collections_exists
-    # This function is kept for backward compatibility but no longer creates collections
-    try:
-        if not await mono_svc.collection_exists(collection_id):
-            logger.warning(
-                f"Collection {collection_id} does not exist but should have been created earlier"
-            )
-    except Exception as e:
-        logger.error(f"Error checking collection {collection_id}: {str(e)}")
-        raise
 
 
 def _find_or_create_chat_thread(
@@ -797,13 +1043,14 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
 
 
 async def _create_agent_runs_from_spans(
-    agent_runs: Dict[str, Dict[str, List[Dict[str, Any]]]]
+    agent_runs: Dict[str, Dict[str, List[Dict[str, Any]]]], collection_id: str
 ) -> List[AgentRun]:
     """
-    Create AgentRun objects from organized spans.
+    Create AgentRun objects from organized spans, incorporating stored scores and metadata.
 
     Args:
         agent_runs: Organized spans by agent_run_id -> transcript_id -> spans[]
+        collection_id: The ID of the collection these spans belong to
 
     Returns:
         List of AgentRun objects
@@ -857,6 +1104,10 @@ async def _create_agent_runs_from_spans(
 
         # Create agent run if it has transcripts
         if agent_run_transcripts:
+            # Get stored scores and metadata for this collection
+            collection_scores = await _get_collection_scores(collection_id)
+            collection_metadata = await _get_collection_metadata(collection_id)
+
             # Create metadata with scores, model, and any additional metadata using BaseAgentRunMetadata
             metadata_dict: Dict[str, Any] = {"scores": agent_run_scores}
             if agent_run_model:
@@ -866,6 +1117,27 @@ async def _create_agent_runs_from_spans(
             if agent_run_metadata_dict:
                 metadata_dict.update(agent_run_metadata_dict)
                 logger.info(f"  Added metadata to agent run: {agent_run_metadata_dict}")
+
+            # Add stored scores from Redis (these take precedence over span-based scores)
+            if collection_scores.get(agent_run_id):
+                for score_item in collection_scores[agent_run_id]:
+                    stored_score_name = score_item.get("score_name")
+                    stored_score_value = score_item.get("score_value")
+                    if stored_score_name and stored_score_value is not None:
+                        # Add the stored score to the scores dict
+                        metadata_dict["scores"][stored_score_name] = stored_score_value
+                        logger.info(
+                            f"  Added stored score to agent run: {stored_score_name} = {stored_score_value}"
+                        )
+
+            # Add stored metadata from Redis (these take precedence over span-based metadata)
+            if collection_metadata.get(agent_run_id):
+                for metadata_item in collection_metadata[agent_run_id]:
+                    stored_metadata = metadata_item.get("metadata", {})
+                    if stored_metadata:
+                        # Merge stored metadata with span-based metadata, stored metadata takes precedence
+                        metadata_dict.update(stored_metadata)
+                        logger.info(f"  Added stored metadata to agent run: {stored_metadata}")
 
             metadata = BaseAgentRunMetadata(**metadata_dict)
             agent_run = AgentRun(

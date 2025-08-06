@@ -191,7 +191,7 @@ def analyze_document_with_metadata(document_text: str):
 
 # Adding metadata during execution
 def process_with_dynamic_metadata():
-    with agent_run_context() as (context, agent_run_id, transcript_id):
+    with agent_run_context() as (agent_run_id, transcript_id):
         # Do some work
         result = process_data()
 
@@ -225,7 +225,7 @@ With context managers, you can explicitly pass and resume agent runs:
 from docent import agent_run_context
 
 def run_agent(state):
-    with agent_run_context() as (_, agent_run_id, _):
+    with agent_run_context() as (agent_run_id, _):
         # Agent logic here
         response = openai.ChatCompletion.create(
             model="gpt-4",
