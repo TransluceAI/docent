@@ -1,6 +1,6 @@
 import { User } from '@/app/types/userTypes';
 import { cookies, headers } from 'next/headers';
-import { INTERNAL_BASE_URL } from '../constants';
+import { COOKIE_KEY, INTERNAL_BASE_URL } from '../constants';
 
 /**
  * Verifies the session with the backend
@@ -20,7 +20,7 @@ export async function getUser(): Promise<User | null> {
 
   // Fallback to normal cookie-based authentication
   const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get('docent_session_id');
+  const sessionCookie = cookieStore.get(COOKIE_KEY);
 
   if (!sessionCookie?.value) {
     return null;
@@ -28,7 +28,7 @@ export async function getUser(): Promise<User | null> {
 
   const response = await fetch(`${INTERNAL_BASE_URL}/rest/me`, {
     headers: {
-      Cookie: `docent_session_id=${sessionCookie.value}`,
+      Cookie: `${COOKIE_KEY}=${sessionCookie.value}`,
       'Content-Type': 'application/json',
     },
     cache: 'no-store', // Always get fresh auth data

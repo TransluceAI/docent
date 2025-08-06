@@ -69,6 +69,7 @@ from docent_core._server._assistant.summarizer import (
     summarize_agent_actions,
 )
 from docent_core._server._auth.session import (
+    COOKIE_KEY,
     create_user_session,
     invalidate_user_session,
 )
@@ -240,7 +241,7 @@ async def get_current_user(request: Request, mono_svc: MonoService = Depends(get
         HTTPException: 401 if session is invalid or expired
     """
     # Get session ID from cookie
-    session_id = request.cookies.get("docent_session_id")
+    session_id = request.cookies.get(COOKIE_KEY)
     if not session_id:
         raise HTTPException(status_code=401, detail="No session found")
 
@@ -268,7 +269,7 @@ async def logout(
         Success message
     """
     # Get session ID from cookie
-    session_id = request.cookies.get("docent_session_id")
+    session_id = request.cookies.get(COOKIE_KEY)
     if session_id:
         # Invalidate the session using the auth helper
         await invalidate_user_session(session_id, response, mono_svc)

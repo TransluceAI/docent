@@ -12,6 +12,8 @@ from docent._log_util.logger import get_logger
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV, get_deployment_id
 
+COOKIE_KEY = "docent_session"
+
 logger = get_logger(__name__)
 
 if deployment_id := get_deployment_id():
@@ -51,7 +53,7 @@ async def create_user_session(user_id: str, response: Response, mono_svc: MonoSe
 
     # Set the session cookie with consistent settings
     response.set_cookie(
-        key="docent_session_id",
+        key=COOKIE_KEY,
         value=session_id,
         max_age=30 * 24 * 60 * 60,  # 30d
         httponly=True,
@@ -79,7 +81,7 @@ async def invalidate_user_session(
 
     # Clear the session cookie
     response.delete_cookie(
-        key="docent_session_id",
+        key=COOKIE_KEY,
         httponly=True,
         secure=cookie_secure,
         samesite=cookie_samesite,
