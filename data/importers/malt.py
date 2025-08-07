@@ -192,7 +192,10 @@ async def dump_malt_sample_to_json(
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Convert AgentRuns to dictionaries for JSON serialization
-        serialized_runs = [agent_run.model_dump() for agent_run in agent_runs]
+        serialized_runs = [
+            agent_run.model_dump(exclude={"id": True, "transcripts": {"__all__": {"id"}}})
+            for agent_run in agent_runs
+        ]
 
         # Create output data with metadata
         output_data = {
