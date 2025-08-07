@@ -59,6 +59,11 @@ dev = [
     # Viz
     "matplotlib",
     "jupyter>=1.0.0",
+    # Data registry
+    "boto3>=1.35.0",
+    "beaupy>=3.10.0",
+    "rich>=13.0.0",
+    "datasets>=4.0.0",
 ]
 
 
