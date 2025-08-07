@@ -1574,6 +1574,7 @@ async def compute_embeddings(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
+    return
     await mono_svc.add_and_enqueue_embedding_job(ctx)
 
 
