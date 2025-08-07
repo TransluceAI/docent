@@ -17,7 +17,7 @@ if [ "$SERVICE" == "server" ]; then
   echo "Starting server on port 8000 with 1 worker"
   ENV_RESOLUTION_STRATEGY=os_environ docent_core server --port 8000 --workers 1 --no-start-docent-worker
 elif [ "$SERVICE" == "worker" ]; then
-  NUM_WORKERS=${NUM_WORKERS:-4}
+  NUM_WORKERS=${NUM_WORKERS:-2}
   echo "Starting ${NUM_WORKERS} worker(s)"
 
   # Ensure child processes are terminated on container stop
