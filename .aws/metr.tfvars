@@ -12,12 +12,16 @@ elasticache_node_type = "cache.m6g.large"
 app_runner_cpu = 4096
 app_runner_memory = 8192
 app_runner_max_concurrency = 50
-app_runner_min_size = 5
-app_runner_max_size = 25
+app_runner_min_size = 1
+app_runner_max_size = 10
+app_runner_num_workers = 4
 
 ecs_cpu = 4096
 ecs_memory = 8192
-worker_desired_count = 5
+ecs_min_size = 1
+ecs_max_size = 10
+ecs_desired_count = 1
+ecs_num_workers = 4
 
 # Tailscale configuration (generate auth key from Tailscale admin console)
 # tailscale_auth_key = "tskey-auth-..."  # Set this via environment variable or uncomment and add your key
