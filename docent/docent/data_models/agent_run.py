@@ -67,7 +67,7 @@ class AgentRun(BaseModel):
 
         # Check that the metadata is JSON serializable
         try:
-            json.dumps(v)
+            json.dumps(fake_model_dump(v))
         except (TypeError, ValueError) as e:
             raise ValueError(f"metadata must be JSON-serializable: {e}")
 

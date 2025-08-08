@@ -66,13 +66,18 @@ def fake_model_dump(obj: dict[str, Any]) -> dict[str, Any]:
     """
     Custom serializer for the metadata field so the internal fields are explicitly preserved.
     """
-    result: dict[str, Any] = {}
-    for k, v in obj.items():
-        if isinstance(v, BaseModel):
-            result[k] = v.model_dump()
+
+    def _inner_dump(obj: Any) -> Any:
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        elif isinstance(obj, dict):
+            return {k: _inner_dump(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_inner_dump(v) for v in obj]
         else:
-            result[k] = v
-    return result
+            return obj
+
+    return _inner_dump(obj)
 
 
 class Transcript(BaseModel):

@@ -25,7 +25,7 @@ from sqlalchemy.schema import UniqueConstraint
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.transcript import Transcript
+from docent.data_models.transcript import Transcript, fake_model_dump
 from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.filters import ComplexFilter, parse_filter_dict
 from docent_core._db_service.schemas.auth_models import Organization, Permission, User
@@ -99,9 +99,10 @@ class SQLAAgentRun(SQLABase):
     @classmethod
     def from_agent_run(cls, agent_run: AgentRun, collection_id: str) -> "SQLAAgentRun":
         # Sanitize raw text
-        metadata_json = json.loads(sanitize_pg_text(json.dumps(agent_run.metadata)))
+        metadata_json = json.loads(
+            sanitize_pg_text(json.dumps(fake_model_dump(agent_run.metadata)))
+        )
         text_for_search = sanitize_pg_text(agent_run.text)
-
         return cls(
             id=agent_run.id,
             name=agent_run.name,
@@ -112,7 +113,7 @@ class SQLAAgentRun(SQLABase):
         )
 
     def to_agent_run(self, transcripts: dict[str, Transcript]) -> AgentRun:
-        metadata = json.loads(self.metadata_json)  # .decode("utf-8")) TODO(vincent): fix this
+        metadata = self.metadata_json
         assert isinstance(metadata, dict), f"metadata is not a dict: {metadata}"
 
         return AgentRun(
@@ -151,7 +152,7 @@ class SQLATranscript(SQLABase):
     ) -> "SQLATranscript":
         # Serialize to JSON and then convert to bytes to avoid encoding issues
         messages_binary = json.dumps(to_jsonable_python(transcript.messages)).encode("utf-8")
-        metadata_binary = json.dumps(to_jsonable_python(transcript.metadata)).encode("utf-8")
+        metadata_binary = json.dumps(fake_model_dump(transcript.metadata)).encode("utf-8")
 
         return cls(
             dict_key=dict_key,

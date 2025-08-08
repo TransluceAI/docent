@@ -480,8 +480,6 @@ async def preview_import_runs_from_file(
     models: set[str] = set()
     task_ids: set[str] = set()
 
-    # TODO(vincent): fix this
-
     for run in agent_runs:
         # Use getattr with defaults to safely access attributes
         model = getattr(run.metadata, "model", None)

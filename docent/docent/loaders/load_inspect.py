@@ -69,7 +69,8 @@ def load_inspect_log(log: EvalLog) -> list[AgentRun]:
             AgentRun(
                 transcripts={
                     "main": Transcript(
-                        messages=[parse_chat_message(m.model_dump()) for m in s.messages]
+                        messages=[parse_chat_message(m.model_dump()) for m in s.messages],
+                        metadata={},
                     )
                 },
                 metadata=metadata,
