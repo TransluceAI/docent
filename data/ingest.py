@@ -97,7 +97,7 @@ async def register_test_user_and_create_api_key() -> str:
         return response_data["api_key"]
 
 
-async def ingest_file(filename: str) -> None:
+async def ingest_file(filename: str, importer_override: str | None = None) -> None:
     """
     Ingest a file using the Docent Python SDK.
 
@@ -120,9 +120,10 @@ async def ingest_file(filename: str) -> None:
         log_error(f"Could not obtain file '{filename}': {e}")
         raise
 
-    # Parse filename to get collection name and importer
+    # Parse filename to get collection name and importer (unless overridden)
     try:
-        collection_name, importer_name, _ = parse_filename(filename)
+        collection_name, parsed_importer_name, _ = parse_filename(filename)
+        importer_name = importer_override or parsed_importer_name
     except ValueError as e:
         log_error(str(e))
         raise
@@ -133,7 +134,7 @@ async def ingest_file(filename: str) -> None:
 
     # Get the appropriate importer
     try:
-        importer = get_importer(importer_name)
+        importer_func = get_importer(importer_name)
     except ValueError as e:
         log_error(str(e))
         raise
@@ -141,7 +142,7 @@ async def ingest_file(filename: str) -> None:
     # Process the file to get agent runs
     with simple_progress("Processing file...") as (progress, task):
         try:
-            agent_runs, file_info = await importer(local_path)
+            agent_runs, file_info = await importer_func(local_path)
 
             log_success(
                 f"Processed {len(agent_runs)} agent runs from {file_info.get('filename', filename)}"

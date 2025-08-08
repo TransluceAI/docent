@@ -103,20 +103,25 @@ class RubricService:
     async def get_all_rubrics(self, collection_id: str, latest_only: bool = True) -> list[Rubric]:
         """Get all rubrics for a collection. If latest_only is True, only return the latest version of each rubric."""
         if latest_only:
-            # Use window function to get only the latest version of each rubric
-            # This approach uses ROW_NUMBER() to rank versions within each rubric_id
-            ranked_rubrics = (
+            # Join to a subquery of max version per rubric id within the collection
+            max_versions_subq = (
                 select(
-                    SQLARubric,
-                    func.row_number()
-                    .over(partition_by=SQLARubric.id, order_by=SQLARubric.version.desc())
-                    .label("rn"),
-                ).where(SQLARubric.collection_id == collection_id)
-            ).cte("ranked_rubrics")
+                    SQLARubric.id.label("rid"),
+                    func.max(SQLARubric.version).label("max_version"),
+                )
+                .where(SQLARubric.collection_id == collection_id)
+                .group_by(SQLARubric.id)
+                .subquery()
+            )
 
-            # Select only the rows with rank 1 (latest version)
             result = await self.session.execute(
-                select(SQLARubric).select_from(ranked_rubrics).where(ranked_rubrics.c.rn == 1)
+                select(SQLARubric)
+                .join(
+                    max_versions_subq,
+                    (SQLARubric.id == max_versions_subq.c.rid)
+                    & (SQLARubric.version == max_versions_subq.c.max_version),
+                )
+                .where(SQLARubric.collection_id == collection_id)
             )
         else:
             # Get all versions of all rubrics

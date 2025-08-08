@@ -28,9 +28,17 @@ from .utils import create_aligned_file_display, log_error, log_info, log_success
 
 
 @app.command()
-def ingest(filename: str = typer.Argument(None, help="File to ingest")):
+def ingest(
+    filename: str = typer.Argument(None, help="File to ingest"),
+    importer: str | None = typer.Option(
+        None,
+        "--importer",
+        "-i",
+        help="Override importer to use (e.g. 'tau_bench', 'inspect_log')",
+    ),
+):
     """Ingest data using the Docent Python SDK."""
-    asyncio.run(_ingest_async(filename))
+    asyncio.run(_ingest_async(filename, importer))
 
 
 @app.command()
@@ -48,7 +56,7 @@ def dump(
     asyncio.run(_dump_async(collection_id, name))
 
 
-async def _ingest_async(filename: str | None):
+async def _ingest_async(filename: str | None, importer: str | None):
     """Async implementation of ingest command."""
 
     if not filename:
@@ -58,7 +66,7 @@ async def _ingest_async(filename: str | None):
             return
 
     try:
-        await ingest_file(filename)
+        await ingest_file(filename, importer_override=importer)
     except Exception:
         sys.exit(1)
 
