@@ -585,7 +585,7 @@ async def agent_run_metadata_fields(
     # Get any agent_run to get the metadata fields
     any_data = await mono_svc.get_any_agent_run(ctx)
     if any_data is not None:
-        fields = any_data.get_filterable_fields()  # TODO(vincent): fix this
+        fields = any_data.get_filterable_fields()
     else:
         fields = []
 

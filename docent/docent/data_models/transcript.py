@@ -64,20 +64,13 @@ def format_chat_message(
 
 def fake_model_dump(obj: dict[str, Any]) -> dict[str, Any]:
     """
-    Custom serializer for the metadata field so the internal fields are explicitly preserved.
+    Emulate the action of pydantic.model_dump() for non-pydantic objects (to handle nested values)
     """
 
-    def _inner_dump(obj: Any) -> Any:
-        if isinstance(obj, BaseModel):
-            return obj.model_dump()
-        elif isinstance(obj, dict):
-            return {k: _inner_dump(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [_inner_dump(v) for v in obj]
-        else:
-            return obj
+    class _FakeModel(BaseModel):
+        data: dict[str, Any]
 
-    return _inner_dump(obj)
+    return _FakeModel(data=obj).model_dump()["data"]
 
 
 class Transcript(BaseModel):
