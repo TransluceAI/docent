@@ -64,6 +64,7 @@ class ChartDimension(BaseModel):
     )  # Whether this represents an aggregate measure
     extra: dict[str, Any] = {}
     is_numeric: bool = False
+    is_valid_measure: bool = False
 
     def __init__(
         self,
@@ -73,12 +74,15 @@ class ChartDimension(BaseModel):
         expression: Any = None,
         is_aggregation: bool = False,
         is_numeric: bool = False,
+        is_valid_measure: bool | None = None,
         **extra: Any,
     ):
         if name is None:
             name = key
         if short_name is None:
             short_name = name
+        if is_valid_measure is None:
+            is_valid_measure = is_numeric
 
         super().__init__(
             key=key,
@@ -87,6 +91,7 @@ class ChartDimension(BaseModel):
             expression=expression,
             is_aggregation=is_aggregation,
             is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
             extra=extra,
         )
 
@@ -103,6 +108,7 @@ class ChartDimension(BaseModel):
         json_path: str,
         name: str | None = None,
         is_numeric: bool = False,
+        is_valid_measure: bool = False,
     ):
         """Create a ChartDimension for JSON field access (supports nested paths)."""
         # Handle nested JSON paths like 'scores.correct' -> ['scores', 'correct']
@@ -149,6 +155,7 @@ class ChartDimension(BaseModel):
             expression=expression,
             is_aggregation=False,
             is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
             metadata_key=json_path,
         )
 
@@ -414,7 +421,8 @@ class ChartsService:
             SELECT
                 path,
                 CASE
-                    WHEN bool_and(jsonb_typeof(value) IN ('number','boolean','null')) THEN 'numeric'
+                    WHEN bool_and(jsonb_typeof(value) IN ('number','null')) THEN 'numeric'
+                    WHEN bool_and(jsonb_typeof(value) IN ('number','boolean','null')) THEN 'numeric_or_boolean'
                     ELSE 'text'
                 END AS data_type,
                 bool_and(jsonb_typeof(value) IN ('number', 'boolean', 'null')) AS is_measure_numeric
@@ -437,6 +445,8 @@ class ChartsService:
                     base_field="ar.metadata_json",
                     json_path=row.path,
                     is_numeric=row.data_type == "numeric",
+                    is_valid_measure=row.data_type == "numeric"
+                    or row.data_type == "numeric_or_boolean",
                 )
                 for row in result
             ]
