@@ -1992,7 +1992,13 @@ class MonoService:
     ######################
 
     async def store_telemetry_log(
-        self, user_id: str, json_data: dict[str, Any], collection_id: str | None = None
+        self,
+        user_id: str,
+        type: str,
+        version: str,
+        json_data: dict[str, Any],
+        *,
+        collection_id: str | None = None,
     ) -> str:
         """Store telemetry log data in the database."""
         telemetry_id = str(uuid4())
@@ -2002,6 +2008,8 @@ class MonoService:
                     id=telemetry_id,
                     user_id=user_id,
                     collection_id=collection_id,
+                    type=type,
+                    version=version,
                     json_data=json_data,
                 )
             )

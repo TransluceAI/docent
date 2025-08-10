@@ -67,7 +67,12 @@ async def trace_endpoint(
             raise HTTPException(status_code=415, detail=f"Unsupported content type: {content_type}")
 
         # Store the raw telemetry data for request
-        await mono_svc.store_telemetry_log(user.id, trace_data)
+        await mono_svc.store_telemetry_log(
+            user.id,
+            type="traces",
+            version="v1",
+            json_data=trace_data,
+        )
 
         count_spans = await handle_trace_data(trace_data, user, mono_svc, analytics)
 
@@ -149,7 +154,13 @@ async def trace_done_endpoint(
             "collection_id": collection_id,
             "request_body": body,
         }
-        await mono_svc.store_telemetry_log(user.id, telemetry_data, collection_id)
+        await mono_svc.store_telemetry_log(
+            user.id,
+            type="trace-done",
+            version="v1",
+            json_data=telemetry_data,
+            collection_id=collection_id,
+        )
 
         # Schedule processing with a small delay to allow for late-arriving spans
         asyncio.create_task(_process_trace_done_with_delay(collection_id, user, analytics))
@@ -192,15 +203,13 @@ async def add_score_endpoint(
         await _check_single_collection_permission(collection_id, user)
 
         # Store telemetry log for this request
-        telemetry_data = {
-            "endpoint": "/v1/scores",
-            "collection_id": collection_id,
-            "agent_run_id": agent_run_id,
-            "score_name": score_name,
-            "score_value": score_value,
-            "request_body": body,
-        }
-        await mono_svc.store_telemetry_log(user.id, telemetry_data, collection_id)
+        await mono_svc.store_telemetry_log(
+            user.id,
+            type="scores",
+            version="v1",
+            json_data=body,
+            collection_id=collection_id,
+        )
 
         # Store score in Redis
         await _store_agent_run_score(collection_id, agent_run_id, score_name, score_value)
@@ -239,14 +248,13 @@ async def add_metadata_endpoint(
         await _check_single_collection_permission(collection_id, user)
 
         # Store telemetry log for this request
-        telemetry_data = {
-            "endpoint": "/v1/metadata",
-            "collection_id": collection_id,
-            "agent_run_id": agent_run_id,
-            "metadata": metadata,
-            "request_body": body,
-        }
-        await mono_svc.store_telemetry_log(user.id, telemetry_data, collection_id)
+        await mono_svc.store_telemetry_log(
+            user.id,
+            type="metadata",
+            version="v1",
+            json_data=body,
+            collection_id=collection_id,
+        )
 
         # Store metadata in Redis
         await _store_agent_run_metadata(collection_id, agent_run_id, metadata)

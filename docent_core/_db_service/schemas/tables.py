@@ -673,6 +673,9 @@ class SQLATelemetryLog(SQLABase):
     collection_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=True, index=True
     )
+    # Explicit type/category for this telemetry entry (e.g., "traces", "scores", "metadata", "trace-done")
+    type = mapped_column(Text, nullable=True)
+    version = mapped_column(Text, nullable=True)
     json_data = mapped_column(JSONB, nullable=False)
     created_at = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
