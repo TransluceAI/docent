@@ -7,7 +7,7 @@ import TableChart from './TableChart';
 import ChartContainer from './ChartContainer';
 import { ChartSpec } from '../types/collectionTypes';
 import { useAppSelector } from '../store/hooks';
-import { ChartData, ScoreData, getScoreAt } from '../utils/chartDataUtils';
+import { ChartData, getScoreAt, parseChartData } from '../utils/chartDataUtils';
 import { useGetChartDataQuery } from '../api/chartApi';
 import { useChartFilters } from '../../hooks/use-chart-filters';
 import { CustomBarTooltip, CustomLineTooltip } from './CustomTooltips';
@@ -41,83 +41,18 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
   const maxValues = 100;
 
   // Parse data once for all chart types
-  const chartData: ChartData = useMemo(() => {
-    if (!relevantBinStats) {
-      return {
-        data: {},
-        xValues: [],
-        seriesValues: [],
-        xKey: chart.x_key || '',
-        xLabel: chart.x_label || chart.x_key || '',
-        seriesKey: chart.series_key ?? 'Score',
-        seriesLabel: chart.series_label || chart.series_key || '',
-        yKey: chart.y_key || '',
-        yLabel: chart.y_label || chart.y_key || '',
-        is2d: Boolean(chart.series_key),
-      };
-    }
-
-    const xValueSet = new Set<string>();
-    const seriesValueSet = new Set<string>();
-
-    // Indexed like data[seriesValue][xValue]
-    const parsedData: Record<string, Record<string, ScoreData>> = {};
-
-    Object.entries(relevantBinStats).forEach(([key, stats]) => {
-      // Dimensions and values for this bin
-      const dimensions: Record<string, string> = {};
-
-      // Key format is key1,value1|key2,value2
-      for (const part of key.split('|')) {
-        const [dim, value] = part.split(',', 2);
-        if (dim && value) {
-          dimensions[dim] = value;
-        }
-      }
-
-      // If the chart doesn't have a seriesKey, there will be one series with a name equal to the yKey
-      const seriesValue = chart.series_key
-        ? dimensions[chart.series_key]
-        : chart.y_label;
-
-      const xValue = chart.x_key ? dimensions[chart.x_key] : undefined;
-      if (!xValue || !seriesValue) return;
-
-      xValueSet.add(xValue);
-      seriesValueSet.add(seriesValue);
-
-      if (!parsedData[seriesValue]) parsedData[seriesValue] = {};
-      parsedData[seriesValue][xValue] = {
-        score: stats.mean,
-        n: stats.n,
-        ci: stats.ci,
-      };
-    });
-
-    const xValues = Array.from(xValueSet).slice(0, maxValues);
-    const seriesValues = Array.from(seriesValueSet).slice(0, maxValues);
-
-    return {
-      data: parsedData,
-      xValues,
-      seriesValues,
-      xKey: chart.x_key || '',
-      xLabel: chart.x_label || chart.x_key || '',
-      seriesKey: chart.series_key ?? 'Score',
-      seriesLabel: chart.series_label || chart.series_key || '',
-      yKey: chart.y_key || '',
-      yLabel: chart.y_label || chart.y_key || '',
-      is2d: Boolean(chart.series_key),
-    };
-  }, [
-    relevantBinStats,
-    chart.x_key,
-    chart.y_key,
-    chart.series_key,
-    chart.x_label,
-    chart.y_label,
-    chart.series_label,
-  ]);
+  const chartData: ChartData = useMemo(
+    () => parseChartData(relevantBinStats, chart, { maxValues }),
+    [
+      relevantBinStats,
+      chart.x_key,
+      chart.y_key,
+      chart.series_key,
+      chart.x_label,
+      chart.y_label,
+      chart.series_label,
+    ]
+  );
 
   // Handle loading and error states after all hooks
   if (isLoading) {
@@ -154,6 +89,7 @@ function BarChart({
     seriesValue?: string
   ) => void;
 }) {
+  const theme = computeChartTheme();
   const data: NivoBar[] = useMemo(
     () =>
       chartData.xValues.map((xValue) => {
@@ -197,7 +133,7 @@ function BarChart({
         indexBy={chartData.xKey}
         labelSkipWidth={12}
         labelSkipHeight={12}
-        theme={chartTheme}
+        theme={theme}
         onClick={handleBarClick}
         tooltip={CustomBarTooltip}
         legends={
@@ -251,6 +187,7 @@ function LineChart({
     seriesValue?: string
   ) => void;
 }) {
+  const theme = computeChartTheme();
   const data: NivoLineSeries[] = useMemo(() => {
     const seriesMap: Record<string, { x: any; y: number | null }[]> = {};
 
@@ -299,7 +236,7 @@ function LineChart({
           bottom: 50,
           left: 60,
         }}
-        theme={chartTheme}
+        theme={theme}
         yScale={{
           type: 'linear',
           min: 'auto',
@@ -346,30 +283,52 @@ const getTickValues = (values: (string | number)[]) => {
   return values.filter((_, index) => index % step === 0);
 };
 
-const chartTheme = {
-  axis: {
-    ticks: {
-      text: {
-        fill: 'hsl(var(--muted-foreground))',
+function getCssVarValue(name: string): string {
+  if (typeof window === 'undefined') return '';
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
+
+function getCssHsl(name: string): string | undefined {
+  const raw = getCssVarValue(name);
+  if (!raw) return undefined;
+  return `hsl(${raw})`;
+}
+
+// CSS vars are not available when rendering for export, so we need to get the acutal HSL values
+function computeChartTheme() {
+  const mutedForeground = getCssHsl('--muted-foreground');
+  const foreground = getCssHsl('--foreground');
+  const card = getCssHsl('--card');
+  const cardForeground = getCssHsl('--card-foreground');
+  const border = getCssHsl('--border');
+
+  return {
+    axis: {
+      ticks: {
+        text: {
+          fill: mutedForeground,
+        },
+      },
+      legend: {
+        text: {
+          fill: foreground,
+        },
       },
     },
-    legend: {
+    legends: {
       text: {
-        fill: 'hsl(var(--foreground))',
+        fill: mutedForeground,
       },
     },
-  },
-  legends: {
-    text: {
-      fill: 'hsl(var(--muted-foreground))',
+    tooltip: {
+      container: {
+        background: card,
+        color: cardForeground,
+        border: `1px solid ${border}`,
+        borderRadius: '6px',
+      },
     },
-  },
-  tooltip: {
-    container: {
-      background: 'hsl(var(--card))',
-      color: 'hsl(var(--card-foreground))',
-      border: '1px solid hsl(var(--border))',
-      borderRadius: '6px',
-    },
-  },
-};
+  } as const;
+}

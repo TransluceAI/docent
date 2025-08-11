@@ -71,6 +71,7 @@ resource "aws_apprunner_service" "api" {
         port = "8000"
         runtime_environment_variables = {
           SERVICE              = "server"  # Starts the uvicorn server, not the worker
+          NUM_WORKERS          = var.app_runner_num_workers
           DEPLOYMENT_ID        = var.deployment
           LLM_CACHE_PATH       = null  # Disable cache
           DOCENT_PG_HOST       = aws_db_instance.postgres.address
@@ -129,6 +130,10 @@ resource "aws_apprunner_auto_scaling_configuration_version" "api" {
   max_concurrency = var.app_runner_max_concurrency
   max_size        = var.app_runner_max_size
   min_size        = var.app_runner_min_size
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-api-autoscaling"
@@ -196,6 +201,10 @@ resource "aws_apprunner_auto_scaling_configuration_version" "frontend" {
   max_concurrency = var.frontend_app_runner_max_concurrency
   max_size        = var.frontend_app_runner_max_size
   min_size        = var.frontend_app_runner_min_size
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-frontend-autoscaling"

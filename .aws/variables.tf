@@ -69,13 +69,11 @@ variable "db_name" {
 variable "app_runner_cpu" {
   description = "CPU units for App Runner (256, 512, 1024, 2048, 4096)"
   type        = number
-  default     = 4096
 }
 
 variable "app_runner_memory" {
   description = "Memory for App Runner (512, 1024, 2048, 3072, 4096, 6144, 8192, 10240, 12288)"
   type        = number
-  default     = 12288
 }
 
 variable "app_runner_max_concurrency" {
@@ -93,20 +91,38 @@ variable "app_runner_max_size" {
   type        = number
 }
 
+variable "app_runner_num_workers" {
+  description = "Number of workers per instance for App Runner"
+  type        = number
+}
+
 variable "ecs_cpu" {
   description = "CPU units for ECS Fargate (256, 512, 1024, 2048, 4096)"
   type        = number
-  default     = 4096
 }
 
 variable "ecs_memory" {
   description = "Memory for ECS Fargate (512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192)"
   type        = number
-  default     = 8192
 }
 
-variable "worker_desired_count" {
+variable "ecs_min_size" {
+  description = "Minimum number of ECS worker tasks"
+  type        = number
+}
+
+variable "ecs_max_size" {
+  description = "Maximum number of ECS worker tasks"
+  type        = number
+}
+
+variable "ecs_desired_count" {
   description = "Desired number of worker tasks"
+  type        = number
+}
+
+variable "ecs_num_workers" {
+  description = "Number of workers per instance for ECS"
   type        = number
 }
 
@@ -157,4 +173,14 @@ variable "frontend_app_runner_max_size" {
   description = "Maximum number of Frontend App Runner instances"
   type        = number
   default     = 10
+}
+
+variable "vpc_cidr_block" {
+  description = "CIDR block for the VPC."
+  type        = string
+  default     = "10.0.0.0/16"
+  validation {
+    condition     = can(cidrnetmask(var.vpc_cidr_block))
+    error_message = "vpc_cidr_block must be a valid IPv4 CIDR string, e.g., 10.0.0.0/16."
+  }
 }

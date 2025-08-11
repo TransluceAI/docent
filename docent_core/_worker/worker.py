@@ -186,6 +186,6 @@ def run():
             "functions": [run_job],
             "redis_settings": redis_settings,
             "queue_name": WORKER_QUEUE_NAME,
-            "max_jobs": 5,  # per worker
+            "max_jobs": 1,  # per worker
         }
     )

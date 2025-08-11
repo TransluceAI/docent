@@ -11,13 +11,14 @@ if [ "$SERVICE" != "server" ] && [ "$SERVICE" != "worker" ]; then
   exit 1
 fi
 
+NUM_WORKERS=${NUM_WORKERS:-2}
+echo "NUM_WORKERS: ${NUM_WORKERS}"
+
 # Use os_environ to allow overriding .env via TF
 if [ "$SERVICE" == "server" ]; then
-  # Port 8000 and 1 worker is default for AppRunner
-  echo "Starting server on port 8000 with 1 worker"
-  ENV_RESOLUTION_STRATEGY=os_environ docent_core server --port 8000 --workers 1 --no-start-docent-worker
+  echo "Starting server on port 8000 with ${NUM_WORKERS} worker(s)"
+  ENV_RESOLUTION_STRATEGY=os_environ docent_core server --port 8000 --workers ${NUM_WORKERS} --no-start-docent-worker
 elif [ "$SERVICE" == "worker" ]; then
-  NUM_WORKERS=${NUM_WORKERS:-4}
   echo "Starting ${NUM_WORKERS} worker(s)"
 
   # Ensure child processes are terminated on container stop

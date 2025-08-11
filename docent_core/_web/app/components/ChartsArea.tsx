@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import ChartSettings from './ChartSettings';
+import { getChartExportElementId } from '../utils/exportChart';
 import {
   useCreateChartMutation,
   useUpdateChartMutation,
@@ -20,6 +21,7 @@ import {
   chartApi,
 } from '../api/chartApi';
 import { ChartSpec } from '../types/collectionTypes';
+import { cn } from '@/lib/utils';
 
 export function ChartsArea() {
   const collectionId = useAppSelector((state) => state.collection.collectionId);
@@ -169,7 +171,7 @@ export function ChartsArea() {
   // Handle loading and error states
   if (isLoading) {
     return (
-      <div className="max-h-[35%] flex flex-col">
+      <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
         <div className="flex items-center justify-center p-4">
           Loading charts...
         </div>
@@ -179,7 +181,7 @@ export function ChartsArea() {
 
   if (error) {
     return (
-      <div className="max-h-[35%] flex flex-col">
+      <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
         <div className="flex items-center justify-center p-4 text-red-500">
           Error loading charts
         </div>
@@ -188,7 +190,12 @@ export function ChartsArea() {
   }
 
   return (
-    <div className="max-h-[35%] flex flex-col">
+    <div
+      className={cn(
+        'flex flex-col overflow-y-auto',
+        activeChart && 'resize-y h-[35%] min-h-[200px]'
+      )}
+    >
       {/* Tab Bar */}
       <div className="flex items-end">
         {charts.map((chart: ChartSpec) => (
@@ -196,7 +203,7 @@ export function ChartsArea() {
             key={chart.id}
             className={`group relative flex items-center px-2 py-1 text-xs font-medium cursor-pointer transition-colors rounded-t-md border mr-1 -mb-px ${
               activeTabId === chart.id
-                ? 'bg-background border-border text-primary border-b-white'
+                ? 'bg-background border-border text-primary border-b-background'
                 : 'bg-secondary/80 border-border text-muted-foreground hover:bg-muted hover:text-primary'
             }`}
             onClick={() => updateActiveTabId(chart.id)}
@@ -275,7 +282,12 @@ export function ChartsArea() {
               }
             }}
           />
-          <Chart chart={activeChart} />
+          <div
+            id={getChartExportElementId(activeChart.id)}
+            className="flex flex-col min-h-0 flex-1"
+          >
+            <Chart chart={activeChart} />
+          </div>
         </div>
       )}
     </div>
