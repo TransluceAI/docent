@@ -30,6 +30,7 @@ from docent.data_models.citation import (
     Citation,
     parse_citations_single_run,
 )
+from docent.data_models.transcript import fake_model_dump
 from docent.loaders.load_inspect import load_inspect_log
 from docent_core._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent_core._db_service.contexts import ViewContext
@@ -489,8 +490,8 @@ async def preview_import_runs_from_file(
         if task_id is not None:
             task_ids.add(str(task_id))
 
-        if run.metadata.scores:
-            scores_keys.update(run.metadata.scores.keys())
+        if "scores" in run.metadata:
+            scores_keys.update(run.metadata["scores"].keys())
 
     return {
         "status": "preview",
@@ -503,7 +504,7 @@ async def preview_import_runs_from_file(
         "file_info": file_info,
         "sample_preview": [
             {
-                "metadata": run.metadata.model_dump(strip_internal_fields=True),
+                "metadata": fake_model_dump(run.metadata),
                 "num_messages": sum(
                     len(transcript.messages) for transcript in run.transcripts.values()
                 ),
@@ -639,7 +640,7 @@ async def get_agent_run_metadata(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     data = await mono_svc.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
-    return {d.id: d.metadata.model_dump(strip_internal_fields=True) for d in data}
+    return {d.id: fake_model_dump(d.metadata) for d in data}
 
 
 class PostAgentRunsRequest(BaseModel):

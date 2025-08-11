@@ -203,7 +203,10 @@ def _build_base_query(
             )
             .join(
                 SQLARubric.__table__,
-                SQLAJudgeResult.rubric_id == SQLARubric.id,
+                and_(
+                    SQLAJudgeResult.rubric_id == SQLARubric.id,
+                    SQLAJudgeResult.rubric_version == SQLARubric.version,
+                ),
                 isouter=True,
             )
             .join(
@@ -231,7 +234,18 @@ def _build_base_query(
 
     # Optional user-supplied search-query filter
     if rubric_filter:
-        base = base.where(SQLARubric.id == rubric_filter)
+        # Constrain to the latest version of the requested rubric ID
+        latest_version_subq = (
+            select(func.max(SQLARubric.version))
+            .where(SQLARubric.id == rubric_filter)
+            .scalar_subquery()
+        )
+        base = base.where(
+            and_(
+                SQLAJudgeResult.rubric_id == rubric_filter,
+                SQLAJudgeResult.rubric_version == latest_version_subq,
+            )
+        )
 
     return base
 
@@ -312,6 +326,30 @@ def _deduplicate(
 # -----------------------------------------------------------------------------
 
 
+def _convert_to_numeric(raw: Any) -> Any:
+    # Create text representation of raw measure for compatibility
+    raw_text = cast(raw, Text)
+
+    return case(
+        (
+            # If it was a number originally, cast it back to number
+            # Note: if measure were a numeric string originally, it wouldn't be available in the menu
+            raw_text.op("~")(r"^[0-9]+\.?[0-9]*$"),  # type: ignore[attr-defined]
+            cast(raw, Numeric),
+        ),
+        (
+            # Handle boolean values - convert to 1.0/0.0
+            func.lower(raw_text) == "true",
+            1.0,
+        ),
+        (
+            func.lower(raw_text) == "false",
+            0.0,
+        ),
+        else_=None,  # Silently drop non-numeric strings
+    )
+
+
 def _aggregate(
     dedup_subquery: Any, dimensions: List["ChartDimension"], measure: "ChartDimension"
 ) -> Select[Any]:
@@ -328,29 +366,7 @@ def _aggregate(
         outer_group_by.append(col_ref)
 
     if not measure.is_aggregation:
-        raw = dedup_subquery.c.raw_measure
-
-        # Create text representation of raw measure for compatibility
-        raw_text = cast(raw, Text)
-
-        numeric_value = case(
-            (
-                # If it was a number originally, cast it back to number
-                # Note: if measure were a numeric string originally, it wouldn't be available in the menu
-                raw_text.op("~")(r"^[0-9]+\.?[0-9]*$"),  # type: ignore[attr-defined]
-                cast(raw, Numeric),
-            ),
-            (
-                # Handle boolean values - convert to 1.0/0.0
-                func.lower(raw_text) == "true",
-                1.0,
-            ),
-            (
-                func.lower(raw_text) == "false",
-                0.0,
-            ),
-            else_=None,  # Silently drop non-numeric strings
-        )
+        numeric_value = _convert_to_numeric(dedup_subquery.c.raw_measure)
 
         avg_measure = func.avg(numeric_value)
         count_measure = func.count(numeric_value)

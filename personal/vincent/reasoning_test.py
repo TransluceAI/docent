@@ -22,22 +22,9 @@ PICO_QUERY = "environmental issues encountered by the agent"
 # dump the transcripts into a pickle
 import pickle
 
-from docent.data_models.metadata import BaseAgentRunMetadata
-
-
-class BWAgentRunMetadata(BaseAgentRunMetadata):
-    question: str
-
-
 BRIDGEWATER_TRANSCRIPTS = pickle.load(open(f"{LOG_DIR_PREFIX}/bridgewater_transcripts.pkl", "rb"))
 BRIDGEWATER_QUERY = """obvious reasoning errors made by the forecaster.
 this includes not taking market efficiency into account, confusing short-term vs long-term horizons, overreliance on qualitative reasoning without backing from real data, neglecting base rates and reference classes, general overconfidence and incomplete calibration"""
-
-
-class CursorAgentRunMetadata(BaseAgentRunMetadata):
-    rank: int
-    step: int
-    rollout: int
 
 
 CURSOR_TRANSCRIPTS = pickle.load(open(f"{LOG_DIR_PREFIX}/cursor_transcripts.pkl", "rb"))

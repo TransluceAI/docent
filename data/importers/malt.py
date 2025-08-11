@@ -9,7 +9,6 @@ from datasets import load_dataset
 from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
 from docent.data_models.chat import parse_chat_message
 from docent.data_models.chat.message import ChatMessage
-from docent.data_models.metadata import BaseAgentRunMetadata
 from docent.data_models.transcript import Transcript
 
 tool_call_id = 0
@@ -49,27 +48,18 @@ def _convert_malt_node_to_message(node: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-class MALTRunMetadata(BaseAgentRunMetadata):
-    run_id: int
-    version: str
-    labels: list[str]
-    task_id: str
-    model: str
-    has_chain_of_thought: bool
-
-
 def load_malt_record(record: dict[str, Any]) -> AgentRun:
     """Convert a single MALT record to an AgentRun."""
     # Extract metadata
-    metadata = MALTRunMetadata(
-        run_id=record["run_id"],
-        version=record["version"],
-        labels=record["labels"],
-        task_id=record["task_id"],
-        model=record["model"],
-        has_chain_of_thought=record["has_chain_of_thought"],
-        scores={},  # MALT doesn't seem to have explicit scores in the example
-    )
+    metadata: dict[str, Any] = {
+        "run_id": record["run_id"],
+        "version": record["version"],
+        "labels": record["labels"],
+        "task_id": record["task_id"],
+        "model": record["model"],
+        "has_chain_of_thought": record["has_chain_of_thought"],
+        "scores": {},  # MALT doesn't seem to have explicit scores in the example
+    }
 
     # Convert nodes to messages, filtering out token usage messages
     messages: list[ChatMessage] = []
@@ -118,7 +108,7 @@ async def process_malt_dataset() -> Tuple[List[AgentRun], dict[str, Any]]:
         # Load the MALT dataset (requires HuggingFace authentication)
         ds = load_dataset("metr-evals/malt-transcripts-public", "default")
 
-        agent_runs = []
+        agent_runs: list[AgentRun] = []
         for record in ds["transcripts"]:
             try:
                 agent_run = load_malt_record(record)
@@ -175,7 +165,7 @@ async def dump_malt_sample_to_json(
         sampled_records = [ds["transcripts"][i] for i in record_indices]
 
         # Convert to AgentRuns
-        agent_runs = []
+        agent_runs: list[AgentRun] = []
         failed_conversions = 0
 
         for record in sampled_records:
@@ -261,7 +251,7 @@ async def process_malt_file_json(json_path: str | Path) -> Tuple[List[AgentRun],
         if "agent_runs" not in data:
             raise ValueError("JSON file missing 'agent_runs' key")
 
-        agent_runs = []
+        agent_runs: list[AgentRun] = []
         serialized_runs = data["agent_runs"]
 
         for i, serialized_run in enumerate(serialized_runs):

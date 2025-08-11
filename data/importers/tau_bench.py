@@ -2,23 +2,9 @@ import json
 from pathlib import Path
 from typing import Any, List, Tuple
 
-from pydantic import Field
-
-from docent.data_models.agent_run import AgentRun, BaseAgentRunMetadata
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat import ChatMessage, ToolCall, parse_chat_message
 from docent.data_models.transcript import Transcript
-
-
-class TauBenchMetadata(BaseAgentRunMetadata):
-    benchmark_id: str = Field(
-        description="The benchmark that the task belongs to", default="tau_bench"
-    )
-    task_id: str = Field(description="The task within the benchmark that the agent is solving")
-    model: str = Field(description="The LLM used by the agent")
-    additional_metadata: dict[str, Any] = Field(description="Additional metadata about the task")
-    scoring_metadata: dict[str, Any] | None = Field(
-        description="Additional metadata about the scoring process"
-    )
 
 
 async def process_tau_bench_file(file_path: Path) -> Tuple[List[AgentRun], dict[str, Any]]:
@@ -88,14 +74,14 @@ async def process_tau_bench_file(file_path: Path) -> Tuple[List[AgentRun], dict[
         scores = {"reward": round(sample["reward"], 3)}
 
         # Build metadata
-        metadata = TauBenchMetadata(
-            benchmark_id=task_id,
-            task_id=str(sample_id),
-            model="sonnet-35-new",  # Default model name TODO(kevin): this is a hack.
-            scores=scores,
-            additional_metadata=info,
-            scoring_metadata=info["reward_info"],
-        )
+        metadata: dict[str, Any] = {
+            "benchmark_id": task_id,
+            "task_id": str(sample_id),
+            "model": "sonnet-35-new",  # Default model name TODO(kevin): this is a hack.
+            "scores": scores,
+            "additional_metadata": info,
+            "scoring_metadata": info["reward_info"],
+        }
 
         # Create the transcript and wrap in AgentRun
         transcript = Transcript(

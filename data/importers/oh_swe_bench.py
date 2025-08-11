@@ -3,7 +3,6 @@ import tarfile
 from pathlib import Path
 from typing import Any, List, Tuple
 
-from pydantic import Field
 from tqdm.auto import tqdm
 
 from docent._log_util import get_logger
@@ -15,21 +14,9 @@ from docent.data_models.chat import (
     ToolMessage,
     UserMessage,
 )
-from docent.data_models.metadata import BaseAgentRunMetadata
 from docent.data_models.transcript import Transcript
 
 logger = get_logger(__name__)
-
-
-class OpenHandsSWEBenchMetadata(BaseAgentRunMetadata):
-    benchmark_id: str = Field(
-        description="The benchmark that the task belongs to", default="swe_bench_verified"
-    )
-    task_id: str = Field(description="The task within the benchmark that the agent is solving")
-    model: str = Field(description="The LLM used by the agent")
-    scoring_metadata: dict[str, Any] = Field(
-        description="Additional metadata about the scoring process"
-    )
 
 
 def _parse_openhands_swebench_data(data: dict[str, Any]) -> AgentRun:
@@ -95,13 +82,13 @@ def _parse_openhands_swebench_data(data: dict[str, Any]) -> AgentRun:
         messages.append(cur_msg)
 
     # Build metadata
-    metadata = OpenHandsSWEBenchMetadata(
-        benchmark_id="swe_bench_verified",
-        task_id=data["instance_id"],
-        model=data["metadata"]["llm_config"]["model"],
-        scores={"resolved": data["report"]["resolved"]},
-        scoring_metadata=data["instance"],
-    )
+    metadata: dict[str, Any] = {
+        "benchmark_id": "swe_bench_verified",
+        "task_id": data["instance_id"],
+        "model": data["metadata"]["llm_config"]["model"],
+        "scores": {"resolved": data["report"]["resolved"]},
+        "scoring_metadata": data["instance"],
+    }
 
     # Create the transcript and wrap in AgentRun
     transcript = Transcript(

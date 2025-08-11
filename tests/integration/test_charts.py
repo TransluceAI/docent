@@ -2,15 +2,9 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic import Field
 
-from docent.data_models import AgentRun, BaseAgentRunMetadata, Transcript
+from docent.data_models import AgentRun, Transcript
 from docent.data_models.chat import parse_chat_message
-
-
-class MyMetadata(BaseAgentRunMetadata):
-    agent_scaffold: str = Field(description="Agent scaffold in which the agent was run")
-
 
 transcript_raw = [
     {"role": "user", "content": "What's the weather like in New York today?"},
@@ -27,7 +21,7 @@ def runs_with_metadata(metadatas: list[dict[str, Any]]) -> list[AgentRun]:
             transcripts={
                 "default": Transcript(messages=[parse_chat_message(msg) for msg in transcript_raw])
             },
-            metadata=MyMetadata(**metadata),
+            metadata=metadata,
         )
         for metadata in metadatas
     ]

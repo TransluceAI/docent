@@ -4,9 +4,7 @@ import tarfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from pydantic import Field
-
-from docent.data_models import AgentRun, BaseAgentRunMetadata, Transcript
+from docent.data_models import AgentRun, Transcript
 from docent.data_models.chat import parse_chat_message
 
 """
@@ -42,28 +40,6 @@ archive.tar.gz
 The load_agent_runs() function now takes a path to a .tar.gz file instead of a directory.
 The tar file will be extracted to a temporary directory, processed, and then cleaned up.
 """
-
-
-# Custom metadata class for the agentic misalignment data
-class AgenticMisalignmentMetadata(BaseAgentRunMetadata):
-    model: str = Field(description="LLM API model used to generate the transcript")
-    condition: str = Field(
-        description="Experimental condition (e.g., blackmail_explicit-america_none)"
-    )
-    sample_id: int = Field(description="Sample ID within the condition")
-    timestamp: str = Field(description="Timestamp of the run")
-    api_metadata: Dict[str, Any] = Field(description="API response metadata")
-    inference_time_ms: int = Field(description="Inference time in milliseconds")
-    canary_string: str = Field(description="Canary string to prevent training contamination")
-    classification: Dict[str, Any] = Field(
-        description="Classification results including harmful behavior detection"
-    )
-
-    # Extract condition components for easier filtering
-    scenario: str = Field(description="Scenario type: murder, blackmail, leaking")
-    goal_type: str = Field(description="Goal type: explicit, none, latent, ambiguous, swap")
-    location: str = Field(description="Location context (america, none)")
-    urgency_type: str = Field(description="Urgency type: replacement, restriction, none")
 
 
 def parse_condition(condition: str) -> Dict[str, str]:
@@ -343,26 +319,26 @@ async def load_agent_runs(tar_path: Path) -> Tuple[List[AgentRun], Dict[str, Any
                     continue
 
                 # Create metadata
-                metadata = AgenticMisalignmentMetadata(
-                    model=metadata_obj["model"],
-                    condition=metadata_obj["condition"],
-                    sample_id=metadata_obj["sample_id"],
-                    timestamp=metadata_obj["timestamp"],
-                    api_metadata=metadata_obj["api_metadata"],
-                    inference_time_ms=metadata_obj["inference_time_ms"],
-                    canary_string=metadata_obj["canary_string"],
-                    classification=classification_obj,
-                    scenario=condition_components["scenario"],
-                    goal_type=condition_components["goal_type"],
-                    location=condition_components["location"],
-                    urgency_type=condition_components["urgency_type"],
-                    scores={
+                metadata = {
+                    "model": metadata_obj["model"],
+                    "condition": metadata_obj["condition"],
+                    "sample_id": metadata_obj["sample_id"],
+                    "timestamp": metadata_obj["timestamp"],
+                    "api_metadata": metadata_obj["api_metadata"],
+                    "inference_time_ms": metadata_obj["inference_time_ms"],
+                    "canary_string": metadata_obj["canary_string"],
+                    "classification": classification_obj,
+                    "scenario": condition_components["scenario"],
+                    "goal_type": condition_components["goal_type"],
+                    "location": condition_components["location"],
+                    "urgency_type": condition_components["urgency_type"],
+                    "scores": {
                         "harmful_behavior": classification_obj["harmful_behavior"],
                         "classifier_verdict": classification_obj["classifier_verdict"],
                         "inference_time_ms": metadata_obj["inference_time_ms"],
                         "tokens_used": metadata_obj["api_metadata"].get("tokens_used", 0),
                     },
-                )
+                }
 
                 # Create agent run
                 agent_run = AgentRun(transcripts={"default": transcript}, metadata=metadata)
@@ -381,10 +357,10 @@ async def load_agent_runs(tar_path: Path) -> Tuple[List[AgentRun], Dict[str, Any
         print(f"Processing complete: {len(agent_runs)} agent runs successfully loaded")
 
         # Generate summary statistics
-        models: Set[str] = set(run.metadata.model for run in agent_runs)
-        scenarios: Set[str] = set(run.metadata.scenario for run in agent_runs)
-        goal_types: Set[str] = set(run.metadata.goal_type for run in agent_runs)
-        urgency_types: Set[str] = set(run.metadata.urgency_type for run in agent_runs)
+        models: Set[str] = set(run.metadata["model"] for run in agent_runs)
+        scenarios: Set[str] = set(run.metadata["scenario"] for run in agent_runs)
+        goal_types: Set[str] = set(run.metadata["goal_type"] for run in agent_runs)
+        urgency_types: Set[str] = set(run.metadata["urgency_type"] for run in agent_runs)
 
         file_info = {
             "type": "tar.gz",
@@ -396,7 +372,7 @@ async def load_agent_runs(tar_path: Path) -> Tuple[List[AgentRun], Dict[str, Any
             "goal_types": list(goal_types),
             "urgency_types": list(urgency_types),
             "total_harmful_behaviors": sum(
-                1 for run in agent_runs if run.metadata.classification["harmful_behavior"]
+                1 for run in agent_runs if run.metadata["classification"]["harmful_behavior"]
             ),
         }
 
