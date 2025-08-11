@@ -302,13 +302,13 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                   value={rubric.id}
                   className="text-xs"
                 >
-                {rubric.description.length > 60
-                  ? `${rubric.description.slice(0, 60)}...`
-                  : rubric.description}
-                <span className="text-xs text-muted-foreground">
-                  {' '}
-                  v{rubric.version}
-                </span>
+                  {rubric.description.length > 60
+                    ? `${rubric.description.slice(0, 60)}...`
+                    : rubric.description}
+                  <span className="text-xs text-muted-foreground">
+                    {' '}
+                    v{rubric.version}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
