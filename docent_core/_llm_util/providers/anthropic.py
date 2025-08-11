@@ -238,6 +238,7 @@ FINISH_REASON_MAP: dict[str, FinishReasonType] = {
     "max_tokens": "length",
     "stop_sequence": "stop",
     "tool_use": "tool_calls",
+    "refusal": "refusal",
 }
 
 
@@ -393,6 +394,8 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
         finish_reason = "stop"
     elif message.stop_reason == "tool_use":
         finish_reason = "tool_calls"
+    elif message.stop_reason == "refusal":
+        finish_reason = "refusal"
     else:
         finish_reason = "error"
 

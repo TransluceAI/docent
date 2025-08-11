@@ -37,7 +37,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
             ),
             ModelOption(
                 provider="google",
@@ -59,7 +59,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -84,7 +84,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
             ),
             ModelOption(
                 provider="google",
@@ -106,7 +106,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="low",
             ),
             ModelOption(
@@ -131,7 +131,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="low",
             ),
             ModelOption(
@@ -156,7 +156,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -181,7 +181,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
             ),
             ModelOption(
                 provider="google",
@@ -203,7 +203,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort=None,
             ),
             ModelOption(
@@ -228,7 +228,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
             ModelOption(
@@ -258,7 +258,7 @@ class ProviderPreferences(BaseModel):
             ),
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
         ]
@@ -278,7 +278,7 @@ class ProviderPreferences(BaseModel):
             ),
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
         ]
@@ -314,8 +314,8 @@ class ProviderPreferences(BaseModel):
         ]
 
     @cached_property
-    def cluster_assign_sonnet_37_thinking(self) -> list[ModelOption]:
-        """Get model options for the cluster_assign_sonnet-37-thinking function.
+    def cluster_assign_sonnet_4_thinking(self) -> list[ModelOption]:
+        """Get model options for the cluster_assign_sonnet_4_thinking function.
 
         Returns:
             List of configured model options for this function.
@@ -323,7 +323,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
         ]
@@ -338,7 +338,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
         ]
