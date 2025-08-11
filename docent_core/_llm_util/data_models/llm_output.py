@@ -19,6 +19,7 @@ FinishReasonType = Literal[
     "content_filter",
     "function_call",
     "streaming",
+    "refusal",
 ]
 """Possible reasons for an LLM completion to finish."""
 

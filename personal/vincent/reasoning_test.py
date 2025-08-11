@@ -224,7 +224,7 @@ async def execute_search_4(
         [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort=reasoning_effort,
             )
         ],
