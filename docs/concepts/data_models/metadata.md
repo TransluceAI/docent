@@ -23,6 +23,3 @@ metadata = {
 
 
 If you're using Inspect, `docent.loaders.load_inspect` also contains a `load_inspect_log` function which reads the standard scoring and metadata information from Inspect logs and copies them into Docent metadata.
-
-
-::: docent.data_models.metadata

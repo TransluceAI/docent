@@ -8,7 +8,7 @@ An [`AgentRun`][docent.data_models.agent_run.AgentRun] represents a complete age
 
 ### Usage
 
-`AgentRun` objects require a dictionary of [`Transcript`](./transcript.md) objects, as well as a metadata dictionary whose values are strings. The metadata should be JSON-serializable.
+`AgentRun` objects require a dictionary of [`Transcript`](./transcript.md) objects, as well as a metadata dictionary whose keys are strings. The metadata should be JSON-serializable.
 
 ```python
 from docent.data_models import AgentRun, Transcript
