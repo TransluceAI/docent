@@ -29,11 +29,6 @@ import { toast } from '@/hooks/use-toast';
 import { CollectionsTable } from '../components/CollectionsTable';
 import { UserProfile } from '../components/auth/UserProfile';
 import socketService from '../services/socketService';
-import {
-  cancelCurrentSearch,
-  cancelCurrentClusterRequest,
-  resetSearchSlice,
-} from '../store/searchSlice';
 import { resetExperimentViewerSlice } from '../store/experimentViewerSlice';
 import { resetCollectionSlice } from '../store/collectionSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -67,10 +62,7 @@ export default function HomePage() {
     socketService.closeSocket();
     dispatch(resetCollectionSlice());
     dispatch(resetExperimentViewerSlice());
-    dispatch(resetSearchSlice());
     dispatch(resetTranscriptSlice());
-    dispatch(cancelCurrentSearch());
-    dispatch(cancelCurrentClusterRequest());
     // TODO(mengk): call thunks to cancel the transcript requests too
   }, [dispatch]);
 

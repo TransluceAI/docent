@@ -25,9 +25,6 @@ export default function AgentRunPage() {
   const hasInitSearchQuery = useAppSelector(
     (state) => state.collection?.hasInitSearchQuery
   );
-  const searchResultMap = useAppSelector(
-    (state) => state.search?.searchResultMap
-  );
 
   const params = useParams();
   const searchParams = useSearchParams();
@@ -71,7 +68,7 @@ export default function AgentRunPage() {
     }
 
     if (hasInitSearchQuery === undefined) return;
-    if (hasInitSearchQuery === true && !searchResultMap) return;
+    if (hasInitSearchQuery === true) return;
 
     if (blockIdx !== undefined && agentRunViewerRef.current) {
       alreadyScrolledRef.current = true;
@@ -84,14 +81,7 @@ export default function AgentRunPage() {
         );
       }, 100);
     }
-  }, [
-    curAgentRun,
-    agentRunId,
-    blockIdx,
-    transcriptIdx,
-    hasInitSearchQuery,
-    searchResultMap,
-  ]);
+  }, [curAgentRun, agentRunId, blockIdx, transcriptIdx, hasInitSearchQuery]);
 
   const onShowAgentRun = (agentRunId: string, blockIdx?: number) => {
     if (agentRunId !== curAgentRun?.id) {

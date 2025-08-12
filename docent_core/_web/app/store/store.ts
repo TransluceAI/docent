@@ -2,7 +2,6 @@
 
 import { configureStore } from '@reduxjs/toolkit';
 
-import searchReducer from './searchSlice';
 import experimentViewerReducer from './experimentViewerSlice';
 import collectionReducer from './collectionSlice';
 import toastReducer from './toastSlice';
@@ -35,7 +34,6 @@ const errorLogger = () => (next: any) => (action: any) => {
 const store = configureStore({
   reducer: {
     experimentViewer: experimentViewerReducer,
-    search: searchReducer,
     rubric: rubricReducer,
     embed: embedReducer,
     diff: diffReducer,

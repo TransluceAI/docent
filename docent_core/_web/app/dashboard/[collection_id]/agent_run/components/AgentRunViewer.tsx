@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Loader2,
-  Share2,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Loader2 } from 'lucide-react';
 import React, {
   forwardRef,
   useCallback,
@@ -15,7 +9,6 @@ import React, {
 
 import { useAppSelector } from '@/app/store/hooks';
 import { ChatMessage, Content, AgentRun } from '@/app/types/transcriptTypes';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Tooltip,
@@ -25,10 +18,9 @@ import {
 
 import UuidPill from '@/components/UuidPill';
 import { useDebounce } from '@/hooks/use-debounce';
-import { toast } from '@/hooks/use-toast';
 
 import MetadataDialog from './MetadataDialog';
-import { copyToClipboard, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 // Export interface for use in other components
 export interface AgentRunViewerHandle {
@@ -447,176 +439,6 @@ AgentRunViewer.displayName = 'AgentRunViewer';
 
 export default AgentRunViewer;
 
-// Add AttributeDisplay component to show attributes below citations
-const AttributeDisplay: React.FC<{
-  agentRunId: string;
-  blockIndex: number;
-  scrollToBlock?: (blockIndex: number, transcriptIdx?: number) => void;
-  transcriptIdx: number;
-}> = ({ agentRunId, blockIndex, scrollToBlock, transcriptIdx }) => {
-  const { curSearchQuery, searchResultMap } = useAppSelector(
-    (state) => state.search
-  );
-
-  // Get all attributes that reference this specific block and transcript
-  const relevantAttributes = useMemo(() => {
-    if (!curSearchQuery || !searchResultMap || !searchResultMap[agentRunId]) {
-      return [];
-    }
-    const attributes = searchResultMap[agentRunId]?.[curSearchQuery].filter(
-      (attr) => attr.value !== null
-    );
-    if (!attributes) {
-      return [];
-    }
-    return attributes.filter((attr) =>
-      attr.citations?.some(
-        (citation) =>
-          citation.block_idx === blockIndex &&
-          citation.transcript_idx === transcriptIdx
-      )
-    );
-  }, [searchResultMap, agentRunId, curSearchQuery, blockIndex, transcriptIdx]);
-  if (relevantAttributes.length === 0) {
-    return null;
-  }
-
-  console.log('relevantAttributes', relevantAttributes);
-
-  const handleShareAttribute = async () => {
-    if (!curSearchQuery) {
-      toast({
-        title: 'Error',
-        description: 'Attribute Dimension ID not found.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('searchQuery', curSearchQuery);
-
-    const success = await copyToClipboard(currentUrl.toString());
-    if (success) {
-      toast({
-        title: 'Search URL copied',
-        description: 'Copied a shareable link to the clipboard',
-        variant: 'default',
-      });
-    } else {
-      toast({
-        title: 'Failed to copy',
-        description: 'Could not copy to clipboard',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Render the attribute section with exact same styling as InnerCard.tsx
-  return (
-    <div className="ml-6 mt-2 border-t mb-3 pt-1.5 text-xs">
-      <div className="flex items-center mb-1">
-        <div className="h-2 w-2 rounded-full bg-indigo-text mr-1.5"></div>
-        <span className="text-xs font-medium text-primary">
-          Attributes from your query
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5 ml-auto"
-          onClick={handleShareAttribute}
-          title="Share attribute search"
-        >
-          <Share2 className="h-3 w-3 text-primary" />
-        </Button>
-      </div>
-
-      <div>
-        {relevantAttributes.map((attribute, idx) => {
-          const attributeValue = attribute.value;
-          if (!attributeValue) {
-            return null;
-          }
-
-          // Use all citations for the attribute, not just those for this block
-          const citations = attribute.citations || [];
-
-          // Create a component that renders text with citations highlighted
-          const renderTextWithCitations = () => {
-            if (!citations.length) {
-              return attributeValue;
-            }
-
-            // Sort citations by start index to process them in order
-            const sortedCitations = [...citations].sort(
-              (a, b) => a.start_idx - b.start_idx
-            );
-
-            const parts: JSX.Element[] = [];
-            let lastIndex = 0;
-
-            sortedCitations.forEach((citation, i) => {
-              // Add text before the citation
-              if (citation.start_idx > lastIndex) {
-                parts.push(
-                  <span key={`text-${i}`}>
-                    {attributeValue.slice(lastIndex, citation.start_idx)}
-                  </span>
-                );
-              }
-
-              // Add the cited text as a clickable element
-              const citedText = attributeValue.slice(
-                citation.start_idx,
-                citation.end_idx
-              );
-              // Use different style for current block vs. other blocks
-              parts.push(
-                <button
-                  key={`citation-${i}`}
-                  className={`px-0.5 py-0.25 bg-indigo-muted text-primary hover:bg-indigo-muted/50 rounded transition-colors font-medium`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    scrollToBlock?.(
-                      citation.block_idx,
-                      citation.transcript_idx || undefined
-                    );
-                  }}
-                >
-                  {citedText}
-                </button>
-              );
-
-              lastIndex = citation.end_idx;
-            });
-
-            // Add any remaining text
-            if (lastIndex < attributeValue.length) {
-              parts.push(
-                <span key={`text-end`}>{attributeValue.slice(lastIndex)}</span>
-              );
-            }
-
-            return <>{parts}</>;
-          };
-
-          return (
-            <div
-              key={`${curSearchQuery}-${idx}`}
-              className="group bg-indigo-bg rounded-md p-2 border-r-4 border-indigo-border text-xs text-primary leading-snug mt-1 transition-colors"
-            >
-              <p className="mb-0.5">{renderTextWithCitations()}</p>
-              <div className="flex items-center gap-1 text-[10px] text-primary mt-1">
-                <span className="opacity-70">{curSearchQuery}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
 const roleColorMap: Record<string, string> = {
   assistant: 'blue',
   user: 'gray',
@@ -772,13 +594,6 @@ const MessageBox: React.FC<{
         {renderToolInfo()}
         {renderToolCalls()}
       </div>
-
-      <AttributeDisplay
-        agentRunId={agentRunId}
-        blockIndex={index}
-        scrollToBlock={scrollToBlock}
-        transcriptIdx={transcriptIdx}
-      />
     </div>
   );
 };

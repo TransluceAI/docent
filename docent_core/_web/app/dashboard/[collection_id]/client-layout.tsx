@@ -1,21 +1,12 @@
 'use client';
 
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import React, { useEffect, Suspense, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import React, { useEffect, Suspense } from 'react';
 
 import Breadcrumbs from '../../components/Breadcrumbs';
 import ResponsiveCheck from '../../components/ResponsiveCheck';
-import {
-  initSession,
-  setHasInitSearchQuery,
-} from '../../store/collectionSlice';
+import { initSession } from '../../store/collectionSlice';
 import { useAppDispatch } from '../../store/hooks';
-import {
-  handleSearchUpdate,
-  requestClusters,
-  setSearchQuery,
-} from '@/app/store/searchSlice';
-import { apiRestClient } from '@/app/services/apiService';
 import { Button } from '@/components/ui/button';
 import { useUserContext } from '@/app/contexts/UserContext';
 
@@ -37,53 +28,6 @@ export default function DocentDashboardClientLayout({
     fetchRef.current = true;
     dispatch(initSession(collectionId));
   }, [collectionId, dispatch]);
-
-  /**
-   * Handle shared persisted search
-   */
-  const searchParams = useSearchParams();
-
-  // Check if the URL contains a searchQuery parameter
-  const searchParamsCheckedRef = useRef(false);
-  useEffect(() => {
-    if (searchParamsCheckedRef.current) return;
-    searchParamsCheckedRef.current = true;
-
-    const searchQuery = searchParams.get('searchQuery');
-    const viewId = searchParams.get('viewId');
-    if (searchQuery === null || viewId === null) {
-      dispatch(setHasInitSearchQuery(false));
-      return;
-    }
-    dispatch(setHasInitSearchQuery(true));
-    apiRestClient
-      .post(`/${collectionId}/apply_existing_view`, {
-        search_query: searchQuery,
-        view_id: viewId,
-      })
-      .then((response) => {
-        const shouldLoadClusters = response.data;
-        dispatch(setSearchQuery(searchQuery));
-        dispatch(setHasInitSearchQuery(true));
-        apiRestClient
-          .get(
-            `/${collectionId}/get_existing_search_results?search_query=${searchQuery}`
-          )
-          .then((response) => {
-            dispatch(handleSearchUpdate(response.data));
-            if (shouldLoadClusters) {
-              dispatch(
-                requestClusters({
-                  searchQuery: searchQuery,
-                  feedback: '',
-                  readOnly: true,
-                })
-              );
-            }
-          });
-      });
-    return;
-  }, [searchParams, dispatch]);
 
   return (
     <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-[900px]">

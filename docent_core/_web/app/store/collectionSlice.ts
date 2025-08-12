@@ -17,7 +17,14 @@ import { BaseAgentRunMetadata } from '../types/transcriptTypes';
 import { collectionApi } from '../api/collectionApi';
 
 import { setToastNotification } from './toastSlice';
-import { Job } from './searchSlice';
+
+export interface Job {
+  id: string;
+  type: string;
+  created_at: string;
+  status: string;
+  job_json: { query_id: string };
+}
 
 export interface CollectionState {
   agentRunIds?: string[];
