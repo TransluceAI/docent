@@ -347,6 +347,65 @@ class MonoService:
 
         logger.info(f"Inserted {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
 
+    async def update_agent_runs(self, ctx: ViewContext, agent_runs: Sequence[AgentRun]):
+        """
+        Update agent runs - create if they don't exist, update if they do exist.
+        For transcripts, delete existing ones and recreate them.
+        """
+        # Convert AgentRun objects to SQLAlchemy objects using existing conversion functions
+        agent_run_data: list[SQLAAgentRun] = []
+        transcript_data: list[SQLATranscript] = []
+        agent_run_ids = [ar.id for ar in agent_runs]
+
+        # Check collection size limit
+        async with self.db.session() as session:
+            query = select(func.count()).where(SQLAAgentRun.collection_id == ctx.collection_id)
+            result = await session.execute(query)
+            existing_count = result.scalar_one()
+
+            # Count how many new agent runs we'll be adding (not updating)
+            existing_agent_run_query = select(SQLAAgentRun.id).where(
+                SQLAAgentRun.collection_id == ctx.collection_id, SQLAAgentRun.id.in_(agent_run_ids)
+            )
+            existing_agent_run_result = await session.execute(existing_agent_run_query)
+            existing_agent_run_ids = set(existing_agent_run_result.scalars().all())
+            new_agent_run_count = len(agent_run_ids) - len(existing_agent_run_ids)
+
+            if existing_count + new_agent_run_count > 100_000:
+                raise ValueError("Number of agent runs in the current collection is too large")
+
+        # Process all agent runs and transcripts first
+        for ar in agent_runs:
+            # Use the existing from_agent_run method to get all fields properly
+            sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.collection_id)
+            agent_run_data.append(sqla_agent_run)
+
+            # Process transcripts for this agent run
+            for dk, t in ar.transcripts.items():
+                # Use the existing from_transcript method to get all fields properly
+                sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.collection_id, ar.id)
+                transcript_data.append(sqla_transcript)
+
+        # Handle agent runs - upsert (insert or update)
+        async with self.db.session() as session:
+            for sqla_agent_run in agent_run_data:
+                # Use merge to handle both insert and update
+                await session.merge(sqla_agent_run)
+
+        # Handle transcripts - delete existing and recreate
+        async with self.db.session() as session:
+            # Delete existing transcripts for these agent runs
+            delete_transcript_query = delete(SQLATranscript).where(
+                SQLATranscript.agent_run_id.in_(agent_run_ids)
+            )
+            await session.execute(delete_transcript_query)
+
+            # Insert new transcripts
+            for sqla_transcript in transcript_data:
+                session.add(sqla_transcript)
+
+        logger.info(f"Updated {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
+
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
         collection_id = ctx.collection_id
         pending_count = await self.get_embedding_job_count(

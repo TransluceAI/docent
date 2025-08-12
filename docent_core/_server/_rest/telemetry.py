@@ -32,6 +32,7 @@ _COLLECTION_SCORES_KEY_PREFIX = "collection_scores:"
 _COLLECTION_METADATA_KEY_PREFIX = "collection_metadata:"
 _COLLECTION_TRANSCRIPT_METADATA_KEY_PREFIX = "collection_transcript_metadata:"
 _COLLECTION_TRANSCRIPT_GROUP_METADATA_KEY_PREFIX = "collection_transcript_group_metadata:"
+_STORE_SPANS_LOCK_PREFIX = "store_spans:"
 
 
 telemetry_router = APIRouter()
@@ -95,6 +96,64 @@ async def handle_trace_data(
     spans = await extract_spans(trace_data)
 
     # Extract unique collection IDs and names from spans
+    collection_ids, collection_names = extract_collection_info_from_spans(spans)
+
+    # Check permissions for all collections mentioned in spans
+    await _check_collection_permissions(collection_ids, user, mono_svc)
+
+    await _ensure_collections_exists(collection_ids, collection_names, user, mono_svc)
+
+    # Accumulate spans into Redis
+    await accumulate_spans(spans)
+
+    # Check completion for each collection
+    for collection_id in collection_ids:
+        accumulated_spans = await _get_accumulated_spans(collection_id)
+
+        if not is_collection_complete(accumulated_spans):
+            continue
+
+        # Process the completed collection with all accumulated spans
+        await process_completed_collection(collection_id, accumulated_spans, user, analytics)
+        return len(spans)
+
+    # Incrementally store spans for each collection
+    for collection_id in collection_ids:
+        # Get Redis lock for this collection
+        redis_client = await get_redis_client()
+        lock_key = f"{_STORE_SPANS_LOCK_PREFIX}{collection_id}"
+
+        # Use lock as async context manager
+        async with redis_client.lock(lock_key, blocking=False):
+            # Lock acquired, process spans
+            accumulated_spans = await _get_accumulated_spans(collection_id)
+
+            if accumulated_spans:
+                logger.info(
+                    f"Processing collection {collection_id} with {len(accumulated_spans)} spans"
+                )
+                count_agent_runs = await store_spans(accumulated_spans, user)
+                logger.info(
+                    f"Successfully processed collection {collection_id} with {count_agent_runs} agent runs"
+                )
+            else:
+                logger.info(f"No accumulated spans for collection {collection_id}")
+
+    return len(spans)
+
+
+def extract_collection_info_from_spans(
+    spans: List[Dict[str, Any]]
+) -> tuple[set[str], Dict[str, str]]:
+    """
+    Extract unique collection IDs and names from spans.
+
+    Args:
+        spans: List of processed spans
+
+    Returns:
+        Tuple of (collection_ids, collection_names)
+    """
     collection_ids: set[str] = set()
     collection_names: Dict[str, str] = {}
 
@@ -111,19 +170,7 @@ async def handle_trace_data(
                 if service_name:
                     collection_names[collection_id] = service_name
 
-    # Check permissions for all collections mentioned in spans
-    await _check_collection_permissions(collection_ids, user, mono_svc)
-
-    await _ensure_collections_exists(collection_ids, collection_names, user, mono_svc)
-
-    # Accumulate spans into Redis
-    await accumulate_spans(spans)
-
-    # Check completion for each collection
-    for collection_id in collection_ids:
-        await check_completion(collection_id, user, analytics)
-
-    return len(spans)
+    return collection_ids, collection_names
 
 
 @telemetry_router.post("/v1/trace-done")
@@ -991,25 +1038,6 @@ async def accumulate_spans(spans: List[Dict[str, Any]]) -> None:
         await _add_spans_to_accumulation(collection_id, collection_spans)
 
 
-async def check_completion(collection_id: str, user: User, analytics: AnalyticsClient) -> None:
-    """
-    Check for collection completion event on any span in the collection.
-
-    Args:
-        collection_id: The collection ID to check for completion
-        user: The user associated with the collection
-        analytics: Analytics client for tracking events
-    """
-    # Get accumulated spans for this collection
-    accumulated_spans = await _get_accumulated_spans(collection_id)
-
-    if not is_collection_complete(accumulated_spans):
-        return
-
-    # Process the completed collection with all accumulated spans
-    await process_completed_collection(collection_id, accumulated_spans, user, analytics)
-
-
 def is_collection_complete(all_spans: List[Dict[str, Any]]) -> bool:
     """
     Check if a collection is complete based on the presence of a trace_end span.
@@ -1107,13 +1135,14 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
                 ctx = await mono_svc.get_default_view_ctx(collection_id, user)
 
                 # Add agent runs using the existing service method
-                await mono_svc.add_agent_runs(ctx, collection_agent_runs)
+                await mono_svc.update_agent_runs(ctx, collection_agent_runs)
                 logger.info(
                     f"Added {len(collection_agent_runs)} agent runs to collection {collection_id}"
                 )
                 total_agent_runs += len(collection_agent_runs)
             except Exception as e:
                 logger.error(f"Error adding agent runs to collection {collection_id}: {str(e)}")
+
         else:
             logger.warning(f"No agent runs created for collection {collection_id}")
             # Log agent run details for debugging
