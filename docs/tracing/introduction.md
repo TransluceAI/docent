@@ -55,6 +55,11 @@ initialize_tracing(
     endpoint="https://docent.transluce.org/rest/telemetry",  # Optional, uses default if not provided
     api_key="your-api-key",  # Optional, uses env var if not provided
 )
+
+# Add new agent runs to an existing collection
+initialize_tracing(
+    collection_id="c49ef42c-7493-4af3-84d5-ac2b67556005", # Your collection's ID from the dashboard
+)
 ```
 
 **Parameters:**
