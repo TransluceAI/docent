@@ -33,6 +33,7 @@ import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
   useGetAgentRunIdsQuery,
   useGetAgentRunMetadataQuery,
+  collectionApi,
 } from '../api/collectionApi';
 
 // Constants for magic numbers
@@ -108,8 +109,9 @@ export default function ExperimentViewer() {
       model?: string;
     }) => {
       fetchedAgentRunIdsRef.current.clear();
+      dispatch(collectionApi.util.invalidateTags(['AgentRunIds']));
     },
-    []
+    [dispatch]
   );
 
   // Use debouncing to prevent too many updates

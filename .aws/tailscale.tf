@@ -145,6 +145,8 @@ resource "aws_launch_template" "tailscale_router" {
   count = local.enable_tailscale ? 1 : 0
 
   name_prefix   = "${var.project_name}-${var.deployment}-tailscale-router-"
+  key_name      = "${var.project_name}-${var.deployment}-bastion-key"
+
   image_id      = data.aws_ami.amazon_linux[0].id
   instance_type = "t3.micro"
 
@@ -174,6 +176,10 @@ resource "aws_launch_template" "tailscale_router" {
   }
 
   lifecycle {
+    precondition {
+      condition     = length(trimspace(var.tailscale_auth_key)) > 0
+      error_message = "Tailscale: set non-empty tailscale_auth_key. Provide via TF_VAR_tailscale_auth_key or a secrets tfvars file."
+    }
     create_before_destroy = true
   }
 }

@@ -7,7 +7,6 @@ from uuid import uuid4
 import pytest
 
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.metadata import BaseAgentRunMetadata, BaseMetadata
 from docent.data_models.transcript import Transcript
 from docent_core.services.diff import DiffService
 
@@ -17,10 +16,8 @@ def create_agent_run(metadata: Dict[str, Any] | None = None) -> AgentRun:
     if metadata and "scores" not in metadata:
         metadata["scores"] = {}
 
-    agent_metadata = (
-        BaseAgentRunMetadata(**metadata) if metadata else BaseAgentRunMetadata(scores={})
-    )
-    transcript = Transcript(messages=[], metadata=BaseMetadata())
+    agent_metadata = metadata if metadata else {}
+    transcript = Transcript(messages=[], metadata={})
 
     return AgentRun(id=str(uuid4()), metadata=agent_metadata, transcripts={"default": transcript})
 

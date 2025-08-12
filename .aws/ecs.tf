@@ -96,6 +96,10 @@ resource "aws_ecs_task_definition" "worker" {
           value = "worker"  # Starts the worker, not the uvicorn server
         },
         {
+          name  = "NUM_WORKERS"
+          value = tostring(var.ecs_num_workers)
+        },
+        {
           name  = "DEPLOYMENT_ID"
           value = var.deployment
         },
@@ -160,7 +164,7 @@ resource "aws_ecs_service" "worker" {
   name            = "${var.project_name}-${var.deployment}-worker"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.worker.arn
-  desired_count   = var.worker_desired_count
+  desired_count   = var.ecs_desired_count
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -176,8 +180,8 @@ resource "aws_ecs_service" "worker" {
 }
 
 resource "aws_appautoscaling_target" "ecs_worker" {
-  max_capacity       = 10
-  min_capacity       = 1
+  max_capacity       = var.ecs_max_size
+  min_capacity       = var.ecs_min_size
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.worker.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"

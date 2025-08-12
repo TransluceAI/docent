@@ -97,17 +97,6 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
     ]
     ```
 
-    We also need to convert the metadata into a list of [`BaseAgentRunMetadata`](concepts/data_models/metadata.md) objects. Let's subclass the base class to add some additional metadata.
-
-    ```python
-    from pydantic import Field
-    from docent.data_models import BaseAgentRunMetadata
-
-    class MyMetadata(BaseAgentRunMetadata):
-        model: str = Field(description="LLM API model used to generate the transcript")
-        agent_scaffold: str = Field(description="Agent scaffold in which the agent was run")
-    ```
-
     Now we can create the [`AgentRun`](concepts/data_models/agent_run.md) objects.
 
     ```python
@@ -116,11 +105,11 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
     agent_runs = [
         AgentRun(
             transcripts={"default": t},
-            metadata=MyMetadata(
-                model=m["model"],
-                agent_scaffold=m["agent_scaffold"],
-                scores={"hallucinated": m["hallucinated"]},
-            )
+            metadata={
+                "model": m["model"],
+                "agent_scaffold": m["agent_scaffold"],
+                "scores": {"hallucinated": m["hallucinated"]},
+            }
         )
         for t, m in zip(parsed_transcripts, metadata)
     ]
@@ -143,26 +132,7 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
     print(tb_log)
     ```
 
-    First, we need to define a metadata class. In addition to the [required `scores` field](concepts/data_models/metadata.md), we'll add a few additional fields:
-
-    ```python
-    from typing import Any
-    from docent.data_models import BaseAgentRunMetadata
-    from pydantic import Field
-
-    class TauBenchMetadata(BaseAgentRunMetadata):
-        benchmark_id: str = Field(
-            description="The benchmark that the task belongs to", default="tau_bench"
-        )
-        task_id: str = Field(description="The task within the benchmark that the agent is solving")
-        model: str = Field(description="The LLM used by the agent")
-        additional_metadata: dict[str, Any] = Field(description="Additional metadata about the task")
-        scoring_metadata: dict[str, Any] | None = Field(
-            description="Additional metadata about the scoring process"
-        )
-    ```
-
-    Next, we write a function that parses the dict into an [`AgentRun`](concepts/data_models/agent_run.md) object, complete with `TauBenchMetadata`. Most of the effort is in converting the raw tool calls into the expected format.
+    Next, we write a function that parses the dict into an [`AgentRun`](concepts/data_models/agent_run.md) object, complete with metadata. Most of the effort is in converting the raw tool calls into the expected format.
 
     ```python
     from docent.data_models import AgentRun, Transcript
@@ -215,14 +185,14 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
         scores = {"reward": round(reward, 3)}
 
         # Build metadata
-        metadata = TauBenchMetadata(
-            benchmark_id=task_id,
-            task_id=task_id,
-            model="sonnet-35-new",
-            scores=scores,
-            additional_metadata=info,
-            scoring_metadata=info["reward_info"],
-        )
+        metadata = {
+            "benchmark_id": task_id,
+            "task_id": task_id,
+            "model": "sonnet-35-new",
+            "scores": scores,
+            "additional_metadata": info,
+            "scoring_metadata": info["reward_info"],
+        }
 
         # Create the transcript and wrap in AgentRun
         transcript = Transcript(
@@ -248,6 +218,10 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
 
     <!-- !!! note
         To directly run the code in this section, see [`examples/ingest_inspect.ipynb`](https://github.com/TransluceAI/docent/blob/main/examples/ingest_inspect.ipynb). -->
+
+    You can upload Inspect files directly into Docent! After making a collection on the website, just click "Add Data" and then "Upload Inspect Log".
+
+    Alternatively, you can also add Inspect logs via the SDK; keep reading for an example of how to do this.
 
     Our [`ChatMessage`](concepts/data_models/chat_messages.md) schema is compatible with Inspect AI's format (as of `inspect-ai==0.3.93`), which means you can directly use the [`parse_chat_message`][docent.data_models.chat.message.parse_chat_message] function to parse Inspect messages.
 
@@ -276,40 +250,6 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
     ctf_log_dict = to_jsonable_python(ctf_log)
     ```
 
-    Now we define a metadata class with some fields relevant to the CTF task.
-
-    ```python
-    from typing import Any
-    from docent.data_models import BaseAgentRunMetadata
-    from pydantic import Field
-
-    class InspectAgentRunMetadata(BaseAgentRunMetadata):
-        task_id: str = Field(
-            description="The ID of the 'benchmark' or 'set of evals' that the transcript belongs to"
-        )
-
-        # Identification of this particular run
-        sample_id: str = Field(
-            description="The specific task inside of the `task_id` benchmark that the transcript was run on"
-        )
-        epoch_id: int = Field(
-            description="Each `sample_id` should be run multiple times due to stochasticity; `epoch_id` is the integer index of a specific run."
-        )
-
-        # Parameters for the run
-        model: str = Field(description="The model that was used to generate the transcript")
-
-        # Outcome
-        scoring_metadata: dict[str, Any] | None = Field(
-            description="Additional metadata about the scoring process"
-        )
-
-        # Inspect metadata
-        additional_metadata: dict[str, Any] | None = Field(
-            description="Additional metadata about the transcript"
-        )
-    ```
-
     Now we can write a function that takes the Inspect log and converts it into an [`AgentRun`](concepts/data_models/agent_run.md) object.
 
     ```python
@@ -336,15 +276,15 @@ Now we're ready to ingest some logs! There are three end-to-end examples below; 
                 scores["correct"] = s.scores["includes"].value == "C"
 
             # Set metadata
-            metadata = InspectAgentRunMetadata(
-                task_id=log.eval.task,
-                sample_id=str(sample_id),
-                epoch_id=epoch_id,
-                model=log.eval.model,
-                scores=scores,
-                additional_metadata=s.metadata,
-                scoring_metadata=s.scores,
-            )
+            metadata = {
+                "task_id": log.eval.task,
+                "sample_id": str(sample_id),
+                "epoch_id": epoch_id,
+                "model": log.eval.model,
+                "scores": scores,
+                "additional_metadata": s.metadata,
+                "scoring_metadata": s.scores,
+            }
 
             # Create transcript
             agent_runs.append(

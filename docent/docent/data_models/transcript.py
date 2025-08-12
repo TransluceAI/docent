@@ -11,7 +11,6 @@ from docent.data_models._tiktoken_util import (
     truncate_to_token_limit,
 )
 from docent.data_models.chat import AssistantMessage, ChatMessage, ContentReasoning
-from docent.data_models.metadata import BaseMetadata
 
 # Template for formatting individual transcript blocks
 TRANSCRIPT_BLOCK_TEMPLATE = """
@@ -82,23 +81,32 @@ class TranscriptGroup(BaseModel):
     name: str | None = None
     description: str | None = None
     parent_transcript_group_id: str | None = None
-    metadata: BaseMetadata = Field(default_factory=BaseMetadata)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_serializer("metadata")
-    def serialize_metadata(self, metadata: BaseMetadata, _info: Any) -> dict[str, Any]:
+    def serialize_metadata(self, metadata: dict[str, Any], _info: Any) -> dict[str, Any]:
         """
         Custom serializer for the metadata field so the internal fields are explicitly preserved.
         """
-        return metadata.model_dump(strip_internal_fields=False)
+        return fake_model_dump(metadata)
 
     @field_validator("metadata", mode="before")
     @classmethod
     def _validate_metadata_type(cls, v: Any) -> Any:
-        if v is not None and not isinstance(v, BaseMetadata):
-            raise ValueError(
-                f"metadata must be an instance of BaseMetadata, got {type(v).__name__}"
-            )
-        return v
+        if v is not None and not isinstance(v, dict):
+            raise ValueError(f"metadata must be a dictionary, got {type(v).__name__}")
+        return v  # type: ignore
+
+
+def fake_model_dump(obj: dict[str, Any]) -> dict[str, Any]:
+    """
+    Emulate the action of pydantic.model_dump() for non-pydantic objects (to handle nested values)
+    """
+
+    class _FakeModel(BaseModel):
+        data: dict[str, Any]
+
+    return _FakeModel(data=obj).model_dump()["data"]
 
 
 class Transcript(BaseModel):
@@ -123,25 +131,22 @@ class Transcript(BaseModel):
     transcript_group_id: str | None = None
 
     messages: list[ChatMessage]
-    metadata: BaseMetadata = Field(default_factory=BaseMetadata)
-
+    metadata: dict[str, Any] = Field(default_factory=dict)
     _units_of_action: list[list[int]] | None = PrivateAttr(default=None)
 
     @field_serializer("metadata")
-    def serialize_metadata(self, metadata: BaseMetadata, _info: Any) -> dict[str, Any]:
+    def serialize_metadata(self, metadata: dict[str, Any], _info: Any) -> dict[str, Any]:
         """
         Custom serializer for the metadata field so the internal fields are explicitly preserved.
         """
-        return metadata.model_dump(strip_internal_fields=False)
+        return fake_model_dump(metadata)
 
     @field_validator("metadata", mode="before")
     @classmethod
     def _validate_metadata_type(cls, v: Any) -> Any:
-        if v is not None and not isinstance(v, BaseMetadata):
-            raise ValueError(
-                f"metadata must be an instance of BaseMetadata, got {type(v).__name__}"
-            )
-        return v
+        if v is not None and not isinstance(v, dict):
+            raise ValueError(f"metadata must be a dict, got {type(v).__name__}")
+        return v  # type: ignore
 
     @property
     def units_of_action(self) -> list[list[int]]:
@@ -337,12 +342,7 @@ class Transcript(BaseModel):
         blocks_str = "\n".join(au_blocks)
 
         # Gather metadata
-        metadata_obj = self.metadata.model_dump(strip_internal_fields=True)
-        # Add the field descriptions if they exist
-        metadata_obj = {
-            (f"{k} ({d})" if (d := self.metadata.get_field_description(k)) is not None else k): v
-            for k, v in metadata_obj.items()
-        }
+        metadata_obj = fake_model_dump(self.metadata)
 
         yaml_width = float("inf")
         block_str = f"<blocks>\n{blocks_str}\n</blocks>\n"

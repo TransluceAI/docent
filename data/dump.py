@@ -1,0 +1,275 @@
+"""
+Dump functionality.
+
+Creates files for collections including all related data.
+"""
+
+import os
+import subprocess
+import textwrap
+from datetime import datetime
+from typing import Optional
+
+from .cache import CACHE_DIR
+from .constants import CSV_TABLES, DB_RESTORE_EXTENSION
+from .db_utils import get_collection_info, get_current_alembic_revision, get_db_connection_params
+from .utils import (
+    console,
+    count_csv_rows,
+    create_aligned_collection_display,
+    get_server_host,
+    log_error,
+    log_info,
+    log_success,
+    log_warning,
+    make_safe_filename,
+    simple_progress,
+)
+
+
+async def select_collection_from_menu() -> str | None:
+    """Show a menu to select a collection and return its ID."""
+    import beaupy
+
+    from .ingest import ensure_api_key
+
+    # Ensure API key is available
+    api_key = await ensure_api_key()
+
+    # Set environment variable for docent SDK
+    os.environ["DOCENT_API_KEY"] = api_key
+
+    # Import docent SDK after setting API key
+    import docent
+
+    try:
+        server_url = get_server_host()
+        client = docent.Docent(
+            server_url=server_url,
+            web_url="http://localhost:3000",
+        )
+
+        with simple_progress("Loading collections...") as (progress, task):
+            collections = client.list_collections()
+
+        if not collections:
+            log_warning("No collections found")
+            return None
+
+        collection_details = []
+        for collection in collections:
+            try:
+                # Get agent run count using direct DB query
+                collection_info = await get_collection_info(collection["id"])
+                collection_details.append(
+                    {
+                        "id": collection["id"],
+                        "name": collection["name"] or "Unnamed Collection",
+                        "created_at": collection.get("created_at", "Unknown"),
+                        "agent_runs_count": collection_info["agent_runs_count"],
+                    }
+                )
+            except Exception as e:
+                log_warning(f"Could not get details for collection {collection['id']}: {e}")
+                collection_details.append(
+                    {
+                        "id": collection["id"],
+                        "name": collection["name"] or "Unnamed Collection",
+                        "created_at": collection.get("created_at", "Unknown"),
+                        "agent_runs_count": "?",
+                    }
+                )
+
+        # Create aligned display options
+        display_options = create_aligned_collection_display(collection_details)
+
+        log_info("Select a collection:")
+        selected_display = beaupy.select(display_options)
+        if selected_display is None:
+            return None
+
+        # Find the corresponding collection ID
+        for i, display_option in enumerate(display_options):
+            if display_option == selected_display:
+                return collection_details[i]["id"]
+
+    except Exception as e:
+        log_error("Failed to load collections", e)
+        return None
+
+
+async def dump_collection(collection_id: str, custom_name: Optional[str] = None) -> str:
+    """
+    Create a dump file for a collection.
+
+    Args:
+        collection_id: The ID of the collection to dump
+        custom_name: Optional custom name for the dump file
+
+    Returns:
+        The filename of the created dump file
+    """
+    # Get collection info
+    with simple_progress("Getting collection info...") as (progress, task):
+        collection_info = await get_collection_info(collection_id)
+        alembic_revision = await get_current_alembic_revision()
+
+    log_info("Collection Info:")
+    console.print(f"  ID: {collection_info['id']}")
+    console.print(f"  Name: {collection_info['name']}")
+    console.print(f"  Agent Runs: {collection_info['agent_runs_count']}")
+    console.print(f"  Alembic Revision: {alembic_revision}")
+
+    # Generate filename
+    if custom_name:
+        safe_name = make_safe_filename(custom_name)
+    else:
+        safe_name = make_safe_filename(collection_info["name"])
+
+    filename = f"{safe_name}.{alembic_revision}.{DB_RESTORE_EXTENSION}"
+
+    # Ensure cache directory exists
+    CACHE_DIR.mkdir(exist_ok=True)
+    dump_path = CACHE_DIR / filename
+
+    # Get database connection parameters
+    db_params = get_db_connection_params()
+
+    # Set environment variables for psql
+    env = os.environ.copy()
+    env["PGPASSWORD"] = db_params["password"]
+
+    # Use psql with COPY TO for collection-specific filtering
+    # This gives us precise control over which rows to export
+
+    log_info("Creating collection-specific export using SQL COPY commands")
+
+    # Create a temporary SQL script for the export
+    sql_script_path = CACHE_DIR / f"{safe_name}.{alembic_revision}.export.sql"
+
+    sql_content = textwrap.dedent(
+        f"""
+        -- Collection-specific export SQL script
+        -- Collection ID: {collection_id}
+        -- Generated by Docent data registry
+
+        \\copy (SELECT * FROM collections WHERE id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_collections.csv"}' WITH CSV HEADER;
+        \\copy (SELECT * FROM agent_runs WHERE collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_agent_runs.csv"}' WITH CSV HEADER;
+        \\copy (SELECT * FROM transcripts WHERE collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_transcripts.csv"}' WITH CSV HEADER;
+        \\copy (SELECT * FROM transcript_embeddings WHERE collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_transcript_embeddings.csv"}' WITH CSV HEADER;
+        \\copy (SELECT * FROM rubrics WHERE collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_rubrics.csv"}' WITH CSV HEADER;
+        \\copy (SELECT jr.* FROM judge_results jr JOIN agent_runs ar ON jr.agent_run_id = ar.id WHERE ar.collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_judge_results.csv"}' WITH CSV HEADER;
+        \\copy (SELECT jrc.* FROM judge_result_centroids jrc JOIN judge_results jr ON jrc.judge_result_id = jr.id JOIN agent_runs ar ON jr.agent_run_id = ar.id WHERE ar.collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_judge_result_centroids.csv"}' WITH CSV HEADER;
+        \\copy (SELECT * FROM access_control_entries WHERE collection_id = '{collection_id}') TO '{CACHE_DIR / f"{safe_name}_access_control_entries.csv"}' WITH CSV HEADER;
+    """
+    ).strip()
+
+    with open(sql_script_path, "w") as f:
+        f.write(sql_content)
+
+    # Execute the SQL script using psql
+    psql_cmd = [
+        "psql",
+        f"--host={db_params['host']}",
+        f"--port={db_params['port']}",
+        f"--username={db_params['user']}",
+        f"--dbname={db_params['database']}",
+        "--quiet",
+        "--file",
+        str(sql_script_path),
+    ]
+
+    # Print the command that will be executed
+    log_info("Running psql export command:")
+    # Hide password in the displayed command for security
+    display_cmd = [
+        arg.replace(db_params["password"], "***") if db_params["password"] in arg else arg
+        for arg in psql_cmd
+    ]
+    console.print(f"[dim]{' '.join(display_cmd)}[/dim]")
+    console.print()
+
+    # Run psql to execute the export and count rows
+    csv_files = [f"{safe_name}_{table_name}.csv" for table_name in CSV_TABLES]
+
+    try:
+        subprocess.run(
+            psql_cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        for table_name in CSV_TABLES:
+            csv_filename = table_name + ".csv"
+            csv_path = CACHE_DIR / f"{safe_name}_{csv_filename}"
+            row_count = count_csv_rows(csv_path)
+            if row_count > 0:
+                log_success(f"✓ {table_name}: {row_count} rows")
+            else:
+                console.print(f"[dim]- {table_name}: 0 rows (skipped)[/dim]")
+
+        # Create a tar.gz archive with all the CSV files and metadata
+        import json
+        import tarfile
+
+        # Create metadata file
+        metadata = {
+            "collection_id": collection_id,
+            "collection_name": collection_info["name"],
+            "agent_runs_count": collection_info["agent_runs_count"],
+            "alembic_revision": alembic_revision,
+            "export_timestamp": datetime.now().isoformat(),
+            "export_method": "collection_specific_csv",
+        }
+
+        metadata_path = CACHE_DIR / f"{safe_name}_metadata.json"
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        # Create the final archive
+        with tarfile.open(dump_path, "w:gz") as tar:
+            # Add the SQL script
+            tar.add(sql_script_path, arcname=f"{safe_name}_export.sql")
+
+            # Add metadata
+            tar.add(metadata_path, arcname=f"{safe_name}_metadata.json")
+
+            # Add CSV files that have content
+            files_added = 0
+            for csv_file in csv_files:
+                csv_path = CACHE_DIR / csv_file
+                if csv_path.exists() and csv_path.stat().st_size > 0:
+                    tar.add(csv_path, arcname=csv_file)
+                    files_added += 1
+
+            if files_added == 0:
+                raise ValueError("No data files to include in archive")
+
+        # Check if archive was created and has content
+        if not dump_path.exists() or dump_path.stat().st_size == 0:
+            raise ValueError("Export archive was not created or is empty")
+
+        return filename
+
+    except subprocess.CalledProcessError as e:
+        log_error("psql export failed")
+        log_error(f"stdout: {e.stdout}")
+        log_error(f"stderr: {e.stderr}")
+        raise ValueError(f"psql export failed: {e.stderr or 'Unknown error'}") from e
+    except Exception as e:
+        log_error("Failed to create export", e)
+        raise
+    finally:
+        # Always clean up temporary files, even on failure
+        try:
+            sql_script_path.unlink(missing_ok=True)
+            metadata_path.unlink(missing_ok=True)
+            for csv_file in csv_files:
+                (CACHE_DIR / csv_file).unlink(missing_ok=True)
+            # Clean up partial dump file on failure
+            if dump_path.exists() and dump_path.stat().st_size == 0:
+                dump_path.unlink(missing_ok=True)
+        except Exception:
+            pass  # Ignore cleanup errors

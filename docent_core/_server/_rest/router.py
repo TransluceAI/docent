@@ -30,6 +30,7 @@ from docent.data_models.citation import (
     Citation,
     parse_citations_single_run,
 )
+from docent.data_models.transcript import fake_model_dump
 from docent.loaders.load_inspect import load_inspect_log
 from docent_core._ai_tools.search import SearchResult, SearchResultWithCitations
 from docent_core._db_service.contexts import ViewContext
@@ -69,6 +70,7 @@ from docent_core._server._assistant.summarizer import (
     summarize_agent_actions,
 )
 from docent_core._server._auth.session import (
+    COOKIE_KEY,
     create_user_session,
     invalidate_user_session,
 )
@@ -240,7 +242,7 @@ async def get_current_user(request: Request, mono_svc: MonoService = Depends(get
         HTTPException: 401 if session is invalid or expired
     """
     # Get session ID from cookie
-    session_id = request.cookies.get("docent_session_id")
+    session_id = request.cookies.get(COOKIE_KEY)
     if not session_id:
         raise HTTPException(status_code=401, detail="No session found")
 
@@ -268,7 +270,7 @@ async def logout(
         Success message
     """
     # Get session ID from cookie
-    session_id = request.cookies.get("docent_session_id")
+    session_id = request.cookies.get(COOKIE_KEY)
     if session_id:
         # Invalidate the session using the auth helper
         await invalidate_user_session(session_id, response, mono_svc)
@@ -488,8 +490,8 @@ async def preview_import_runs_from_file(
         if task_id is not None:
             task_ids.add(str(task_id))
 
-        if run.metadata.scores:
-            scores_keys.update(run.metadata.scores.keys())
+        if "scores" in run.metadata:
+            scores_keys.update(run.metadata["scores"].keys())
 
     return {
         "status": "preview",
@@ -502,7 +504,7 @@ async def preview_import_runs_from_file(
         "file_info": file_info,
         "sample_preview": [
             {
-                "metadata": run.metadata.model_dump(strip_internal_fields=True),
+                "metadata": fake_model_dump(run.metadata),
                 "num_messages": sum(
                     len(transcript.messages) for transcript in run.transcripts.values()
                 ),
@@ -638,7 +640,7 @@ async def get_agent_run_metadata(
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     data = await mono_svc.get_agent_runs(ctx, agent_run_ids=request.agent_run_ids)
-    return {d.id: d.metadata.model_dump(strip_internal_fields=True) for d in data}
+    return {d.id: fake_model_dump(d.metadata) for d in data}
 
 
 class PostAgentRunsRequest(BaseModel):
@@ -1573,6 +1575,7 @@ async def compute_embeddings(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
+    return
     await mono_svc.add_and_enqueue_embedding_job(ctx)
 
 

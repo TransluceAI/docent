@@ -17,7 +17,7 @@ async def evaluate_new_queries(
             * num_results
         )
     results = await assign_with_backend(
-        backend="sonnet-37-thinking",
+        backend="sonnet-4-thinking",
         items=items,
         clusters=clusters,
     )

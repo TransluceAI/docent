@@ -20,7 +20,6 @@ import {
 import { RootState } from '../store/store';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
-import EmbeddingsPopover from './EmbeddingsPopover';
 
 const Breadcrumbs: React.FC = () => {
   const router = useRouter();
@@ -142,7 +141,7 @@ const Breadcrumbs: React.FC = () => {
         {collectionId && <ShareViewPopover collectionId={collectionId} />}
 
         {/* Embeddings */}
-        <EmbeddingsPopover />
+        {/* <EmbeddingsPopover /> */}
 
         {/* Connection status */}
         {/* <Button

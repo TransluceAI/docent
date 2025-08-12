@@ -192,3 +192,6 @@ personal/caden/*
 inspect_evals
 
 *.swp
+
+# test data cache
+data/cache

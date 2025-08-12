@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-from enum import Enum
 from typing import Any, List
 from uuid import uuid4
 
@@ -24,22 +22,6 @@ from docent_core._db_service.schemas.tables import (
 from docent_core._db_service.service import MonoService
 
 logger = get_logger(__name__)
-
-
-class MetadataFieldType(str, Enum):
-    """Data types for fields in metadata JSON objects."""
-
-    NUMERIC = "numeric"
-    TEXT = "text"
-    BOOLEAN = "boolean"
-
-
-@dataclass
-class ChartKeys:
-    """Container for metadata/score keys in a collection that can be used in charts."""
-
-    metadata_keys: List[tuple[str, MetadataFieldType]]
-    score_keys: List[str]
 
 
 class ChartSpec(BaseModel):
@@ -81,6 +63,8 @@ class ChartDimension(BaseModel):
         default=False, exclude=True
     )  # Whether this represents an aggregate measure
     extra: dict[str, Any] = {}
+    is_numeric: bool = False
+    is_valid_measure: bool = False
 
     def __init__(
         self,
@@ -89,12 +73,16 @@ class ChartDimension(BaseModel):
         short_name: str | None = None,
         expression: Any = None,
         is_aggregation: bool = False,
+        is_numeric: bool = False,
+        is_valid_measure: bool | None = None,
         **extra: Any,
     ):
         if name is None:
             name = key
         if short_name is None:
             short_name = name
+        if is_valid_measure is None:
+            is_valid_measure = is_numeric
 
         super().__init__(
             key=key,
@@ -102,6 +90,8 @@ class ChartDimension(BaseModel):
             short_name=short_name,
             expression=expression,
             is_aggregation=is_aggregation,
+            is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
             extra=extra,
         )
 
@@ -117,8 +107,8 @@ class ChartDimension(BaseModel):
         base_field: str,
         json_path: str,
         name: str | None = None,
-        short_name: str | None = None,
-        data_type: MetadataFieldType | None = None,
+        is_numeric: bool = False,
+        is_valid_measure: bool = False,
     ):
         """Create a ChartDimension for JSON field access (supports nested paths)."""
         # Handle nested JSON paths like 'scores.correct' -> ['scores', 'correct']
@@ -155,16 +145,17 @@ class ChartDimension(BaseModel):
             parts_except_last_joined = "->".join(parts_except_last)
             key = f"{base_field}->{parts_except_last_joined}->>{last_part}"
 
-        if data_type == MetadataFieldType.NUMERIC:
+        if is_numeric:
             expression = expression.cast(Numeric)  # type: ignore
 
         return cls(
             key=key,
             name=name or f"Metadata: {json_path}",
-            short_name=short_name,
+            short_name=path_parts[-1],
             expression=expression,
             is_aggregation=False,
-            data_type=data_type,
+            is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
             metadata_key=json_path,
         )
 
@@ -237,7 +228,7 @@ class ChartsService:
         self.session = session
         self.service = service
         # Request-scoped cache for chart keys
-        self._chart_keys_cache: dict[str, ChartKeys] = {}
+        self._chart_keys_cache: dict[str, list[ChartDimension]] = {}
 
     async def _populate_chart_labels(self, ctx: ViewContext, chart_spec: ChartSpec) -> ChartSpec:
         """Populate x_label, y_label, and series_label from ChartDimension short_name."""
@@ -397,123 +388,91 @@ class ChartsService:
 
         await self.session.execute(delete(SQLAChart).where(SQLAChart.id == chart_id))
 
-    async def _fetch_metadata_keys_from_db(
-        self, collection_id: str
-    ) -> List[tuple[str, MetadataFieldType]]:
-        """Fetch metadata keys directly from database."""
+    async def _fetch_chart_keys_from_db(self, collection_id: str) -> list[ChartDimension]:
+        """Fetch metadata keys (including nested) and measure-eligible numeric keys in one query.
+
+        Dimension data types allow nulls when determining numeric/boolean types.
+        Measure eligibility is true if all occurrences are number/boolean/null.
+        """
         query = text(
             """
-            SELECT
-                key,
-                CASE
-                    WHEN bool_and(jsonb_typeof(value) = 'number') THEN 'numeric'
-                    WHEN bool_and(jsonb_typeof(value) = 'boolean') THEN 'boolean'
-                    ELSE 'text'
-                END as data_type
-            FROM (
+            WITH RECURSIVE json_paths AS (
+                -- Base case: top-level keys
                 SELECT
-                    key,
+                    key AS path,
                     value
-                FROM agent_runs,
-                LATERAL jsonb_each(metadata_json)
+                FROM agent_runs
+                CROSS JOIN LATERAL jsonb_each(metadata_json) AS t(key, value)
                 WHERE metadata_json IS NOT NULL
                 AND metadata_json != 'null'::jsonb
                 AND metadata_json != '{}'::jsonb
                 AND collection_id = :collection_id
-            ) subquery
-            WHERE key != 'scores'
-            AND jsonb_typeof(value) != 'object'
-            GROUP BY key
-            ORDER BY key
+
+                UNION ALL
+
+                -- Recursive case: nested keys
+                SELECT
+                    jp.path || '.' || nested.key AS path,
+                    nested.value
+                FROM json_paths jp
+                CROSS JOIN LATERAL jsonb_each(jp.value) AS nested(key, value)
+                WHERE jsonb_typeof(jp.value) = 'object'
+            )
+            SELECT
+                path,
+                CASE
+                    WHEN bool_and(jsonb_typeof(value) IN ('number','null')) THEN 'numeric'
+                    WHEN bool_and(jsonb_typeof(value) IN ('number','boolean','null')) THEN 'numeric_or_boolean'
+                    ELSE 'text'
+                END AS data_type,
+                bool_and(jsonb_typeof(value) IN ('number', 'boolean', 'null')) AS is_measure_numeric
+            FROM json_paths
+            WHERE NOT (
+                path IN ('_field_descriptions', 'allow_fields_without_descriptions')
+                OR path LIKE '_field_descriptions.%'
+                OR path LIKE 'allow_fields_without_descriptions.%'
+            )
+            GROUP BY path
+            ORDER BY path
             """
         )
 
         try:
             result = await self.session.execute(query, {"collection_id": collection_id})
-            excluded = {"_field_descriptions", "allow_fields_without_descriptions"}
+
             return [
-                (row.key, MetadataFieldType(row.data_type))
+                ChartDimension.create_json_field(
+                    base_field="ar.metadata_json",
+                    json_path=row.path,
+                    is_numeric=row.data_type == "numeric",
+                    is_valid_measure=row.data_type == "numeric"
+                    or row.data_type == "numeric_or_boolean",
+                )
                 for row in result
-                if row.key not in excluded
             ]
         except Exception as e:
-            logger.error(f"Failed to get metadata keys for collection {collection_id}: {str(e)}")
+            logger.error(f"Failed to get chart keys for collection {collection_id}: {str(e)}")
             return []
 
-    async def _fetch_score_keys_from_db(self, collection_id: str) -> List[str]:
-        """Fetch score keys directly from database."""
-
-        # Only include score keys whose values are numeric or boolean across *all* occurrences
-        # in the collection. This is enforced by checking the jsonb_typeof for every value
-        # associated with each key and requiring that it is always either "number" or "boolean".
-        query = text(
-            """
-            SELECT key
-            FROM (
-                SELECT key, value
-                FROM agent_runs
-                CROSS JOIN LATERAL jsonb_each(metadata_json->'scores') AS t(key, value)
-                WHERE metadata_json IS NOT NULL
-                AND metadata_json != 'null'::jsonb
-                AND metadata_json->'scores' IS NOT NULL
-                AND metadata_json->'scores' != 'null'::jsonb
-                AND collection_id = :collection_id
-            ) subquery
-            GROUP BY key
-            HAVING bool_and(jsonb_typeof(value) IN ('number', 'boolean', 'null'))
-            ORDER BY key
-            """
-        )
-
-        try:
-            result = await self.session.execute(query, {"collection_id": collection_id})
-            return [row.key for row in result]
-        except Exception as e:
-            logger.error(f"Failed to get score keys for collection {collection_id}: {str(e)}")
-            return []
-
-    async def _get_chart_keys(self, ctx: ViewContext) -> ChartKeys:
+    async def _get_chart_keys(self, ctx: ViewContext) -> list[ChartDimension]:
         """Get all chart keys for a collection with request-scoped caching."""
         if ctx.collection_id in self._chart_keys_cache:
             return self._chart_keys_cache[ctx.collection_id]
 
-        metadata_keys = await self._fetch_metadata_keys_from_db(ctx.collection_id)
-        score_keys = await self._fetch_score_keys_from_db(ctx.collection_id)
-
-        chart_keys = ChartKeys(metadata_keys=metadata_keys, score_keys=score_keys)
+        chart_keys = await self._fetch_chart_keys_from_db(ctx.collection_id)
         self._chart_keys_cache[ctx.collection_id] = chart_keys
         return chart_keys
 
     async def get_available_dimensions(self, ctx: ViewContext) -> List[ChartDimension]:
         """Get available dimensions for a table type, including dynamic metadata fields."""
-        # Add dynamic metadata fields with detected data types
         chart_keys = await self._get_chart_keys(ctx)
-        dynamic_metadata: List[ChartDimension] = []
-        for key, data_type in chart_keys.metadata_keys:
-            dimension = ChartDimension.create_json_field(
-                "ar.metadata_json",
-                key,
-                data_type=data_type,
-                short_name=key,
-            )
-            dynamic_metadata.append(dimension)
-
-        return static_dimensions + dynamic_metadata
+        return static_dimensions + chart_keys
 
     async def get_available_measures(self, ctx: ViewContext) -> List[ChartDimension]:
-        """Get available measures for a table type, including dynamic score fields."""
+        """Get available measures for a table type, including dynamic numerical fields."""
         chart_keys = await self._get_chart_keys(ctx)
-        dynamic_scores: List[ChartDimension] = []
-        for key in chart_keys.score_keys:
-            dimension = ChartDimension.create_json_field(
-                "ar.metadata_json",
-                f"scores.{key}",
-                name=f"Score: {key}",
-                short_name=key,
-            )
-            dynamic_scores.append(dimension)
-
-        return static_measures + dynamic_scores
+        numeric_keys = [key for key in chart_keys if key.is_numeric]
+        return static_measures + numeric_keys
 
     async def _validate_and_correct_chart_keys(
         self,

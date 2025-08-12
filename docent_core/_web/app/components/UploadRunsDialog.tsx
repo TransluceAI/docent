@@ -148,7 +148,7 @@ export default function UploadRunsDialog({
       );
 
       try {
-        await apiRestClient.post(`/${collection_id}/compute_embeddings`);
+        // await apiRestClient.post(`/${collection_id}/compute_embeddings`);
         toast({
           title: 'Runs Imported',
           description: `${previewResult?.would_import.num_agent_runs ?? 0} runs have been imported successfully. Embeddings computation started.`,

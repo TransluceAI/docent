@@ -1,47 +1,26 @@
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, List, Tuple
 
-from pydantic import Field
-
-from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun, BaseAgentRunMetadata
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat import ChatMessage, ToolCall, parse_chat_message
 from docent.data_models.transcript import Transcript
 
-logger = get_logger(__name__)
 
-
-LOG_DIR_PREFIX = "/Users/mengk/Code/luce-artifacts/mengk/inspect_logs"
-TAU_BENCH_LOGS: dict[str, str] = {
-    "tb_airline": f"{LOG_DIR_PREFIX}/sonnet-35-new-airline.json",
-}
-
-
-class TauBenchMetadata(BaseAgentRunMetadata):
-    benchmark_id: str = Field(
-        description="The benchmark that the task belongs to", default="tau_bench"
-    )
-    task_id: str = Field(description="The task within the benchmark that the agent is solving")
-    model: str = Field(description="The LLM used by the agent")
-    additional_metadata: dict[str, Any] = Field(description="Additional metadata about the task")
-    scoring_metadata: dict[str, Any] | None = Field(
-        description="Additional metadata about the scoring process"
-    )
-
-
-def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[AgentRun]:
-    """Loads TauBench transcripts from the specified file path.
+async def process_tau_bench_file(file_path: Path) -> Tuple[List[AgentRun], dict[str, Any]]:
+    """
+    Process a TauBench file and extract agent runs.
 
     Args:
-        experiment_id: The ID of the experiment.
-        fpath: The path to the JSON file containing the transcript data.
+        file_path: Path to the JSON file containing TauBench data
 
     Returns:
-        A list of AgentRun objects representing the conversations.
+        tuple: (agent_runs, file_info) where file_info contains metadata about the file
     """
-    logger.info("Loading %s from %s", experiment_id, fpath)
+    if not file_path.suffix.lower() == ".json":
+        raise ValueError("File must be a .json file")
 
-    with open(fpath, "r") as f:
+    with open(file_path, "r") as f:
         data = json.load(f)
 
     agent_runs: list[AgentRun] = []
@@ -95,14 +74,14 @@ def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[AgentRun]:
         scores = {"reward": round(sample["reward"], 3)}
 
         # Build metadata
-        metadata = TauBenchMetadata(
-            benchmark_id=task_id,
-            task_id=str(sample_id),
-            model="sonnet-35-new",  # Default model name TODO(kevin): this is a hack.
-            scores=scores,
-            additional_metadata=info,
-            scoring_metadata=info["reward_info"],
-        )
+        metadata: dict[str, Any] = {
+            "benchmark_id": task_id,
+            "task_id": str(sample_id),
+            "model": "sonnet-35-new",  # Default model name TODO(kevin): this is a hack.
+            "scores": scores,
+            "additional_metadata": info,
+            "scoring_metadata": info["reward_info"],
+        }
 
         # Create the transcript and wrap in AgentRun
         transcript = Transcript(
@@ -117,17 +96,10 @@ def load_tau_bench_experiment(experiment_id: str, fpath: str) -> list[AgentRun]:
 
         agent_runs.append(agent_run)
 
-    return agent_runs
+    file_info = {
+        "filename": file_path.name,
+        "total_samples": len(data),
+        "total_runs": len(agent_runs),
+    }
 
-
-def load_tau_bench() -> list[AgentRun]:
-    """Loads all TauBench transcripts.
-
-    Returns:
-        A list of AgentRun objects representing the conversations.
-    """
-    result: list[AgentRun] = []
-    for experiment_id, fpath in TAU_BENCH_LOGS.items():
-        agent_runs = load_tau_bench_experiment(experiment_id, fpath)
-        result.extend(agent_runs)
-    return result
+    return agent_runs, file_info

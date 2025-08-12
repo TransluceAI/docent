@@ -90,7 +90,7 @@ export const chartApi = createApi({
     getChartMetadata: build.query<
       {
         fields?: { dimensions: ChartDimension[]; measures: ChartDimension[] };
-        rubrics: { id: string; description: string }[];
+        rubrics: { id: string; description: string; version: number }[];
       },
       { collectionId: string }
     >({

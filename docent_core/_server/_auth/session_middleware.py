@@ -1,7 +1,7 @@
 """
 Session authentication middleware for validating user sessions.
 
-This middleware validates the docent_session_id cookie on every request
+This middleware validates the docent_session cookie on every request
 and attaches user information to request.state for use in endpoints.
 """
 
@@ -11,6 +11,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
+from docent_core._server._auth.session import COOKIE_KEY
 from docent_core._server._dependencies.database import get_mono_svc
 
 logger = get_logger(__name__)
@@ -21,7 +22,7 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
     Middleware that validates user sessions and attaches user info to request state.
 
     For each request:
-    1. Extracts the docent_session_id cookie
+    1. Extracts the docent_session cookie
     2. Validates the session (active and not expired)
     3. Loads the associated user
     4. Attaches user and user_id to request.state
@@ -35,7 +36,7 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         request.state.user_id = None
 
         # Get the user from session_id
-        if session_id := request.cookies.get("docent_session_id"):
+        if session_id := request.cookies.get(COOKIE_KEY):
 
             # For testing, we override get_mono_svc with a version that uses the test db
             mono_svc_factory = request.app.dependency_overrides.get(get_mono_svc, get_mono_svc)

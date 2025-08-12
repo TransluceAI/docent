@@ -111,17 +111,17 @@ const EmbeddingsPopover: React.FC = () => {
       setIsQueued(true);
       setIsLoading(false); // Loading complete, now it's queued
 
-      toast({
-        title: 'Embeddings computation started',
-        description: 'Embeddings are being recomputed in the background',
-        variant: 'default',
-      });
+      // toast({
+      //   title: 'Embeddings computation started',
+      //   description: 'Embeddings are being recomputed in the background',
+      //   variant: 'default',
+      // });
     } catch (error) {
-      toast({
-        title: 'Failed to start embeddings computation',
-        description: 'Could not start embeddings computation',
-        variant: 'destructive',
-      });
+      // toast({
+      //   title: 'Failed to start embeddings computation',
+      //   description: 'Could not start embeddings computation',
+      //   variant: 'destructive',
+      // });
       setIsLoading(false);
       // Don't set queued on error
     }

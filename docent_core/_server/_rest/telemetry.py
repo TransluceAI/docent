@@ -13,8 +13,6 @@ from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 from docent._log_util import get_logger
 from docent.data_models import (
     AgentRun,
-    BaseAgentRunMetadata,
-    BaseMetadata,
     Transcript,
     TranscriptGroup,
 )
@@ -764,7 +762,7 @@ def _create_transcript_groups_from_redis_data(
             name=name,
             description=description,
             parent_transcript_group_id=parent_transcript_group_id,
-            metadata=BaseMetadata(**metadata_dict) if metadata_dict else BaseMetadata(),
+            metadata=metadata_dict if metadata_dict else {},
         )
 
         transcript_groups.append(transcript_group)
@@ -1269,7 +1267,7 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
 
 
 def _organize_spans_by_collection(
-    spans: List[Dict[str, Any]]
+    spans: List[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Dict[str, List[Dict[str, Any]]]]]:
     """
     Organize spans by collection_id -> agent_run_id -> transcript_id -> spans[].
@@ -1508,7 +1506,7 @@ async def _create_agent_runs_from_spans(
                         metadata_dict.update(stored_metadata)
                         logger.info(f"  Added stored metadata to agent run: {stored_metadata}")
 
-            metadata = BaseAgentRunMetadata(**metadata_dict)
+            metadata = metadata_dict
             agent_run = AgentRun(
                 id=agent_run_id,
                 name="",

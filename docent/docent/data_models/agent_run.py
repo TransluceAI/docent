@@ -1,3 +1,4 @@
+import json
 import sys
 from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
@@ -12,8 +13,11 @@ from pydantic import (
 )
 
 from docent.data_models._tiktoken_util import get_token_count, group_messages_into_ranges
-from docent.data_models.metadata import BaseAgentRunMetadata
-from docent.data_models.transcript import Transcript, TranscriptWithoutMetadataValidator
+from docent.data_models.transcript import (
+    Transcript,
+    TranscriptWithoutMetadataValidator,
+    fake_model_dump,
+)
 
 
 class FilterableField(TypedDict):
@@ -32,7 +36,7 @@ class AgentRun(BaseModel):
         name: Optional human-readable name for the agent run.
         description: Optional description of the agent run.
         transcripts: Dict mapping transcript IDs to Transcript objects.
-        metadata: Additional structured metadata about the agent run.
+        metadata: Additional structured metadata about the agent run as a JSON-serializable dictionary.
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -40,23 +44,34 @@ class AgentRun(BaseModel):
     description: str | None = None
 
     transcripts: dict[str, Transcript]
-    metadata: BaseAgentRunMetadata
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_serializer("metadata")
-    def serialize_metadata(self, metadata: BaseAgentRunMetadata, _info: Any) -> dict[str, Any]:
+    def serialize_metadata(self, metadata: dict[str, Any], _info: Any) -> dict[str, Any]:
         """
-        Custom serializer for the metadata field so the internal fields are explicitly preserved.
+        Custom serializer for the metadata field - returns the dict as-is since it's already serializable.
         """
-        return metadata.model_dump(strip_internal_fields=False)
+        return fake_model_dump(metadata)
 
     @field_validator("metadata", mode="before")
     @classmethod
-    def _validate_metadata_type(cls, v: Any) -> Any:
-        if v is not None and not isinstance(v, BaseAgentRunMetadata):
-            raise ValueError(
-                f"metadata must be an instance of BaseAgentRunMetadata, got {type(v).__name__}"
-            )
-        return v
+    def _validate_metadata_json_serializable(cls, v: Any) -> dict[str, Any]:
+        """
+        Validates that metadata is a dictionary and is JSON-serializable.
+        """
+        if v is None:
+            return {}
+
+        if not isinstance(v, dict):
+            raise ValueError(f"metadata must be a dictionary, got {type(v).__name__}")
+
+        # Check that the metadata is JSON serializable
+        try:
+            json.dumps(fake_model_dump(cast(dict[str, Any], v)))
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"metadata must be JSON-serializable: {e}")
+
+        return cast(dict[str, Any], v)
 
     @model_validator(mode="after")
     def _validate_transcripts_not_empty(self):
@@ -88,16 +103,11 @@ class AgentRun(BaseModel):
         transcripts_str = "\n\n".join(transcript_strs)
 
         # Gather metadata
-        metadata_obj = self.metadata.model_dump(strip_internal_fields=True)
+        metadata_obj = fake_model_dump(self.metadata)
         if self.name is not None:
             metadata_obj["name"] = self.name
         if self.description is not None:
             metadata_obj["description"] = self.description
-        # Add the field descriptions if they exist
-        metadata_obj = {
-            (f"{k} ({d})" if (d := self.metadata.get_field_description(k)) is not None else k): v
-            for k, v in metadata_obj.items()
-        }
 
         yaml_width = float("inf")
         transcripts_str = (
@@ -202,7 +212,7 @@ class AgentRun(BaseModel):
                     _explore_dict(cast(dict[str, Any], v), f"{prefix}.{k}", depth + 1)
 
         # Look at the agent run metadata
-        _explore_dict(self.metadata.model_dump(strip_internal_fields=True), "metadata", 0)
+        _explore_dict(fake_model_dump(self.metadata), "metadata", 0)
         # Look at the transcript metadata
         # TODO(mengk): restore this later when we have the ability to integrate with SQL.
         # for t_id, t in self.transcripts.items():

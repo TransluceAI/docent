@@ -8,16 +8,26 @@ WORKDIR /app
 # Install uv - it's way faster than pip
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# First install dependencies
-COPY pyproject.toml .
-# Annoying but we need to copy the SDK otherwise the core app which depends on it cannot build
-COPY docent docent
-RUN uv pip install --system .
+#################################
+# Install external dependencies #
+#################################
+# Do this first to prevent unnecessary dep re-installs when the core app is changed but not deps
 
-# Copy the application code
-# TODO(mengk): ignore the _web folder
+# Need this here so that the core app can build
+COPY docent docent
+# Convert uv.lock to a locked requirements.txt that pip can install
+COPY pyproject.toml .
+COPY uv.lock .
+RUN uv export --format requirements-txt > requirements.txt
+# Then install the requirements.txt
+RUN uv pip install --system -r requirements.txt
+
+#################################
+# Install the core application #
+#################################
+
+# TODO(mengk): ignore the _web folder which has no Python code
 COPY docent_core docent_core
-# Install the project in editable mode
 RUN uv pip install --system -e .
 
 # Copy .env and scripts for startup

@@ -203,11 +203,12 @@ async def get_chart_metadata(
             "measures": measures,
         }
 
-        # Always get search queries for the collection
-        rubrics = await rubric_service.get_all_rubrics(collection_id)
+        # Only return the most recent version of each rubric, including version number
+        rubrics = await rubric_service.get_all_rubrics(collection_id, latest_only=True)
         result["rubrics"] = [
             {
                 "id": rubric.id,
+                "version": rubric.version,
                 "description": rubric.high_level_description,
             }
             for rubric in rubrics

@@ -143,12 +143,12 @@ class LlmApiClusterAssigner(ClusterAssigner):
         )
 
     @classmethod
-    def from_sonnet_37_thinking(cls, assign_prompt_fn: Callable[[str, str], str] | None = None):
+    def from_sonnet_4_thinking(cls, assign_prompt_fn: Callable[[str, str], str] | None = None):
         return cls(
             system_prompt=None,
             max_new_tokens=4096,
             temperature=1.0,
-            model_options=PROVIDER_PREFERENCES.cluster_assign_sonnet_37_thinking,
+            model_options=PROVIDER_PREFERENCES.cluster_assign_sonnet_4_thinking,
             assign_prompt_fn=assign_prompt_fn,
         )
 
@@ -384,7 +384,7 @@ class LlmApiClusterAssigner(ClusterAssigner):
 
 
 BaseAssignerType = Literal[
-    "o3-mini", "o4-mini", "sonnet-37-thinking", "modernbert-ft", "gemini-flash"
+    "o3-mini", "o4-mini", "sonnet-4-thinking", "modernbert-ft", "gemini-flash"
 ]
 BASE_ASSIGNERS: dict[BaseAssignerType, ClusterAssigner] = {}
 
@@ -398,8 +398,8 @@ async def _get_base_assigner(backend: BaseAssignerType) -> ClusterAssigner:
             assigner = LlmApiClusterAssigner.from_o3_mini()
         elif backend == "o4-mini":
             assigner = LlmApiClusterAssigner.from_o4_mini()
-        elif backend == "sonnet-37-thinking":
-            assigner = LlmApiClusterAssigner.from_sonnet_37_thinking()
+        elif backend == "sonnet-4-thinking":
+            assigner = LlmApiClusterAssigner.from_sonnet_4_thinking()
         elif backend == "gemini-flash":
             assigner = LlmApiClusterAssigner.from_gemini_flash()
         # elif backend == "modernbert-ft":
