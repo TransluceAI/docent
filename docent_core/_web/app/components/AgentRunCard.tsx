@@ -19,9 +19,6 @@ export default function AgentRunCard({
   // Collection slice
   const collectionId = useAppSelector((state) => state.collection.collectionId);
 
-  // Search slice
-  const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-
   return (
     <div
       className={cn(
@@ -60,8 +57,7 @@ export default function AgentRunCard({
                   agentRunId,
                   undefined,
                   undefined,
-                  collectionId,
-                  curSearchQuery
+                  collectionId
                   // (e.button === 1 || e.metaKey || e.ctrlKey)
                 );
               }}
@@ -77,13 +73,6 @@ export default function AgentRunCard({
       </div>
 
       {/* <RegexSnippetsSection regexSnippets={regexSnippets?.[agentRunId]} /> */}
-
-      {/* {searchResults && curSearchQuery && (
-        <SearchResultsList
-          curSearchQuery={curSearchQuery}
-          searchResults={searchResults}
-        />
-      )} */}
     </div>
   );
 }

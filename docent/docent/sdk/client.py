@@ -197,75 +197,85 @@ class Docent:
         return response.json()
 
     def list_searches(self, collection_id: str) -> list[dict[str, Any]]:
-        """List all searches for a given collection.
+        """List all rubrics for a given collection.
 
         Args:
             collection_id: ID of the Collection.
 
         Returns:
-            list: List of dictionaries containing search query information.
+            list: List of dictionaries containing rubric information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/list_search_queries"
+        url = f"{self._server_url}/rubric/{collection_id}/rubrics"
         response = self._session.get(url)
         response.raise_for_status()
         return response.json()
 
-    def get_search_results(self, collection_id: str, search_query: str) -> list[dict[str, Any]]:
-        """Get search results for a given collection and search query.
-        Pass in either search_query or query_id.
+    def get_search_results(
+        self, collection_id: str, rubric_id: str, rubric_version: int
+    ) -> list[dict[str, Any]]:
+        """Get rubric results for a given collection, rubric and version.
 
         Args:
             collection_id: ID of the Collection.
-            search_query: The search query to get results for.
+            rubric_id: The ID of the rubric to get results for.
+            rubric_version: The version of the rubric to get results for.
 
         Returns:
-            list: List of dictionaries containing search result information.
+            list: List of dictionaries containing rubric result information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/get_search_results"
-        response = self._session.post(url, json={"search_query": search_query})
+        url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/results"
+        response = self._session.get(url, params={"rubric_version": rubric_version})
         response.raise_for_status()
         return response.json()
 
-    def list_search_clusters(self, collection_id: str, search_query: str) -> list[dict[str, Any]]:
-        """List all search clusters for a given collection.
-        Pass in either search_query or query_id.
+    def list_search_clusters(
+        self, collection_id: str, rubric_id: str, rubric_version: int | None = None
+    ) -> list[dict[str, Any]]:
+        """List all centroids for a given collection and rubric.
 
         Args:
             collection_id: ID of the Collection.
-            search_query: The search query to get clusters for.
+            rubric_id: The ID of the rubric to get centroids for.
+            rubric_version: Optional version of the rubric. If not provided, uses latest.
 
         Returns:
-            list: List of dictionaries containing search cluster information.
+            list: List of dictionaries containing centroid information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/list_search_clusters"
-        response = self._session.post(url, json={"search_query": search_query})
+        url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/centroids"
+        params: dict[str, int] = {}
+        if rubric_version is not None:
+            params["rubric_version"] = rubric_version
+        response = self._session.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
-    def get_cluster_matches(self, collection_id: str, centroid: str) -> list[dict[str, Any]]:
-        """Get the matches for a given cluster.
+    def get_cluster_matches(
+        self, collection_id: str, rubric_id: str, rubric_version: int
+    ) -> list[dict[str, Any]]:
+        """Get centroid assignments for a given rubric.
 
         Args:
             collection_id: ID of the Collection.
-            cluster_id: The ID of the cluster to get matches for.
+            rubric_id: The ID of the rubric to get assignments for.
+            rubric_version: The version of the rubric to get assignments for.
 
         Returns:
-            list: List of dictionaries containing the search results that match the cluster.
+            list: List of dictionaries containing centroid assignment information.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/get_cluster_matches"
-        response = self._session.post(url, json={"centroid": centroid})
+        url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/assignments"
+        response = self._session.get(url, params={"rubric_version": rubric_version})
         response.raise_for_status()
         return response.json()
 

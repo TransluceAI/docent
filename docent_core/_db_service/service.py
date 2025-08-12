@@ -10,16 +10,13 @@ from typing import (
     ParamSpec,
     Sequence,
     TypeVar,
-    cast,
 )
 from uuid import uuid4
 
-import anyio
 from passlib.context import CryptContext
 from sqlalchemy import (
     ColumnElement,
     delete,
-    distinct,
     exists,
     func,
     select,
@@ -31,19 +28,6 @@ from sqlalchemy.orm import selectinload
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript, TranscriptGroup
-from docent_core._ai_tools.clustering.cluster_assigner import (
-    DEFAULT_ASSIGNER,
-    assign_with_backend,
-)
-from docent_core._ai_tools.clustering.cluster_generator import (
-    ClusterFeedback,
-    propose_clusters,
-)
-from docent_core._ai_tools.search import (
-    SearchResult,
-    SearchResultStreamingCallback,
-    execute_search,
-)
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.db import DocentDB
 from docent_core._db_service.filters import ComplexFilter
@@ -745,233 +729,6 @@ class MonoService:
         )
         return new_ctx
 
-    ###########
-    # Filters #
-    ###########
-
-    async def get_search_query_by_query(
-        self, collection_id: str, search_query: str
-    ) -> SQLASearchQuery | None:
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLASearchQuery).where(
-                    SQLASearchQuery.collection_id == collection_id,
-                    SQLASearchQuery.search_query == search_query,
-                )
-            )
-            return result.scalar_one_or_none()
-
-    async def get_search_query(self, query_id: str) -> SQLASearchQuery:
-        async with self.db.session() as session:
-            # Check if the search query already exists for this collection
-            result = await session.execute(
-                select(SQLASearchQuery).where(SQLASearchQuery.id == query_id)
-            )
-            return result.scalar_one()
-
-    async def delete_search_query(self, collection_id: str, search_query_id: str):
-        """
-        Delete a search query from the database.
-
-        Args:
-            search_query_id: The ID of the search query to delete
-
-        Returns:
-            True if the search query was found and deleted, False otherwise
-        """
-        async with self.db.session() as session:
-            # Get the search query object
-            search_query_obj = await session.execute(
-                select(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
-            )
-            search_query_obj = search_query_obj.scalar_one_or_none()
-            if search_query_obj is None:
-                return False
-
-            # Delete all search result cluster assignments that reference search results with this query
-            await session.execute(
-                delete(SQLASearchResultCluster).where(
-                    SQLASearchResultCluster.search_result_id.in_(
-                        select(SQLASearchResult.id).where(
-                            SQLASearchResult.search_query_id == search_query_id
-                        )
-                    )
-                )
-            )
-
-            # Delete all clusters for this search query
-            await session.execute(
-                delete(SQLASearchCluster).where(
-                    SQLASearchCluster.collection_id == collection_id,
-                    SQLASearchCluster.search_query_id == search_query_id,
-                )
-            )
-
-            # Delete search results
-            await session.execute(
-                delete(SQLASearchResult).where(SQLASearchResult.search_query_id == search_query_id)
-            )
-
-            # Delete the search query itself
-            await session.execute(
-                delete(SQLASearchQuery).where(SQLASearchQuery.id == search_query_id)
-            )
-            return True
-
-    async def get_searches_with_result_counts(self, ctx: ViewContext) -> list[dict[str, Any]]:
-        # Get search result queries
-        async with self.db.session() as session:
-            query = select(SQLASearchQuery.id, SQLASearchQuery.search_query).where(
-                SQLASearchQuery.collection_id == ctx.collection_id
-            )
-            result = await session.execute(query)
-            search_ids_and_queries = result.all()
-
-        # Consolidate set of search queries
-        for _, query in search_ids_and_queries:
-            assert query is not None, "We filtered out null search queries, this should not happen"
-        search_queries = list(set(cast(str, query) for _, query in search_ids_and_queries))
-
-        # Get counts of agent runs that these search queries have been run against
-        async with self.db.session() as session:
-            query = (
-                select(
-                    SQLASearchResult.search_query_id,
-                    func.count(distinct(SQLASearchResult.agent_run_id)),
-                )
-                .where(SQLASearchResult.search_query_id.in_(search_queries))
-                .join(SQLAAgentRun, SQLASearchResult.agent_run_id == SQLAAgentRun.id)
-                .where(
-                    ctx.get_base_where_clause(SQLAAgentRun),
-                )
-                .group_by(SQLASearchResult.search_query_id)
-            )
-            result = await session.execute(query)
-
-        latest_jobs: dict[str, SQLASearchQuery] = {
-            query.id: job for job, query in await self.list_search_jobs_and_queries()
-        }
-
-        # Return search queries with judgment counts
-        counts = {query: count for query, count in result.all()}
-        num_total = await self.count_base_agent_runs(ctx)
-        searches = [
-            {
-                "search_id": search_id,
-                "search_query": search_query,
-                "num_judgments_computed": counts.get(search_query, 0),
-                "num_total": num_total,
-                "job": latest_jobs[search_id],
-            }
-            for search_id, search_query in search_ids_and_queries
-        ]
-        searches.sort(key=lambda x: cast(SQLASearchQuery, x["job"]).created_at, reverse=True)
-        return searches
-
-    async def _get_agent_runs_without_search_results(
-        self, ctx: ViewContext, search_query_id: str
-    ) -> list[AgentRun]:
-        where_clause = ~exists().where(
-            SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-            SQLASearchResult.search_query_id == search_query_id,
-        )
-        return await self.get_agent_runs(ctx, _where_clause=where_clause)
-
-    async def get_search_results(
-        self,
-        ctx: ViewContext,
-        search_query_id: str,
-    ) -> list[SearchResult]:
-        return await self._get_search_results(ctx, search_query_id, ensure_fresh=False)
-
-    async def _get_search_results(
-        self,
-        ctx: ViewContext,
-        search_query_id: str,
-        search_result_callback: SearchResultStreamingCallback | None = None,
-        ensure_fresh: bool = True,
-    ) -> list[SearchResult]:
-        # Ensure we have fresh search results
-        if ensure_fresh:
-            await self.compute_search(
-                ctx,
-                search_query_id,
-                search_result_callback=search_result_callback,
-            )
-
-        async with self.db.session() as session:
-            query = (
-                select(SQLASearchResult)
-                .where(SQLASearchResult.search_query_id == search_query_id)
-                .join(SQLAAgentRun, SQLASearchResult.agent_run_id == SQLAAgentRun.id)
-                .where(ctx.get_base_where_clause(SQLAAgentRun))
-            )
-
-            result = await session.execute(query)
-            return [a.to_search_result() for a in result.scalars().all()]
-
-    async def compute_search(
-        self,
-        ctx: ViewContext,
-        search_query_id: str,
-        search_result_callback: SearchResultStreamingCallback | None = None,
-        read_only: bool = False,
-    ):
-        """If read_only, only return existing results."""
-
-        # If the callback is set, the caller is expecting all results to be streamed back
-        # So, retrieve them and send them
-        if search_result_callback is not None:
-            existing_search_results = await self._get_search_results(
-                ctx, search_query_id, ensure_fresh=False
-            )
-            if existing_search_results:
-                await search_result_callback(existing_search_results)
-
-        # Figure out which runs don't have search results computed
-        agent_runs = await self._get_agent_runs_without_search_results(ctx, search_query_id)
-        if not agent_runs:
-            logger.info(f"All agent runs already have results for {search_query_id}")
-            return
-        else:
-            logger.info(f"Computing results for {len(agent_runs)} agent runs")
-
-        if await self.fg_has_embeddings(ctx.collection_id):
-            agent_runs = await self._rerank_agent_runs_by_embeddings(
-                ctx, agent_runs, search_query_id
-            )
-
-        async def _results_callback(search_results: list[SearchResult] | None):
-            if search_result_callback:
-                await search_result_callback(search_results)
-
-            with anyio.CancelScope(shield=True):
-                if search_results is None:
-                    return
-                to_upload: list[SQLASearchResult] = [
-                    SQLASearchResult.from_search_result(
-                        search_result=attr,
-                        collection_id=ctx.collection_id,
-                    )
-                    for attr in search_results
-                ]
-                async with self.db.session() as session:
-                    session.add_all(to_upload)
-
-                logger.info(f"Pushed {len(to_upload)} attributes")
-
-        # Early exit if we're not allowed to write
-        if read_only:
-            return
-        # Otherwise, compute the search results
-        search_query = await self.get_search_query(search_query_id)
-        await execute_search(
-            agent_runs,
-            search_query_id,
-            search_query.search_query,
-            search_result_callback=_results_callback,
-        )
-
     ##############
     # Embeddings #
     ##############
@@ -986,6 +743,7 @@ class MonoService:
         Rerank agent runs using pgvector cosine distance search if embeddings are available.
         Returns the original agent runs if reranking fails or embeddings are loading.
         """
+        return agent_runs
 
         try:
             search_query = await self.get_search_query(search_query_id)
@@ -1238,148 +996,6 @@ class MonoService:
             result = await session.execute(query)
             return result.scalar_one_or_none()
 
-    #########################################
-    # Computing filters and clustering dims #
-    #########################################
-
-    async def cluster_search_results(
-        self,
-        ctx: ViewContext,
-        search_query_id: str,
-        feedback: str | None = None,
-        existing_clusters: list[dict[str, Any]] | None = None,
-    ):
-        """Cluster search results and store cluster information with the search results."""
-        search_query = await self.get_search_query(search_query_id)
-
-        # Get all search results for this query
-        search_results = await self._get_search_results(ctx, search_query_id)
-        # Filter out the search results that have a value of None
-        search_results = [sr for sr in search_results if sr.value is not None]
-        # Separate the values because clustering just takes the values
-        search_result_values = cast(
-            list[str], [sr.value for sr in search_results]
-        )  # We already filtered out the None values
-
-        guidance = f"Specifically focus on the following attribute: {search_query.search_query}"
-        if feedback is not None and feedback != "" and existing_clusters:
-            centroids: list[str] = await propose_clusters(
-                search_result_values,
-                extra_instructions_list=[guidance],
-                feedback_list=[
-                    ClusterFeedback(
-                        clusters=[
-                            c["centroid"] for c in existing_clusters if c["centroid"] is not None
-                        ],
-                        feedback=feedback,
-                    )
-                ],
-            )
-        else:
-            centroids: list[str] = await propose_clusters(
-                search_result_values,
-                extra_instructions_list=[guidance],
-            )
-
-        logger.info(f"centroids: {centroids}")
-
-        # store clusters in the database
-        centroid_to_id: dict[str, str] = {}
-        async with self.db.session() as session:
-            for centroid in centroids:
-                centroid_id = str(uuid4())
-                cluster = SQLASearchCluster(
-                    id=centroid_id,
-                    collection_id=ctx.collection_id,
-                    search_query_id=search_query_id,
-                    centroid=centroid,
-                )
-                session.add(cluster)
-                centroid_to_id[centroid] = centroid_id
-            await session.commit()
-
-        results_to_assign = [
-            search_result for search_result in search_result_values for _ in centroids
-        ]
-        clusters_to_assign = [centroid for _ in search_result_values for centroid in centroids]
-        # we need to use search_results for the search_result.id, results_to_assign only has the value
-        results_to_record = [search_result for search_result in search_results for _ in centroids]
-
-        async def record_assignment(batch_index: int, assignment: tuple[bool, str] | None):
-            if assignment is None:
-                return
-
-            async with self.db.session() as session:
-                search_result = results_to_record[batch_index]
-                centroid = clusters_to_assign[batch_index]
-                decision = assignment[0]
-                reason = assignment[1]
-                search_result_id = search_result.id
-                cluster_id = centroid_to_id[centroid]
-                search_result_cluster = SQLASearchResultCluster(
-                    id=str(uuid4()),
-                    search_result_id=search_result_id,
-                    cluster_id=cluster_id,
-                    decision=decision,
-                    reason=reason,
-                )
-                session.add(search_result_cluster)
-                await session.commit()
-
-        await assign_with_backend(
-            DEFAULT_ASSIGNER,
-            results_to_assign,
-            clusters_to_assign,
-            assignment_callback=record_assignment,
-        )
-
-    async def get_existing_search_clusters(
-        self, ctx: ViewContext, search_query_id: str
-    ) -> list[dict[str, Any]]:
-        """Get existing clusters for a search query."""
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLASearchCluster.centroid, SQLASearchCluster.id).where(
-                    SQLASearchCluster.collection_id == ctx.collection_id,
-                    SQLASearchCluster.search_query_id == search_query_id,
-                )
-            )
-            clusters = result.all()
-            return [{"centroid": c.centroid, "id": c.id} for c in clusters]
-
-    async def get_cluster_matches(self, centroid: str) -> list[dict[str, Any]]:
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLASearchResultCluster)
-                .options(selectinload(SQLASearchResultCluster.search_result))
-                .join(SQLASearchCluster, SQLASearchResultCluster.cluster_id == SQLASearchCluster.id)
-                .where(SQLASearchCluster.centroid == centroid)
-            )
-            return [r.search_result.to_search_result() for r in result.scalars().all()]
-
-    async def clear_search_result_clusters(self, ctx: ViewContext, search_query_id: str):
-        """Clear cluster assignments for search results."""
-        async with self.db.session() as session:
-            # Delete all cluster assignments for the clusters associated with this search query
-            await session.execute(
-                delete(SQLASearchResultCluster).where(
-                    SQLASearchResultCluster.cluster_id.in_(
-                        select(SQLASearchCluster.id).where(
-                            SQLASearchCluster.collection_id == ctx.collection_id,
-                            SQLASearchCluster.search_query_id == search_query_id,
-                        )
-                    )
-                )
-            )
-
-            # Delete all clusters for this search query
-            await session.execute(
-                delete(SQLASearchCluster).where(
-                    SQLASearchCluster.collection_id == ctx.collection_id,
-                    SQLASearchCluster.search_query_id == search_query_id,
-                )
-            )
-
     ########
     # Jobs #
     ########
@@ -1463,38 +1079,6 @@ class MonoService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
 
-    async def list_search_queries(self, collection_id: str) -> list[SQLASearchQuery]:
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLASearchQuery).where(SQLASearchQuery.collection_id == collection_id)
-            )
-
-            return list(result.scalars().all())
-
-    async def list_search_jobs_and_queries(self):
-        async with self.db.session() as session:
-            # Find the latest job creation time corresponding to each query ID.
-            sub_q = (
-                select(
-                    SQLAJob.job_json["query_id"].astext.label("query_id"),
-                    func.max(SQLAJob.created_at).label("created_at"),
-                )
-                .group_by("query_id")
-                .filter(SQLAJob.type == "compute_search")
-            ).subquery()
-            # Find all search queries, along with the latest job corresponding to each one.
-            q = (
-                select(SQLAJob, SQLASearchQuery)
-                .select_from(sub_q)
-                .filter(SQLAJob.type == "compute_search")
-                .filter(SQLASearchQuery.id == sub_q.c.query_id)
-                .filter(SQLAJob.created_at == sub_q.c.created_at)
-                .order_by(SQLASearchQuery.created_at.desc())
-            )
-            result = await session.execute(q)
-
-        return result.all()
-
     async def set_job_status(self, job_id: str, status: JobStatus):
         async with self.db.session() as session:
             await session.execute(
@@ -1506,23 +1090,6 @@ class MonoService:
             await session.execute(
                 update(SQLAJob).filter(SQLAJob.id == job_id).values(job_json=job_json)
             )
-
-    async def get_search_job_and_query(
-        self, job_id: str
-    ) -> tuple[dict[Any, Any], SQLASearchQuery] | None:
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(SQLAJob, SQLASearchQuery)
-                .filter(SQLAJob.id == job_id)
-                .filter(SQLAJob.type == "compute_search")
-                .filter(SQLAJob.job_json["query_id"].astext == SQLASearchQuery.id)
-            )
-
-        row = result.one_or_none()
-        if row is None:
-            return None
-        job, query = row
-        return job.job_json, query
 
     async def cleanup_old_chat_sessions(self, days_old: int = 7) -> int:
         """
@@ -1965,38 +1532,6 @@ class MonoService:
                     {"key1": fg_hash, "key2": action_hash},
                 )
                 logger.info(f"Released advisory lock for {collection_id}/{action_id}")
-
-    async def add_search_query(self, ctx: ViewContext, search_query: str) -> str:
-        """
-        Add a search query to the SQLASearchQuery table if it does not already exist.
-        Returns the id of the search query.
-        """
-        async with self.db.session() as session:
-            # Check if the search query already exists for this collection
-            result = await session.execute(
-                select(SQLASearchQuery).where(
-                    SQLASearchQuery.collection_id == ctx.collection_id,
-                    SQLASearchQuery.search_query == search_query,
-                )
-            )
-            existing = result.scalar_one_or_none()
-            if existing is not None:
-                return existing.id
-
-        # Otherwise, create a new search query
-        async with self.db.session() as session:
-            new_id = str(uuid4())
-            sq = SQLASearchQuery(
-                id=new_id,
-                collection_id=ctx.collection_id,
-                search_query=search_query,
-            )
-            session.add(sq)
-
-        logger.info(
-            f"Added new search query {search_query} with id {new_id} to collection_id {ctx.collection_id}"
-        )
-        return new_id
 
     async def create_api_key(self, user_id: str, name: str) -> tuple[str, str]:
         """

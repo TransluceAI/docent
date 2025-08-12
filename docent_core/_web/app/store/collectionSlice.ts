@@ -17,7 +17,14 @@ import { BaseAgentRunMetadata } from '../types/transcriptTypes';
 import { collectionApi } from '../api/collectionApi';
 
 import { setToastNotification } from './toastSlice';
-import { Job } from './searchSlice';
+
+export interface Job {
+  id: string;
+  type: string;
+  created_at: string;
+  status: string;
+  job_json: { query_id: string };
+}
 
 export interface CollectionState {
   agentRunIds?: string[];
@@ -67,47 +74,6 @@ export const initSession = createAsyncThunk(
         setToastNotification({
           title: 'Error connecting to server',
           description: 'Please try again in a moment',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
-
-export const deleteSearch = createAsyncThunk(
-  'collection/deleteSearch',
-  async (
-    { searchQueryId, job }: { searchQueryId: string; job: Job },
-    { dispatch, getState }
-  ) => {
-    const state = getState() as { collection: CollectionState };
-    const collectionId = state.collection.collectionId;
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      if (job.status === 'running') {
-        await apiRestClient.post(`/${job.id}/cancel_compute_search`);
-      }
-      console.log('deleting search', searchQueryId, job);
-      await apiRestClient.delete(
-        `/${collectionId}/search?search_query_id=${searchQueryId}`
-      );
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error deleting search',
-          description: 'Failed to delete search query',
           variant: 'destructive',
         })
       );

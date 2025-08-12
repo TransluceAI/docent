@@ -10,7 +10,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { toast } from '@/hooks/use-toast';
 
 import { RootState } from '../store/store';
 import { ProgressBar } from './ProgressBar';

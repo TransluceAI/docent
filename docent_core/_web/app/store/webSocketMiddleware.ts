@@ -2,7 +2,6 @@ import type { Middleware } from '@reduxjs/toolkit';
 
 import socketService from '../services/socketService';
 
-import { setSearchesWithStats, handleSearchUpdate } from './searchSlice';
 import { setAgentRunIds } from './experimentViewerSlice';
 import { updateAgentRunMetadata } from './collectionSlice';
 import { AppDispatch } from './store';
@@ -44,19 +43,6 @@ export const createWebSocketMiddleware = (): Middleware => {
           break;
         case 'datapoints_updated':
           dispatch(handleAgentRunsUpdated());
-          break;
-        case 'searches':
-          dispatch(setSearchesWithStats(data.payload));
-          break;
-        case 'search_results_updated':
-          dispatch(
-            handleSearchUpdate({
-              data_dict: data.data_dict,
-              num_agent_runs_done: Object.keys(data.data_dict || {}).length,
-              num_agent_runs_total: Object.keys(data.data_dict || {}).length,
-              num_search_hits: data.num_search_hits || 0,
-            })
-          );
           break;
         case 'summarize_transcript_update':
           if (data.payload.type === 'solution') {

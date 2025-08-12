@@ -1,6 +1,5 @@
 import {
   ChevronRight,
-  Loader2,
   ChevronLeft,
   ChevronFirst,
   ChevronLast,
@@ -44,13 +43,6 @@ export default function ExperimentViewer() {
 
   // Get all state at the top level
   const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const baseFilter = useAppSelector((state) => state.collection.baseFilter);
-
-  const loadingSearchQuery = useAppSelector(
-    (state) => state.search.loadingSearchQuery
-  );
-  const curSearchQuery = useAppSelector((state) => state.search.curSearchQuery);
-  const attributeMap = useAppSelector((state) => state.search.searchResultMap);
 
   const experimentViewerScrollPosition = useAppSelector(
     (state) => state.experimentViewer.experimentViewerScrollPosition
@@ -143,20 +135,8 @@ export default function ExperimentViewer() {
 
   // Filter agent run IDs to ones that have the attribute query
   const agentRunIds = useMemo(() => {
-    if (!rawAgentRunIds) return rawAgentRunIds;
-    if (!curSearchQuery) return rawAgentRunIds;
-
-    // Filter agent runs to ones that have the attributes
-    const filteredAgentRuns = rawAgentRunIds.filter((agentRunId) => {
-      if (curSearchQuery) {
-        const attrs = attributeMap?.[agentRunId]?.[curSearchQuery];
-        return attrs && attrs.length && attrs[0].value !== null;
-      }
-      return true;
-    });
-
-    return filteredAgentRuns;
-  }, [rawAgentRunIds, curSearchQuery, attributeMap]);
+    return rawAgentRunIds;
+  }, [rawAgentRunIds]);
 
   // Add pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -263,32 +243,19 @@ export default function ExperimentViewer() {
             ))
           ) : (
             <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs">
-              {loadingSearchQuery ? (
-                <div className="flex items-center gap-1">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    Loading results...
-                  </span>
-                </div>
-              ) : curSearchQuery || baseFilter ? (
-                <div className="text-muted-foreground">No results found</div>
-              ) : (
-                <div className="flex flex-col items-center space-y-3">
-                  <Upload className="h-12 w-12 text-muted-foreground" />
-                  <div className="text-muted-foreground">
-                    No agent runs found
-                  </div>
-                  <Button asChild variant="outline" size="sm">
-                    <a
-                      href="https://docs.transluce.org/en/latest/quickstart/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      See quickstart guide
-                    </a>
-                  </Button>
-                </div>
-              )}
+              <div className="flex flex-col items-center space-y-3">
+                <Upload className="h-12 w-12 text-muted-foreground" />
+                <div className="text-muted-foreground">No agent runs found</div>
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href="https://docs.transluce.org/en/latest/quickstart/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    See quickstart guide
+                  </a>
+                </Button>
+              </div>
             </div>
           )}
         </div>

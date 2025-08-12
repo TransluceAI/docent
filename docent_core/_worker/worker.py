@@ -9,44 +9,14 @@ from arq.worker import run_worker
 
 from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.db import DocentDB
-from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
+from docent_core._db_service.schemas.tables import JobStatus
 from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV, get_deployment_id
 from docent_core._server._broker.redis_client import get_redis_client
-from docent_core._worker.constants import WORKER_QUEUE_NAME, WorkerFunction
-from docent_core._worker.embedding_worker import compute_embeddings
-from docent_core._worker.search_worker import compute_search
-from docent_core.services.rubric import RubricService
+from docent_core._worker.constants import WORKER_QUEUE_NAME
+from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
 
 logger = get_logger(__name__)
-
-
-async def rubric_job(ctx: ViewContext, job: SQLAJob):
-    db = await DocentDB.init()
-    mono_svc = await MonoService.init()
-
-    # Communicate the total number of agent runs
-    # TODO(mengk): slightly hacky, not sure what's better tho
-    await mono_svc.set_job_json(
-        job.id, job.job_json | {"total_agent_runs": await mono_svc.count_base_agent_runs(ctx)}
-    )
-
-    async with db.session() as session:
-        rs = RubricService(session, db.session, mono_svc)
-        await rs.run_rubric_job(ctx, job)
-
-
-async def centroid_assignment_job(ctx: ViewContext, job: SQLAJob):
-    db = await DocentDB.init()
-    mono_svc = await MonoService.init()
-
-    async with db.session() as session:
-        rs = RubricService(session, db.session, mono_svc)
-        sqla_rubric = await rs.get_rubric(job.job_json["rubric_id"], version=None)
-        if sqla_rubric is None:
-            raise ValueError(f"Rubric {job.job_json['rubric_id']} not found")
-        await rs.assign_centroids(sqla_rubric)
 
 
 async def run_job(_: Any, ctx: ViewContext, job_id: str):
@@ -83,17 +53,11 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
 
             logger.info(f"Starting job {job_id}")
 
-            # Run the job with the appropriate function
-            if job.type == WorkerFunction.RUBRIC_JOB.value:
-                await rubric_job(ctx, job)
-            elif job.type == WorkerFunction.COMPUTE_SEARCH.value:
-                await compute_search(ctx, job_id, read_only=False, REDIS=REDIS)
-            elif job.type == WorkerFunction.COMPUTE_EMBEDDINGS.value:
-                await compute_embeddings(ctx, job_id)
-            elif job.type == WorkerFunction.CENTROID_ASSIGNMENT_JOB.value:
-                await centroid_assignment_job(ctx, job)
-            else:
+            if job.type not in JOB_DISPATCHER_MAP:
                 raise ValueError(f"Unknown job type: {job.type}")
+
+            # Run the job with the appropriate function
+            await JOB_DISPATCHER_MAP[job.type](ctx, job)
         except anyio.get_cancelled_exc_class():
             canceled = True
             raise

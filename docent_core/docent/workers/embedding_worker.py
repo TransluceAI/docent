@@ -4,39 +4,30 @@ import anyio
 
 from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.schemas.tables import JobStatus
+from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._db_service.service import MonoService
 from docent_core._server._broker.redis_client import publish_collection_update
 
 logger = get_logger(__name__)
 
 
-async def compute_embeddings(view_ctx: ViewContext, job_id: str):
-    logger.info(f"Starting compute_embeddings: view_ctx={view_ctx}, job_id={job_id}")
+async def compute_embeddings(ctx: ViewContext, job: SQLAJob):
+    logger.info(f"Starting compute_embeddings: ctx={ctx}, job_id={job.id}")
 
     mono_svc = await MonoService.init()
-    job = await mono_svc.get_job(job_id)
-
-    if job is None:
-        logger.error(f"Embedding job {job_id} not found")
-        return
-
-    if job.type != "compute_embeddings":
-        logger.error(f"Job {job_id} is not an embedding job (type: {job.type})")
-        return
 
     # Wait for any running embedding jobs
     while (
-        res := await mono_svc.get_oldest_active_embedding_job(view_ctx.collection_id)
-    ) is not None and res.id != job_id:
+        res := await mono_svc.get_oldest_active_embedding_job(ctx.collection_id)
+    ) is not None and res.id != job.id:
         logger.info(
-            f"Job {job_id} waiting for existing embedding job to complete for collection_id {view_ctx.collection_id}"
+            f"Job {job.id} waiting for existing embedding job to complete for collection_id {ctx.collection_id}"
         )
         await asyncio.sleep(5)
 
     should_index = job.job_json["should_index"]
 
-    await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
+    await mono_svc.set_job_status(job.id, JobStatus.RUNNING)
 
     # Track completion states
     errored = False
@@ -53,7 +44,7 @@ async def compute_embeddings(view_ctx: ViewContext, job_id: str):
 
         # Send via websocket instead of Redis stream
         await publish_collection_update(
-            view_ctx.collection_id,
+            ctx.collection_id,
             {"action": "embedding_progress", "payload": progress_data},
         )
 
@@ -69,7 +60,7 @@ async def compute_embeddings(view_ctx: ViewContext, job_id: str):
         while not indexing_completed:
             await asyncio.sleep(1)
 
-            phase, percent = await mono_svc.get_indexing_progress(view_ctx.collection_id)
+            phase, percent = await mono_svc.get_indexing_progress(ctx.collection_id)
             if phase is None:
                 continue
 
@@ -81,7 +72,7 @@ async def compute_embeddings(view_ctx: ViewContext, job_id: str):
 
             # Send via websocket instead of Redis stream
             await publish_collection_update(
-                view_ctx.collection_id,
+                ctx.collection_id,
                 {"action": "embedding_progress", "payload": progress_data},
             )
 
@@ -95,18 +86,16 @@ async def compute_embeddings(view_ctx: ViewContext, job_id: str):
         nonlocal embedding_completed, indexing_completed, errored
 
         try:
-            async with mono_svc.advisory_lock(
-                view_ctx.collection_id, action_id="compute_embeddings"
-            ):
+            async with mono_svc.advisory_lock(ctx.collection_id, action_id="compute_embeddings"):
                 # Compute embeddings
-                embedding_status = await mono_svc.compute_embeddings(view_ctx, _progress_callback)
+                embedding_status = await mono_svc.compute_embeddings(ctx, _progress_callback)
 
                 if not embedding_status:
                     errored = True
                     return
 
                 embedding_completed = True
-                logger.info(f"Embeddings computation completed for job {job_id}")
+                logger.info(f"Embeddings computation completed for job {job.id}")
 
                 if not should_index:
                     indexing_completed = True
@@ -120,31 +109,31 @@ async def compute_embeddings(view_ctx: ViewContext, job_id: str):
                 }
                 # Send via websocket instead of Redis stream
                 await publish_collection_update(
-                    view_ctx.collection_id,
+                    ctx.collection_id,
                     {"action": "embedding_progress", "payload": progress_data},
                 )
 
                 # Compute index
-                await mono_svc.compute_ivfflat_index(view_ctx)
+                await mono_svc.compute_ivfflat_index(ctx)
                 indexing_completed = True
-                logger.info(f"Indexing completed for job {job_id}")
+                logger.info(f"Indexing completed for job {job.id}")
 
         except Exception as e:
-            logger.error(f"Error computing embeddings for job {job_id}: {e}")
+            logger.error(f"Error computing embeddings for job {job.id}: {e}")
             errored = True
             raise
 
         finally:
             with anyio.CancelScope(shield=True):
                 if errored:
-                    logger.highlight(f"Job {job_id} canceled", color="red")
-                    await mono_svc.set_job_status(job_id, JobStatus.CANCELED)
+                    logger.highlight(f"Job {job.id} canceled", color="red")
+                    await mono_svc.set_job_status(job.id, JobStatus.CANCELED)
                 else:
-                    logger.highlight(f"Job {job_id} finished", color="green")
-                    await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
+                    logger.highlight(f"Job {job.id} finished", color="green")
+                    await mono_svc.set_job_status(job.id, JobStatus.COMPLETED)
                     # Send completion message via websocket
                     await publish_collection_update(
-                        view_ctx.collection_id,
+                        ctx.collection_id,
                         {"action": "embedding_complete", "payload": {}},
                     )
 
