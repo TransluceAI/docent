@@ -16,7 +16,7 @@ The Docent tracing system allows you to:
 
 ### 1. Installation
 
-Docent tracing is included with the main Docent package:
+Docent tracing is included with the main Docent SDK package:
 
 ```bash
 pip install docent-python
@@ -95,7 +95,7 @@ from docent.trace import agent_run
 @agent_run
 def analyze_document(document_text: str):
     # This entire function will be wrapped in an agent run
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": f"Analyze this document: {document_text}"}]
     )
@@ -112,7 +112,7 @@ from docent.trace import agent_run_context
 def process_user_query(query: str):
     with agent_run_context():
         # Your agent code here
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": query}]
         )
@@ -129,7 +129,7 @@ from docent.trace import agent_run_context
 async def async_agent_function():
     async with agent_run_context():
         # Async agent code here
-        response = await openai.AsyncChatCompletion.create(
+        response = await client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": "Hello"}]
         )
@@ -138,7 +138,7 @@ async def async_agent_function():
 
 ## Attaching Scores to Agent Runs
 
-You can attach scores to agent runs to track performance metrics and quality indicators. It will automatically be assocaited with the agent run that is currently in context.
+You can attach scores to agent runs to track performance metrics and quality indicators. It will automatically be associated with the agent run that is currently in context.
 
 ```python
 from docent.trace import agent_run_score
@@ -227,7 +227,7 @@ from docent import agent_run_context
 def run_agent(state):
     with agent_run_context() as (agent_run_id, _):
         # Agent logic here
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": user_input}]
         )
@@ -268,7 +268,7 @@ from docent import agent_run
 @agent_run
 def run_agent(user_input: str):
     # Agent logic here
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": user_input}]
     )
