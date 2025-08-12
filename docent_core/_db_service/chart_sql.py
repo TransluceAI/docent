@@ -17,7 +17,7 @@ from docent_core._db_service.schemas.tables import (
 )
 
 if TYPE_CHECKING:
-    from docent_core.services.charts import ChartDimension
+    from docent_core.docent.services.charts import ChartDimension
 
 logger = logging.getLogger(__name__)
 

@@ -13,8 +13,8 @@ from docent_core._db_service.service import DocentDB, MonoService
 from docent_core._server._dependencies.database import get_db, get_mono_svc
 from docent_core._server._dependencies.services import get_refinement_service
 from docent_core._server._dependencies.user import get_user_anonymous_ok
+from docent_core.docent.services.rubric import RubricService
 from docent_core.services.refinement import RefinementService
-from docent_core.services.rubric import RubricService
 
 logger = get_logger(__name__)
 

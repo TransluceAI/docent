@@ -24,8 +24,8 @@ from docent_core._server._dependencies.services import (
 from docent_core._server._dependencies.user import (
     get_default_view_ctx,
 )
-from docent_core.services.charts import ChartSpec, ChartsService
-from docent_core.services.rubric import RubricService
+from docent_core.docent.services.charts import ChartSpec, ChartsService
+from docent_core.docent.services.rubric import RubricService
 
 chart_router = APIRouter()
 

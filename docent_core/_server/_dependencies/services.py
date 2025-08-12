@@ -9,11 +9,11 @@ from docent_core._server._dependencies.database import (
     get_session,
     get_session_cm_factory,
 )
-from docent_core.services.charts import ChartsService
-from docent_core.services.diff import DiffService
-from docent_core.services.job import JobService
+from docent_core.docent.services.charts import ChartsService
+from docent_core.docent.services.diff import DiffService
+from docent_core.docent.services.job import JobService
+from docent_core.docent.services.rubric import RubricService
 from docent_core.services.refinement import RefinementService
-from docent_core.services.rubric import RubricService
 
 
 def get_diff_service(

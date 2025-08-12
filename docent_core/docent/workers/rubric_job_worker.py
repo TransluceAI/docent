@@ -2,7 +2,7 @@ from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.db import DocentDB
 from docent_core._db_service.schemas.tables import SQLAJob
 from docent_core._db_service.service import MonoService
-from docent_core.services.rubric import RubricService
+from docent_core.docent.services.rubric import RubricService
 
 
 async def rubric_job(ctx: ViewContext, job: SQLAJob):
