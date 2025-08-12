@@ -3,7 +3,7 @@ import base64
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -30,6 +30,8 @@ _COLLECTION_SPANS_KEY_PREFIX = "collection_spans:"
 _COLLECTION_TIMEOUT_KEY_PREFIX = "collection_timeout:"
 _COLLECTION_SCORES_KEY_PREFIX = "collection_scores:"
 _COLLECTION_METADATA_KEY_PREFIX = "collection_metadata:"
+_COLLECTION_TRANSCRIPT_METADATA_KEY_PREFIX = "collection_transcript_metadata:"
+_COLLECTION_TRANSCRIPT_GROUP_METADATA_KEY_PREFIX = "collection_transcript_group_metadata:"
 
 
 telemetry_router = APIRouter()
@@ -192,11 +194,12 @@ async def add_score_endpoint(
         agent_run_id = body.get("agent_run_id")
         score_name = body.get("score_name")
         score_value = body.get("score_value")
+        timestamp = body.get("timestamp")
 
-        if not all([collection_id, agent_run_id, score_name, score_value is not None]):
+        if not all([collection_id, agent_run_id, score_name, score_value is not None, timestamp]):
             raise HTTPException(
                 status_code=400,
-                detail="collection_id, agent_run_id, score_name, and score_value are required",
+                detail="collection_id, agent_run_id, score_name, score_value, and timestamp are required",
             )
 
         # Check if collection exists and user has permissions
@@ -212,7 +215,9 @@ async def add_score_endpoint(
         )
 
         # Store score in Redis
-        await _store_agent_run_score(collection_id, agent_run_id, score_name, score_value)
+        await _store_agent_run_score(
+            collection_id, agent_run_id, score_name, score_value, timestamp
+        )
 
         return JSONResponse(status_code=200, content={"status": "success"})
 
@@ -221,7 +226,7 @@ async def add_score_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@telemetry_router.post("/v1/metadata")
+@telemetry_router.post("/v1/agent-run-metadata")
 async def add_metadata_endpoint(
     request: Request,
     user: User = Depends(get_authenticated_user),
@@ -238,10 +243,12 @@ async def add_metadata_endpoint(
         collection_id = body.get("collection_id")
         agent_run_id = body.get("agent_run_id")
         metadata = body.get("metadata")
+        timestamp = body.get("timestamp")
 
-        if not all([collection_id, agent_run_id, metadata]):
+        if not all([collection_id, agent_run_id, metadata, timestamp]):
             raise HTTPException(
-                status_code=400, detail="collection_id, agent_run_id, and metadata are required"
+                status_code=400,
+                detail="collection_id, agent_run_id, metadata, and timestamp are required",
             )
 
         # Check if collection exists and user has permissions
@@ -257,12 +264,107 @@ async def add_metadata_endpoint(
         )
 
         # Store metadata in Redis
-        await _store_agent_run_metadata(collection_id, agent_run_id, metadata)
+        await _store_agent_run_metadata(collection_id, agent_run_id, metadata, timestamp)
 
         return JSONResponse(status_code=200, content={"status": "success"})
 
     except Exception as e:
         logger.error(f"Error adding metadata: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@telemetry_router.post("/v1/transcript-metadata")
+async def add_transcript_metadata_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    """
+    Endpoint to add metadata to a transcript.
+
+    The metadata will be stored in Redis and applied when the collection is processed.
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+        collection_id = body.get("collection_id")
+        transcript_id = body.get("transcript_id")
+        name = body.get("name")
+        description = body.get("description")
+        transcript_group_id = body.get("transcript_group_id")
+        metadata = body.get("metadata")
+        timestamp = body.get("timestamp")
+
+        if not all([collection_id, transcript_id, timestamp]):
+            raise HTTPException(
+                status_code=400, detail="collection_id, transcript_id, and timestamp are required"
+            )
+
+        # Check if collection exists and user has permissions
+        await _check_single_collection_permission(collection_id, user)
+
+        # Store transcript metadata in Redis
+        await _store_transcript_metadata(
+            collection_id,
+            transcript_id,
+            name,
+            description,
+            transcript_group_id,
+            metadata,
+            timestamp,
+        )
+
+        return JSONResponse(status_code=200, content={"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Error adding transcript metadata: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@telemetry_router.post("/v1/transcript-group-metadata")
+async def add_transcript_group_metadata_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    """
+    Endpoint to add metadata to a transcript group.
+
+    The metadata will be stored in Redis and applied when the collection is processed.
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+        collection_id = body.get("collection_id")
+        transcript_group_id = body.get("transcript_group_id")
+        name = body.get("name")
+        description = body.get("description")
+        parent_transcript_group_id = body.get("parent_transcript_group_id")
+        metadata = body.get("metadata")
+        timestamp = body.get("timestamp")
+
+        if not all([collection_id, transcript_group_id, timestamp]):
+            raise HTTPException(
+                status_code=400,
+                detail="collection_id, transcript_group_id, and timestamp are required",
+            )
+
+        # Check if collection exists and user has permissions
+        await _check_single_collection_permission(collection_id, user)
+
+        # Store transcript group metadata in Redis
+        await _store_transcript_group_metadata(
+            collection_id,
+            transcript_group_id,
+            name,
+            description,
+            parent_transcript_group_id,
+            metadata,
+            timestamp,
+        )
+
+        return JSONResponse(status_code=200, content={"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Error adding transcript group metadata: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -339,7 +441,11 @@ async def _remove_collection_from_accumulation(collection_id: str) -> None:
 
 
 async def _store_agent_run_score(
-    collection_id: str, agent_run_id: str, score_name: str, score_value: Any
+    collection_id: str,
+    agent_run_id: str,
+    score_name: str,
+    score_value: Any,
+    timestamp: str,
 ) -> None:
     """Store an agent run score in Redis using lists to support multiple scores."""
     redis_client = await get_redis_client()
@@ -350,7 +456,7 @@ async def _store_agent_run_score(
         "agent_run_id": agent_run_id,
         "score_name": score_name,
         "score_value": score_value,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timestamp,
     }
 
     # Use LPUSH to add to a list for this agent_run_id
@@ -363,7 +469,7 @@ async def _store_agent_run_score(
 
 
 async def _store_agent_run_metadata(
-    collection_id: str, agent_run_id: str, metadata: Dict[str, Any]
+    collection_id: str, agent_run_id: str, metadata: Dict[str, Any], timestamp: str
 ) -> None:
     """Store agent run metadata in Redis using lists to support multiple metadata calls."""
     redis_client = await get_redis_client()
@@ -373,7 +479,7 @@ async def _store_agent_run_metadata(
     metadata_data = {
         "agent_run_id": agent_run_id,
         "metadata": metadata,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timestamp,
     }
 
     # Use LPUSH to add to a list for this agent_run_id
@@ -381,6 +487,70 @@ async def _store_agent_run_metadata(
     await redis_client.lpush(list_key, json.dumps(metadata_data))  # type: ignore
 
     logger.info(f"Stored metadata for agent_run_id {agent_run_id} in collection {collection_id}")
+
+
+async def _store_transcript_metadata(
+    collection_id: str,
+    transcript_id: str,
+    name: Optional[str],
+    description: Optional[str],
+    transcript_group_id: Optional[str],
+    metadata: Optional[Dict[str, Any]],
+    timestamp: str,
+) -> None:
+    """Store transcript metadata in Redis using lists to support multiple metadata calls."""
+    redis_client = await get_redis_client()
+    metadata_key = f"{_COLLECTION_TRANSCRIPT_METADATA_KEY_PREFIX}{collection_id}"
+
+    # Store metadata as JSON in a list with transcript_id as field
+    metadata_data = {
+        "transcript_id": transcript_id,
+        "name": name,
+        "description": description,
+        "transcript_group_id": transcript_group_id,
+        "metadata": metadata,
+        "timestamp": timestamp,
+    }
+
+    # Use LPUSH to add to a list for this transcript_id
+    list_key = f"{metadata_key}:{transcript_id}"
+    await redis_client.lpush(list_key, json.dumps(metadata_data))  # type: ignore
+
+    logger.info(
+        f"Stored transcript metadata for transcript_id {transcript_id} in collection {collection_id}"
+    )
+
+
+async def _store_transcript_group_metadata(
+    collection_id: str,
+    transcript_group_id: str,
+    name: Optional[str],
+    description: Optional[str],
+    parent_transcript_group_id: Optional[str],
+    metadata: Optional[Dict[str, Any]],
+    timestamp: str,
+) -> None:
+    """Store transcript group metadata in Redis using lists to support multiple metadata calls."""
+    redis_client = await get_redis_client()
+    metadata_key = f"{_COLLECTION_TRANSCRIPT_GROUP_METADATA_KEY_PREFIX}{collection_id}"
+
+    # Store metadata as JSON in a list with transcript_group_id as field
+    metadata_data = {
+        "transcript_group_id": transcript_group_id,
+        "name": name,
+        "description": description,
+        "parent_transcript_group_id": parent_transcript_group_id,
+        "metadata": metadata,
+        "timestamp": timestamp,
+    }
+
+    # Use LPUSH to add to a list for this transcript_group_id
+    list_key = f"{metadata_key}:{transcript_group_id}"
+    await redis_client.lpush(list_key, json.dumps(metadata_data))  # type: ignore
+
+    logger.info(
+        f"Stored transcript group metadata for transcript_group_id {transcript_group_id} in collection {collection_id}"
+    )
 
 
 async def _get_collection_scores(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
