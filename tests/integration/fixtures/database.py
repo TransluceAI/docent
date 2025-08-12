@@ -82,13 +82,11 @@ async def mono_service(db_service: DocentDB) -> AsyncGenerator[MonoService, None
 
 
 @pytest_asyncio.fixture(scope="function")
-async def charts_service(
-    db_session: AsyncSession, mono_service: MonoService
-) -> AsyncGenerator[ChartsService, None]:
+async def charts_service(db_session: AsyncSession) -> AsyncGenerator[ChartsService, None]:
     """
     Fixture that creates a test charts service and returns it.
     """
-    service = ChartsService(db_session, mono_service)
+    service = ChartsService(db_session)
     yield service
 
 

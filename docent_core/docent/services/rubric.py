@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
 from docent_core._ai_tools.clustering.cluster_assigner import DEFAULT_ASSIGNER, assign_with_backend
-from docent_core._ai_tools.clustering.cluster_generator import propose_clusters
+from docent_core._ai_tools.clustering.cluster_generator import ClusterFeedback, propose_clusters
 from docent_core._ai_tools.rubric.rubric import (
     JudgeResult,
     ResultType,
@@ -33,11 +33,6 @@ from docent_core.docent.services.job import JobService
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
-
-
-raise Exception(
-    "Do not edit or import this file! Instead, you should work with RubricService from docent_core.docent.services.rubric"
-)
 
 
 class RubricService:

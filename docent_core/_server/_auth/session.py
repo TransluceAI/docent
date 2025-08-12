@@ -9,8 +9,8 @@ from typing import Literal
 from fastapi import Response
 
 from docent._log_util.logger import get_logger
-from docent_core._db_service.service import MonoService
 from docent_core._env_util import ENV, get_deployment_id
+from docent_core.docent.services.monoservice import MonoService
 
 COOKIE_KEY = "docent_session"
 

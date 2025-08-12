@@ -8,15 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._log_util.logger import get_logger
 from docent_core._ai_tools.rubric.rubric import JudgeResultWithCitations, Rubric
 from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.service import DocentDB, MonoService
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._dependencies.analytics import use_posthog_user_context
 from docent_core._server._dependencies.database import get_db, get_mono_svc, get_session
 from docent_core._server._dependencies.permissions import Permission, require_collection_permission
 from docent_core._server._dependencies.services import get_job_service, get_rubric_service
 from docent_core._server._dependencies.user import get_default_view_ctx, get_user_anonymous_ok
-from docent_core.services.job import JobService
-from docent_core.services.rubric import RubricService
+from docent_core.docent.services.job import JobService
+from docent_core.docent.services.monoservice import DocentDB, MonoService
+from docent_core.docent.services.rubric import RubricService
 
 rubric_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 

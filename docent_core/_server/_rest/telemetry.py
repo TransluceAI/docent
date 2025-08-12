@@ -19,12 +19,12 @@ from docent.data_models import (
 from docent.data_models.chat import ChatMessage, parse_chat_message
 from docent.data_models.chat.tool import ToolCall
 from docent_core._db_service.schemas.auth_models import User
-from docent_core._db_service.service import MonoService
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._server._dependencies.analytics import use_posthog_user_context
 from docent_core._server._dependencies.database import get_mono_svc
 from docent_core._server._dependencies.user import get_authenticated_user
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -147,7 +147,7 @@ async def handle_trace_data(
 
 
 def extract_collection_info_from_spans(
-    spans: List[Dict[str, Any]]
+    spans: List[Dict[str, Any]],
 ) -> tuple[set[str], Dict[str, str]]:
     """
     Extract unique collection IDs and names from spans.
@@ -733,7 +733,7 @@ async def _get_collection_transcript_group_metadata(
 
 
 def _create_transcript_groups_from_redis_data(
-    transcript_group_metadata: Dict[str, Dict[str, Any]]
+    transcript_group_metadata: Dict[str, Dict[str, Any]],
 ) -> List[TranscriptGroup]:
     """
     Create TranscriptGroup objects from Redis metadata.

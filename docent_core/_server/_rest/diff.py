@@ -7,7 +7,7 @@ from docent_core._db_service.contexts import ViewContext
 from docent_core._server._dependencies.services import get_diff_service
 from docent_core._server._dependencies.user import get_default_view_ctx, get_user_anonymous_ok
 from docent_core._server.util import sse_event_stream
-from docent_core.services.diff import DiffQuery, DiffResult, DiffService
+from docent_core.docent.services.diff import DiffQuery, DiffResult, DiffService
 
 diff_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 

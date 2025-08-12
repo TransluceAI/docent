@@ -18,10 +18,10 @@ from docent_core._ai_tools.refinement.refinement import (
 )
 from docent_core._ai_tools.rubric.rubric import Rubric
 from docent_core._db_service.schemas.refinement import SQLARefinementSession
-from docent_core._db_service.service import MonoService
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 

@@ -5,8 +5,8 @@ import anyio
 from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
-from docent_core._db_service.service import MonoService
 from docent_core._server._broker.redis_client import publish_collection_update
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 

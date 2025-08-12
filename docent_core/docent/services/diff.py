@@ -30,7 +30,7 @@ from docent_core._db_service.schemas.diff import (
     SQLAPairedSearchQuery,
     SQLAPairedSearchResult,
 )
-from docent_core._db_service.service import MonoService
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 

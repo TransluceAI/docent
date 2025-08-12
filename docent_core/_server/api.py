@@ -126,7 +126,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 async def periodic_cleanup_task():
     """Background task that periodically cleans up old chat sessions."""
-    from docent_core._db_service.service import MonoService
+    from docent_core.docent.services.monoservice import MonoService
 
     while True:
         await anyio.sleep(24 * 3600)  # once a day

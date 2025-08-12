@@ -83,11 +83,6 @@ class _NotGiven:
 NOT_GIVEN = _NotGiven()
 
 
-raise Exception(
-    "Do not edit or import this file! Instead, you should work with MonoService from docent_core.docent.services.monoservice"
-)
-
-
 class MonoService:
     def __init__(self, db: DocentDB):
         self.db = db

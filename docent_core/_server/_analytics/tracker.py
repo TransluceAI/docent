@@ -4,7 +4,7 @@ from typing import Optional
 
 from docent_core._db_service.schemas.auth_models import User
 from docent_core._db_service.schemas.tables import EndpointType, SQLAAnalyticsEvent
-from docent_core._db_service.service import MonoService
+from docent_core.docent.services.monoservice import MonoService
 
 
 def extract_user_id(user: Optional[User]) -> Optional[str]:

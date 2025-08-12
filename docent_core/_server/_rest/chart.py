@@ -9,7 +9,6 @@ from docent_core._db_service.schemas.auth_models import (
     Permission,
 )
 from docent_core._db_service.schemas.tables import EndpointType
-from docent_core._db_service.service import MonoService
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._analytics.tracker import track_endpoint_with_user
 from docent_core._server._dependencies.analytics import use_posthog_user_context
@@ -24,8 +23,9 @@ from docent_core._server._dependencies.services import (
 from docent_core._server._dependencies.user import (
     get_default_view_ctx,
 )
-from docent_core.services.charts import ChartSpec, ChartsService
-from docent_core.services.rubric import RubricService
+from docent_core.docent.services.charts import ChartSpec, ChartsService
+from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.rubric import RubricService
 
 chart_router = APIRouter()
 
@@ -50,7 +50,7 @@ async def create_chart(
 ) -> dict[str, str]:
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
         async with mono_svc.db.session() as session:
-            chart_service = ChartsService(session, mono_svc)
+            chart_service = ChartsService(session)
             chart_id = await chart_service.create_chart(
                 ctx=ctx,
                 name=request.name,
@@ -105,7 +105,7 @@ async def update_chart(
         update_fields["runs_filter_dict"] = None
 
     async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session, mono_svc)
+        chart_service = ChartsService(session)
         async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
             await chart_service.update_chart(ctx=ctx, chart_id=request.id, updates=update_fields)
 
@@ -129,7 +129,7 @@ async def delete_chart(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session, mono_svc)
+        chart_service = ChartsService(session)
         async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
             await chart_service.delete_chart(ctx, chart_id)
 

@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent_core._db_service.db import DocentDB
-from docent_core._db_service.service import MonoService
+from docent_core.docent.services.monoservice import MonoService
 
 
 async def get_db() -> DocentDB:

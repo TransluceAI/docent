@@ -32,6 +32,15 @@ from docent.data_models.citation import (
 )
 from docent.data_models.transcript import fake_model_dump
 from docent.loaders.load_inspect import load_inspect_log
+from docent_core._ai_tools.assistant.chat import make_single_tasst_system_prompt
+from docent_core._ai_tools.assistant.summarizer import (
+    HighLevelAction,
+    LowLevelAction,
+    ObservationType,
+    group_actions_into_high_level_steps,
+    interesting_agent_observations,
+    summarize_agent_actions,
+)
 from docent_core._ai_tools.search import SearchResultWithCitations
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.filters import (
@@ -51,21 +60,11 @@ from docent_core._db_service.schemas.tables import (
     SQLAChatSession,
     SQLAJob,
 )
-from docent_core._db_service.service import MonoService
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._analytics.tracker import track_endpoint_with_user
-from docent_core._server._assistant.chat import make_single_tasst_system_prompt
-from docent_core._server._assistant.summarizer import (
-    HighLevelAction,
-    LowLevelAction,
-    ObservationType,
-    group_actions_into_high_level_steps,
-    interesting_agent_observations,
-    summarize_agent_actions,
-)
 from docent_core._server._auth.session import (
     COOKIE_KEY,
     create_user_session,
@@ -86,6 +85,7 @@ from docent_core._server._dependencies.user import (
     get_user_anonymous_ok,
 )
 from docent_core._server.util import sse_event_stream
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 
@@ -737,22 +737,6 @@ async def get_base_filter(
     _: None = Depends(require_view_permission(Permission.WRITE)),
 ):
     return ctx.base_filter
-
-
-@user_router.post("/{collection_id}/clone_own_view")
-async def clone_own_view(
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.WRITE)),
-):
-    new_view_id = await mono_svc.clone_view_for_sharing(ctx)
-
-    # Track analytics
-    await track_endpoint_with_user(
-        mono_svc, EndpointType.CLONE_OWN_VIEW, ctx.user, ctx.collection_id
-    )
-
-    return {"view_id": new_view_id}
 
 
 # class GetRegexSnippetsRequest(BaseModel):

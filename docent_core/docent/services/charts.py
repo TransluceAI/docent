@@ -1,9 +1,10 @@
 from typing import Any, List
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.types import Numeric
 
 from docent._log_util import get_logger
 from docent_core._db_service.contexts import ViewContext
@@ -18,13 +19,8 @@ from docent_core._db_service.schemas.rubric import (
 from docent_core._db_service.schemas.tables import (
     SQLAAgentRun,
 )
-from docent_core.docent.services.charts import ChartDimension
 
 logger = get_logger(__name__)
-
-raise Exception(
-    "Do not edit or import this file! Instead, you should work with ChartsService from docent_core.docent.services.charts"
-)
 
 
 class ChartSpec(BaseModel):
@@ -54,6 +50,112 @@ class ChartSpec(BaseModel):
             rubric_filter=chart.rubric_filter,
             chart_type=chart.chart_type,
             runs_filter=chart.runs_filter,
+        )
+
+
+class ChartDimension(BaseModel):
+    key: str
+    name: str
+    short_name: str | None = None
+    expression: Any = Field(exclude=True)  # SQLAlchemy expression, excluded from JSON
+    is_aggregation: bool = Field(
+        default=False, exclude=True
+    )  # Whether this represents an aggregate measure
+    extra: dict[str, Any] = {}
+    is_numeric: bool = False
+    is_valid_measure: bool = False
+
+    def __init__(
+        self,
+        key: str,
+        name: str | None = None,
+        short_name: str | None = None,
+        expression: Any = None,
+        is_aggregation: bool = False,
+        is_numeric: bool = False,
+        is_valid_measure: bool | None = None,
+        **extra: Any,
+    ):
+        if name is None:
+            name = key
+        if short_name is None:
+            short_name = name
+        if is_valid_measure is None:
+            is_valid_measure = is_numeric
+
+        super().__init__(
+            key=key,
+            name=name,
+            short_name=short_name,
+            expression=expression,
+            is_aggregation=is_aggregation,
+            is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
+            extra=extra,
+        )
+
+        # Validate that expression is provided for new instances
+        if expression is None:
+            raise ValueError(
+                f"ChartDimension '{key}' must have an expression. Use create_field() or create_json_field() instead."
+            )
+
+    @classmethod
+    def create_json_field(
+        cls,
+        base_field: str,
+        json_path: str,
+        name: str | None = None,
+        is_numeric: bool = False,
+        is_valid_measure: bool = False,
+    ):
+        """Create a ChartDimension for JSON field access (supports nested paths)."""
+        # Handle nested JSON paths like 'scores.correct' -> ['scores', 'correct']
+        path_parts = json_path.split(".")
+
+        # Get the base SQLAlchemy column
+        base_expressions = {
+            "ar.metadata_json": SQLAAgentRun.metadata_json,
+        }
+
+        if base_field not in base_expressions:
+            raise ValueError(f"Unknown base field: {base_field}")
+
+        base_expr = base_expressions[base_field]
+
+        # Build the JSON path expression
+        if len(path_parts) == 1:
+            # Simple case: ar.metadata_json->>'key'
+            expression = base_expr.op("->>")(path_parts[0])
+            key = f"{base_field}->>{path_parts[0]}"
+        else:
+            # Nested case: ar.metadata_json->'scores'->>'correct'
+            # First navigate to the nested object
+            nested_expr = base_expr
+            for part in path_parts[:-1]:
+                nested_expr = nested_expr.op("->")(part)
+
+            # Then extract the final value
+            expression = nested_expr.op("->>")(path_parts[-1])
+
+            # Give it a key that resembles the SQL expression
+            parts_except_last = path_parts[:-1]
+            last_part = path_parts[-1]
+            parts_except_last_joined = "->".join(parts_except_last)
+            key = f"{base_field}->{parts_except_last_joined}->>{last_part}"
+
+        if is_numeric:
+            expression = expression.cast(Numeric)  # type: ignore
+
+        return cls(
+            key=key,
+            name=name or f"Metadata: {json_path}",
+            short_name=path_parts[-1],
+            expression=expression,
+            is_aggregation=False,
+            is_numeric=is_numeric,
+            is_valid_measure=is_valid_measure,
+            metadata_key=json_path,
         )
 
 
