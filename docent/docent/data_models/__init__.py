@@ -6,7 +6,7 @@ from docent.data_models.metadata import (
     InspectAgentRunMetadata,
 )
 from docent.data_models.regex import RegexSnippet
-from docent.data_models.transcript import Transcript
+from docent.data_models.transcript import Transcript, TranscriptGroup
 
 __all__ = [
     "AgentRun",
@@ -16,4 +16,5 @@ __all__ = [
     "BaseMetadata",
     "InspectAgentRunMetadata",
     "Transcript",
+    "TranscriptGroup",
 ]

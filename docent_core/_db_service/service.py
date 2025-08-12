@@ -30,7 +30,7 @@ from sqlalchemy.orm import selectinload
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.transcript import Transcript
+from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._ai_tools.clustering.cluster_assigner import (
     DEFAULT_ASSIGNER,
     assign_with_backend,
@@ -74,6 +74,7 @@ from docent_core._db_service.schemas.tables import (
     SQLATelemetryLog,
     SQLATranscript,
     SQLATranscriptEmbedding,
+    SQLATranscriptGroup,
     SQLAUser,
     SQLAView,
 )
@@ -405,6 +406,29 @@ class MonoService:
                 session.add(sqla_transcript)
 
         logger.info(f"Updated {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
+
+    async def store_transcript_groups(
+        self, ctx: ViewContext, transcript_groups: Sequence[TranscriptGroup]
+    ):
+        """
+        Store transcript groups in the database.
+        Creates new transcript groups if they don't exist, updates them if they do exist.
+        """
+        # Convert TranscriptGroup objects to SQLAlchemy objects
+        transcript_group_data: list[SQLATranscriptGroup] = []
+
+        for tg in transcript_groups:
+            # Use the existing from_transcript_group method to get all fields properly
+            sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg, ctx.collection_id)
+            transcript_group_data.append(sqla_transcript_group)
+
+        # Handle transcript groups - upsert (insert or update)
+        async with self.db.session() as session:
+            for sqla_transcript_group in transcript_group_data:
+                # Use merge to handle both insert and update
+                await session.merge(sqla_transcript_group)
+
+        logger.info(f"Stored {len(transcript_groups)} transcript groups")
 
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
         collection_id = ctx.collection_id

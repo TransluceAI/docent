@@ -11,7 +11,13 @@ from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 
 from docent._log_util import get_logger
-from docent.data_models import AgentRun, BaseAgentRunMetadata, Transcript
+from docent.data_models import (
+    AgentRun,
+    BaseAgentRunMetadata,
+    BaseMetadata,
+    Transcript,
+    TranscriptGroup,
+)
 from docent.data_models.chat import ChatMessage, parse_chat_message
 from docent.data_models.chat.tool import ToolCall
 from docent_core._db_service.schemas.auth_models import User
@@ -682,6 +688,90 @@ async def _get_collection_metadata(collection_id: str) -> Dict[str, List[Dict[st
     return metadata
 
 
+async def _get_collection_transcript_group_metadata(
+    collection_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    """Get all transcript group metadata for a collection from Redis, merging multiple calls with recent data taking precedence."""
+    redis_client = await get_redis_client()
+    metadata_key = f"{_COLLECTION_TRANSCRIPT_GROUP_METADATA_KEY_PREFIX}{collection_id}"
+
+    # Get all keys that match the pattern for this collection
+    pattern = f"{metadata_key}:*"
+    keys = await redis_client.keys(pattern)  # type: ignore
+
+    metadata: Dict[str, Dict[str, Any]] = {}
+    for key in keys:
+        try:
+            # Extract transcript_group_id from key (format: collection_transcript_group_metadata:collection_id:transcript_group_id)
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            transcript_group_id = key_str.split(":")[-1]
+
+            # Get all metadata for this transcript_group_id
+            metadata_jsons: List[bytes] = await redis_client.lrange(key, 0, -1)  # type: ignore
+
+            # Merge all metadata items, with more recent ones (earlier in the list) taking precedence
+            merged_metadata: Dict[str, Any] = {}
+            for metadata_json in metadata_jsons:  # type: ignore
+                try:
+                    metadata_item = json.loads(
+                        metadata_json.decode()
+                        if isinstance(metadata_json, bytes)
+                        else str(metadata_json)  # type: ignore
+                    )
+                    # Update merged_metadata with this item, newer items will overwrite older ones
+                    merged_metadata.update(metadata_item)
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to decode transcript group metadata: {e}")
+                    continue
+
+            if merged_metadata:
+                metadata[transcript_group_id] = merged_metadata
+
+        except Exception as e:
+            logger.error(f"Failed to process transcript group metadata for key {key}: {e}")
+            continue
+
+    return metadata
+
+
+def _create_transcript_groups_from_redis_data(
+    transcript_group_metadata: Dict[str, Dict[str, Any]]
+) -> List[TranscriptGroup]:
+    """
+    Create TranscriptGroup objects from Redis metadata.
+
+    Args:
+        transcript_group_metadata: Dictionary mapping transcript_group_id to merged metadata dict
+
+    Returns:
+        List of TranscriptGroup objects
+    """
+    transcript_groups: List[TranscriptGroup] = []
+
+    for transcript_group_id, metadata in transcript_group_metadata.items():
+        if not metadata:
+            continue
+
+        # Extract fields from metadata
+        name = metadata.get("name")
+        description = metadata.get("description")
+        parent_transcript_group_id = metadata.get("parent_transcript_group_id")
+        metadata_dict = metadata.get("metadata", {})
+
+        # Create TranscriptGroup object
+        transcript_group = TranscriptGroup(
+            id=transcript_group_id,
+            name=name,
+            description=description,
+            parent_transcript_group_id=parent_transcript_group_id,
+            metadata=BaseMetadata(**metadata_dict) if metadata_dict else BaseMetadata(),
+        )
+
+        transcript_groups.append(transcript_group)
+
+    return transcript_groups
+
+
 async def _cleanup_collection_data(collection_id: str) -> None:
     """Clean up all Redis data for a collection."""
     await _remove_collection_from_accumulation(collection_id)
@@ -701,6 +791,20 @@ async def _cleanup_collection_data(collection_id: str) -> None:
     metadata_key = f"{_COLLECTION_METADATA_KEY_PREFIX}{collection_id}"
     metadata_keys = await redis_client.keys(f"{metadata_key}:*")  # type: ignore
     for key in metadata_keys:
+        await redis_client.delete(key)  # type: ignore
+
+    # Clean up transcript metadata list keys (they have the pattern collection_transcript_metadata:collection_id:transcript_id)
+    transcript_metadata_key = f"{_COLLECTION_TRANSCRIPT_METADATA_KEY_PREFIX}{collection_id}"
+    transcript_metadata_keys = await redis_client.keys(f"{transcript_metadata_key}:*")  # type: ignore
+    for key in transcript_metadata_keys:
+        await redis_client.delete(key)  # type: ignore
+
+    # Clean up transcript group metadata list keys (they have the pattern collection_transcript_group_metadata:collection_id:transcript_group_id)
+    transcript_group_metadata_key = (
+        f"{_COLLECTION_TRANSCRIPT_GROUP_METADATA_KEY_PREFIX}{collection_id}"
+    )
+    transcript_group_metadata_keys = await redis_client.keys(f"{transcript_group_metadata_key}:*")  # type: ignore
+    for key in transcript_group_metadata_keys:
         await redis_client.delete(key)  # type: ignore
 
     logger.info(f"Cleaned up Redis data for collection {collection_id}")
@@ -1064,7 +1168,7 @@ async def process_completed_collection(
     collection_id: str, spans: List[Dict[str, Any]], user: User, analytics: AnalyticsClient
 ) -> None:
     """
-    Process a completed collection by creating agent runs and transcripts.
+    Process a completed collection by creating agent runs, transcripts, and transcript groups.
 
     Args:
         collection_id: The collection ID that was completed
@@ -1123,6 +1227,19 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
                 detail=f"Collection {collection_id} not found. It should have been created during trace processing.",
             )
 
+        # Get or create default view context for this collection
+        ctx = await mono_svc.get_default_view_ctx(collection_id, user)
+
+        # Get transcript group metadata from Redis and store to database
+        transcript_group_metadata = await _get_collection_transcript_group_metadata(collection_id)
+        if transcript_group_metadata:
+            transcript_groups = _create_transcript_groups_from_redis_data(transcript_group_metadata)
+            if transcript_groups:
+                await mono_svc.store_transcript_groups(ctx, transcript_groups)
+                logger.info(
+                    f"Stored {len(transcript_groups)} transcript groups for collection {collection_id}"
+                )
+
         # Create agent runs for this collection with stored scores and metadata
         collection_agent_runs = await _create_agent_runs_from_spans(
             spans_by_agent_run, collection_id
@@ -1131,9 +1248,6 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
         # Add agent runs to this collection
         if collection_agent_runs:
             try:
-                # Get or create default view context for this collection
-                ctx = await mono_svc.get_default_view_ctx(collection_id, user)
-
                 # Add agent runs using the existing service method
                 await mono_svc.update_agent_runs(ctx, collection_agent_runs)
                 logger.info(
@@ -1239,6 +1353,12 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
     # Store all the chat threads
     chat_threads: List[List[ChatMessage]] = []
 
+    # Extract transcript_group_id from the first span (they should all have the same one)
+    transcript_group_id = None
+    if transcript_spans:
+        first_span_attrs = transcript_spans[0].get("attributes", {})
+        transcript_group_id = first_span_attrs.get("transcript_group_id")
+
     for span in transcript_spans:
         # Extract messages from this span
         span_messages = _span_to_chat_messages(span)
@@ -1279,10 +1399,11 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
                 messages=chat_thread,
                 name=f"Chat Thread {i + 1}" if len(chat_threads) > 1 else "",
                 description="",
+                transcript_group_id=transcript_group_id,
             )
             transcripts.append(transcript)
             logger.info(
-                f"    Created transcript {thread_transcript_id} with {len(chat_thread)} messages"
+                f"    Created transcript {thread_transcript_id} with {len(chat_thread)} messages and transcript_group_id: {transcript_group_id}"
             )
     else:
         logger.warning(f"    No messages extracted from {len(transcript_spans)} spans")
