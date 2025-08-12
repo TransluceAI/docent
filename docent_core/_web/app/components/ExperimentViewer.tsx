@@ -101,7 +101,12 @@ export default function ExperimentViewer() {
       model?: string;
     }) => {
       fetchedAgentRunIdsRef.current.clear();
-      dispatch(collectionApi.util.invalidateTags(['AgentRunIds']));
+      dispatch(
+        collectionApi.util.invalidateTags([
+          'AgentRunIds',
+          'AgentRunMetadataFields',
+        ])
+      );
     },
     [dispatch]
   );
