@@ -3,7 +3,6 @@ from typing import Any, Callable, Coroutine
 
 from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.tables import SQLAJob
-from docent_core._server._rest.router import compute_embeddings
 from docent_core.docent.workers.centroid_assignment_worker import centroid_assignment_job
 from docent_core.docent.workers.embedding_worker import compute_embeddings
 from docent_core.docent.workers.rubric_job_worker import rubric_job

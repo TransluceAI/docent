@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 async def compute_embeddings(ctx: ViewContext, job: SQLAJob):
-    logger.info(f"Starting compute_embeddings: view_ctx={ctx}, job_id={job.id}")
+    logger.info(f"Starting compute_embeddings: ctx={ctx}, job_id={job.id}")
 
     mono_svc = await MonoService.init()
 
