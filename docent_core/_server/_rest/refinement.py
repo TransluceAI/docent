@@ -20,10 +20,6 @@ logger = get_logger(__name__)
 
 refinement_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.server.rest.refinement instead."
-)
-
 
 @refinement_router.get("/{collection_id}/get_or_create_refinement_session")
 async def get_or_create_refinement_session(
