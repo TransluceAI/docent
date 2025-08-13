@@ -86,7 +86,7 @@ class SQLAAgentRun(SQLABase):
     name = mapped_column(Text)
     description = mapped_column(Text)
 
-    # Metdata columns as JSONB so they can be keyed into
+    # Metadata columns as JSONB so they can be keyed into
     # A scan is fine for ~1e4 transcripts; if larger we might want to index
     metadata_json = mapped_column(JSONB, nullable=False)
 
