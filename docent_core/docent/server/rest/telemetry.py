@@ -41,10 +41,6 @@ _STORE_SPANS_LOCK_PREFIX = "store_spans:"
 
 telemetry_router = APIRouter()
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.server.rest.telemetry instead."
-)
-
 
 @telemetry_router.post("/v1/traces")
 async def trace_endpoint(

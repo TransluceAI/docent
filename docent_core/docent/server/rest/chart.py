@@ -27,10 +27,6 @@ from docent_core.docent.services.rubric import RubricService
 
 chart_router = APIRouter()
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.server.rest.chart instead."
-)
-
 
 class CreateChartRequest(BaseModel):
     name: str | None = None
