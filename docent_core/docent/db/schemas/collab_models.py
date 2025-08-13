@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from docent_core._db_service.schemas.auth_models import Organization, Permission, SubjectType, User
-from docent_core._db_service.schemas.tables import (
+from docent_core.docent.db.schemas.auth_models import Organization, Permission, SubjectType, User
+from docent_core.docent.db.schemas.tables import (
     SQLAAccessControlEntry,
     SQLAOrganization,
     SQLAUser,

@@ -59,10 +59,6 @@ TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
 TABLE_TELEMETRY_LOG = "telemetry_logs"
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.db.schemas.tables instead."
-)
-
 
 def sanitize_pg_text(text: str) -> str:
     """

@@ -3,8 +3,8 @@ from typing import AsyncGenerator
 from fastapi import Depends
 from posthog import identify_context, new_context
 
-from docent_core._db_service.schemas.auth_models import User
 from docent_core._server._analytics.posthog import AnalyticsClient
+from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
 
 

@@ -24,10 +24,6 @@ TABLE_JUDGE_RESULT = "judge_results"
 TABLE_RUBRIC_CENTROID = "rubric_centroids"
 TABLE_JUDGE_RESULT_CENTROIDS = "judge_result_centroids"
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.db.schemas.rubric instead."
-)
-
 
 class SQLARubric(SQLABase):
     __tablename__ = TABLE_RUBRIC

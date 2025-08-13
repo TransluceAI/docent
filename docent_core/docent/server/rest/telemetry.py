@@ -18,9 +18,9 @@ from docent.data_models import (
 )
 from docent.data_models.chat import ChatMessage, parse_chat_message
 from docent.data_models.chat.tool import ToolCall
-from docent_core._db_service.schemas.auth_models import User
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._broker.redis_client import get_redis_client
+from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import get_mono_svc
 from docent_core.docent.server.dependencies.user import get_authenticated_user
@@ -842,7 +842,7 @@ async def _check_collection_permissions(
     Raises:
         HTTPException: If user lacks write permissions on any existing collection
     """
-    from docent_core._db_service.schemas.auth_models import Permission, ResourceType
+    from docent_core.docent.db.schemas.auth_models import Permission, ResourceType
 
     # Check permissions for each collection
     for collection_id in collection_ids:
@@ -885,7 +885,7 @@ async def _check_single_collection_permission(collection_id: str, user: User) ->
     """
     mono_svc = await MonoService.init()
     if await mono_svc.collection_exists(collection_id):
-        from docent_core._db_service.schemas.auth_models import Permission, ResourceType
+        from docent_core.docent.db.schemas.auth_models import Permission, ResourceType
 
         has_write_permission = await mono_svc.has_permission(
             user=user,

@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
-from docent_core._db_service.schemas.tables import JobStatus, SQLAJob
 from docent_core._server._broker.redis_client import cancel_job
+from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
 
 logger = get_logger(__name__)
 

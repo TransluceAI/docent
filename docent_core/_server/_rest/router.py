@@ -42,19 +42,6 @@ from docent_core._ai_tools.assistant.summarizer import (
     summarize_agent_actions,
 )
 from docent_core._ai_tools.search import SearchResultWithCitations
-from docent_core._db_service.schemas.auth_models import (
-    Permission,
-    ResourceType,
-    SubjectType,
-    User,
-)
-from docent_core._db_service.schemas.collab_models import CollectionCollaborator
-from docent_core._db_service.schemas.tables import (
-    JobStatus,
-    SQLAAccessControlEntry,
-    SQLAChatSession,
-    SQLAJob,
-)
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
@@ -68,6 +55,19 @@ from docent_core._server.util import sse_event_stream
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.filters import (
     ComplexFilter,
+)
+from docent_core.docent.db.schemas.auth_models import (
+    Permission,
+    ResourceType,
+    SubjectType,
+    User,
+)
+from docent_core.docent.db.schemas.collab_models import CollectionCollaborator
+from docent_core.docent.db.schemas.tables import (
+    JobStatus,
+    SQLAAccessControlEntry,
+    SQLAChatSession,
+    SQLAJob,
 )
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import (

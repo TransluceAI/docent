@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import mapped_column
 
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core._db_service.schemas.tables import TABLE_COLLECTION
+from docent_core.docent.db.schemas.tables import TABLE_COLLECTION
 
 TABLE_REFINEMENT_SESSION = "refinement_sessions"
 

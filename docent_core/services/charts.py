@@ -6,18 +6,18 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
-from docent_core._db_service.schemas.chart import SQLAChart
-from docent_core._db_service.schemas.rubric import (
+from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.filters import ComplexFilter
+from docent_core.docent.db.schemas.chart import SQLAChart
+from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
     SQLARubric,
     SQLARubricCentroid,
 )
-from docent_core._db_service.schemas.tables import (
+from docent_core.docent.db.schemas.tables import (
     SQLAAgentRun,
 )
-from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.services.charts import ChartDimension
 
 logger = get_logger(__name__)

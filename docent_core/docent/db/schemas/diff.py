@@ -16,7 +16,7 @@ from docent_core._ai_tools.search_paired import (
     SearchPairedResult,
 )
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core._db_service.schemas.tables import (
+from docent_core.docent.db.schemas.tables import (
     TABLE_AGENT_RUN,
     TABLE_COLLECTION,
 )

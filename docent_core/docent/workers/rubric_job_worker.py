@@ -1,6 +1,6 @@
 from docent_core._db_service.db import DocentDB
-from docent_core._db_service.schemas.tables import SQLAJob
 from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.schemas.tables import SQLAJob
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
 

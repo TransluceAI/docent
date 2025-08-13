@@ -6,13 +6,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core._db_service.schemas.tables import (
+from docent_core.docent.db.filters import ComplexFilter, parse_filter_dict
+from docent_core.docent.db.schemas.tables import (
     TABLE_COLLECTION,
     TABLE_USER,
     SQLACollection,
     SQLAUser,
 )
-from docent_core.docent.db.filters import ComplexFilter, parse_filter_dict
 
 TABLE_CHART = "charts"
 

@@ -9,7 +9,7 @@ from sqlalchemy import ColumnElement, and_, or_
 from docent._log_util import get_logger
 
 if TYPE_CHECKING:
-    from docent_core._db_service.schemas.tables import SQLAAgentRun
+    from docent_core.docent.db.schemas.tables import SQLAAgentRun
 
 logger = get_logger(__name__)
 

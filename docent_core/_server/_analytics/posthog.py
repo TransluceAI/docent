@@ -3,8 +3,8 @@ from typing import Any, Dict, Optional
 from posthog import Posthog
 
 from docent._log_util import get_logger
-from docent_core._db_service.schemas.auth_models import User
 from docent_core._env_util import ENV, get_deployment_id
+from docent_core.docent.db.schemas.auth_models import User
 
 logger = get_logger(__name__)
 

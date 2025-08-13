@@ -29,15 +29,20 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
-from docent_core._db_service.schemas.auth_models import (
+from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
+from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
+from docent_core._server._broker.redis_client import enqueue_job
+from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.filters import ComplexFilter
+from docent_core.docent.db.schemas.auth_models import (
     PERMISSION_LEVELS,
     Permission,
     ResourceType,
     SubjectType,
     User,
 )
-from docent_core._db_service.schemas.chart import SQLAChart
-from docent_core._db_service.schemas.tables import (
+from docent_core.docent.db.schemas.chart import SQLAChart
+from docent_core.docent.db.schemas.tables import (
     EMBEDDING_DIM,
     TABLE_TRANSCRIPT_EMBEDDING,
     JobStatus,
@@ -60,11 +65,6 @@ from docent_core._db_service.schemas.tables import (
     SQLAUser,
     SQLAView,
 )
-from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
-from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
-from docent_core._server._broker.redis_client import enqueue_job
-from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.filters import ComplexFilter
 
 logger = get_logger(__name__)
 
