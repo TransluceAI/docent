@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, Request
 
 from docent_core._db_service.schemas.auth_models import User
-from docent_core._server._dependencies.database import get_mono_svc
+from docent_core.docent.server.dependencies.database import get_mono_svc
 from docent_core.docent.services.monoservice import MonoService
 
 

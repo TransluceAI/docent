@@ -64,7 +64,7 @@ from docent_core._db_service.schemas.tables import (
 )
 from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
 from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
-from docent_core._server._broker.redis_client import enqueue_embedding_job
+from docent_core._server._broker.redis_client import enqueue_job
 
 logger = get_logger(__name__)
 
@@ -431,7 +431,7 @@ class MonoService:
 
             # Enqueue a job in pg and start a redis worker
             job_id = await self.add_embedding_job(collection_id, should_index)
-            await enqueue_embedding_job(ctx, job_id)  # type: ignore
+            await enqueue_job(ctx, job_id)  # type: ignore
 
             logger.info(f"Enqueued embedding job {job_id} for collection {collection_id}")
 

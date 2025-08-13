@@ -30,10 +30,6 @@ logger = get_logger(__name__)
 # Rubric CRUD #
 ###############
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.server.rest.rubric instead."
-)
-
 
 class CreateRubricRequest(BaseModel):
     rubric: Rubric

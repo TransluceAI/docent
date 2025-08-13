@@ -3,7 +3,7 @@ from typing import AsyncContextManager, Callable
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from docent_core._server._dependencies.database import (
+from docent_core.docent.server.dependencies.database import (
     get_mono_svc,
     get_session,
     get_session_cm_factory,

@@ -96,10 +96,6 @@ user_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 # Public endpoints #
 ####################
 
-raise Exception(
-    "This file is deprecated. Import and apply changes to docent_core.docent.server.rest.router instead."
-)
-
 
 @public_router.get("/ping")
 async def ping():

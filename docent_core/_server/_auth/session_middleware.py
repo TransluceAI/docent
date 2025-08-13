@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
 from docent_core._server._auth.session import COOKIE_KEY
-from docent_core._server._dependencies.database import get_mono_svc
+from docent_core.docent.server.dependencies.database import get_mono_svc
 
 logger = get_logger(__name__)
 

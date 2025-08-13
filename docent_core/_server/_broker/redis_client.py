@@ -126,22 +126,8 @@ async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: An
     print(f"Enqueued job {j} to {queue_name} with func {func_name}")
 
 
-async def enqueue_search_job(view_ctx: ViewContext, job_id: str) -> None:
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
-
-
-async def enqueue_embedding_job(view_ctx: ViewContext, job_id: str) -> None:
-    """Enqueue an embedding computation job to the worker."""
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
-
-
-async def enqueue_rubric_job(view_ctx: ViewContext, job_id: str) -> None:
-    """Enqueue an rubric job to the worker."""
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
-
-
 async def enqueue_job(view_ctx: ViewContext, job_id: str) -> None:
-    """Enqueue a centroid assignment job to the worker."""
+    """Enqueue a job to the worker."""
     await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
 
 
