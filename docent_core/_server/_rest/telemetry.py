@@ -1883,7 +1883,9 @@ def _extract_messages_from_gen_ai_data(
     # Process prompt messages
     if "prompt" in gen_ai:
         # Sort keys numerically to maintain proper order
-        for key in sorted(gen_ai["prompt"].keys(), key=lambda k: int(k) if k.isdigit() else k):
+        for key in sorted(
+            gen_ai["prompt"].keys(), key=lambda k: (0, int(k)) if k.isdigit() else (1, k)
+        ):
             prompt_data: dict[str, Any] = gen_ai["prompt"][key]
 
             message = _create_message_from_data(prompt_data, span_id, f"prompt_{key}")
@@ -1893,7 +1895,9 @@ def _extract_messages_from_gen_ai_data(
     # Process completion messages
     if "completion" in gen_ai:
         # Sort keys numerically to maintain proper order
-        for key in sorted(gen_ai["completion"].keys(), key=lambda k: int(k) if k.isdigit() else k):
+        for key in sorted(
+            gen_ai["completion"].keys(), key=lambda k: (0, int(k)) if k.isdigit() else (1, k)
+        ):
             completion_data: dict[str, Any] = gen_ai["completion"][key]
 
             message = _create_message_from_data(

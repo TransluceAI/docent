@@ -124,7 +124,7 @@ wheels = [
 
 [[package]]
 name = "docent-python"
-version = "0.1.4a0"
+version = "0.1.5a0"
 source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },
