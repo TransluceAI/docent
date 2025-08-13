@@ -26,8 +26,8 @@ from sqlalchemy.schema import UniqueConstraint
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript, TranscriptGroup, fake_model_dump
-from docent_core._ai_tools.search import SearchResult
 from docent_core._db_service.schemas.base import SQLABase
+from docent_core.docent.ai_tools.search import SearchResult
 from docent_core.docent.db.filters import ComplexFilter, parse_filter_dict
 from docent_core.docent.db.schemas.auth_models import Organization, Permission, User
 

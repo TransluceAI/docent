@@ -6,17 +6,17 @@ from sqlalchemy.orm import selectinload
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent_core._ai_tools.diff.diff import (
+from docent_core.docent.ai_tools.diff.diff import (
     DiffQuery,
     DiffResult,
     DiffResultStreamingCallback,
     execute_diff,
 )
-from docent_core._ai_tools.diff.propose_claims import (
+from docent_core.docent.ai_tools.diff.propose_claims import (
     DiffClaimsResult,
     execute_propose_claims,
 )
-from docent_core._ai_tools.search_paired import (
+from docent_core.docent.ai_tools.search_paired import (
     SearchPairedQuery,
     SearchPairedResult,
     SearchPairedResultStreamingCallback,

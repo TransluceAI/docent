@@ -15,8 +15,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from docent_core._ai_tools.rubric.rubric import JudgeResult, ResultType, Rubric
 from docent_core._db_service.schemas.base import SQLABase
+from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, ResultType, Rubric
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
 
 TABLE_RUBRIC = "rubrics"

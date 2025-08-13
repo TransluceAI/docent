@@ -32,16 +32,6 @@ from docent.data_models.citation import (
 )
 from docent.data_models.transcript import fake_model_dump
 from docent.loaders.load_inspect import load_inspect_log
-from docent_core._ai_tools.assistant.chat import make_single_tasst_system_prompt
-from docent_core._ai_tools.assistant.summarizer import (
-    HighLevelAction,
-    LowLevelAction,
-    ObservationType,
-    group_actions_into_high_level_steps,
-    interesting_agent_observations,
-    summarize_agent_actions,
-)
-from docent_core._ai_tools.search import SearchResultWithCitations
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
@@ -52,6 +42,15 @@ from docent_core._server._auth.session import (
     invalidate_user_session,
 )
 from docent_core._server.util import sse_event_stream
+from docent_core.docent.ai_tools.assistant.chat import make_single_tasst_system_prompt
+from docent_core.docent.ai_tools.assistant.summarizer import (
+    HighLevelAction,
+    LowLevelAction,
+    ObservationType,
+    group_actions_into_high_level_steps,
+    interesting_agent_observations,
+    summarize_agent_actions,
+)
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.filters import (
     ComplexFilter,
@@ -986,39 +985,6 @@ async def share_collection_with_email(
     )
 
     return {"status": "success", "message": f"Collection shared with {request.email}"}
-
-
-###################################
-# Computing searches and clusters #
-###################################
-
-
-class AttributeWithCitation(TypedDict):
-    attribute: str
-    citations: list[Citation]
-
-
-class StreamedSearchResult(TypedDict):
-    data_dict: dict[str, dict[str, list[SearchResultWithCitations]]]
-    num_agent_runs_done: int
-    num_agent_runs_total: int
-    num_search_hits: int
-
-
-class ComputeSearchRequest(BaseModel):
-    search_query: str
-
-
-class GetSearchResultsRequest(BaseModel):
-    search_query_id: str
-
-
-class ListSearchClustersRequest(BaseModel):
-    search_query_id: str
-
-
-class GetClusterMatchesRequest(BaseModel):
-    centroid: str
 
 
 @user_router.post("/{collection_id}/has_embedding_job")

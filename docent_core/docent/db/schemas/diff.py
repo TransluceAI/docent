@@ -7,15 +7,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from docent_core._ai_tools.diff.diff import DiffInstance, DiffQuery, DiffResult
-from docent_core._ai_tools.diff.propose_claims import DiffClaimsResult
-from docent_core._ai_tools.search_paired import (
+from docent_core._db_service.schemas.base import SQLABase
+from docent_core.docent.ai_tools.diff.diff import DiffInstance, DiffQuery, DiffResult
+from docent_core.docent.ai_tools.diff.propose_claims import DiffClaimsResult
+from docent_core.docent.ai_tools.search_paired import (
     ActionResult,
     SearchPairedInstance,
     SearchPairedQuery,
     SearchPairedResult,
 )
-from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.tables import (
     TABLE_AGENT_RUN,
     TABLE_COLLECTION,

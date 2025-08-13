@@ -9,7 +9,7 @@ from docent.data_models.chat.tool import (
     ToolParam,
     ToolParams,
 )
-from docent_core._ai_tools.rubric.rubric import ResultType, Rubric
+from docent_core.docent.ai_tools.rubric.rubric import ResultType, Rubric
 from docent_core.docent.db.schemas.rubric import JudgeResult, SQLARubricCentroid
 
 DEV_MESSAGE_TEMPLATE = """

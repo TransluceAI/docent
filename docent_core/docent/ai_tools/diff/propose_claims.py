@@ -6,10 +6,10 @@ import yaml
 from pydantic import BaseModel, Field
 
 from docent._log_util import get_logger
-from docent_core._ai_tools.diff.diff import DiffQuery, DiffResult
-from docent_core._ai_tools.search_paired import SearchPairedQuery
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
+from docent_core.docent.ai_tools.diff.diff import DiffQuery, DiffResult
+from docent_core.docent.ai_tools.search_paired import SearchPairedQuery
 
 logger = get_logger(__name__)
 
