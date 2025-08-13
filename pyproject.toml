@@ -74,12 +74,6 @@ docent_core = "docent_core.cli:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Needed for Traceloop dependency of docent-python
-[tool.uv]
-override-dependencies = [
-    "posthog>=6.0",
-]
-
 [tool.uv.sources]
 docent-python = { path = "docent", editable = true }
 

@@ -25,7 +25,6 @@ dependencies = [
     "opentelemetry-instrumentation-langchain>=0.44.1",
     "opentelemetry-instrumentation-openai>=0.44.1",
     "opentelemetry-instrumentation-threading>=0.55b1",
-    "traceloop-sdk>=0.44.1",
 ]
 
 [build-system]
