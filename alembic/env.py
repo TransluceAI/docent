@@ -33,8 +33,8 @@ def run_migrations_offline() -> None:
     # url = config.get_main_option("sqlalchemy.url")
 
     # Construct the URL from the environment variables
-    user, password, host, port, dbname = get_pg_params()
-    url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    p = get_pg_params()
+    url = f"postgresql://{p.user}:{p.password}@{p.host}:{p.port}/{p.database}"
 
     context.configure(
         url=url,

@@ -332,9 +332,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           }`}
                         >
                           <button
-                            onClick={() =>
-                              setSelectedTranscriptKey(transcriptKey)
-                            }
+                            onClick={() => {
+                              setSelectedTranscriptKey(transcriptKey);
+                            }}
                             className="flex-1 text-left px-2 py-1 text-ellipsis whitespace-nowrap overflow-hidden"
                             title={transcriptKey}
                           >

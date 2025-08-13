@@ -750,7 +750,6 @@ dependencies = [
     { name = "arq" },
     { name = "asyncpg" },
     { name = "backoff" },
-    { name = "datasets" },
     { name = "docent-python" },
     { name = "fastapi" },
     { name = "google-genai" },
@@ -778,6 +777,7 @@ dependencies = [
 dev = [
     { name = "beaupy" },
     { name = "boto3" },
+    { name = "datasets" },
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "mkdocs" },
@@ -799,7 +799,7 @@ requires-dist = [
     { name = "backoff", specifier = ">=2.2.1" },
     { name = "beaupy", marker = "extra == 'dev'", specifier = ">=3.10.0" },
     { name = "boto3", marker = "extra == 'dev'", specifier = ">=1.35.0" },
-    { name = "datasets", specifier = ">=4.0.0" },
+    { name = "datasets", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "docent-python", editable = "docent" },
     { name = "fastapi", specifier = ">=0.114.1" },
     { name = "google-genai", specifier = ">=1.16.1" },
@@ -836,7 +836,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.3a0"
+version = "0.1.4a0"
 source = { editable = "docent" }
 dependencies = [
     { name = "opentelemetry-api" },

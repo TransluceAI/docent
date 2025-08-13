@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import AsyncIterator
 
 import anyio
@@ -18,7 +19,16 @@ from docent_core._env_util import ENV
 logger = get_logger(__name__)
 
 
-def get_pg_params():
+@dataclass
+class PGParams:
+    host: str
+    port: str
+    user: str
+    password: str
+    database: str
+
+
+def get_pg_params() -> PGParams:
     pg_host, pg_port, pg_user, pg_password, pg_database = (
         ENV.get("DOCENT_PG_HOST"),
         ENV.get("DOCENT_PG_PORT"),
@@ -40,21 +50,23 @@ def get_pg_params():
         pg_database = "docent"
         logger.info("No database name provided; using `docent` as default")
 
-    return pg_host, pg_port, pg_user, pg_password, pg_database
+    return PGParams(
+        host=pg_host, port=pg_port, user=pg_user, password=pg_password, database=pg_database
+    )
 
 
 def get_sync_engine():
     """Only used for database migrations, since alembic doesn't have great async support"""
-    pg_host, pg_port, pg_user, pg_password, pg_database = get_pg_params()
+    p = get_pg_params()
 
     return create_engine(
         URL.create(
             drivername="postgresql",
-            username=pg_user,
-            password=pg_password,
-            host=pg_host,
-            port=int(pg_port),
-            database=pg_database,
+            username=p.user,
+            password=p.password,
+            host=p.host,
+            port=int(p.port),
+            database=p.database,
         )
     )
 
@@ -86,19 +98,19 @@ class DocentDB:
             if cls._instance is not None:
                 return cls._instance
 
-            pg_host, pg_port, pg_user, pg_password, pg_database = get_pg_params()
+            p = get_pg_params()
 
             # Check that the target database is not 'postgres'
-            if (target_database := pg_database) == "postgres":
+            if (target_database := p.database) == "postgres":
                 raise ValueError("Cannot use 'postgres' as a target database")
 
             # First create a connection to the default 'postgres' database
             url = URL.create(
                 drivername="postgresql+asyncpg",
-                username=pg_user,
-                password=pg_password,
-                host=pg_host,
-                port=int(pg_port),
+                username=p.user,
+                password=p.password,
+                host=p.host,
+                port=int(p.port),
                 database="postgres",  # Connect to default postgres database first
             )
 

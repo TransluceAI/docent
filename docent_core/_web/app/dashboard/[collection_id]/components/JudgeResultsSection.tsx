@@ -12,6 +12,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import posthog from 'posthog-js';
 
 interface CollapsibleResultsSectionProps {
   title: string;
@@ -263,6 +264,11 @@ export const JudgeResultCard = ({
       onMouseDown={(e) => {
         e.stopPropagation();
         const firstCitation = citations.length > 0 ? citations[0] : null;
+
+        posthog.capture('rubric_result_clicked', {
+          query: judgeResult.rubric_id,
+          agent_run_id: agentRunId,
+        });
 
         if (e.metaKey || e.ctrlKey || !usePreview) {
           // Open in new tab - use original navigation

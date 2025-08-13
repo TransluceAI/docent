@@ -5,6 +5,7 @@ import { useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { cn } from '@/lib/utils';
 import { BaseAgentRunMetadata } from '../types/collectionTypes';
+import posthog from 'posthog-js';
 
 interface AgentRunCardProps {
   agentRunId: string;
@@ -30,6 +31,11 @@ export default function AgentRunCard({
         className="cursor-pointer"
         onMouseDown={(e) => {
           e.stopPropagation();
+
+          posthog.capture('agent_run_clicked', {
+            agent_run_id: agentRunId,
+          });
+
           navToAgentRun(
             router,
             window,
@@ -51,6 +57,11 @@ export default function AgentRunCard({
               className="text-blue-text font-medium hover:text-blue-text/80"
               onMouseDown={(e) => {
                 e.stopPropagation();
+
+                posthog.capture('agent_run_clicked', {
+                  agent_run_id: agentRunId,
+                });
+
                 navToAgentRun(
                   router,
                   window,

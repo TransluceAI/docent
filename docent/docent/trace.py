@@ -11,7 +11,8 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Union
+from enum import Enum
+from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Union
 
 import requests
 from opentelemetry import trace
@@ -42,6 +43,15 @@ DEFAULT_ENDPOINT = "https://api.docent.transluce.org/rest/telemetry"
 DEFAULT_COLLECTION_NAME = "default-collection-name"
 
 
+class Instruments(Enum):
+    """Enumeration of available instrument types."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    BEDROCK = "bedrock"
+    LANGCHAIN = "langchain"
+
+
 def _is_notebook() -> bool:
     """Check if we're running in a Jupyter notebook."""
     try:
@@ -64,6 +74,8 @@ class DocentTracer:
         enable_console_export: bool = False,
         enable_otlp_export: bool = True,
         disable_batch: bool = False,
+        instruments: Optional[Set[Instruments]] = None,
+        block_instruments: Optional[Set[Instruments]] = None,
     ):
         """
         Initialize Docent tracing manager.
@@ -78,6 +90,8 @@ class DocentTracer:
             enable_console_export: Whether to export to console
             enable_otlp_export: Whether to export to OTLP endpoint
             disable_batch: Whether to disable batch processing (use SimpleSpanProcessor)
+            instruments: Set of instruments to enable (None = all instruments)
+            block_instruments: Set of instruments to explicitly disable
         """
         self.collection_name: str = collection_name
         self.collection_id: str = collection_id if collection_id else str(uuid.uuid4())
@@ -105,6 +119,9 @@ class DocentTracer:
         self.enable_console_export = enable_console_export
         self.enable_otlp_export = enable_otlp_export
         self.disable_batch = disable_batch
+        self.disabled_instruments: Set[Instruments] = {Instruments.LANGCHAIN}
+        self.instruments = instruments or (set(Instruments) - self.disabled_instruments)
+        self.block_instruments = block_instruments or set()
 
         # Use separate tracer provider to avoid interfering with existing OTEL setup
         self._tracer_provider: Optional[TracerProvider] = None
@@ -333,33 +350,39 @@ class DocentTracer:
             except Exception as e:
                 logger.warning(f"Failed to instrument threading: {e}")
 
+            enabled_instruments = self.instruments - self.block_instruments
+
             # Instrument OpenAI with our isolated tracer provider
-            try:
-                OpenAIInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                logger.info("Instrumented OpenAI")
-            except Exception as e:
-                logger.warning(f"Failed to instrument OpenAI: {e}")
+            if Instruments.OPENAI in enabled_instruments:
+                try:
+                    OpenAIInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                    logger.info("Instrumented OpenAI")
+                except Exception as e:
+                    logger.warning(f"Failed to instrument OpenAI: {e}")
 
             # Instrument Anthropic with our isolated tracer provider
-            try:
-                AnthropicInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                logger.info("Instrumented Anthropic")
-            except Exception as e:
-                logger.warning(f"Failed to instrument Anthropic: {e}")
+            if Instruments.ANTHROPIC in enabled_instruments:
+                try:
+                    AnthropicInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                    logger.info("Instrumented Anthropic")
+                except Exception as e:
+                    logger.warning(f"Failed to instrument Anthropic: {e}")
 
             # Instrument Bedrock with our isolated tracer provider
-            try:
-                BedrockInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                logger.info("Instrumented Bedrock")
-            except Exception as e:
-                logger.warning(f"Failed to instrument Bedrock: {e}")
+            if Instruments.BEDROCK in enabled_instruments:
+                try:
+                    BedrockInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                    logger.info("Instrumented Bedrock")
+                except Exception as e:
+                    logger.warning(f"Failed to instrument Bedrock: {e}")
 
             # Instrument LangChain with our isolated tracer provider
-            try:
-                LangchainInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                logger.info("Instrumented LangChain")
-            except Exception as e:
-                logger.warning(f"Failed to instrument LangChain: {e}")
+            if Instruments.LANGCHAIN in enabled_instruments:
+                try:
+                    LangchainInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                    logger.info("Instrumented LangChain")
+                except Exception as e:
+                    logger.warning(f"Failed to instrument LangChain: {e}")
 
             # Register cleanup handlers
             self._register_cleanup()
@@ -942,6 +965,8 @@ def initialize_tracing(
     enable_console_export: bool = False,
     enable_otlp_export: bool = True,
     disable_batch: bool = False,
+    instruments: Optional[Set[Instruments]] = None,
+    block_instruments: Optional[Set[Instruments]] = None,
 ) -> DocentTracer:
     """
     Initialize the global Docent tracer.
@@ -958,6 +983,8 @@ def initialize_tracing(
         enable_console_export: Whether to export spans to console
         enable_otlp_export: Whether to export spans to OTLP endpoint
         disable_batch: Whether to disable batch processing (use SimpleSpanProcessor)
+        instruments: Set of instruments to enable (None = all instruments).
+        block_instruments: Set of instruments to explicitly disable.
 
     Returns:
         The initialized Docent tracer
@@ -966,6 +993,7 @@ def initialize_tracing(
         # Basic setup
         initialize_tracing("my-collection")
     """
+
     global _global_tracer
 
     # Check for API key in environment variable if not provided as parameter
@@ -983,6 +1011,8 @@ def initialize_tracing(
             enable_console_export=enable_console_export,
             enable_otlp_export=enable_otlp_export,
             disable_batch=disable_batch,
+            instruments=instruments,
+            block_instruments=block_instruments,
         )
         _global_tracer.initialize()
 
