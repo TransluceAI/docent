@@ -13,7 +13,6 @@ aiohttp==3.12.13
     #   fsspec
     #   inspect-ai
     #   s3fs
-    #   traceloop-sdk
 aioitertools==0.12.0
     # via aiobotocore
 aiosignal==1.3.2
@@ -119,7 +118,6 @@ colorama==0.4.6
     #   mkdocs-material
     #   pytest
     #   tqdm
-    #   traceloop-sdk
     #   uvicorn
 comm==0.2.2
     # via
@@ -139,8 +137,6 @@ decorator==5.2.1
     # via ipython
 defusedxml==0.7.1
     # via nbconvert
-deprecated==1.2.18
-    # via traceloop-sdk
 dill==0.3.8
     # via
     #   datasets
@@ -235,8 +231,6 @@ ijson==3.4.0
     # via inspect-ai
 importlib-metadata==8.7.0
     # via opentelemetry-api
-inflection==0.5.1
-    # via opentelemetry-instrumentation-llamaindex
 iniconfig==2.1.0
     # via pytest
 inspect-ai==0.3.109
@@ -268,7 +262,6 @@ jinja2==3.1.6
     #   mkdocs-material
     #   mkdocstrings
     #   nbconvert
-    #   traceloop-sdk
 jiter==0.10.0
     # via
     #   anthropic
@@ -458,173 +451,38 @@ opentelemetry-api==1.34.1
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-alephalpha
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
-    #   opentelemetry-instrumentation-chromadb
-    #   opentelemetry-instrumentation-cohere
-    #   opentelemetry-instrumentation-crewai
-    #   opentelemetry-instrumentation-google-generativeai
-    #   opentelemetry-instrumentation-groq
-    #   opentelemetry-instrumentation-haystack
-    #   opentelemetry-instrumentation-lancedb
     #   opentelemetry-instrumentation-langchain
-    #   opentelemetry-instrumentation-llamaindex
-    #   opentelemetry-instrumentation-logging
-    #   opentelemetry-instrumentation-marqo
-    #   opentelemetry-instrumentation-mcp
-    #   opentelemetry-instrumentation-milvus
-    #   opentelemetry-instrumentation-mistralai
-    #   opentelemetry-instrumentation-ollama
     #   opentelemetry-instrumentation-openai
-    #   opentelemetry-instrumentation-openai-agents
-    #   opentelemetry-instrumentation-pinecone
-    #   opentelemetry-instrumentation-qdrant
-    #   opentelemetry-instrumentation-redis
-    #   opentelemetry-instrumentation-replicate
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-sagemaker
-    #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-instrumentation-threading
-    #   opentelemetry-instrumentation-together
-    #   opentelemetry-instrumentation-transformers
-    #   opentelemetry-instrumentation-urllib3
-    #   opentelemetry-instrumentation-vertexai
-    #   opentelemetry-instrumentation-watsonx
-    #   opentelemetry-instrumentation-weaviate
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-    #   traceloop-sdk
-opentelemetry-exporter-otlp==1.34.1
-    # via opentelemetry-instrumentation-mcp
 opentelemetry-exporter-otlp-proto-common==1.34.1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-exporter-otlp-proto-grpc==1.34.1
-    # via
-    #   docent-python
-    #   opentelemetry-exporter-otlp
-    #   traceloop-sdk
+    # via docent-python
 opentelemetry-exporter-otlp-proto-http==1.34.1
-    # via
-    #   docent-python
-    #   opentelemetry-exporter-otlp
-    #   traceloop-sdk
+    # via docent-python
 opentelemetry-instrumentation==0.55b1
     # via
-    #   opentelemetry-instrumentation-alephalpha
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
-    #   opentelemetry-instrumentation-chromadb
-    #   opentelemetry-instrumentation-cohere
-    #   opentelemetry-instrumentation-crewai
-    #   opentelemetry-instrumentation-google-generativeai
-    #   opentelemetry-instrumentation-groq
-    #   opentelemetry-instrumentation-haystack
-    #   opentelemetry-instrumentation-lancedb
     #   opentelemetry-instrumentation-langchain
-    #   opentelemetry-instrumentation-llamaindex
-    #   opentelemetry-instrumentation-logging
-    #   opentelemetry-instrumentation-marqo
-    #   opentelemetry-instrumentation-mcp
-    #   opentelemetry-instrumentation-milvus
-    #   opentelemetry-instrumentation-mistralai
-    #   opentelemetry-instrumentation-ollama
     #   opentelemetry-instrumentation-openai
-    #   opentelemetry-instrumentation-openai-agents
-    #   opentelemetry-instrumentation-pinecone
-    #   opentelemetry-instrumentation-qdrant
-    #   opentelemetry-instrumentation-redis
-    #   opentelemetry-instrumentation-replicate
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-sagemaker
-    #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-instrumentation-threading
-    #   opentelemetry-instrumentation-together
-    #   opentelemetry-instrumentation-transformers
-    #   opentelemetry-instrumentation-urllib3
-    #   opentelemetry-instrumentation-vertexai
-    #   opentelemetry-instrumentation-watsonx
-    #   opentelemetry-instrumentation-weaviate
-opentelemetry-instrumentation-alephalpha==0.44.1
-    # via traceloop-sdk
 opentelemetry-instrumentation-anthropic==0.44.1
-    # via
-    #   docent-python
-    #   traceloop-sdk
+    # via docent-python
 opentelemetry-instrumentation-bedrock==0.44.1
-    # via
-    #   docent-python
-    #   traceloop-sdk
-opentelemetry-instrumentation-chromadb==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-cohere==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-crewai==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-google-generativeai==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-groq==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-haystack==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-lancedb==0.44.1
-    # via traceloop-sdk
+    # via docent-python
 opentelemetry-instrumentation-langchain==0.44.1
-    # via
-    #   docent-python
-    #   traceloop-sdk
-opentelemetry-instrumentation-llamaindex==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-logging==0.55b1
-    # via traceloop-sdk
-opentelemetry-instrumentation-marqo==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-mcp==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-milvus==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-mistralai==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-ollama==0.44.1
-    # via traceloop-sdk
+    # via docent-python
 opentelemetry-instrumentation-openai==0.44.1
-    # via
-    #   docent-python
-    #   traceloop-sdk
-opentelemetry-instrumentation-openai-agents==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-pinecone==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-qdrant==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-redis==0.55b1
-    # via traceloop-sdk
-opentelemetry-instrumentation-replicate==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-requests==0.55b1
-    # via traceloop-sdk
-opentelemetry-instrumentation-sagemaker==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-sqlalchemy==0.55b1
-    # via traceloop-sdk
+    # via docent-python
 opentelemetry-instrumentation-threading==0.55b1
-    # via
-    #   docent-python
-    #   traceloop-sdk
-opentelemetry-instrumentation-together==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-transformers==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-urllib3==0.55b1
-    # via traceloop-sdk
-opentelemetry-instrumentation-vertexai==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-watsonx==0.44.1
-    # via traceloop-sdk
-opentelemetry-instrumentation-weaviate==0.44.1
-    # via traceloop-sdk
+    # via docent-python
 opentelemetry-proto==1.34.1
     # via
     #   docent-core
@@ -636,78 +494,20 @@ opentelemetry-sdk==1.34.1
     #   docent-python
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-    #   traceloop-sdk
 opentelemetry-semantic-conventions==0.55b1
     # via
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-alephalpha
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
-    #   opentelemetry-instrumentation-chromadb
-    #   opentelemetry-instrumentation-cohere
-    #   opentelemetry-instrumentation-crewai
-    #   opentelemetry-instrumentation-google-generativeai
-    #   opentelemetry-instrumentation-groq
-    #   opentelemetry-instrumentation-haystack
-    #   opentelemetry-instrumentation-lancedb
     #   opentelemetry-instrumentation-langchain
-    #   opentelemetry-instrumentation-llamaindex
-    #   opentelemetry-instrumentation-marqo
-    #   opentelemetry-instrumentation-mcp
-    #   opentelemetry-instrumentation-milvus
-    #   opentelemetry-instrumentation-mistralai
-    #   opentelemetry-instrumentation-ollama
     #   opentelemetry-instrumentation-openai
-    #   opentelemetry-instrumentation-openai-agents
-    #   opentelemetry-instrumentation-pinecone
-    #   opentelemetry-instrumentation-qdrant
-    #   opentelemetry-instrumentation-redis
-    #   opentelemetry-instrumentation-replicate
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-sagemaker
-    #   opentelemetry-instrumentation-sqlalchemy
-    #   opentelemetry-instrumentation-together
-    #   opentelemetry-instrumentation-transformers
-    #   opentelemetry-instrumentation-urllib3
-    #   opentelemetry-instrumentation-vertexai
-    #   opentelemetry-instrumentation-watsonx
-    #   opentelemetry-instrumentation-weaviate
     #   opentelemetry-sdk
 opentelemetry-semantic-conventions-ai==0.4.11
     # via
-    #   opentelemetry-instrumentation-alephalpha
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
-    #   opentelemetry-instrumentation-chromadb
-    #   opentelemetry-instrumentation-cohere
-    #   opentelemetry-instrumentation-crewai
-    #   opentelemetry-instrumentation-google-generativeai
-    #   opentelemetry-instrumentation-groq
-    #   opentelemetry-instrumentation-haystack
-    #   opentelemetry-instrumentation-lancedb
     #   opentelemetry-instrumentation-langchain
-    #   opentelemetry-instrumentation-llamaindex
-    #   opentelemetry-instrumentation-marqo
-    #   opentelemetry-instrumentation-mcp
-    #   opentelemetry-instrumentation-milvus
-    #   opentelemetry-instrumentation-mistralai
-    #   opentelemetry-instrumentation-ollama
     #   opentelemetry-instrumentation-openai
-    #   opentelemetry-instrumentation-openai-agents
-    #   opentelemetry-instrumentation-pinecone
-    #   opentelemetry-instrumentation-qdrant
-    #   opentelemetry-instrumentation-replicate
-    #   opentelemetry-instrumentation-sagemaker
-    #   opentelemetry-instrumentation-together
-    #   opentelemetry-instrumentation-transformers
-    #   opentelemetry-instrumentation-vertexai
-    #   opentelemetry-instrumentation-watsonx
-    #   opentelemetry-instrumentation-weaviate
-    #   traceloop-sdk
-opentelemetry-util-http==0.55b1
-    # via
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-urllib3
 overrides==7.7.0
     # via jupyter-server
 packaging==25.0
@@ -723,7 +523,6 @@ packaging==25.0
     #   mkdocs
     #   nbconvert
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-sqlalchemy
     #   pytest
 paginate==0.5.7
     # via mkdocs-material
@@ -755,9 +554,7 @@ pluggy==1.6.0
 ply==3.11
     # via jsonpath-ng
 posthog==6.3.1
-    # via
-    #   docent-core
-    #   traceloop-sdk
+    # via docent-core
 pre-commit==4.2.0
     # via docent-core
 prometheus-client==0.22.1
@@ -805,7 +602,6 @@ pydantic==2.11.7
     #   google-genai
     #   inspect-ai
     #   openai
-    #   traceloop-sdk
 pydantic-core==2.33.2
     # via pydantic
 pygments==2.19.2
@@ -972,7 +768,6 @@ tenacity==8.5.0
     # via
     #   google-genai
     #   inspect-ai
-    #   traceloop-sdk
 terminado==0.18.1
     # via
     #   jupyter-server
@@ -999,8 +794,6 @@ tqdm==4.67.1
     #   docent-python
     #   huggingface-hub
     #   openai
-# traceloop-sdk==0.44.1
-#     # via docent-python
 traitlets==5.14.3
     # via
     #   comm
@@ -1091,12 +884,8 @@ widgetsnbextension==4.0.14
 wrapt==1.17.2
     # via
     #   aiobotocore
-    #   deprecated
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-redis
-    #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-instrumentation-threading
-    #   opentelemetry-instrumentation-urllib3
 xxhash==3.5.0
     # via datasets
 yarl==1.20.1
