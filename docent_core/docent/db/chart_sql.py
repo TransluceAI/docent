@@ -5,7 +5,6 @@ from sqlalchemy import Numeric, and_, case, cast, func, select, text
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.sqltypes import Text
 
-from docent_core._db_service.filters import ComplexFilter
 from docent_core._db_service.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
@@ -15,6 +14,7 @@ from docent_core._db_service.schemas.rubric import (
 from docent_core._db_service.schemas.tables import (
     SQLAAgentRun,
 )
+from docent_core.docent.db.filters import ComplexFilter
 
 if TYPE_CHECKING:
     from docent_core.docent.services.charts import ChartDimension

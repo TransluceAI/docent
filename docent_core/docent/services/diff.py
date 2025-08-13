@@ -22,7 +22,6 @@ from docent_core._ai_tools.search_paired import (
     SearchPairedResultStreamingCallback,
     execute_search_paired,
 )
-from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.diff import (
     SQLADiffClaimsResult,
     SQLADiffQuery,
@@ -30,6 +29,7 @@ from docent_core._db_service.schemas.diff import (
     SQLAPairedSearchQuery,
     SQLAPairedSearchResult,
 )
+from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)

@@ -3,12 +3,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.filters import ComplexFilter
 from docent_core._db_service.schemas.auth_models import (
     Permission,
 )
 from docent_core._server._analytics.posthog import AnalyticsClient
+from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.permissions import (
     require_collection_permission,

@@ -42,10 +42,6 @@ from docent_core._ai_tools.assistant.summarizer import (
     summarize_agent_actions,
 )
 from docent_core._ai_tools.search import SearchResultWithCitations
-from docent_core._db_service.contexts import ViewContext
-from docent_core._db_service.filters import (
-    ComplexFilter,
-)
 from docent_core._db_service.schemas.auth_models import (
     Permission,
     ResourceType,
@@ -69,6 +65,10 @@ from docent_core._server._auth.session import (
     invalidate_user_session,
 )
 from docent_core._server.util import sse_event_stream
+from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.filters import (
+    ComplexFilter,
+)
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import (
     get_mono_svc,

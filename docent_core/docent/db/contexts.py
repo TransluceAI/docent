@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_
 
 from docent._log_util import get_logger
-from docent_core._db_service.filters import ComplexFilter
 from docent_core._db_service.schemas.auth_models import User
+from docent_core.docent.db.filters import ComplexFilter
 
 if TYPE_CHECKING:
     from docent_core._db_service.schemas.tables import SQLAAgentRun

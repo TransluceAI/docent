@@ -1,8 +1,8 @@
 from fastapi import Depends, HTTPException
 
 from docent._log_util import get_logger
-from docent_core._db_service.contexts import ViewContext
 from docent_core._db_service.schemas.auth_models import Permission, ResourceType, User
+from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.server.dependencies.database import get_mono_svc
 from docent_core.docent.server.dependencies.user import get_default_view_ctx, get_user_anonymous_ok
 from docent_core.docent.services.monoservice import MonoService

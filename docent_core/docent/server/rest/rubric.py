@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util.logger import get_logger
 from docent_core._ai_tools.rubric.rubric import JudgeResultWithCitations, Rubric
-from docent_core._db_service.contexts import ViewContext
 from docent_core._server._analytics.posthog import AnalyticsClient
+from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import get_db, get_mono_svc, get_session
 from docent_core.docent.server.dependencies.permissions import (
