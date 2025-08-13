@@ -280,7 +280,7 @@ class SQLAView(SQLABase):
 
     base_filter_dict = mapped_column(JSONB, nullable=True)
     # These keys reference metadata fields
-    # TOOD(mengk,gregor): can we get explicit FK relations?
+    # TODO(mengk,gregor): can we get explicit FK relations?
     inner_bin_key = mapped_column(Text, nullable=True)
     outer_bin_key = mapped_column(Text, nullable=True)
 
