@@ -9,7 +9,7 @@ Create Date: 2025-07-21 19:31:29.834692
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from pgvector.sqlalchemy.vector import Vector
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -24,43 +24,47 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
 
-    status_enum = sa.Enum("PENDING", "RUNNING", "CANCELED", "COMPLETED", name="jobstatus")
-    status_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
-    analytics_enum = sa.Enum(
-        "SIGNUP",
-        "CREATE_ANONYMOUS_SESSION",
-        "CREATE_FG",
-        "GET_AGENT_RUN",
-        "POST_AGENT_RUNS",
-        "JOIN",
-        "SET_IO_BIN_KEYS",
-        "SET_IO_BIN_KEY_WITH_METADATA_KEY",
-        "POST_BASE_FILTER",
-        "CLONE_OWN_VIEW",
-        "APPLY_EXISTING_VIEW",
-        "GET_EXISTING_SEARCH_RESULTS",
-        "GET_REGEX_SNIPPETS_ENDPOINT",
-        "UPSERT_COLLABORATOR",
-        "DELETE_FILTER",
-        "POST_FILTER",
-        "START_COMPUTE_SEARCH",
-        "RESUME_COMPUTE_SEARCH",
-        "GET_EXISTING_CLUSTERS",
-        "START_CLUSTER_SEARCH_RESULTS",
-        "GET_TA_MESSAGE",
-        "GET_DIFFS_REPORT",
-        "START_COMPUTE_DIFFS",
-        "COMPUTE_DIFF_CLUSTERS",
-        "GET_TRANSCRIPT_DIFF",
-        "CREATE_CHART",
-        "UPDATE_CHART",
-        "DELETE_CHART",
-        "MAKE_COLLECTION_PUBLIC",
-        "SHARE_COLLECTION_WITH_EMAIL",
-        name="endpointtype",
-    )
-    analytics_enum.create(op.get_bind(), checkfirst=True)
+    # op.execute("DROP TYPE IF EXISTS jobstatus")
+
+    # status_enum = sa.Enum("PENDING", "RUNNING", "CANCELED", "COMPLETED", name="jobstatus")
+    # status_enum.create(op.get_bind(), checkfirst=True)
+
+    # analytics_enum = sa.Enum(
+    #     "SIGNUP",
+    #     "CREATE_ANONYMOUS_SESSION",
+    #     "CREATE_FG",
+    #     "GET_AGENT_RUN",
+    #     "POST_AGENT_RUNS",
+    #     "JOIN",
+    #     "SET_IO_BIN_KEYS",
+    #     "SET_IO_BIN_KEY_WITH_METADATA_KEY",
+    #     "POST_BASE_FILTER",
+    #     "CLONE_OWN_VIEW",
+    #     "APPLY_EXISTING_VIEW",
+    #     "GET_EXISTING_SEARCH_RESULTS",
+    #     "GET_REGEX_SNIPPETS_ENDPOINT",
+    #     "UPSERT_COLLABORATOR",
+    #     "DELETE_FILTER",
+    #     "POST_FILTER",
+    #     "START_COMPUTE_SEARCH",
+    #     "RESUME_COMPUTE_SEARCH",
+    #     "GET_EXISTING_CLUSTERS",
+    #     "START_CLUSTER_SEARCH_RESULTS",
+    #     "GET_TA_MESSAGE",
+    #     "GET_DIFFS_REPORT",
+    #     "START_COMPUTE_DIFFS",
+    #     "COMPUTE_DIFF_CLUSTERS",
+    #     "GET_TRANSCRIPT_DIFF",
+    #     "CREATE_CHART",
+    #     "UPDATE_CHART",
+    #     "DELETE_CHART",
+    #     "MAKE_COLLECTION_PUBLIC",
+    #     "SHARE_COLLECTION_WITH_EMAIL",
+    #     name="endpointtype",
+    # )
+    # analytics_enum.create(op.get_bind(), checkfirst=True)
 
     # this section is a separate revision that was added later to back-populate table definitions
     op.create_table(
@@ -849,25 +853,6 @@ def upgrade() -> None:
         ["paired_search_result_id"],
         unique=False,
     )
-    op.drop_index(op.f("ix_diff_attributes_attribute"), table_name="diff_attributes")
-    op.drop_index(op.f("ix_diff_attributes_attribute_idx"), table_name="diff_attributes")
-    op.drop_index(op.f("ix_diff_attributes_collection_id"), table_name="diff_attributes")
-    op.drop_index(op.f("ix_diff_attributes_data_id_1"), table_name="diff_attributes")
-    op.drop_index(op.f("ix_diff_attributes_data_id_2"), table_name="diff_attributes")
-    op.drop_table("diff_attributes")
-    op.drop_index(op.f("ix_claim_idx"), table_name="claim")
-    op.drop_index(op.f("ix_claim_transcript_diff_id"), table_name="claim")
-    op.drop_table("claim")
-    op.drop_index(
-        op.f("ix_access_control_entries_collection_id"), table_name="access_control_entries"
-    )
-    op.drop_index(op.f("ix_access_control_entries_is_public"), table_name="access_control_entries")
-    op.drop_index(
-        op.f("ix_access_control_entries_organization_id"), table_name="access_control_entries"
-    )
-    op.drop_index(op.f("ix_access_control_entries_permission"), table_name="access_control_entries")
-    op.drop_index(op.f("ix_access_control_entries_user_id"), table_name="access_control_entries")
-    op.drop_index(op.f("ix_access_control_entries_view_id"), table_name="access_control_entries")
     op.create_index(
         op.f("ix_access_control_entries__collection_id"),
         "access_control_entries",
@@ -904,14 +889,9 @@ def upgrade() -> None:
         ["view_id"],
         unique=False,
     )
-    op.drop_index(op.f("ix_agent_runs_collection_id"), table_name="agent_runs")
     op.create_index(
         op.f("ix_agent_runs__collection_id"), "agent_runs", ["collection_id"], unique=False
     )
-    op.drop_index(op.f("ix_analytics_events_called_at"), table_name="analytics_events")
-    op.drop_index(op.f("ix_analytics_events_collection_id"), table_name="analytics_events")
-    op.drop_index(op.f("ix_analytics_events_endpoint"), table_name="analytics_events")
-    op.drop_index(op.f("ix_analytics_events_user_id"), table_name="analytics_events")
     op.create_index(
         op.f("ix_analytics_events__called_at"), "analytics_events", ["called_at"], unique=False
     )
@@ -927,24 +907,15 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_analytics_events__user_id"), "analytics_events", ["user_id"], unique=False
     )
-    op.drop_index(op.f("ix_api_keys_disabled_at"), table_name="api_keys")
-    op.drop_index(op.f("ix_api_keys_key_hash"), table_name="api_keys")
-    op.drop_index(op.f("ix_api_keys_last_used_at"), table_name="api_keys")
-    op.drop_index(op.f("ix_api_keys_user_id"), table_name="api_keys")
     op.create_index(op.f("ix_api_keys__disabled_at"), "api_keys", ["disabled_at"], unique=False)
     op.create_index(op.f("ix_api_keys__key_hash"), "api_keys", ["key_hash"], unique=True)
     op.create_index(op.f("ix_api_keys__last_used_at"), "api_keys", ["last_used_at"], unique=False)
     op.create_index(op.f("ix_api_keys__user_id"), "api_keys", ["user_id"], unique=False)
-    op.drop_index(op.f("ix_chat_sessions_updated_at"), table_name="chat_sessions")
-    op.drop_index(op.f("ix_chat_sessions_user_id"), table_name="chat_sessions")
     op.create_index(
         op.f("ix_chat_sessions__updated_at"), "chat_sessions", ["updated_at"], unique=False
     )
     op.create_index(op.f("ix_chat_sessions__user_id"), "chat_sessions", ["user_id"], unique=False)
-    op.drop_index(op.f("ix_collections_created_by"), table_name="collections")
     op.create_index(op.f("ix_collections__created_by"), "collections", ["created_by"], unique=False)
-    op.drop_index(op.f("ix_search_clusters_collection_id"), table_name="search_clusters")
-    op.drop_index(op.f("ix_search_clusters_search_query"), table_name="search_clusters")
     op.create_index(
         op.f("ix_search_clusters__collection_id"),
         "search_clusters",
@@ -954,17 +925,11 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_search_clusters__search_query"), "search_clusters", ["search_query"], unique=False
     )
-    op.drop_index(op.f("ix_search_queries_collection_id"), table_name="search_queries")
-    op.drop_index(op.f("ix_search_queries_search_query"), table_name="search_queries")
     op.create_index(
         op.f("ix_search_queries__collection_id"), "search_queries", ["collection_id"], unique=False
     )
     op.create_index(
         op.f("ix_search_queries__search_query"), "search_queries", ["search_query"], unique=False
-    )
-    op.drop_index(op.f("ix_search_result_clusters_cluster_id"), table_name="search_result_clusters")
-    op.drop_index(
-        op.f("ix_search_result_clusters_search_result_id"), table_name="search_result_clusters"
     )
     op.create_index(
         op.f("ix_search_result_clusters__cluster_id"),
@@ -978,10 +943,6 @@ def upgrade() -> None:
         ["search_result_id"],
         unique=False,
     )
-    op.drop_index(op.f("ix_search_results_agent_run_id"), table_name="search_results")
-    op.drop_index(op.f("ix_search_results_collection_id"), table_name="search_results")
-    op.drop_index(op.f("ix_search_results_search_query"), table_name="search_results")
-    op.drop_index(op.f("ix_search_results_search_result_idx"), table_name="search_results")
     op.create_index(
         op.f("ix_search_results__agent_run_id"), "search_results", ["agent_run_id"], unique=False
     )
@@ -997,16 +958,9 @@ def upgrade() -> None:
         ["search_result_idx"],
         unique=False,
     )
-    op.drop_index(op.f("ix_sessions_expires_at"), table_name="sessions")
-    op.drop_index(op.f("ix_sessions_is_active"), table_name="sessions")
-    op.drop_index(op.f("ix_sessions_user_id"), table_name="sessions")
     op.create_index(op.f("ix_sessions__expires_at"), "sessions", ["expires_at"], unique=False)
     op.create_index(op.f("ix_sessions__is_active"), "sessions", ["is_active"], unique=False)
     op.create_index(op.f("ix_sessions__user_id"), "sessions", ["user_id"], unique=False)
-    op.drop_index(op.f("ix_transcript_embeddings_agent_run_id"), table_name="transcript_embeddings")
-    op.drop_index(
-        op.f("ix_transcript_embeddings_collection_id"), table_name="transcript_embeddings"
-    )
     op.create_index(
         op.f("ix_transcript_embeddings__agent_run_id"),
         "transcript_embeddings",
@@ -1019,16 +973,12 @@ def upgrade() -> None:
         ["collection_id"],
         unique=False,
     )
-    op.drop_index(op.f("ix_transcripts_agent_run_id"), table_name="transcripts")
-    op.drop_index(op.f("ix_transcripts_collection_id"), table_name="transcripts")
     op.create_index(
         op.f("ix_transcripts__agent_run_id"), "transcripts", ["agent_run_id"], unique=False
     )
     op.create_index(
         op.f("ix_transcripts__collection_id"), "transcripts", ["collection_id"], unique=False
     )
-    op.drop_index(op.f("ix_user_organizations_organization_id"), table_name="user_organizations")
-    op.drop_index(op.f("ix_user_organizations_user_id"), table_name="user_organizations")
     op.create_index(
         op.f("ix_user_organizations__organization_id"),
         "user_organizations",
@@ -1038,25 +988,10 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_user_organizations__user_id"), "user_organizations", ["user_id"], unique=False
     )
-    op.drop_index(op.f("ix_users_email"), table_name="users")
-    op.drop_index(op.f("ix_users_is_anonymous"), table_name="users")
     op.create_index(op.f("ix_users__email"), "users", ["email"], unique=True)
     op.create_index(op.f("ix_users__is_anonymous"), "users", ["is_anonymous"], unique=False)
-    op.drop_index(op.f("ix_views_collection_id"), table_name="views")
-    op.drop_index(op.f("ix_views_user_id"), table_name="views")
     op.create_index(op.f("ix_views__collection_id"), "views", ["collection_id"], unique=False)
     op.create_index(op.f("ix_views__user_id"), "views", ["user_id"], unique=False)
-
-    op.drop_index(op.f("ix_transcript_diff_agent_run_1_id"), table_name="transcript_diff")
-    op.drop_index(op.f("ix_transcript_diff_agent_run_2_id"), table_name="transcript_diff")
-    op.drop_index(op.f("ix_transcript_diff_collection_id"), table_name="transcript_diff")
-    op.drop_index(op.f("ix_transcript_diff_diffs_report_id"), table_name="transcript_diff")
-    op.drop_index(op.f("ix_transcript_diff_title"), table_name="transcript_diff")
-    op.drop_table("transcript_diff")
-
-    op.drop_index(op.f("ix_diffs_report_collection_id"), table_name="diffs_report")
-    op.drop_table("diffs_report")
-    # ### end Alembic commands ###
 
 
 def downgrade() -> None:
