@@ -139,7 +139,8 @@ class DocentDB:
             )
 
             # Initialize database tables if they don't exist
-            await cls._setup_target_database(engine)
+            # await cls._setup_target_database(engine)
+            # TODO(mengk): please create tables manually.
 
             # Cache and return the singleton instance
             cls._instance = cls(engine, Session)
