@@ -24,49 +24,9 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
 
+    # this first section (up to line 507) is a separate revision that was added later to back-populate the initial table definitions
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
-    # op.execute("DROP TYPE IF EXISTS jobstatus")
-
-    # status_enum = sa.Enum("PENDING", "RUNNING", "CANCELED", "COMPLETED", name="jobstatus")
-    # status_enum.create(op.get_bind(), checkfirst=True)
-
-    # analytics_enum = sa.Enum(
-    #     "SIGNUP",
-    #     "CREATE_ANONYMOUS_SESSION",
-    #     "CREATE_FG",
-    #     "GET_AGENT_RUN",
-    #     "POST_AGENT_RUNS",
-    #     "JOIN",
-    #     "SET_IO_BIN_KEYS",
-    #     "SET_IO_BIN_KEY_WITH_METADATA_KEY",
-    #     "POST_BASE_FILTER",
-    #     "CLONE_OWN_VIEW",
-    #     "APPLY_EXISTING_VIEW",
-    #     "GET_EXISTING_SEARCH_RESULTS",
-    #     "GET_REGEX_SNIPPETS_ENDPOINT",
-    #     "UPSERT_COLLABORATOR",
-    #     "DELETE_FILTER",
-    #     "POST_FILTER",
-    #     "START_COMPUTE_SEARCH",
-    #     "RESUME_COMPUTE_SEARCH",
-    #     "GET_EXISTING_CLUSTERS",
-    #     "START_CLUSTER_SEARCH_RESULTS",
-    #     "GET_TA_MESSAGE",
-    #     "GET_DIFFS_REPORT",
-    #     "START_COMPUTE_DIFFS",
-    #     "COMPUTE_DIFF_CLUSTERS",
-    #     "GET_TRANSCRIPT_DIFF",
-    #     "CREATE_CHART",
-    #     "UPDATE_CHART",
-    #     "DELETE_CHART",
-    #     "MAKE_COLLECTION_PUBLIC",
-    #     "SHARE_COLLECTION_WITH_EMAIL",
-    #     name="endpointtype",
-    # )
-    # analytics_enum.create(op.get_bind(), checkfirst=True)
-
-    # this section is a separate revision that was added later to back-populate table definitions
     op.create_table(
         "jobs",
         sa.Column("id", sa.String(length=36), nullable=False),
