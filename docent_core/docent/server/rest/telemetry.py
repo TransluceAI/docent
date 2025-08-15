@@ -1883,7 +1883,9 @@ def _extract_messages_from_gen_ai_data(
     # Process prompt messages
     if "prompt" in gen_ai:
         # Sort keys numerically to maintain proper order
-        for key in sorted(gen_ai["prompt"].keys(), key=lambda k: int(k) if k.isdigit() else k):
+        for key in sorted(
+            gen_ai["prompt"].keys(), key=lambda k: (0, int(k)) if k.isdigit() else (1, k)
+        ):
             prompt_data: dict[str, Any] = gen_ai["prompt"][key]
 
             message = _create_message_from_data(prompt_data, span_id, f"prompt_{key}")
@@ -1893,10 +1895,14 @@ def _extract_messages_from_gen_ai_data(
     # Process completion messages
     if "completion" in gen_ai:
         # Sort keys numerically to maintain proper order
-        for key in sorted(gen_ai["completion"].keys(), key=lambda k: int(k) if k.isdigit() else k):
+        for key in sorted(
+            gen_ai["completion"].keys(), key=lambda k: (0, int(k)) if k.isdigit() else (1, k)
+        ):
             completion_data: dict[str, Any] = gen_ai["completion"][key]
 
-            message = _create_message_from_data(completion_data, span_id, f"completion_{key}")
+            message = _create_message_from_data(
+                completion_data, span_id, f"completion_{key}", assume_role="assistant"
+            )
             if message:
                 messages.append(message)
 
@@ -1904,17 +1910,19 @@ def _extract_messages_from_gen_ai_data(
 
 
 def _create_message_from_data(
-    data: Dict[str, Any], span_id: str, context: str
+    data: Dict[str, Any], span_id: str, context: str, assume_role: Optional[str] = None
 ) -> ChatMessage | None:
     """Create a ChatMessage from structured data."""
-    if "role" not in data:
-        logger.warning(f"Missing role in {context} data for span {span_id}")
-        return None
-
     try:
-        role = str(data["role"])
-        if role == "developer":
-            role = "system"
+        if "role" in data:
+            role = str(data["role"])
+            if role == "developer":
+                role = "system"
+        elif assume_role:
+            role = assume_role
+        else:
+            logger.error(f"Invalid role '{data.get('role')}' in {context} for span {span_id}")
+            return None
 
         # Build content from available fields
         content_parts: List[str] = []
@@ -1957,9 +1965,6 @@ def _create_message_from_data(
         logger.debug(f"Successfully created {context} message: role={message.role}")
         return message
 
-    except ValueError as e:
-        logger.error(f"Invalid role '{data.get('role')}' in {context} for span {span_id}: {e}")
-        return None
     except Exception as e:
         logger.error(f"Failed to parse {context} message for span {span_id}: {e}")
         return None

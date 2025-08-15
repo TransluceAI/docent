@@ -1,6 +1,7 @@
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
-from posthog import Posthog
+from posthog import Posthog, identify_context, new_context
 
 from docent._log_util import get_logger
 from docent_core._env_util import ENV, get_deployment_id
@@ -69,3 +70,16 @@ class AnalyticsClient:
 
         event_properties = properties or {}
         self.ph.capture(event=event_name, properties=event_properties)
+
+    @contextmanager
+    def user_context(self, user: Optional[User]):
+        if not self.ph:
+            yield
+            return
+
+        # TODO(mengk): I think this makes lots of extraneous calls
+        distinct_id = self.identify_user(user)
+        with new_context():
+            if distinct_id:
+                identify_context(distinct_id)
+            yield
