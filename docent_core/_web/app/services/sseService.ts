@@ -90,9 +90,109 @@ const createEventSource = (
   };
 };
 
+/**
+ * SSE doesn't work with POST; this provides similar functionality for
+ * run uploads with progress updates
+ */
+function postEventStream(
+  url: string,
+  body: FormData,
+  onMessage: (data: any) => void,
+  onFinish: () => void,
+  dispatch: (action: any) => void
+): { onCancel: () => void } {
+  const taskId = generateTaskId();
+
+  const controller = new AbortController();
+
+  let cancelled = false;
+
+  const closeConnection = () => {
+    cancelled = true;
+    controller.abort();
+    delete eventSourcesMap[taskId];
+    onFinish();
+  };
+
+  // Store a dummy reference so we can reuse the same cleanup map
+  // (keeps a single place to cancel ongoing streams by taskId if needed)
+  eventSourcesMap[taskId] = {
+    close: closeConnection,
+  } as unknown as EventSource;
+
+  // Kick off the POST request and parse the response stream
+  (async () => {
+    try {
+      const response = await fetch(`${BASE_URL}${url}`, {
+        method: 'POST',
+        body,
+        credentials: 'include',
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream request failed with status ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const payloadText = line.slice(6);
+            if (payloadText === '[DONE]') {
+              closeConnection();
+              return;
+            }
+            try {
+              const data = JSON.parse(payloadText);
+              onMessage(data);
+            } catch (error) {
+              console.error('Error parsing SSE POST data:', error);
+              dispatch(
+                setToastNotification({
+                  title: 'Error parsing data',
+                  description: 'Failed to parse server-sent event data',
+                  variant: 'destructive',
+                })
+              );
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (!cancelled) {
+        console.error('POST event stream error:', error);
+        dispatch(
+          setToastNotification({
+            title: 'Connection error',
+            description: 'Server-sent event connection failed',
+            variant: 'destructive',
+          })
+        );
+      }
+    } finally {
+      closeConnection();
+    }
+  })();
+
+  return { onCancel: closeConnection };
+}
 const sseService = {
   createEventSource,
   generateTaskId,
+  postEventStream,
 };
 
 export default sseService;

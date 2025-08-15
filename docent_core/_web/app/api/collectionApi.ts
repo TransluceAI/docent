@@ -3,6 +3,7 @@ import { BASE_URL } from '@/app/constants';
 import { Collection, ComplexFilter } from '@/app/types/collectionTypes';
 import { TranscriptMetadataField } from '@/app/types/experimentViewerTypes';
 import { BaseAgentRunMetadata } from '@/app/types/transcriptTypes';
+import sseService from '../services/sseService';
 
 interface CreateCollectionRequest {
   collection_id?: string;
@@ -112,6 +113,86 @@ export const collectionApi = createApi({
         body,
       }),
     }),
+    previewImportRunsFromFile: build.mutation<
+      {
+        status: string;
+        would_import: {
+          num_agent_runs: number;
+          models: string[];
+          task_ids: string[];
+          score_types: string[];
+        };
+        file_info: {
+          filename: string;
+          task?: string | null;
+          model?: string | null;
+          total_samples: number;
+        };
+        sample_preview: Array<{
+          metadata: Record<string, any>;
+          num_messages: number;
+        }>;
+      },
+      { collectionId: string; file: File }
+    >({
+      query: ({ collectionId, file }) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return {
+          url: `/${collectionId}/preview_import_runs_from_file`,
+          method: 'POST',
+          body: formData,
+        } as any;
+      },
+    }),
+    importRunsFromFileStream: build.query<
+      {
+        phase: 'progress' | 'complete' | 'error';
+        uploaded: number | null;
+        total: number | null;
+      },
+      { collectionId: string; file: File }
+    >({
+      queryFn: () => ({
+        data: {
+          phase: 'progress',
+          uploaded: 0,
+          total: null,
+        },
+      }),
+      keepUnusedDataFor: 0,
+      async onCacheEntryAdded(
+        { collectionId, file },
+        { updateCachedData, cacheEntryRemoved, dispatch }
+      ) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const { onCancel } = sseService.postEventStream(
+          `/rest/${collectionId}/import_runs_from_file`,
+          formData,
+          (data) => {
+            updateCachedData((_) => data);
+            if (data.phase === 'complete') {
+              // Refresh dependent data after import completes
+              dispatch(
+                collectionApi.util.invalidateTags([
+                  'AgentRunIds',
+                  'AgentRunMetadata',
+                ])
+              );
+            }
+          },
+          () => {
+            // no-op; cached data is already up to date, and cacheEntryRemoved below will finalize
+          },
+          dispatch as any
+        );
+
+        await cacheEntryRemoved;
+        onCancel();
+      },
+    }),
   }),
 });
 
@@ -125,4 +206,7 @@ export const {
   useGetAgentRunMetadataFieldsQuery,
   useGetAgentRunMetadataQuery,
   useGetAgentRunIdsQuery,
+  usePreviewImportRunsFromFileMutation,
+  useImportRunsFromFileStreamQuery,
+  useLazyImportRunsFromFileStreamQuery,
 } = collectionApi;

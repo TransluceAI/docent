@@ -91,25 +91,15 @@ export default function ExperimentViewer() {
     setDraggedFile(null);
   }, []);
 
-  const handleUploadSuccess = useCallback(
-    (result: {
-      status: string;
-      message: string;
-      num_runs_imported: number;
-      filename: string;
-      task_id?: string;
-      model?: string;
-    }) => {
-      fetchedAgentRunIdsRef.current.clear();
-      dispatch(
-        collectionApi.util.invalidateTags([
-          'AgentRunIds',
-          'AgentRunMetadataFields',
-        ])
-      );
-    },
-    [dispatch]
-  );
+  const handleUploadSuccess = useCallback(() => {
+    fetchedAgentRunIdsRef.current.clear();
+    dispatch(
+      collectionApi.util.invalidateTags([
+        'AgentRunIds',
+        'AgentRunMetadataFields',
+      ])
+    );
+  }, [dispatch]);
 
   // Use debouncing to prevent too many updates
   useEffect(() => {

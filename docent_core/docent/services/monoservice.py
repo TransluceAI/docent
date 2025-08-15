@@ -295,42 +295,40 @@ class MonoService:
     # Agent Runs #
     ##############
 
-    async def add_agent_runs(self, ctx: ViewContext, agent_runs: Sequence[AgentRun]):
+    async def count_collection_agent_runs(self, collection_id: str) -> int:
+        """Count all agent runs for a collection (ignores base filters)."""
+        async with self.db.session() as session:
+            query = select(func.count()).where(SQLAAgentRun.collection_id == collection_id)
+            result = await session.execute(query)
+            return result.scalar_one()
+
+    async def check_space_for_runs(self, ctx: ViewContext, new_runs: int):
+        existing_runs = await self.count_collection_agent_runs(ctx.collection_id)
+        if existing_runs + new_runs > 100_000:
+            raise ValueError("Number of agent runs in the current collection is too large")
+
+    async def add_agent_runs(
+        self,
+        ctx: ViewContext,
+        agent_runs: Sequence[AgentRun],
+    ):
         # Convert AgentRun objects to SQLAlchemy objects using existing conversion functions
         agent_run_data: list[SQLAAgentRun] = []
         transcript_data: list[SQLATranscript] = []
 
-        # count the number of agent runs in the current collection
-        async with self.db.session() as session:
-            query = select(func.count()).where(SQLAAgentRun.collection_id == ctx.collection_id)
-            result = await session.execute(query)
-            num_agent_runs = result.scalar_one()
-        if num_agent_runs + len(agent_runs) > 100_000:
-            raise ValueError("Number of agent runs in the current collection is too large")
-
-        # Process all agent runs and transcripts first
         for ar in agent_runs:
-            # Use the existing from_agent_run method to get all fields properly
             sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.collection_id)
             agent_run_data.append(sqla_agent_run)
 
-            # Process transcripts for this agent run
             for dk, t in ar.transcripts.items():
-                # Use the existing from_transcript method to get all fields properly
                 sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.collection_id, ar.id)
                 transcript_data.append(sqla_transcript)
 
-        # Insert all agent runs
+        # Insert all rows in a single transaction using add_all
         async with self.db.session() as session:
-            for sqla_agent_run in agent_run_data:
-                session.add(sqla_agent_run)
-
-        # Insert all transcripts
-        async with self.db.session() as session:
-            for sqla_transcript in transcript_data:
-                session.add(sqla_transcript)
-
-        logger.info(f"Inserted {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
+            # Note: order does not matter as both are in the same transaction
+            session.add_all(agent_run_data)
+            session.add_all(transcript_data)
 
     async def update_agent_runs(self, ctx: ViewContext, agent_runs: Sequence[AgentRun]):
         """

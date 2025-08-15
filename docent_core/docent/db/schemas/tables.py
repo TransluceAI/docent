@@ -65,14 +65,16 @@ def sanitize_pg_text(text: str) -> str:
     Wow this took almost an hour to debug.
     Postgres rejects strings with \\x00 and \\u0000, but it turns out that
     JSONifying data converts them to the literal characters \\, \\, x, 0, 0.
+
+    __contains__ is faster than replace, so the if statements noticeably
+    speed up import for transcripts without null characters.
     """
-    return (
-        text.translate({0: None})
-        .replace("\\\\x00", "")
-        .replace("\\\\u0000", "")
-        .replace("\\x00", "")
-        .replace("\\u0000", "")
-    )
+    if "\x00" in text:
+        text = text.translate({0: None})
+    for pattern in ["\\\\x00", "\\\\u0000", "\\x00", "\\u0000"]:
+        if pattern in text:
+            text = text.replace(pattern, "")
+    return text
 
 
 class SQLAAgentRun(SQLABase):

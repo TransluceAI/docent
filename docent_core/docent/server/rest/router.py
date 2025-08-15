@@ -1,9 +1,12 @@
 import hashlib
+import itertools
 import json
 import os
 import tempfile
+import time
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 from uuid import uuid4
 
@@ -18,9 +21,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
-from inspect_ai.log import read_eval_log_async
 from pydantic import BaseModel
-from pydantic_core import ValidationError
 from sqlalchemy import or_, select, update
 from sqlalchemy.inspection import inspect as sqla_inspect
 
@@ -31,7 +32,7 @@ from docent.data_models.citation import (
     parse_citations_single_run,
 )
 from docent.data_models.transcript import fake_model_dump
-from docent.loaders.load_inspect import load_inspect_log
+from docent.loaders import load_inspect
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
@@ -364,79 +365,21 @@ async def delete_collection(
 ##############
 
 
-async def _process_inspect_file(file: UploadFile) -> tuple[list[AgentRun], dict[str, Any]]:
-    """
-    Helper function to process an Inspect log file and extract agent runs.
-
-    Args:
-        file: Uploaded file containing Inspect evaluation log
-
-    Returns:
-        tuple: (agent_runs, file_info) where file_info contains metadata about the file
-
-    Raises:
-        HTTPException: If file processing fails
-    """
-    # Validate file extension
-    if not file.filename or not (
-        file.filename.endswith(".eval") or file.filename.endswith(".json")
-    ):
+def validate_inspect_filename(filename: str | None) -> str:
+    if filename is None:
+        raise HTTPException(status_code=400, detail="File must have a filename")
+    if filename.endswith(".eval"):
+        return "eval"
+    elif filename.endswith(".json"):
+        return "json"
+    else:
         raise HTTPException(status_code=400, detail="File must be an .eval or .json file")
-
-    temp_file_path = None
-    try:
-        # Read file content
-        file_content = await file.read()
-
-        # Preserve the original file extension for the temporary file
-        file_suffix = ".json" if file.filename.endswith(".json") else ".eval"
-
-        # Create temporary file to write the content
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=file_suffix, delete=False) as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
-
-        # Load the inspect log using the async interface to avoid uvloop conflicts
-        eval_log = await read_eval_log_async(temp_file_path)
-
-        # Convert to agent runs using the existing load_inspect_log function
-        agent_runs = load_inspect_log(eval_log)
-
-        # Extract file metadata
-        file_info = {
-            "filename": file.filename,
-            "task": eval_log.eval.task if eval_log.eval else None,
-            "model": eval_log.eval.model if eval_log.eval else None,
-            "total_samples": len(eval_log.samples) if eval_log.samples else 0,
-        }
-
-        return agent_runs, file_info
-
-    except ValidationError as e:
-        errors = e.errors()
-        if not errors:
-            message = "Unknown error"
-        else:
-            message = ""
-            for error in errors:
-                message += f"{error['msg']} at {error['loc']}\n"
-                print(message)
-        raise HTTPException(status_code=400, detail=message)
-    except Exception as e:
-        logger.error(f"Failed to process file {file.filename}: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
-    finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
 
 
 @user_router.post("/{collection_id}/preview_import_runs_from_file")
 async def preview_import_runs_from_file(
     collection_id: str,
     file: UploadFile = File(...),
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> dict[str, Any]:
     """
@@ -454,15 +397,18 @@ async def preview_import_runs_from_file(
     Raises:
         HTTPException: If file processing fails
     """
-    agent_runs, file_info = await _process_inspect_file(file)
+    format = validate_inspect_filename(file.filename)
+
+    count_runs = 0
+    previews: list[AgentRun] = []
 
     # Gather statistics about what would be imported
     scores_keys: set[str] = set()
     models: set[str] = set()
     task_ids: set[str] = set()
 
-    for run in agent_runs:
-        # Use getattr with defaults to safely access attributes
+    file_info, runs = load_inspect.runs_from_file(file.file, format)
+    for run in runs:
         model = getattr(run.metadata, "model", None)
         if model is not None:
             models.add(str(model))
@@ -474,10 +420,22 @@ async def preview_import_runs_from_file(
         if "scores" in run.metadata:
             scores_keys.update(run.metadata["scores"].keys())
 
+        count_runs += 1
+
+        if len(previews) < 10:
+            previews.append(run)
+
+    file_info = {
+        "filename": file.filename,
+        "task": file_info.get("task"),
+        "model": file_info.get("model"),
+        "total_samples": count_runs,
+    }
+
     return {
         "status": "preview",
         "would_import": {
-            "num_agent_runs": len(agent_runs),
+            "num_agent_runs": count_runs,
             "models": sorted(list(models)),
             "task_ids": sorted(list(task_ids)),
             "score_types": sorted(list(scores_keys)),
@@ -490,7 +448,7 @@ async def preview_import_runs_from_file(
                     len(transcript.messages) for transcript in run.transcripts.values()
                 ),
             }
-            for run in agent_runs[:10]  # Show first 10 as preview
+            for run in previews
         ],
     }
 
@@ -505,53 +463,102 @@ async def import_runs_from_file(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     """
-    Import agent runs from an Inspect AI log file.
+    Import agent runs from an Inspect AI log file and stream progress via SSE.
 
-    Args:
-        collection_id: Collection ID to import runs into
-        file: Uploaded file containing Inspect AI evaluation log
-        db: Database service dependency
-        ctx: View context dependency
-
-    Returns:
-        dict: Summary of the import operation
-
-    Raises:
-        HTTPException: If file processing or import fails
+    The response is a text/event-stream emitting JSON payloads with fields:
+      { "phase": "progress" | "complete", "uploaded": int, "total": int, ... }
     """
-    agent_runs, file_info = await _process_inspect_file(file)
 
-    if not agent_runs:
-        return {
-            "status": "success",
-            "message": "No agent runs found in the provided file",
-            "num_runs_imported": 0,
-            **file_info,
-        }
+    # Validate file extension
+    format = validate_inspect_filename(file.filename)
 
-    # Add agent runs to the database (similar to post_agent_runs)
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        await mono_svc.add_agent_runs(ctx, agent_runs)
+    # Stage the uploaded file to a temporary path before returning StreamingResponse
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{format}") as _tmp:
+        temp_path = _tmp.name
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            _tmp.write(chunk)
 
-    # Track with PostHog
-    analytics.track_event(
-        "agent_runs_ingested",
-        properties={
-            "collection_id": collection_id,
-            "num_runs": len(agent_runs),
-            "source": "file_upload",
-            "filename": file_info.get("filename"),
-            "task": file_info.get("task"),
-            "model": file_info.get("model"),
-        },
+    # Compute counts using the staged file (request body may be closed after return)
+    count_new_runs = load_inspect.get_total_samples(Path(temp_path), format)
+    await mono_svc.check_space_for_runs(ctx, count_new_runs)
+
+    # Create an in-memory stream for SSE
+    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
+        max_buffer_size=100_000
     )
 
-    return {
-        "status": "success",
-        "message": f"Successfully imported {len(agent_runs)} agent runs from {file_info['filename']}",
-        "num_runs_imported": len(agent_runs),
-        **file_info,
-    }
+    async def _execute():
+        t_start = time.perf_counter()
+
+        runs_added = 0
+
+        try:
+            # Send initial event so clients can render 0 progress
+            await send_stream.send(
+                {
+                    "phase": "progress",
+                    "uploaded": 0,
+                    "total": count_new_runs,
+                }
+            )
+
+            # Open a fresh handle on the staged file for ingestion
+            with open(temp_path, "rb") as _fh_ingest:
+                file_info, runs_generator = load_inspect.runs_from_file(_fh_ingest, format)
+
+                batches = itertools.batched(runs_generator, 100)
+                async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
+                    for batch in batches:
+                        await mono_svc.add_agent_runs(ctx, batch)
+                        runs_added += len(batch)
+
+                        # Stream progress update
+                        await send_stream.send(
+                            {
+                                "phase": "progress",
+                                "uploaded": runs_added,
+                                "total": count_new_runs,
+                            }
+                        )
+
+            t_end = time.perf_counter()
+
+            # Track with PostHog
+            analytics.track_event(
+                "agent_runs_ingested",
+                properties={
+                    "collection_id": collection_id,
+                    "num_runs": runs_added,
+                    "source": "file_upload",
+                    "filename": file_info.get("filename"),
+                    "task": file_info.get("task"),
+                    "model": file_info.get("model"),
+                    "time_taken_seconds": t_end - t_start,
+                },
+            )
+
+            # Final completion event
+            await send_stream.send(
+                {
+                    "phase": "complete",
+                    "message": f"Successfully imported {runs_added} agent runs from {file_info.get('filename')}",
+                    "uploaded": runs_added,
+                    "total": count_new_runs,
+                }
+            )
+        finally:
+            await send_stream.aclose()
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        sse_event_stream(_execute, send_stream, recv_stream), media_type="text/event-stream"
+    )
 
 
 @user_router.get("/{collection_id}/agent_run_metadata_fields")
@@ -630,6 +637,7 @@ async def post_agent_runs(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
+        await mono_svc.check_space_for_runs(ctx, len(request.agent_runs))
         await mono_svc.add_agent_runs(ctx, request.agent_runs)
 
     # Track with PostHog

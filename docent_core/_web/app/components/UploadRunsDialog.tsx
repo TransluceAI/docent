@@ -12,10 +12,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Loader2, UploadIcon, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { apiRestClient } from '../services/apiService';
 import { toast } from '@/hooks/use-toast';
+import { ProgressBar } from './ProgressBar';
+import {
+  usePreviewImportRunsFromFileMutation,
+  useLazyImportRunsFromFileStreamQuery,
+} from '@/app/api/collectionApi';
 
 const uploadStates = {
   INACTIVE: 'inactive',
@@ -50,14 +54,7 @@ interface UploadRunsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   file: File | null;
-  onImportSuccess?: (result: {
-    status: string;
-    message: string;
-    num_runs_imported: number;
-    filename: string;
-    task_id?: string;
-    model?: string;
-  }) => void;
+  onImportSuccess?: () => void;
 }
 
 export default function UploadRunsDialog({
@@ -76,6 +73,12 @@ export default function UploadRunsDialog({
   const [currentSampleIndex, setCurrentSampleIndex] = useState<number>(0);
   const params = useParams();
   const collection_id = params.collection_id as string;
+  const [progressCurrent, setProgressCurrent] = useState<number>(0);
+  const [progressTotal, setProgressTotal] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [triggerPreview] = usePreviewImportRunsFromFileMutation();
+  const [triggerImportStream, importStreamState] =
+    useLazyImportRunsFromFileStreamQuery();
 
   // Process file when dialog opens with a file
   useEffect(() => {
@@ -105,24 +108,17 @@ export default function UploadRunsDialog({
     }
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      const response = await apiRestClient.post(
-        `/${collection_id}/preview_import_runs_from_file`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-
+      const response = await triggerPreview({
+        collectionId: collection_id,
+        file: selectedFile,
+      }).unwrap();
       setUploadState(uploadStates.REVIEWING);
-      setPreviewResult(response.data);
+      setPreviewResult(response as any);
       setCurrentSampleIndex(0);
+      setProgressCurrent(0);
+      setProgressTotal(response?.would_import?.num_agent_runs ?? null);
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Preview failed');
+      setError(err?.data?.detail || err?.message || 'Preview failed');
       setUploadState(uploadStates.REVIEWING);
     }
   };
@@ -134,61 +130,53 @@ export default function UploadRunsDialog({
     setUploadState(uploadStates.UPLOADING);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await apiRestClient.post(
-        `/${collection_id}/import_runs_from_file`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-
-      try {
-        // await apiRestClient.post(`/${collection_id}/compute_embeddings`);
-        toast({
-          title: 'Runs Imported',
-          description: `${previewResult?.would_import.num_agent_runs ?? 0} runs have been imported successfully.`, // Embeddings computation started.`,
-        });
-      } catch (embeddingError: any) {
-        console.error(
-          'Failed to start embeddings computation:',
-          embeddingError.response?.data || embeddingError
-        );
-        toast({
-          title: 'Runs Imported',
-          description: `${previewResult?.would_import.num_agent_runs ?? 0} runs have been imported successfully. Embeddings computation failed to start - you can manually trigger it later.`,
-        });
+      if (progressTotal === null && previewResult) {
+        setProgressTotal(previewResult.would_import.num_agent_runs);
+        setProgressCurrent(0);
       }
 
-      if (onImportSuccess) {
-        onImportSuccess({
-          status: response.data.status || 'success',
-          message: response.data.message || 'Import completed successfully',
-          num_runs_imported:
-            response.data.num_runs_imported ||
-            previewResult?.would_import.num_agent_runs ||
-            0,
-          filename: response.data.filename || file.name,
-          task_id: response.data.task_id,
-          model: response.data.model,
-        });
-      }
+      const promise = triggerImportStream({
+        collectionId: collection_id,
+        file,
+      });
+      abortRef.current = { abort: () => promise.unsubscribe?.() } as any;
 
-      handleClose();
+      await promise.unwrap();
+      // unwrap resolves only for immediate queryFn; we rely on SSE updates via updateCachedData below
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Import failed');
+      setError(err?.data?.detail || err?.message || 'Import failed');
       setUploadState(uploadStates.REVIEWING);
     }
   };
 
   const handleClose = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     setUploadState(uploadStates.INACTIVE);
     onClose();
   };
+
+  // Reflect streaming progress from RTK Query into local UI state
+  useEffect(() => {
+    const data = importStreamState.data as any;
+    if (!data) return;
+
+    setProgressCurrent(data.uploaded);
+    setProgressTotal(data.total);
+
+    if (data.phase === 'complete') {
+      toast({
+        title: 'Runs Imported',
+        description: `${data.uploaded} runs have been imported successfully.`,
+      });
+      if (onImportSuccess) {
+        onImportSuccess();
+      }
+      handleClose();
+    }
+  }, [importStreamState.data]);
 
   const showTruncationTooltip =
     previewResult &&
@@ -319,6 +307,10 @@ export default function UploadRunsDialog({
               </div>
             )}
           </div>
+        )}
+
+        {uploadState === uploadStates.UPLOADING && (
+          <ProgressBar current={progressCurrent} total={progressTotal} />
         )}
 
         <DialogFooter>

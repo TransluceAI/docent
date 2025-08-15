@@ -11,14 +11,7 @@ import { useRouter } from 'next/navigation';
 import UploadRunsDialog from './UploadRunsDialog';
 
 interface UploadRunsButtonProps {
-  onImportSuccess?: (result: {
-    status: string;
-    message: string;
-    num_runs_imported: number;
-    filename: string;
-    task_id?: string;
-    model?: string;
-  }) => void;
+  onImportSuccess?: () => void;
 }
 
 export default function UploadRunsButton({
