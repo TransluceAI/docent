@@ -41,7 +41,7 @@ const FRAMEWORK_OPTIONS = [
   { id: 'crewai', label: 'CrewAI' },
   { id: 'haystack', label: 'Haystack' },
   { id: 'semantic_kernel', label: 'Semantic Kernel' },
-  { id: 'openai_assistants', label: 'OpenAI Assistants' },
+  { id: 'openai_agents', label: 'OpenAI Agents SDK' },
   { id: 'custom', label: 'Custom Framework' },
   { id: 'none', label: 'None' },
   { id: 'other', label: 'Other' },
@@ -271,7 +271,7 @@ export default function OnboardingPage() {
                         onChange={(e) => {
                           updateOnboardingData(otherTextField, e.target.value);
                         }}
-                        className="bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600"
+                        className="bg-gray-25 dark:bg-gray-900 border-gray-200 dark:border-gray-600"
                         autoFocus
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -610,7 +610,7 @@ initialize_tracing("my-collection")
 @agent_run
 def analyze_document(document_text: str):
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-5",
         messages=[{"role": "user", "content": f"Analyze: {document_text}"}]
     )
     return response.choices[0].message.content`}
@@ -713,7 +713,7 @@ transcript = Transcript(messages=[
 
 agent_run = AgentRun(
     transcripts={"default": transcript},
-    metadata={"model": "gpt-4", "scores": {"accuracy": 0.95}}
+    metadata={"model": "gpt-5", "scores": {"accuracy": 0.95}}
 )
 
 # Upload to Docent
