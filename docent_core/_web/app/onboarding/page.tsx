@@ -60,8 +60,6 @@ const PROVIDER_OPTIONS = [
   { id: 'vllm', label: 'vLLM Self-Host' },
   { id: 'together', label: 'Together' },
   { id: 'groq', label: 'Groq' },
-  { id: 'cohere', label: 'Cohere' },
-  { id: 'huggingface', label: 'Hugging Face' },
   { id: 'other', label: 'Other' },
 ];
 
@@ -80,7 +78,10 @@ export default function OnboardingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get('redirect') || '';
-  const [currentStep, setCurrentStep] = useState(1);
+  const stepParam = searchParams.get('step');
+  const [currentStep, setCurrentStep] = useState(
+    stepParam ? parseInt(stepParam) : 1
+  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [onboardingData, setOnboardingData] = useState<OnboardingData>({
     institution: '',
@@ -97,7 +98,10 @@ export default function OnboardingPage() {
 
   const handleNext = () => {
     if (currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1);
+      const nextStep = currentStep + 1;
+      setCurrentStep(nextStep);
+      // Update browser history
+      router.push(`/onboarding?step=${nextStep}`, { scroll: false });
     } else {
       // Complete onboarding and redirect to dashboard
       handleCompleteOnboarding();
@@ -106,9 +110,35 @@ export default function OnboardingPage() {
 
   const handleBack = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      const prevStep = currentStep - 1;
+      setCurrentStep(prevStep);
+      // Update browser history
+      router.push(`/onboarding?step=${prevStep}`, { scroll: false });
     }
   };
+
+  // Initialize URL with current step if not present
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (!stepParam && currentStep === 1) {
+      // Set initial URL without triggering navigation
+      router.push('/onboarding?step=1', { scroll: false });
+    }
+  }, []);
+
+  // Handle URL changes (browser back/forward navigation)
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (stepParam) {
+      const step = parseInt(stepParam);
+      if (step >= 1 && step <= totalSteps && step !== currentStep) {
+        setCurrentStep(step);
+      }
+    } else if (currentStep !== 1) {
+      // If no step param but we're not on step 1, go to step 1
+      setCurrentStep(1);
+    }
+  }, [searchParams, currentStep, totalSteps]);
 
   // Reset scroll to top when step changes
   useEffect(() => {
@@ -232,7 +262,7 @@ export default function OnboardingPage() {
                           {option.label}
                         </h3>
                         <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                          <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                          <div className="w-2 h-2 bg-white rounded-full"></div>
                         </div>
                       </div>
                       <Input
@@ -290,7 +320,7 @@ export default function OnboardingPage() {
                   </div>
                   {selectedItems.includes(option.label) && (
                     <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
                     </div>
                   )}
                 </div>
@@ -520,7 +550,7 @@ export default function OnboardingPage() {
   const renderStep4 = () =>
     renderMultiSelectStep(
       'Which providers do you use?',
-      "Select any AI providers you're currently using",
+      "Select any providers you're currently using",
       PROVIDER_OPTIONS,
       onboardingData.providers,
       onboardingData.otherProviderText,
