@@ -66,6 +66,11 @@ output "ecs_service_name" {
   value       = aws_ecs_service.worker.name
 }
 
+output "ecs_service_2_name" {
+  description = "ECS service name for migrations"
+  value       = aws_ecs_service.migrations.name
+}
+
 output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
   description = "Public IP address of the bastion host"

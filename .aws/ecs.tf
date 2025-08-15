@@ -291,3 +291,23 @@ resource "aws_ecs_task_definition" "migrations" {
     Deployment = var.deployment
   }
 }
+
+
+resource "aws_ecs_service" "migrations" {
+  name            = "${var.project_name}-${var.deployment}-migrations"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.migrations.arn
+  desired_count   = var.ecs_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  tags = {
+    Name        = "${var.project_name}-${var.deployment}-migrations-service"
+    Deployment = var.deployment
+  }
+}
