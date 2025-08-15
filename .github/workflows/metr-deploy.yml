@@ -51,6 +51,32 @@ jobs:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           NEXT_PUBLIC_API_HOST: ${{ vars.METR_API_HOST }}
 
+      - name: Run DB migrations (ECS one-off task)
+        env:
+          AWS_PAGER: ""
+        run: |
+          set -euo pipefail
+          TASK_DEF_ARN=$(aws ecs describe-task-definition --task-definition ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-migrations --query 'taskDefinition.taskDefinitionArn' --output text)
+          VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-vpc --query 'Vpcs[0].VpcId' --output text)
+          SUBNETS=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC_ID Name=tag:Type,Values=Private --query 'Subnets[*].SubnetId' --output text)
+          SG_ID=$(aws ec2 describe-security-groups --filters Name=tag:Name,Values=${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-ecs-tasks-sg --query 'SecurityGroups[0].GroupId' --output text)
+          SUBNETS_CSV=$(echo "$SUBNETS" | tr '\t' ',' | tr ' ' ',')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-cluster \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS_CSV],securityGroups=[$SG_ID],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Waiting for migration task ($TASK_ARN) to complete..."
+          aws ecs wait tasks-stopped --cluster ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-cluster --tasks "$TASK_ARN"
+          EXIT_CODE=$(aws ecs describe-tasks --cluster ${{ env.PROJECT_NAME }}-${{ env.DEPLOYMENT_ID }}-cluster --tasks "$TASK_ARN" --query 'tasks[0].containers[0].exitCode' --output text)
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
       - name: Force ECS deployment
         run: |
           aws ecs update-service \
