@@ -31,6 +31,8 @@ COPY docent_core docent_core
 RUN uv pip install --system -e .
 
 # Copy .env and scripts for startup
+COPY alembic alembic
+COPY alembic.ini alembic.ini
 COPY .env .env
 COPY scripts scripts
 

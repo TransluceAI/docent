@@ -1,19 +1,19 @@
-name: Staging Deploy
+name: Staging2 Deploy
 
 on:
   push:
-    branches: [staging]
+    branches: [staging2]
   workflow_dispatch:
 
 env:
   PROJECT_NAME: docent
-  DEPLOYMENT_ID: staging
+  DEPLOYMENT_ID: staging2
   AWS_REGION: us-east-1
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: staging2
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
