@@ -86,6 +86,7 @@ resource "aws_apprunner_service" "api" {
       }
       image_repository_type = "ECR"
     }
+    auto_deployments_enabled = false
   }
 
   instance_configuration {

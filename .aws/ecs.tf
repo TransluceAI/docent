@@ -221,3 +221,73 @@ resource "aws_appautoscaling_policy" "ecs_worker_memory" {
     target_value = 50.0
   }
 }
+
+resource "aws_ecs_task_definition" "migrations" {
+  family                   = "${var.project_name}-${var.deployment}-migrations"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.ecs_cpu
+  memory                   = var.ecs_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "migrations"
+      image = "${aws_ecr_repository.backend.repository_url}:latest"
+
+      command = ["/bin/sh", "-c", "alembic upgrade head"]
+
+      environment = [
+        {
+          name  = "ENV_RESOLUTION_STRATEGY"
+          value = "os_environ"
+        },
+        {
+          name  = "DEPLOYMENT_ID"
+          value = var.deployment
+        },
+        {
+          name  = "LLM_CACHE_PATH"
+          value = ""  # Disable cache
+        },
+        {
+          name  = "DOCENT_PG_HOST"
+          value = aws_db_instance.postgres.address
+        },
+        {
+          name  = "DOCENT_PG_PORT"
+          value = tostring(aws_db_instance.postgres.port)
+        },
+        {
+          name  = "DOCENT_PG_DATABASE"
+          value = var.db_name
+        },
+        {
+          name  = "DOCENT_PG_USER"
+          value = var.db_username
+        },
+        {
+          name  = "DOCENT_PG_PASSWORD"
+          value = var.db_password
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "migrations"
+        }
+      }
+
+      essential = true
+    }
+  ])
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-migrations-task"
+    Deployment = var.deployment
+  }
+}
