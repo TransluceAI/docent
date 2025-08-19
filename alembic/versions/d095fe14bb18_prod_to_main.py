@@ -56,8 +56,8 @@ def upgrade() -> None:
         sa.Column("is_anonymous", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
-    op.create_index(op.f("ix_users_is_anonymous"), "users", ["is_anonymous"], unique=False)
+    # op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+    # op.create_index(op.f("ix_users_is_anonymous"), "users", ["is_anonymous"], unique=False)
     op.create_table(
         "api_keys",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -73,10 +73,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_api_keys_disabled_at"), "api_keys", ["disabled_at"], unique=False)
-    op.create_index(op.f("ix_api_keys_key_hash"), "api_keys", ["key_hash"], unique=True)
-    op.create_index(op.f("ix_api_keys_last_used_at"), "api_keys", ["last_used_at"], unique=False)
-    op.create_index(op.f("ix_api_keys_user_id"), "api_keys", ["user_id"], unique=False)
+    # op.create_index(op.f("ix_api_keys_disabled_at"), "api_keys", ["disabled_at"], unique=False)
+    # op.create_index(op.f("ix_api_keys_key_hash"), "api_keys", ["key_hash"], unique=True)
+    # op.create_index(op.f("ix_api_keys_last_used_at"), "api_keys", ["last_used_at"], unique=False)
+    # op.create_index(op.f("ix_api_keys_user_id"), "api_keys", ["user_id"], unique=False)
     op.create_table(
         "chat_sessions",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -90,10 +90,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_chat_sessions_updated_at"), "chat_sessions", ["updated_at"], unique=False
-    )
-    op.create_index(op.f("ix_chat_sessions_user_id"), "chat_sessions", ["user_id"], unique=False)
+    # op.create_index(
+    #     op.f("ix_chat_sessions_updated_at"), "chat_sessions", ["updated_at"], unique=False
+    # )
+    # op.create_index(op.f("ix_chat_sessions_user_id"), "chat_sessions", ["user_id"], unique=False)
     op.create_table(
         "collections",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -107,7 +107,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_collections_created_by"), "collections", ["created_by"], unique=False)
+    # op.create_index(op.f("ix_collections_created_by"), "collections", ["created_by"], unique=False)
     op.create_table(
         "sessions",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -121,9 +121,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_sessions_expires_at"), "sessions", ["expires_at"], unique=False)
-    op.create_index(op.f("ix_sessions_is_active"), "sessions", ["is_active"], unique=False)
-    op.create_index(op.f("ix_sessions_user_id"), "sessions", ["user_id"], unique=False)
+    # op.create_index(op.f("ix_sessions_expires_at"), "sessions", ["expires_at"], unique=False)
+    # op.create_index(op.f("ix_sessions_is_active"), "sessions", ["is_active"], unique=False)
+    # op.create_index(op.f("ix_sessions_user_id"), "sessions", ["user_id"], unique=False)
     op.create_table(
         "user_organizations",
         sa.Column("user_id", sa.String(length=36), nullable=False),
@@ -138,15 +138,15 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("user_id", "organization_id"),
     )
-    op.create_index(
-        op.f("ix_user_organizations_organization_id"),
-        "user_organizations",
-        ["organization_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_user_organizations_user_id"), "user_organizations", ["user_id"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_user_organizations_organization_id"),
+    #     "user_organizations",
+    #     ["organization_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_user_organizations_user_id"), "user_organizations", ["user_id"], unique=False
+    # )
     op.create_table(
         "agent_runs",
         sa.Column("collection_id", sa.String(length=36), nullable=False),
@@ -168,9 +168,9 @@ def upgrade() -> None:
         unique=False,
         postgresql_using="gin",
     )
-    op.create_index(
-        op.f("ix_agent_runs_collection_id"), "agent_runs", ["collection_id"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_agent_runs_collection_id"), "agent_runs", ["collection_id"], unique=False
+    # )
     op.create_table(
         "analytics_events",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -224,21 +224,21 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_analytics_events_called_at"), "analytics_events", ["called_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_analytics_events_collection_id"),
-        "analytics_events",
-        ["collection_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_analytics_events_endpoint"), "analytics_events", ["endpoint"], unique=False
-    )
-    op.create_index(
-        op.f("ix_analytics_events_user_id"), "analytics_events", ["user_id"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_analytics_events_called_at"), "analytics_events", ["called_at"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_analytics_events_collection_id"),
+    #     "analytics_events",
+    #     ["collection_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_analytics_events_endpoint"), "analytics_events", ["endpoint"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_analytics_events_user_id"), "analytics_events", ["user_id"], unique=False
+    # )
     op.create_table(
         "search_clusters",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -252,12 +252,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_search_clusters_collection_id"), "search_clusters", ["collection_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_search_clusters_search_query"), "search_clusters", ["search_query"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_search_clusters_collection_id"), "search_clusters", ["collection_id"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_search_clusters_search_query"), "search_clusters", ["search_query"], unique=False
+    # )
     op.create_table(
         "search_queries",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -270,12 +270,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_search_queries_collection_id"), "search_queries", ["collection_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_search_queries_search_query"), "search_queries", ["search_query"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_search_queries_collection_id"), "search_queries", ["collection_id"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_search_queries_search_query"), "search_queries", ["search_query"], unique=False
+    # )
     op.create_table(
         "views",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -303,8 +303,8 @@ def upgrade() -> None:
         unique=True,
         postgresql_where="for_sharing = false",
     )
-    op.create_index(op.f("ix_views_collection_id"), "views", ["collection_id"], unique=False)
-    op.create_index(op.f("ix_views_user_id"), "views", ["user_id"], unique=False)
+    # op.create_index(op.f("ix_views_collection_id"), "views", ["collection_id"], unique=False)
+    # op.create_index(op.f("ix_views_user_id"), "views", ["user_id"], unique=False)
     op.create_table(
         "access_control_entries",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -343,42 +343,42 @@ def upgrade() -> None:
             name="uq_access_control_entry_combination",
         ),
     )
-    op.create_index(
-        op.f("ix_access_control_entries_collection_id"),
-        "access_control_entries",
-        ["collection_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_access_control_entries_is_public"),
-        "access_control_entries",
-        ["is_public"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_access_control_entries_organization_id"),
-        "access_control_entries",
-        ["organization_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_access_control_entries_permission"),
-        "access_control_entries",
-        ["permission"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_access_control_entries_user_id"),
-        "access_control_entries",
-        ["user_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_access_control_entries_view_id"),
-        "access_control_entries",
-        ["view_id"],
-        unique=False,
-    )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_collection_id"),
+    #     "access_control_entries",
+    #     ["collection_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_is_public"),
+    #     "access_control_entries",
+    #     ["is_public"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_organization_id"),
+    #     "access_control_entries",
+    #     ["organization_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_permission"),
+    #     "access_control_entries",
+    #     ["permission"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_user_id"),
+    #     "access_control_entries",
+    #     ["user_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_access_control_entries_view_id"),
+    #     "access_control_entries",
+    #     ["view_id"],
+    #     unique=False,
+    # )
     op.create_table(
         "search_results",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -404,21 +404,21 @@ def upgrade() -> None:
             name="uq_search_result_key_combination",
         ),
     )
-    op.create_index(
-        op.f("ix_search_results_agent_run_id"), "search_results", ["agent_run_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_search_results_collection_id"), "search_results", ["collection_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_search_results_search_query"), "search_results", ["search_query"], unique=False
-    )
-    op.create_index(
-        op.f("ix_search_results_search_result_idx"),
-        "search_results",
-        ["search_result_idx"],
-        unique=False,
-    )
+    # op.create_index(
+    #     op.f("ix_search_results_agent_run_id"), "search_results", ["agent_run_id"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_search_results_collection_id"), "search_results", ["collection_id"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_search_results_search_query"), "search_results", ["search_query"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_search_results_search_result_idx"),
+    #     "search_results",
+    #     ["search_result_idx"],
+    #     unique=False,
+    # )
     op.create_table(
         "transcript_embeddings",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -435,18 +435,18 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_transcript_embeddings_agent_run_id"),
-        "transcript_embeddings",
-        ["agent_run_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_transcript_embeddings_collection_id"),
-        "transcript_embeddings",
-        ["collection_id"],
-        unique=False,
-    )
+    # op.create_index(
+    #     op.f("ix_transcript_embeddings_agent_run_id"),
+    #     "transcript_embeddings",
+    #     ["agent_run_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_transcript_embeddings_collection_id"),
+    #     "transcript_embeddings",
+    #     ["collection_id"],
+    #     unique=False,
+    # )
     op.create_table(
         "transcripts",
         sa.Column("collection_id", sa.String(length=36), nullable=False),
@@ -467,12 +467,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_transcripts_agent_run_id"), "transcripts", ["agent_run_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_transcripts_collection_id"), "transcripts", ["collection_id"], unique=False
-    )
+    # op.create_index(
+    #     op.f("ix_transcripts_agent_run_id"), "transcripts", ["agent_run_id"], unique=False
+    # )
+    # op.create_index(
+    #     op.f("ix_transcripts_collection_id"), "transcripts", ["collection_id"], unique=False
+    # )
     op.create_table(
         "search_result_clusters",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -492,18 +492,18 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("search_result_id", "cluster_id", name="uq_search_result_cluster"),
     )
-    op.create_index(
-        op.f("ix_search_result_clusters_cluster_id"),
-        "search_result_clusters",
-        ["cluster_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_search_result_clusters_search_result_id"),
-        "search_result_clusters",
-        ["search_result_id"],
-        unique=False,
-    )
+    # op.create_index(
+    #     op.f("ix_search_result_clusters_cluster_id"),
+    #     "search_result_clusters",
+    #     ["cluster_id"],
+    #     unique=False,
+    # )
+    # op.create_index(
+    #     op.f("ix_search_result_clusters_search_result_id"),
+    #     "search_result_clusters",
+    #     ["search_result_id"],
+    #     unique=False,
+    # )
     # ### commands auto generated by Alembic - please adjust! ###
     op.create_table(
         "diff_queries",
