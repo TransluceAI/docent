@@ -115,7 +115,11 @@ class SQLAAgentRun(SQLABase):
             text_for_search=text_for_search,
         )
 
-    def to_agent_run(self, transcripts: dict[str, Transcript]) -> AgentRun:
+    def to_agent_run(
+        self,
+        transcripts: dict[str, Transcript],
+        transcript_groups: dict[str, TranscriptGroup] | None = None,
+    ) -> AgentRun:
         metadata = self.metadata_json
         assert isinstance(metadata, dict), f"metadata is not a dict: {metadata}"
 
@@ -125,6 +129,7 @@ class SQLAAgentRun(SQLABase):
             description=self.description,
             metadata=cast(dict[str, Any], metadata),
             transcripts=transcripts,
+            transcript_groups=transcript_groups or {},
         )
 
 
@@ -152,6 +157,11 @@ class SQLATranscript(SQLABase):
     messages = mapped_column(LargeBinary, nullable=False)
     metadata_json = mapped_column(LargeBinary, nullable=False)
 
+    # Timestamps
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
     @classmethod
     def from_transcript(
         cls, transcript: Transcript, dict_key: str, collection_id: str, agent_run_id: str
@@ -160,17 +170,24 @@ class SQLATranscript(SQLABase):
         messages_binary = json.dumps(to_jsonable_python(transcript.messages)).encode("utf-8")
         metadata_binary = json.dumps(fake_model_dump(transcript.metadata)).encode("utf-8")
 
-        return cls(
-            dict_key=dict_key,
-            id=transcript.id,
-            name=transcript.name,
-            description=transcript.description,
-            transcript_group_id=transcript.transcript_group_id,
-            collection_id=collection_id,
-            agent_run_id=agent_run_id,
-            messages=messages_binary,
-            metadata_json=metadata_binary,
-        )
+        # Build kwargs, only including created_at if it's not None
+        kwargs: dict[str, Any] = {
+            "dict_key": dict_key,
+            "id": transcript.id,
+            "name": transcript.name,
+            "description": transcript.description,
+            "transcript_group_id": transcript.transcript_group_id,
+            "collection_id": collection_id,
+            "agent_run_id": agent_run_id,
+            "messages": messages_binary,
+            "metadata_json": metadata_binary,
+        }
+
+        # Only include created_at if it's not None, allowing database default to handle it
+        if transcript.created_at is not None:
+            kwargs["created_at"] = transcript.created_at
+
+        return cls(**kwargs)
 
     def to_dict_key_and_transcript(self) -> tuple[str, Transcript]:
         messages = json.loads(self.messages.decode("utf-8"))
@@ -183,6 +200,7 @@ class SQLATranscript(SQLABase):
                 name=self.name,
                 description=self.description,
                 transcript_group_id=self.transcript_group_id,
+                created_at=self.created_at,
                 messages=messages,
                 metadata=cast(dict[str, Any], metadata),
             ),
@@ -197,6 +215,9 @@ class SQLATranscriptGroup(SQLABase):
     collection_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
+    agent_run_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
+    )
 
     name = mapped_column(Text, nullable=True)
     description = mapped_column(Text, nullable=True)
@@ -207,28 +228,42 @@ class SQLATranscriptGroup(SQLABase):
     # Core metadata data field
     metadata_json = mapped_column(JSONB, nullable=False)
 
+    # Timestamps
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
     @classmethod
-    def from_transcript_group(
-        cls, transcript_group: TranscriptGroup, collection_id: str
-    ) -> "SQLATranscriptGroup":
+    def from_transcript_group(cls, transcript_group: TranscriptGroup) -> "SQLATranscriptGroup":
         # Convert metadata to JSON-serializable dict for JSONB column
         metadata_json = to_jsonable_python(transcript_group.metadata)
 
-        return cls(
-            id=transcript_group.id,
-            name=transcript_group.name,
-            description=transcript_group.description,
-            parent_transcript_group_id=transcript_group.parent_transcript_group_id,
-            collection_id=collection_id,
-            metadata_json=metadata_json,
-        )
+        # Build kwargs, only including created_at if it's not None
+        kwargs: dict[str, Any] = {
+            "id": transcript_group.id,
+            "name": transcript_group.name,
+            "description": transcript_group.description,
+            "parent_transcript_group_id": transcript_group.parent_transcript_group_id,
+            "collection_id": transcript_group.collection_id,
+            "agent_run_id": transcript_group.agent_run_id,
+            "metadata_json": metadata_json,
+        }
+
+        # Only include created_at if it's not None, allowing database default to handle it
+        if transcript_group.created_at is not None:
+            kwargs["created_at"] = transcript_group.created_at
+
+        return cls(**kwargs)
 
     def to_transcript_group(self) -> TranscriptGroup:
         return TranscriptGroup(
             id=self.id,
             name=self.name,
             description=self.description,
+            collection_id=self.collection_id,
+            agent_run_id=self.agent_run_id,
             parent_transcript_group_id=self.parent_transcript_group_id,
+            created_at=self.created_at,
             metadata=self.metadata_json,
         )
 

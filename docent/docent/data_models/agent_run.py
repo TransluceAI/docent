@@ -15,6 +15,7 @@ from pydantic import (
 from docent.data_models._tiktoken_util import get_token_count, group_messages_into_ranges
 from docent.data_models.transcript import (
     Transcript,
+    TranscriptGroup,
     TranscriptWithoutMetadataValidator,
     fake_model_dump,
 )
@@ -36,6 +37,7 @@ class AgentRun(BaseModel):
         name: Optional human-readable name for the agent run.
         description: Optional description of the agent run.
         transcripts: Dict mapping transcript IDs to Transcript objects.
+        transcript_groups: Dict mapping transcript group IDs to TranscriptGroup objects.
         metadata: Additional structured metadata about the agent run as a JSON-serializable dictionary.
     """
 
@@ -44,6 +46,7 @@ class AgentRun(BaseModel):
     description: str | None = None
 
     transcripts: dict[str, Transcript]
+    transcript_groups: dict[str, TranscriptGroup] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_serializer("metadata")
