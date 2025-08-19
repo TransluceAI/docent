@@ -5,6 +5,7 @@ export interface AgentRun {
   name?: string | null;
   description?: string | null;
   transcripts: Record<string, Transcript>;
+  transcript_groups?: Record<string, TranscriptGroup>;
   metadata: BaseAgentRunMetadata;
 }
 
@@ -98,7 +99,20 @@ export function getMetadataValue<T>(
 export interface Transcript {
   id: string;
   name?: string | null;
+  transcript_group_id?: string | null;
+  created_at?: string | null;
   messages: ChatMessage[];
+  metadata: BaseMetadata;
+}
+
+export interface TranscriptGroup {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  collection_id: string;
+  agent_run_id: string;
+  parent_transcript_group_id?: string | null;
+  created_at?: string | null;
   metadata: BaseMetadata;
 }
 

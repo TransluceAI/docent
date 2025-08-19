@@ -385,6 +385,7 @@ async def add_transcript_group_metadata_endpoint(
         # Parse request body
         body = await request.json()
         collection_id = body.get("collection_id")
+        agent_run_id = body.get("agent_run_id")
         transcript_group_id = body.get("transcript_group_id")
         name = body.get("name")
         description = body.get("description")
@@ -392,11 +393,22 @@ async def add_transcript_group_metadata_endpoint(
         metadata = body.get("metadata")
         timestamp = body.get("timestamp")
 
-        if not all([collection_id, transcript_group_id, timestamp]):
-            raise HTTPException(
-                status_code=400,
-                detail="collection_id, transcript_group_id, and timestamp are required",
-            )
+        if not all([collection_id, transcript_group_id, agent_run_id, timestamp]):
+            missing_fields = [
+                field
+                for field, value in [
+                    ("collection_id", collection_id),
+                    ("transcript_group_id", transcript_group_id),
+                    ("agent_run_id", agent_run_id),
+                    ("timestamp", timestamp),
+                ]
+                if not value
+            ]
+            if missing_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing required fields: {', '.join(missing_fields)}",
+                )
 
         # Check if collection exists and user has permissions
         await _check_single_collection_permission(collection_id, user)
@@ -404,6 +416,7 @@ async def add_transcript_group_metadata_endpoint(
         # Store transcript group metadata in Redis
         await _store_transcript_group_metadata(
             collection_id,
+            agent_run_id,
             transcript_group_id,
             name,
             description,
@@ -574,6 +587,7 @@ async def _store_transcript_metadata(
 
 async def _store_transcript_group_metadata(
     collection_id: str,
+    agent_run_id: str,
     transcript_group_id: str,
     name: Optional[str],
     description: Optional[str],
@@ -588,6 +602,8 @@ async def _store_transcript_group_metadata(
     # Store metadata as JSON in a list with transcript_group_id as field
     metadata_data = {
         "transcript_group_id": transcript_group_id,
+        "collection_id": collection_id,
+        "agent_run_id": agent_run_id,
         "name": name,
         "description": description,
         "parent_transcript_group_id": parent_transcript_group_id,
@@ -600,11 +616,11 @@ async def _store_transcript_group_metadata(
     await redis_client.lpush(list_key, json.dumps(metadata_data))  # type: ignore
 
     logger.info(
-        f"Stored transcript group metadata for transcript_group_id {transcript_group_id} in collection {collection_id}"
+        f"Stored transcript group metadata for transcript_group_id {transcript_group_id} in agent run {agent_run_id} in collection {collection_id}"
     )
 
 
-async def _get_collection_scores(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
+async def _get_collection_scores_from_redis(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
     """Get all scores for a collection from Redis."""
     redis_client = await get_redis_client()
     scores_key = f"{_COLLECTION_SCORES_KEY_PREFIX}{collection_id}"
@@ -644,7 +660,9 @@ async def _get_collection_scores(collection_id: str) -> Dict[str, List[Dict[str,
     return scores
 
 
-async def _get_collection_metadata(collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
+async def _get_collection_metadata_from_redis(
+    collection_id: str,
+) -> Dict[str, List[Dict[str, Any]]]:
     """Get all metadata for a collection from Redis."""
     redis_client = await get_redis_client()
     metadata_key = f"{_COLLECTION_METADATA_KEY_PREFIX}{collection_id}"
@@ -686,7 +704,7 @@ async def _get_collection_metadata(collection_id: str) -> Dict[str, List[Dict[st
     return metadata
 
 
-async def _get_collection_transcript_group_metadata(
+async def _get_transcript_group_metadata_from_redis(
     collection_id: str,
 ) -> Dict[str, Dict[str, Any]]:
     """Get all transcript group metadata for a collection from Redis, merging multiple calls with recent data taking precedence."""
@@ -733,7 +751,7 @@ async def _get_collection_transcript_group_metadata(
 
 
 def _create_transcript_groups_from_redis_data(
-    transcript_group_metadata: Dict[str, Dict[str, Any]],
+    transcript_group_metadata: Dict[str, Dict[str, Any]]
 ) -> List[TranscriptGroup]:
     """
     Create TranscriptGroup objects from Redis metadata.
@@ -753,14 +771,31 @@ def _create_transcript_groups_from_redis_data(
         # Extract fields from metadata
         name = metadata.get("name")
         description = metadata.get("description")
+        agent_run_id = metadata.get("agent_run_id")
+        collection_id = metadata.get("collection_id")
         parent_transcript_group_id = metadata.get("parent_transcript_group_id")
         metadata_dict = metadata.get("metadata", {})
+
+        # Skip if required fields are missing
+        if not agent_run_id:
+            logger.warning(
+                f"Skipping transcript group {transcript_group_id} - missing agent_run_id"
+            )
+            continue
+
+        if not collection_id:
+            logger.warning(
+                f"Skipping transcript group {transcript_group_id} - missing collection_id"
+            )
+            continue
 
         # Create TranscriptGroup object
         transcript_group = TranscriptGroup(
             id=transcript_group_id,
             name=name,
             description=description,
+            collection_id=collection_id,
+            agent_run_id=agent_run_id,
             parent_transcript_group_id=parent_transcript_group_id,
             metadata=metadata_dict if metadata_dict else {},
         )
@@ -1228,26 +1263,32 @@ async def store_spans(spans: List[Dict[str, Any]], user: User) -> int:
         # Get or create default view context for this collection
         ctx = await mono_svc.get_default_view_ctx(collection_id, user)
 
-        # Get transcript group metadata from Redis and store to database
-        transcript_group_metadata = await _get_collection_transcript_group_metadata(collection_id)
+        # Get transcript group metadata from Redis
+        transcript_group_metadata = await _get_transcript_group_metadata_from_redis(collection_id)
+        transcript_groups_by_agent_run: Dict[str, List[TranscriptGroup]] = {}
+
         if transcript_group_metadata:
             transcript_groups = _create_transcript_groups_from_redis_data(transcript_group_metadata)
             if transcript_groups:
-                await mono_svc.store_transcript_groups(ctx, transcript_groups)
+                # Group transcript groups by agent_run_id
+                for tg in transcript_groups:
+                    if tg.agent_run_id not in transcript_groups_by_agent_run:
+                        transcript_groups_by_agent_run[tg.agent_run_id] = []
+                    transcript_groups_by_agent_run[tg.agent_run_id].append(tg)
                 logger.info(
-                    f"Stored {len(transcript_groups)} transcript groups for collection {collection_id}"
+                    f"Found {len(transcript_groups)} transcript groups for {len(transcript_groups_by_agent_run)} agent runs"
                 )
 
         # Create agent runs for this collection with stored scores and metadata
         collection_agent_runs = await _create_agent_runs_from_spans(
-            spans_by_agent_run, collection_id
+            spans_by_agent_run, collection_id, transcript_groups_by_agent_run
         )
 
         # Add agent runs to this collection
         if collection_agent_runs:
             try:
                 # Add agent runs using the existing service method
-                await mono_svc.update_agent_runs(ctx, collection_agent_runs)
+                await mono_svc.update_agent_runs_for_telemetry(ctx, collection_agent_runs)
                 logger.info(
                     f"Added {len(collection_agent_runs)} agent runs to collection {collection_id}"
                 )
@@ -1348,16 +1389,11 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
     Returns:
         List of Transcript objects
     """
-    # Store all the chat threads
+    # Store all the chat threads and track which spans contributed to each
     chat_threads: List[List[ChatMessage]] = []
+    thread_span_indices: List[List[int]] = []  # Track which spans contributed to each thread
 
-    # Extract transcript_group_id from the first span (they should all have the same one)
-    transcript_group_id = None
-    if transcript_spans:
-        first_span_attrs = transcript_spans[0].get("attributes", {})
-        transcript_group_id = first_span_attrs.get("transcript_group_id")
-
-    for span in transcript_spans:
+    for span_idx, span in enumerate(transcript_spans):
         # Extract messages from this span
         span_messages = _span_to_chat_messages(span)
 
@@ -1370,12 +1406,14 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
         if action == "new":
             # Create new chat thread
             chat_threads.append(span_messages)
+            thread_span_indices.append([span_idx])
             logger.debug(f"    Created new chat thread with {len(span_messages)} messages")
         elif action == "extend" and thread_index is not None:
             # Found matching thread - add new messages
             existing_thread = chat_threads[thread_index]
             new_messages = span_messages[len(existing_thread) :]
             chat_threads[thread_index].extend(new_messages)
+            thread_span_indices[thread_index].append(span_idx)
             logger.info(
                 f"    Extended chat thread {thread_index} with {len(new_messages)} new messages. First new message: {new_messages[0].text[:100] if new_messages else 'N/A'}"
             )
@@ -1392,16 +1430,25 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
             # Create unique transcript ID for each thread
             thread_transcript_id = str(uuid.uuid4())
 
+            # Determine transcript_group_id for this thread based on contributing spans
+            thread_transcript_group_id = None
+            if thread_span_indices[i]:
+                # Use the transcript_group_id from the first span that contributed to this thread
+                first_contributing_span_idx = thread_span_indices[i][0]
+                first_contributing_span = transcript_spans[first_contributing_span_idx]
+                first_span_attrs = first_contributing_span.get("attributes", {})
+                thread_transcript_group_id = first_span_attrs.get("transcript_group_id")
+
             transcript = Transcript(
                 id=thread_transcript_id,
                 messages=chat_thread,
                 name=f"Chat Thread {i + 1}" if len(chat_threads) > 1 else "",
                 description="",
-                transcript_group_id=transcript_group_id,
+                transcript_group_id=thread_transcript_group_id,
             )
             transcripts.append(transcript)
             logger.info(
-                f"    Created transcript {thread_transcript_id} with {len(chat_thread)} messages and transcript_group_id: {transcript_group_id}"
+                f"    Created transcript {thread_transcript_id} with {len(chat_thread)} messages and transcript_group_id: {thread_transcript_group_id}"
             )
     else:
         logger.warning(f"    No messages extracted from {len(transcript_spans)} spans")
@@ -1410,7 +1457,9 @@ def _create_transcripts_from_spans(transcript_spans: List[Dict[str, Any]]) -> Li
 
 
 async def _create_agent_runs_from_spans(
-    agent_runs: Dict[str, Dict[str, List[Dict[str, Any]]]], collection_id: str
+    agent_runs: Dict[str, Dict[str, List[Dict[str, Any]]]],
+    collection_id: str,
+    transcript_groups_by_agent_run: Dict[str, List[TranscriptGroup]] | None = None,
 ) -> List[AgentRun]:
     """
     Create AgentRun objects from organized spans, incorporating stored scores and metadata.
@@ -1472,8 +1521,8 @@ async def _create_agent_runs_from_spans(
         # Create agent run if it has transcripts
         if agent_run_transcripts:
             # Get stored scores and metadata for this collection
-            collection_scores = await _get_collection_scores(collection_id)
-            collection_metadata = await _get_collection_metadata(collection_id)
+            collection_scores = await _get_collection_scores_from_redis(collection_id)
+            collection_metadata = await _get_collection_metadata_from_redis(collection_id)
 
             # Create metadata with scores, model, and any additional metadata using BaseAgentRunMetadata
             metadata_dict: Dict[str, Any] = {"scores": agent_run_scores}
@@ -1507,11 +1556,19 @@ async def _create_agent_runs_from_spans(
                         logger.info(f"  Added stored metadata to agent run: {stored_metadata}")
 
             metadata = metadata_dict
+
+            # Get transcript groups for this agent run
+            agent_run_transcript_groups: Dict[str, TranscriptGroup] = {}
+            if transcript_groups_by_agent_run and agent_run_id in transcript_groups_by_agent_run:
+                for tg in transcript_groups_by_agent_run[agent_run_id]:
+                    agent_run_transcript_groups[tg.id] = tg
+
             agent_run = AgentRun(
                 id=agent_run_id,
                 name="",
                 description="",
                 transcripts=agent_run_transcripts,
+                transcript_groups=agent_run_transcript_groups,
                 metadata=metadata,
             )
             collection_agent_runs.append(agent_run)

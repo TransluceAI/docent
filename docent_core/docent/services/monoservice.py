@@ -315,29 +315,58 @@ class MonoService:
         # Convert AgentRun objects to SQLAlchemy objects using existing conversion functions
         agent_run_data: list[SQLAAgentRun] = []
         transcript_data: list[SQLATranscript] = []
+        transcript_group_data: list[SQLATranscriptGroup] = []
 
+        # Process all agent runs, transcripts, and transcript groups first
         for ar in agent_runs:
             sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.collection_id)
             agent_run_data.append(sqla_agent_run)
 
+            # Process transcripts for this agent run
             for dk, t in ar.transcripts.items():
                 sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.collection_id, ar.id)
                 transcript_data.append(sqla_transcript)
 
+            # Process transcript groups for this agent run
+            if hasattr(ar, "transcript_groups") and ar.transcript_groups:
+                for tg in ar.transcript_groups.values():
+                    # Use the existing from_transcript_group method to get all fields properly
+                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg)
+                    transcript_group_data.append(sqla_transcript_group)
+
         # Insert all rows in a single transaction using add_all
         async with self.db.session() as session:
+            # Handle transcript groups first with proper parent-child ordering
+            if transcript_group_data:
+                sorted_transcript_groups = self._sort_transcript_groups_for_storage(
+                    transcript_group_data
+                )
+
+                # Insert transcript groups in sorted order
+                for sqla_transcript_group in sorted_transcript_groups:
+                    session.add(sqla_transcript_group)
+
+            # Insert agent runs and transcripts
             # Note: order does not matter as both are in the same transaction
             session.add_all(agent_run_data)
             session.add_all(transcript_data)
 
-    async def update_agent_runs(self, ctx: ViewContext, agent_runs: Sequence[AgentRun]):
+        logger.info(
+            f"Added {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
+        )
+
+    async def update_agent_runs_for_telemetry(
+        self, ctx: ViewContext, agent_runs: Sequence[AgentRun]
+    ):
         """
         Update agent runs - create if they don't exist, update if they do exist.
         For transcripts, delete existing ones and recreate them.
+        For transcript groups, upsert them with proper parent-child ordering.
         """
         # Convert AgentRun objects to SQLAlchemy objects using existing conversion functions
         agent_run_data: list[SQLAAgentRun] = []
         transcript_data: list[SQLATranscript] = []
+        transcript_group_data: list[SQLATranscriptGroup] = []
         agent_run_ids = [ar.id for ar in agent_runs]
 
         # Check collection size limit
@@ -357,7 +386,7 @@ class MonoService:
             if existing_count + new_agent_run_count > 100_000:
                 raise ValueError("Number of agent runs in the current collection is too large")
 
-        # Process all agent runs and transcripts first
+        # Process all agent runs, transcripts, and transcript groups first
         for ar in agent_runs:
             # Use the existing from_agent_run method to get all fields properly
             sqla_agent_run = SQLAAgentRun.from_agent_run(ar, ctx.collection_id)
@@ -369,11 +398,29 @@ class MonoService:
                 sqla_transcript = SQLATranscript.from_transcript(t, dk, ctx.collection_id, ar.id)
                 transcript_data.append(sqla_transcript)
 
+            # Process transcript groups for this agent run
+            if hasattr(ar, "transcript_groups") and ar.transcript_groups:
+                for tg in ar.transcript_groups.values():
+                    # Use the existing from_transcript_group method to get all fields properly
+                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg)
+                    transcript_group_data.append(sqla_transcript_group)
+
         # Handle agent runs - upsert (insert or update)
         async with self.db.session() as session:
             for sqla_agent_run in agent_run_data:
                 # Use merge to handle both insert and update
                 await session.merge(sqla_agent_run)
+
+        # Handle transcript groups - upsert with proper parent-child ordering
+        if transcript_group_data:
+            sorted_transcript_groups = self._sort_transcript_groups_for_storage(
+                transcript_group_data
+            )
+
+            async with self.db.session() as session:
+                for sqla_transcript_group in sorted_transcript_groups:
+                    # Use merge to handle both insert and update
+                    await session.merge(sqla_transcript_group)
 
         # Handle transcripts - delete existing and recreate
         async with self.db.session() as session:
@@ -387,30 +434,60 @@ class MonoService:
             for sqla_transcript in transcript_data:
                 session.add(sqla_transcript)
 
-        logger.info(f"Updated {len(agent_runs)} agent runs and {len(transcript_data)} transcripts")
+        logger.info(
+            f"Updated {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
+        )
 
-    async def store_transcript_groups(
-        self, ctx: ViewContext, transcript_groups: Sequence[TranscriptGroup]
-    ):
+    def _sort_transcript_groups_for_storage(
+        self, transcript_groups: list[SQLATranscriptGroup]
+    ) -> list[SQLATranscriptGroup]:
         """
-        Store transcript groups in the database.
-        Creates new transcript groups if they don't exist, updates them if they do exist.
+        Sort transcript groups so that parents are stored before their children.
+        This ensures foreign key constraints are satisfied when storing to the database.
+
+        Uses topological sorting to handle the parent-child relationships.
         """
-        # Convert TranscriptGroup objects to SQLAlchemy objects
-        transcript_group_data: list[SQLATranscriptGroup] = []
+        if not transcript_groups:
+            return transcript_groups
+
+        # Create a mapping of id to transcript group for quick lookup
+        id_to_group = {tg.id: tg for tg in transcript_groups}
+
+        # Build adjacency list: child_id -> parent_id
+        child_to_parent: dict[str, str | None] = {}
 
         for tg in transcript_groups:
-            # Use the existing from_transcript_group method to get all fields properly
-            sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg, ctx.collection_id)
-            transcript_group_data.append(sqla_transcript_group)
+            child_to_parent[tg.id] = tg.parent_transcript_group_id
 
-        # Handle transcript groups - upsert (insert or update)
-        async with self.db.session() as session:
-            for sqla_transcript_group in transcript_group_data:
-                # Use merge to handle both insert and update
-                await session.merge(sqla_transcript_group)
+        # Topological sort: parents first, then children
+        sorted_ids: list[str] = []
+        visited: set[str] = set()
 
-        logger.info(f"Stored {len(transcript_groups)} transcript groups")
+        def visit(group_id: str) -> None:
+            """Recursively visit a group and its parent."""
+            if group_id in visited:
+                return
+
+            visited.add(group_id)
+
+            # Visit parent first (if it exists and is in our list)
+            parent_id = child_to_parent.get(group_id)
+            if parent_id and parent_id in id_to_group:
+                visit(parent_id)
+
+            # Then add this group
+            sorted_ids.append(group_id)
+
+        # Visit all groups
+        for tg in transcript_groups:
+            if tg.id not in visited:
+                visit(tg.id)
+
+        # Return transcript groups in sorted order
+        sorted_groups = [id_to_group[group_id] for group_id in sorted_ids]
+
+        logger.debug(f"Sorted {len(transcript_groups)} transcript groups for storage")
+        return sorted_groups
 
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
         collection_id = ctx.collection_id
@@ -510,6 +587,22 @@ class MonoService:
             else:
                 transcripts_raw = []
 
+            # Get transcript groups for the agent runs
+            transcript_groups_raw: list[SQLATranscriptGroup] = []
+            if agent_run_ids:
+                # Use batch processing to avoid PostgreSQL parameter limits
+                batch_size = 10_000
+
+                for i in range(0, len(agent_run_ids), batch_size):
+                    batch_ids = agent_run_ids[i : i + batch_size]
+                    result = await session.execute(
+                        select(SQLATranscriptGroup).where(
+                            SQLATranscriptGroup.agent_run_id.in_(batch_ids)
+                        )
+                    )
+                    batch_transcript_groups = result.scalars().all()
+                    transcript_groups_raw.extend(batch_transcript_groups)
+
         # Collate run_id -> transcripts
         agent_run_transcripts: dict[str, list[tuple[str, Transcript]]] = {}
         for t_raw in transcripts_raw:
@@ -517,9 +610,17 @@ class MonoService:
                 t_raw.to_dict_key_and_transcript()
             )
 
+        # Collate run_id -> transcript groups
+        agent_run_transcript_groups: dict[str, dict[str, TranscriptGroup]] = {}
+        for tg_raw in transcript_groups_raw:
+            agent_run_transcript_groups.setdefault(tg_raw.agent_run_id, {})[
+                tg_raw.id
+            ] = tg_raw.to_transcript_group()
+
         final_result = [
             ar_raw.to_agent_run(
-                transcripts={dk: t for dk, t in agent_run_transcripts.get(ar_raw.id, [])}
+                transcripts={dk: t for dk, t in agent_run_transcripts.get(ar_raw.id, [])},
+                transcript_groups=agent_run_transcript_groups.get(ar_raw.id, {}),
             )
             for ar_raw in agent_runs_raw
         ]

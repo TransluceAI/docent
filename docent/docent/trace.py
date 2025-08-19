@@ -34,9 +34,8 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.trace import Span
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
-logger.disabled = True
 
 # Default configuration
 DEFAULT_ENDPOINT = "https://api.docent.transluce.org/rest/telemetry"
@@ -223,7 +222,7 @@ class DocentTracer:
                 exporters.append(exporter)
                 logger.info(f"Initialized exporter for endpoint: {endpoint}")
             else:
-                logger.warning(f"Failed to initialize exporter for endpoint: {endpoint}")
+                logger.critical(f"Failed to initialize exporter for endpoint: {endpoint}")
 
         return exporters
 
@@ -326,8 +325,6 @@ class DocentTracer:
                     logger.info(
                         f"Added {len(otlp_exporters)} OTLP exporters for {len(self.endpoints)} endpoints"
                     )
-                else:
-                    logger.warning("Failed to initialize OTLP exporter")
 
             if self.enable_console_export:
                 console_exporter: ConsoleSpanExporter = ConsoleSpanExporter()
@@ -812,9 +809,19 @@ class DocentTracer:
             metadata: Optional metadata to send
         """
         collection_id = self.collection_id
+
+        # Get agent_run_id from current context
+        agent_run_id = self.get_current_agent_run_id()
+        if not agent_run_id:
+            logger.error(
+                f"Cannot send transcript group metadata for {transcript_group_id} - no agent_run_id in context"
+            )
+            return
+
         payload: Dict[str, Any] = {
             "collection_id": collection_id,
             "transcript_group_id": transcript_group_id,
+            "agent_run_id": agent_run_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
