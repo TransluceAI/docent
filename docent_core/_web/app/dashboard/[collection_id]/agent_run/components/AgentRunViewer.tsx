@@ -59,6 +59,21 @@ const formatMetadataValue = (value: any): string => {
   return String(value);
 };
 
+// Helper function to sort transcripts by created_at timestamp
+const sortTranscriptsByTimestamp = (
+  transcriptIds: string[],
+  transcripts: Record<string, any>
+): string[] => {
+  return [...transcriptIds].sort((a, b) => {
+    const timestampA = transcripts[a].created_at;
+    const timestampB = transcripts[b].created_at;
+    if (!timestampA && !timestampB) return 0;
+    if (!timestampA) return 1;
+    if (!timestampB) return -1;
+    return new Date(timestampA).getTime() - new Date(timestampB).getTime();
+  });
+};
+
 // Interface for hierarchical transcript group structure
 interface TranscriptGroupNode {
   group: TranscriptGroup;
@@ -229,35 +244,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         const groupToTranscripts: Record<string, string[]> = {};
         const groupToNode: Record<string, TranscriptGroupNode> = {};
 
-        // Debug logging
-        console.log('AgentRun:', {
-          id: agentRun.id,
-          transcriptCount: Object.keys(agentRun.transcripts).length,
-          hasTranscriptGroups: !!agentRun.transcript_groups,
-          transcriptGroupsCount: agentRun.transcript_groups
-            ? Object.keys(agentRun.transcript_groups).length
-            : 0,
-        });
-        console.log('AgentRun transcripts:', Object.keys(agentRun.transcripts));
-        console.log(
-          'AgentRun transcript_groups:',
-          Object.keys(transcriptGroups)
-        );
-
         // First pass: collect all transcripts and their groups
         Object.entries(agentRun.transcripts).forEach(
           ([transcriptId, transcript]) => {
             allTranscriptKeys.push(transcriptId);
-
-            console.log(`Transcript ${transcriptId}:`, {
-              transcript_group_id: transcript.transcript_group_id,
-              hasGroup:
-                transcript.transcript_group_id &&
-                transcriptGroups[transcript.transcript_group_id],
-              groupExists: transcript.transcript_group_id
-                ? transcriptGroups[transcript.transcript_group_id]
-                : false,
-            });
 
             if (
               transcript.transcript_group_id &&
@@ -268,28 +258,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                 groupToTranscripts[groupId] = [];
               }
               groupToTranscripts[groupId].push(transcriptId);
-              console.log(
-                `Assigned transcript ${transcriptId} to group ${groupId}`
-              );
-            } else {
-              console.log(
-                `Transcript ${transcriptId} has no valid group assignment`
-              );
             }
           }
         );
-
-        console.log('Group to transcripts mapping:', groupToTranscripts);
-
-        // Debug transcript groups structure
-        console.log('Transcript groups details:');
-        Object.entries(transcriptGroups).forEach(([groupId, group]) => {
-          console.log(`Group ${groupId}:`, {
-            name: group.name,
-            parent: group.parent_transcript_group_id,
-            hasTranscripts: groupToTranscripts[groupId]?.length || 0,
-          });
-        });
 
         // Second pass: build nodes for all groups
         Object.entries(transcriptGroups).forEach(([groupId, group]) => {
@@ -348,16 +319,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
         // Sort transcripts within each group by created_at timestamp
         const sortTranscripts = (node: TranscriptGroupNode) => {
-          node.transcripts.sort((a, b) => {
-            const timestampA = agentRun.transcripts[a].created_at;
-            const timestampB = agentRun.transcripts[b].created_at;
-            if (!timestampA && !timestampB) return 0;
-            if (!timestampA) return 1;
-            if (!timestampB) return -1;
-            return (
-              new Date(timestampA).getTime() - new Date(timestampB).getTime()
-            );
-          });
+          node.transcripts = sortTranscriptsByTimestamp(
+            node.transcripts,
+            agentRun.transcripts
+          );
 
           // Recursively sort children
           node.children.forEach(sortTranscripts);
@@ -372,16 +337,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         );
 
         // Sort ungrouped transcripts by created_at timestamp
-        ungroupedTranscripts.sort((a, b) => {
-          const timestampA = agentRun.transcripts[a].created_at;
-          const timestampB = agentRun.transcripts[b].created_at;
-          if (!timestampA && !timestampB) return 0;
-          if (!timestampA) return 1;
-          if (!timestampB) return -1;
-          return (
-            new Date(timestampA).getTime() - new Date(timestampB).getTime()
-          );
-        });
+        const sortedUngroupedTranscripts = sortTranscriptsByTimestamp(
+          ungroupedTranscripts,
+          agentRun.transcripts
+        );
 
         console.log(
           'Final tree structure:',
@@ -393,7 +352,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             childCount: node.children.length,
           }))
         );
-        console.log('Ungrouped transcripts:', ungroupedTranscripts);
 
         // If no transcript groups are available, treat all transcripts as ungrouped
         if (Object.keys(transcriptGroups).length === 0) {
@@ -409,7 +367,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
         return {
           transcriptGroupTree: rootNodes,
-          ungroupedTranscripts,
+          ungroupedTranscripts: sortedUngroupedTranscripts,
           transcriptKeys: allTranscriptKeys,
         };
       }, [agentRun]);
