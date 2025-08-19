@@ -80,7 +80,8 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
   const totalAgentRuns = rubricRunState?.total_agent_runs ?? null;
 
   // Rubric job lifecyles
-  const [startEvaluation] = useStartEvaluationMutation();
+  const [startEvaluation, { isLoading: isStartingEvaluation }] =
+    useStartEvaluationMutation();
   const handleStartRubricJob = async () => {
     await startEvaluation({
       collectionId,
@@ -142,7 +143,8 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
   };
 
   // Clustering job lifecyles
-  const [startClusteringJob] = useStartClusteringJobMutation();
+  const [startClusteringJob, { isLoading: isStartingClustering }] =
+    useStartClusteringJobMutation();
   const handleStartClustering = async (
     feedback: string | undefined,
     recluster: boolean
@@ -321,11 +323,13 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
                   type="button"
                   size="sm"
                   className="gap-1 h-7 text-xs"
-                  disabled={hasUnsavedChanges}
+                  disabled={hasUnsavedChanges || isStartingClustering}
                   variant="outline"
                   onClick={() => handleStartClustering(undefined, false)}
                 >
-                  Cluster results
+                  {isStartingClustering
+                    ? 'Starting clustering...'
+                    : 'Cluster results'}
                 </Button>
               )}
             {!activeClusteringJobId && Object.keys(centroidsMap).length > 0 && (
@@ -368,10 +372,10 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
                 type="button"
                 size="sm"
                 className="gap-1 h-7 text-xs"
-                disabled={hasUnsavedChanges}
+                disabled={isStartingEvaluation || hasUnsavedChanges}
                 onClick={handleStartRubricJob}
               >
-                Run rubric
+                {isStartingEvaluation ? 'Starting rubric...' : 'Run rubric'}
               </Button>
             )}
             {activeRubricJobId && (
