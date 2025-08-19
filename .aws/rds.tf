@@ -16,7 +16,7 @@ resource "aws_db_instance" "postgres" {
   instance_class = var.rds_instance_class
 
   allocated_storage     = 20
-  max_allocated_storage = 100
+  max_allocated_storage = var.deployment == "prod" ? 1000 : 100
   storage_type          = "gp3"
   storage_encrypted     = true
 

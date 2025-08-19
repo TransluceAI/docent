@@ -23,7 +23,6 @@ import { Label } from '@/components/ui/label';
 
 import { type Rubric } from '@/app/store/rubricSlice';
 
-import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import {
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
@@ -141,8 +140,7 @@ export default function RubricEditor({
   editable,
   onHasUnsavedChangesUpdated,
 }: RubricEditorProps) {
-  const hasWritePermission = useHasCollectionWritePermission();
-  const isDisabled = !editable || !hasWritePermission;
+  const isDisabled = !editable;
 
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const dispatch = useAppDispatch();

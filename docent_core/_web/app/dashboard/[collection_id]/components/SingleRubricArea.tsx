@@ -16,6 +16,7 @@ import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { JudgeResultWithCitations, Rubric } from '../../../store/rubricSlice';
 
 import { ProgressBar } from '../../../components/ProgressBar';
+import { Loader2 } from 'lucide-react';
 import RubricEditor from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsSection';
 import {
@@ -53,15 +54,16 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
 
   const [shouldPollRubricRunState, setShouldPollRubricRunState] =
     useState(false);
-  const { data: rubricRunState } = useGetRubricRunStateQuery(
-    {
-      collectionId,
-      rubricId,
-    },
-    {
-      pollingInterval: shouldPollRubricRunState ? 1000 : 0,
-    }
-  );
+  const { data: rubricRunState, isLoading: isLoadingRubricRunState } =
+    useGetRubricRunStateQuery(
+      {
+        collectionId,
+        rubricId,
+      },
+      {
+        pollingInterval: shouldPollRubricRunState ? 1000 : 0,
+      }
+    );
   // Job state
   const activeRubricJobId = rubricRunState?.job_id ?? null;
   useEffect(() => {
@@ -241,7 +243,7 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
   const handleShare = async () => {
     try {
       const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('activeRubricId', rubricId);
+      currentUrl.searchParams.set('rubricId', rubricId);
 
       // If centroids exist, add parameter to auto-load them in the shared link
       if (Object.keys(centroidsMap).length > 0) {
@@ -280,7 +282,9 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
         onSave={handleRubricSave}
         onCloseWithoutSave={() => {}}
         onHasUnsavedChangesUpdated={setHasUnsavedChanges}
-        editable={!activeRubricJobId && !activeClusteringJobId}
+        editable={
+          !activeRubricJobId && !activeClusteringJobId && hasWritePermission
+        }
       />
 
       {/* Progress bar */}
@@ -392,6 +396,14 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
           </>
         )}
       </div>
+
+      {/* Loading indicator */}
+      {isLoadingRubricRunState && Object.keys(judgeResultsMap).length === 0 && (
+        <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading rubric results
+        </div>
+      )}
 
       {/* Results */}
       <JudgeResultsList
