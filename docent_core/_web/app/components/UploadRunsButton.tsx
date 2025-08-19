@@ -5,7 +5,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { PlusIcon, Upload, BookOpen } from 'lucide-react';
+import { PlusIcon, Upload, BookOpen, Code } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import UploadRunsDialog from './UploadRunsDialog';
@@ -48,6 +48,14 @@ export default function UploadRunsButton({
     window.open('https://docs.transluce.org/en/latest/quickstart/', '_blank');
   };
 
+  const handleUseTracingClick = () => {
+    // Navigate to tracing documentation
+    window.open(
+      'https://docs.transluce.org/en/latest/tracing/introduction/',
+      '_blank'
+    );
+  };
+
   return (
     <div>
       <input
@@ -73,6 +81,10 @@ export default function UploadRunsButton({
           <DropdownMenuItem onClick={handleUseSDKClick}>
             <BookOpen className="mr-2 h-4 w-4" />
             Use SDK
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleUseTracingClick}>
+            <Code className="mr-2 h-4 w-4" />
+            Use Tracing
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -2,6 +2,7 @@ from typing import TypedDict
 
 from fastapi import APIRouter
 
+from docent_core._server._rest.onboarding import onboarding_router
 from docent_core._server._rest.refinement import refinement_router
 from docent_core.docent.server.rest.chart import chart_router
 from docent_core.docent.server.rest.diff import diff_router
@@ -43,6 +44,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": chart_router,
         "prefix": "/rest/chart",
+    },
+    {
+        "router": onboarding_router,
+        "prefix": "/rest",
     },
 ]
 

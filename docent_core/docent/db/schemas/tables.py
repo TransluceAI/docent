@@ -58,6 +58,7 @@ TABLE_ANALYTICS_EVENT = "analytics_events"
 TABLE_CHAT_SESSION = "chat_sessions"
 TABLE_API_KEY = "api_keys"
 TABLE_TELEMETRY_LOG = "telemetry_logs"
+TABLE_USER_PROFILE = "user_profiles"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -777,3 +778,32 @@ class SQLATelemetryLog(SQLABase):
     created_at = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
+
+
+class SQLAUserProfile(SQLABase):
+    __tablename__ = TABLE_USER_PROFILE
+
+    id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
+
+    # Onboarding data fields
+    institution = mapped_column(Text, nullable=True)
+    task = mapped_column(Text, nullable=True)
+    help_type = mapped_column(Text, nullable=True)
+    frameworks = mapped_column(
+        JSONB, nullable=True
+    )  # {"selected": ["LangChain", "Inspect"], "other": ["MyCustomFramework"]}
+    providers = mapped_column(
+        JSONB, nullable=True
+    )  # {"selected": ["OpenAI", "Anthropic"], "other": ["MyCustomProvider"]}
+    discovery_source = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    updated_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    user: Mapped["SQLAUser"] = relationship("SQLAUser", backref="user_profile")

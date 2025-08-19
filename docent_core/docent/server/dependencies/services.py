@@ -13,6 +13,7 @@ from docent_core.docent.services.diff import DiffService
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
+from docent_core.services.onboarding import OnboardingService
 from docent_core.services.refinement import RefinementService
 
 
@@ -59,3 +60,13 @@ def get_chart_service(
     session: AsyncSession = Depends(get_session),
 ) -> ChartsService:
     return ChartsService(session)
+
+
+def get_onboarding_service(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    session: AsyncSession = Depends(get_session),
+    session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]] = Depends(
+        get_session_cm_factory
+    ),
+) -> OnboardingService:
+    return OnboardingService(session, session_cm_factory, mono_svc)

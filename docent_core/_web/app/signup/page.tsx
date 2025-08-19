@@ -33,7 +33,7 @@ function SignupPageContent() {
       setUser(user);
 
       // Force a full page navigation to ensure cookie is processed
-      const redirectUrl = redirectParam || '/dashboard';
+      const redirectUrl = redirectParam || '/onboarding';
       window.location.href = redirectUrl;
     } catch (error: any) {
       console.error('Failed to sign up:', error);
