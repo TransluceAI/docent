@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from enum import Enum
+from importlib.metadata import Distribution, distributions
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Union
 
 import requests
@@ -19,10 +20,6 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as GRPCExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPExporter
-from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
-from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 from opentelemetry.instrumentation.threading import ThreadingInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
@@ -34,8 +31,8 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.trace import Span
 
 # Configure logging
-logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 # Default configuration
 DEFAULT_ENDPOINT = "https://api.docent.transluce.org/rest/telemetry"
@@ -352,32 +349,44 @@ class DocentTracer:
             # Instrument OpenAI with our isolated tracer provider
             if Instruments.OPENAI in enabled_instruments:
                 try:
-                    OpenAIInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                    logger.info("Instrumented OpenAI")
+                    if is_package_installed("openai"):
+                        from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+
+                        OpenAIInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                        logger.info("Instrumented OpenAI")
                 except Exception as e:
                     logger.warning(f"Failed to instrument OpenAI: {e}")
 
             # Instrument Anthropic with our isolated tracer provider
             if Instruments.ANTHROPIC in enabled_instruments:
                 try:
-                    AnthropicInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                    logger.info("Instrumented Anthropic")
+                    if is_package_installed("anthropic"):
+                        from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+
+                        AnthropicInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                        logger.info("Instrumented Anthropic")
                 except Exception as e:
                     logger.warning(f"Failed to instrument Anthropic: {e}")
 
             # Instrument Bedrock with our isolated tracer provider
             if Instruments.BEDROCK in enabled_instruments:
                 try:
-                    BedrockInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                    logger.info("Instrumented Bedrock")
+                    if is_package_installed("boto3"):
+                        from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
+
+                        BedrockInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                        logger.info("Instrumented Bedrock")
                 except Exception as e:
                     logger.warning(f"Failed to instrument Bedrock: {e}")
 
             # Instrument LangChain with our isolated tracer provider
             if Instruments.LANGCHAIN in enabled_instruments:
                 try:
-                    LangchainInstrumentor().instrument(tracer_provider=self._tracer_provider)
-                    logger.info("Instrumented LangChain")
+                    if is_package_installed("langchain") or is_package_installed("langgraph"):
+                        from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
+                        LangchainInstrumentor().instrument(tracer_provider=self._tracer_provider)
+                        logger.info("Instrumented LangChain")
                 except Exception as e:
                     logger.warning(f"Failed to instrument LangChain: {e}")
 
@@ -1024,6 +1033,22 @@ def initialize_tracing(
         _global_tracer.initialize()
 
     return _global_tracer
+
+
+def _get_package_name(dist: Distribution) -> str | None:
+    try:
+        return dist.name.lower()
+    except (KeyError, AttributeError):
+        return None
+
+
+installed_packages = {
+    name for dist in distributions() if (name := _get_package_name(dist)) is not None
+}
+
+
+def is_package_installed(package_name: str) -> bool:
+    return package_name.lower() in installed_packages
 
 
 def get_tracer() -> DocentTracer:
