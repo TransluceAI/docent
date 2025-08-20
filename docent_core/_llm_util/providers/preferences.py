@@ -252,13 +252,13 @@ class ProviderPreferences(BaseModel):
         """
         return [
             ModelOption(
-                provider="openai",
-                model_name="o3",
+                provider="anthropic",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
             ModelOption(
-                provider="anthropic",
-                model_name="claude-3-7-sonnet-20250219",
+                provider="openai",
+                model_name="gpt-5",
                 reasoning_effort="medium",
             ),
         ]
@@ -457,7 +457,7 @@ class ProviderPreferences(BaseModel):
         return [
             ModelOption(
                 provider="anthropic",
-                model_name="claude-sonnet-4",
+                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
             ModelOption(provider="openai", model_name="gpt-5", reasoning_effort="medium"),

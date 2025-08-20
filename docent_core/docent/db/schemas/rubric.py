@@ -90,11 +90,15 @@ class SQLARubric(SQLABase):
         )
 
     def to_pydantic(self) -> Rubric:
-        try:
-            jm = ModelOption.model_validate(self.judge_model)
-        except ValidationError:
-            logger.warning(f"Unable to parse judge model from database: {self.judge_model}")
+        if self.judge_model is None:
             jm = None
+        else:
+            try:
+                jm = ModelOption.model_validate(self.judge_model)
+            except ValidationError:
+                logger.warning(f"Unable to parse judge model from database: {self.judge_model}")
+                jm = None
+
         return Rubric(
             id=self.id,
             version=self.version,
