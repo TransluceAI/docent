@@ -170,6 +170,12 @@ class MonoService:
                 .values(outer_bin_key=None, inner_bin_key=None, base_filter_dict=None)
             )
 
+        # Delete telemetry logs
+        async with self.db.session() as session:
+            await session.execute(
+                delete(SQLATelemetryLog).where(SQLATelemetryLog.collection_id == collection_id)
+            )
+
         # delete all search result clusters joining on search result id to get collection_id
         async with self.db.session() as session:
             await session.execute(
