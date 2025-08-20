@@ -21,7 +21,7 @@ export interface UpdateRubricRequest {
     high_level_description: string;
     inclusion_rules: string[];
     exclusion_rules: string[];
-    judge_model: JudgeModel;
+    judge_model: JudgeModel | null;
   };
 }
 
