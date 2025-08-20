@@ -626,7 +626,7 @@ class DocentTracer:
             raise RuntimeError("API endpoint base is not configured")
         url = f"{self._api_endpoint_base}{path}"
         try:
-            resp = requests.post(url, json=data, headers=self._api_headers(), timeout=10)
+            resp = requests.post(url, json=data, headers=self._api_headers(), timeout=(10, 60))
             resp.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed POST {url}: {e}")
