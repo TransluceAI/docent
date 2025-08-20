@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from docent._log_util import get_logger
+from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.db.schemas.auth_models import User
+from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.services import get_onboarding_service
 from docent_core.docent.server.dependencies.user import get_authenticated_user
 from docent_core.services.onboarding import OnboardingService
@@ -31,9 +33,14 @@ async def save_onboarding_data(
     data: OnboardingData,
     user: User = Depends(get_authenticated_user),
     onboarding_svc: OnboardingService = Depends(get_onboarding_service),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ):
     """Save onboarding data for the authenticated user."""
     try:
+        # Check if user profile already exists to determine if this is an update
+        existing = await onboarding_svc.get_user_profile(user.id)
+        is_update = existing is not None
+
         result = await onboarding_svc.save_user_profile(
             user_id=user.id,
             institution=data.institution,
@@ -43,8 +50,18 @@ async def save_onboarding_data(
             providers=data.providers.model_dump() if data.providers else None,
             discovery_source=data.discovery_source,
         )
-
         logger.info(f"Saved onboarding data for user {user.id}")
+
+        analytics.track_event(
+            "onboarding_completed",
+            properties={
+                "user_id": user.id,
+                "is_update": is_update,
+                **data.model_dump(),
+            },
+        )
+        logger.info(f"Tracked onboarding completion for user {user.id}")
+
         return {
             "success": True,
             "message": "Onboarding data saved successfully",
