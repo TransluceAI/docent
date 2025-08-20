@@ -20,7 +20,7 @@ jobs:
     environment: Preview
     env:
       NEXT_TELEMETRY_DISABLED: 1
-      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_API_HOST: ${{ vars.NEXT_PUBLIC_API_HOST }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
