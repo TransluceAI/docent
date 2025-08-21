@@ -1327,7 +1327,7 @@ async def create_ta_session(
 ):
     agent_run_id = request.agent_run_id
 
-    agent_run = await mono_svc.get_agent_run(ctx, agent_run_id)
+    agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
     if not agent_run:
         raise ValueError("Agent run not found")
 
