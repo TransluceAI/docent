@@ -35,6 +35,11 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 import MetadataDialog from './MetadataDialog';
 import { cn } from '@/lib/utils';
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable';
 
 // Export interface for use in other components
 export interface AgentRunViewerHandle {
@@ -668,11 +673,19 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                 ...
               </div>
             </div>
-            <div className="flex flex-1 min-h-0 w-full space-x-2 overflow-hidden relative">
+            <ResizablePanelGroup
+              direction="horizontal"
+              className="flex flex-1 min-h-0 w-full overflow-hidden relative"
+            >
               {/* Transcript Groups and Transcripts Sidebar */}
               {transcriptKeys.length >= 1 && (
                 <>
-                  <div className="w-48 flex-shrink-0 flex flex-col">
+                  <ResizablePanel
+                    defaultSize={25}
+                    minSize={20}
+                    maxSize={50}
+                    className="flex flex-col"
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-xs font-medium text-primary">
                         Transcripts
@@ -773,13 +786,13 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         </div>
                       ))}
                     </div>
-                  </div>
-                  <div className="border-r border-border " />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
                 </>
               )}
 
               {transcript && (
-                <>
+                <ResizablePanel defaultSize={75} className="flex flex-col">
                   {/* Transcript content */}
                   <div
                     className="space-y-2 overflow-y-auto custom-scrollbar flex-1"
@@ -822,9 +835,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       </button>
                     </div>
                   </div>
-                </>
+                </ResizablePanel>
               )}
-            </div>
+            </ResizablePanelGroup>
           </>
         )}
         {!agentRun && (
