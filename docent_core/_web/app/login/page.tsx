@@ -80,7 +80,7 @@ function LoginPageContent() {
           {/* Header */}
           <div className="text-center space-y-2">
             <h1 className="text-2xl font-bold tracking-tight">
-              Sign in to Docent
+              Welcome back to Docent
             </h1>
             <p className="text-sm text-muted-foreground">
               Enter your email and password to sign in

@@ -11,7 +11,7 @@ export default async function SettingsLayout({
   // If user is either not authenticated or anonymous, redirect to login
   if (!user || user.is_anonymous) {
     const encodedRedirect = encodeURIComponent('/settings/api_keys');
-    redirect(`/login?redirect=${encodedRedirect}`);
+    redirect(`/signup?redirect=${encodedRedirect}`);
   }
   return <div>{children}</div>;
 }

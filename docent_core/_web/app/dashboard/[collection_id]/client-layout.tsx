@@ -47,7 +47,7 @@ export function PermissionDeniedPage() {
     // Capture the current URL to redirect back after login
     const currentUrl = window.location.pathname + window.location.search;
     const encodedRedirect = encodeURIComponent(currentUrl);
-    router.push(`/login?redirect=${encodedRedirect}`);
+    router.push(`/signup?redirect=${encodedRedirect}`);
   };
 
   return (

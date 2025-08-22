@@ -6,7 +6,7 @@ import { getUser } from './services/dal';
  *
  * Redirects users based on authentication status:
  * - Authenticated users → /dashboard (handled by route group)
- * - Unauthenticated users → /login
+ * - Unauthenticated users → /signup
  */
 export default async function LandingPage() {
   const user = await getUser();
@@ -15,7 +15,7 @@ export default async function LandingPage() {
     // User is authenticated and not anonymous, redirect to dashboard
     redirect('/dashboard');
   } else {
-    // User is not authenticated, redirect to login
-    redirect('/login');
+    // User is not authenticated, redirect to signup
+    redirect('/signup');
   }
 }

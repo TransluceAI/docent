@@ -31,8 +31,8 @@ export const UserProfile = () => {
     try {
       await logout(); // Pure API call
       setUser(null); // Clear client state
-      // router.push('/login'); // Handle redirect
-      window.location.href = '/login'; // Handle redirect
+      // router.push('/signup'); // Handle redirect
+      window.location.href = '/signup'; // Handle redirect
     } catch (error) {
       console.error('Logout failed:', error);
       toast({

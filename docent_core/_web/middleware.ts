@@ -51,7 +51,7 @@ export async function middleware(request: NextRequest) {
 
   // At this point, if there is no user, we need to redirect to login
   if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/signup', request.url));
   }
 
   return NextResponse.next();

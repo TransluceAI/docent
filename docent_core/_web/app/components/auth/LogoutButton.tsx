@@ -36,7 +36,7 @@ export const LogoutButton = ({
       });
 
       // Redirect to login
-      window.location.href = '/login';
+      window.location.href = '/signup';
     } catch (error) {
       console.error('Logout failed:', error);
       toast({
