@@ -234,7 +234,7 @@ function SignupPageContent() {
           </Button>
           <Button asChild variant="outline">
             <a
-              href="https://join.slack.com/share/enQtOTQwNDEzOTg1OTEyMC03ZjI3ZWFhMjExY2EyZWZkNzkxNjBkMzY1NTJjOGJjMmEyY2MxOTZmNGRkNmFmMGUxYjVhNmIwOWE2ZWMzMjgz"
+              href="https://join.slack.com/t/docentcommunity/shared_invite/zt-39uln1o3q-DObXadOIKN_IGc73ZOjgnA"
               target="_blank"
               rel="noopener noreferrer"
             >
