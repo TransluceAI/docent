@@ -200,7 +200,6 @@ class DocentTracer:
     def _signal_handler(self, signum: int, frame: Optional[object]):
         """Handle shutdown signals."""
         self.cleanup()
-        sys.exit(0)
 
     def _init_spans_exporter(self, endpoint: str) -> Optional[Union[HTTPExporter, GRPCExporter]]:
         """Initialize the appropriate span exporter based on endpoint."""

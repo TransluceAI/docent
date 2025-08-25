@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
+from redis.exceptions import LockError
 
 from docent._log_util import get_logger
 from docent.data_models import (
@@ -127,21 +128,30 @@ async def handle_trace_data(
         redis_client = await get_redis_client()
         lock_key = f"{_STORE_SPANS_LOCK_PREFIX}{collection_id}"
 
-        # Use lock as async context manager
-        async with redis_client.lock(lock_key, blocking=False):
-            # Lock acquired, process spans
-            accumulated_spans = await _get_accumulated_spans(collection_id)
+        try:
+            # Use lock as async context manager
+            async with redis_client.lock(lock_key, blocking=False):
+                # Lock acquired, process spans
+                accumulated_spans = await _get_accumulated_spans(collection_id)
 
-            if accumulated_spans:
-                logger.info(
-                    f"Processing collection {collection_id} with {len(accumulated_spans)} spans"
-                )
-                count_agent_runs = await store_spans(accumulated_spans, user)
-                logger.info(
-                    f"Successfully processed collection {collection_id} with {count_agent_runs} agent runs"
-                )
-            else:
-                logger.info(f"No accumulated spans for collection {collection_id}")
+                if accumulated_spans:
+                    logger.info(
+                        f"Processing collection {collection_id} with {len(accumulated_spans)} spans"
+                    )
+                    count_agent_runs = await store_spans(accumulated_spans, user)
+                    logger.info(
+                        f"Successfully processed collection {collection_id} with {count_agent_runs} agent runs"
+                    )
+                else:
+                    logger.info(f"No accumulated spans for collection {collection_id}")
+        except LockError:
+            logger.info(f"Collection {collection_id} is already being processed by another request")
+            # Continue processing other collections even if one fails
+            continue
+        except Exception as e:
+            logger.error(f"Error processing collection {collection_id}: {str(e)}")
+            # Continue processing other collections even if one fails
+            continue
 
     return len(spans)
 

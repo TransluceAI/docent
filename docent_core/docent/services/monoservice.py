@@ -353,7 +353,7 @@ class MonoService:
         async with self.db.session() as session:
             # Handle transcript groups first with proper parent-child ordering
             if transcript_group_data:
-                sorted_transcript_groups = self._sort_transcript_groups_for_storage(
+                sorted_transcript_groups = await self._sort_transcript_groups_for_storage(
                     transcript_group_data
                 )
 
@@ -428,7 +428,7 @@ class MonoService:
 
         # Handle transcript groups - upsert with proper parent-child ordering
         if transcript_group_data:
-            sorted_transcript_groups = self._sort_transcript_groups_for_storage(
+            sorted_transcript_groups = await self._sort_transcript_groups_for_storage(
                 transcript_group_data
             )
 
@@ -453,7 +453,7 @@ class MonoService:
             f"Updated {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
         )
 
-    def _sort_transcript_groups_for_storage(
+    async def _sort_transcript_groups_for_storage(
         self, transcript_groups: list[SQLATranscriptGroup]
     ) -> list[SQLATranscriptGroup]:
         """
@@ -461,6 +461,7 @@ class MonoService:
         This ensures foreign key constraints are satisfied when storing to the database.
 
         Uses topological sorting to handle the parent-child relationships.
+        Also checks for existing parents in the database.
         """
         if not transcript_groups:
             return transcript_groups
@@ -473,6 +474,36 @@ class MonoService:
 
         for tg in transcript_groups:
             child_to_parent[tg.id] = tg.parent_transcript_group_id
+
+        # Get all parent IDs that are referenced but not in the current batch
+        external_parent_ids: set[str] = set()
+        for parent_id in child_to_parent.values():
+            if parent_id and parent_id not in id_to_group:
+                external_parent_ids.add(parent_id)
+
+        # Check if external parents exist in the database
+        existing_external_parents: set[str] = set()
+        if external_parent_ids:
+            async with self.db.session() as session:
+                query = select(SQLATranscriptGroup.id).where(
+                    SQLATranscriptGroup.id.in_(list(external_parent_ids))
+                )
+                result = await session.execute(query)
+                existing_external_parents = set(result.scalars().all())
+
+        # Log any missing external parents
+        missing_parents: set[str] = external_parent_ids - existing_external_parents
+        if missing_parents:
+            logger.warning(
+                f"Found {len(missing_parents)} missing parent transcript groups: {missing_parents}"
+            )
+            # Remove references to missing parents to avoid foreign key violations
+            for tg in transcript_groups:
+                if tg.parent_transcript_group_id in missing_parents:
+                    logger.warning(
+                        f"Removing reference to missing parent {tg.parent_transcript_group_id} from transcript group {tg.id}"
+                    )
+                    tg.parent_transcript_group_id = None
 
         # Topological sort: parents first, then children
         sorted_ids: list[str] = []
