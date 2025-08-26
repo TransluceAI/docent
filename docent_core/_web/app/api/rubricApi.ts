@@ -140,7 +140,7 @@ export const rubricApi = createApi({
       ],
     }),
     createRubric: build.mutation<
-      Rubric[],
+      string,
       { collectionId: string; rubric: CreateRubricRequest['rubric'] }
     >({
       query: ({ collectionId, rubric }) => ({

@@ -113,7 +113,7 @@ async def get_rubrics(
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """Get all rubrics for a collection."""
-    return await rubric_svc.get_all_rubrics(collection_id, latest_only=False)
+    return await rubric_svc.get_all_rubrics(collection_id, latest_only=True)
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/latest-version")

@@ -120,11 +120,17 @@ function RubricCard({
         <div className="flex items-start gap-2">
           <FileText className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-mono text-primary line-clamp-2">
-              {rubric.rubric_text.length > 100
-                ? rubric.rubric_text.substring(0, 100) + '...'
-                : rubric.rubric_text}
-            </p>
+            {!rubric.rubric_text || rubric.rubric_text.trim() === '' ? (
+              <p className="text-xs font-mono text-muted-foreground line-clamp-2">
+                Empty rubric
+              </p>
+            ) : (
+              <p className="text-xs font-mono text-primary line-clamp-2">
+                {rubric.rubric_text.length > 100
+                  ? rubric.rubric_text.substring(0, 100) + '...'
+                  : rubric.rubric_text}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -191,6 +197,7 @@ function RubricCard({
 
 export default function RubricList() {
   const collectionId = useAppSelector((state) => state.collection.collectionId);
+  const router = useRouter();
 
   // Check write permissions
   const hasWritePermission = useHasCollectionWritePermission();
@@ -212,10 +219,13 @@ export default function RubricList() {
       // Create a new rubric using the API
       const newRubric = { rubric_text: '' };
 
-      await createRubric({
+      const createdRubricId = await createRubric({
         collectionId,
         rubric: newRubric,
       }).unwrap();
+
+      // Navigate to the created rubric for editing
+      router.push(`/dashboard/${collectionId}?rubricId=${createdRubricId}`);
     } catch (error) {
       console.error('Failed to create rubric:', error);
       toast({
