@@ -20,6 +20,7 @@ import { JudgeResultsList } from '../../components/JudgeResultsSection';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { ProgressBar } from '@/app/components/ProgressBar';
+import posthog from 'posthog-js';
 
 export default function RefinePage() {
   const params = useParams();
@@ -213,9 +214,16 @@ export default function RefinePage() {
                 className="w-full"
                 size="sm"
                 disabled={isSSEConnected}
-                onClick={() =>
-                  router.push(`/dashboard/${collectionId}?rubricId=${rubricId}`)
-                }
+                onClick={() => {
+                  // Log PostHog event with rubric details
+                  posthog.capture('refinement_finalized', {
+                    collection_id: collectionId,
+                    session_id: sessionId,
+                  });
+                  router.push(
+                    `/dashboard/${collectionId}?rubricId=${rubricId}`
+                  );
+                }}
               >
                 Finalize and run rubric
               </Button>
