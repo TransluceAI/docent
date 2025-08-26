@@ -4,6 +4,7 @@ import {
   ChevronFirst,
   ChevronLast,
   Upload,
+  Loader2,
 } from 'lucide-react';
 import React, {
   useMemo,
@@ -12,6 +13,7 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,15 +50,9 @@ export default function ExperimentViewer() {
     (state) => state.experimentViewer.experimentViewerScrollPosition
   );
 
-  // Fetch agent run IDs
-  const { data: rawAgentRunIds } = useGetAgentRunIdsQuery(
-    {
-      collectionId: collectionId!,
-    },
-    {
-      skip: !collectionId,
-    }
-  );
+  // Fetch agent run IDs using RTK skipToken
+  const { data: rawAgentRunIds, isLoading: isLoadingAgentRunIds } =
+    useGetAgentRunIdsQuery(collectionId ? { collectionId } : skipToken);
 
   /**
    * Scrolling
@@ -225,7 +221,13 @@ export default function ExperimentViewer() {
             </div>
           )}
 
-          {(agentRunIds?.length || 0) > 0 ? (
+          {agentRunIds === undefined && (
+            <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs items-center">
+              <Loader2 size={16} className="animate-spin" />
+            </div>
+          )}
+
+          {agentRunIds !== undefined && agentRunIds.length > 0 ? (
             currentPageItems.map((agentRunId) => (
               <AgentRunCard
                 key={agentRunId}

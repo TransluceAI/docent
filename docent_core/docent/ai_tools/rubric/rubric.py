@@ -1,16 +1,17 @@
 import enum
 import re
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_serializer
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat import ChatMessage
 from docent.data_models.citation import Citation, parse_citations_single_run
 from docent.data_models.transcript import SINGLE_RUN_CITE_INSTRUCTION
 from docent_core._llm_util.data_models.llm_output import LLMOutput
-from docent_core._llm_util.prod_llms import get_llm_completions_async
+from docent_core._llm_util.prod_llms import MessagesInput, get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, ModelOption
 
 logger = get_logger(__name__)
@@ -135,47 +136,48 @@ def _get_llm_callback(
     return _llm_callback
 
 
+def _get_prompt_resolver(rubric: Rubric, ar: AgentRun, prompt_template: str):
+    def _prompt_resolver() -> list[ChatMessage | dict[str, Any]]:
+        return [
+            {
+                "role": "user",
+                "content": prompt_template.format(rubric=rubric.rubric_text, agent_run=ar.text),
+            }
+        ]
+
+    return _prompt_resolver
+
+
 async def evaluate_rubric(
     agent_runs: list[AgentRun],
     rubric: Rubric,
     api_key_overrides: dict[str, str] | None = None,
     callback: JudgeResultStreamingCallback | None = None,
 ):
-    from time import time
-
-    ids = [ar.id for ar in agent_runs]
-    ct = time()
-    texts = [ar.text for ar in agent_runs]
-    logger.highlight(f"Time taken to get texts: {time() - ct} seconds. TODO(mengk): pipeline.")
-
-    prompts = [
-        RUBRIC_PROMPT.format(rubric=rubric.rubric_text, agent_run=agent_run) for agent_run in texts
+    prompt_resolvers: list[MessagesInput] = [
+        _get_prompt_resolver(rubric, ar, RUBRIC_PROMPT) for ar in agent_runs
     ]
     outputs = await get_llm_completions_async(
-        [
-            [
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ]
-            for prompt in prompts
-        ],
+        prompt_resolvers,
         get_model_options_for_rubric(rubric),
         max_new_tokens=8192,
         timeout=180.0,
         use_cache=True,
         api_key_overrides=api_key_overrides,
         completion_callback=(
-            _get_llm_callback(rubric.id, rubric.version, ids, callback, ResultType.DIRECT_RESULT)
+            _get_llm_callback(
+                rubric.id,
+                rubric.version,
+                [ar.id for ar in agent_runs],
+                callback,
+                ResultType.DIRECT_RESULT,
+            )
             if callback is not None
             else None
         ),
     )
 
-    ans: list[list[str] | None] = [
-        None,
-    ] * len(texts)
+    ans: list[list[str] | None] = [None] * len(prompt_resolvers)
     for i, output in enumerate(outputs):
         ans[i] = _parse_rubric_outputs(output)
 
@@ -223,41 +225,30 @@ async def evaluate_rubric_max_recall(
     api_key_overrides: dict[str, str] | None = None,
     callback: JudgeResultStreamingCallback | None = None,
 ):
-    ids = [ar.id for ar in agent_runs]
-    texts = [ar.text for ar in agent_runs]
-
-    prompts = [
-        RUBRIC_MAX_RECALL_PROMPT.format(
-            rubric=rubric.rubric_text,
-            agent_run=agent_run,
-        )
-        for agent_run in texts
+    prompt_resolvers: list[MessagesInput] = [
+        _get_prompt_resolver(rubric, ar, RUBRIC_MAX_RECALL_PROMPT) for ar in agent_runs
     ]
     outputs = await get_llm_completions_async(
-        [
-            [
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ]
-            for prompt in prompts
-        ],
+        prompt_resolvers,
         PROVIDER_PREFERENCES.evaluate_rubric_max_recall,
         max_new_tokens=8192,
         timeout=180.0,
         use_cache=True,
         api_key_overrides=api_key_overrides,
         completion_callback=(
-            _get_llm_callback(rubric.id, rubric.version, ids, callback, ResultType.NEAR_MISS)
+            _get_llm_callback(
+                rubric.id,
+                rubric.version,
+                [ar.id for ar in agent_runs],
+                callback,
+                ResultType.NEAR_MISS,
+            )
             if callback is not None
             else None
         ),
     )
 
-    ans: list[list[str] | None] = [
-        None,
-    ] * len(texts)
+    ans: list[list[str] | None] = [None] * len(prompt_resolvers)
     for i, output in enumerate(outputs):
         ans[i] = _parse_rubric_outputs(output)
 

@@ -6,7 +6,7 @@ import anyio
 
 from docent._log_util import get_logger
 from docent_core._llm_util.data_models.llm_output import LLMOutput
-from docent_core._llm_util.prod_llms import get_llm_completions_async
+from docent_core._llm_util.prod_llms import MessagesInput, get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, ModelOption
 
 # import torch
@@ -153,34 +153,35 @@ class LlmApiClusterAssigner(ClusterAssigner):
         )
 
     async def skip_queries(self, items: list[str], cluster: str) -> None:
-        queries: list[list[dict[str, str]]] = [
-            [
-                *(
-                    [{"role": "system", "content": self.system_prompt}]
-                    if self.system_prompt
-                    else []
-                ),
-                {
-                    "role": "user",
-                    "content": (
-                        self.assign_prompt_fn(item, cluster)
-                        if self.assign_prompt_fn
-                        else ASSIGNMENT_PROMPT.format(item=item, cluster=cluster)
-                    ),
-                },
-            ]
-            for item in items
-        ]
+        # queries: list[list[dict[str, str]]] = [
+        #     [
+        #         *(
+        #             [{"role": "system", "content": self.system_prompt}]
+        #             if self.system_prompt
+        #             else []
+        #         ),
+        #         {
+        #             "role": "user",
+        #             "content": (
+        #                 self.assign_prompt_fn(item, cluster)
+        #                 if self.assign_prompt_fn
+        #                 else ASSIGNMENT_PROMPT.format(item=item, cluster=cluster)
+        #             ),
+        #         },
+        #     ]
+        #     for item in items
+        # ]
 
-        await get_llm_completions_async(
-            queries,
-            model_options=self.model_options,
-            max_new_tokens=self.max_new_tokens,
-            temperature=self.temperature,
-            timeout=30,
-            use_cache=True,
-            fill_cache="ANSWER: NO\nEXPLANATION: skipping query",
-        )
+        # await get_llm_completions_async(
+        #     queries,
+        #     model_options=self.model_options,
+        #     max_new_tokens=self.max_new_tokens,
+        #     temperature=self.temperature,
+        #     timeout=30,
+        #     use_cache=True,
+        #     fill_cache="ANSWER: NO\nEXPLANATION: skipping query",
+        # )
+        raise NotImplementedError
 
     @classmethod
     def from_gemini_flash(cls):
@@ -201,7 +202,7 @@ class LlmApiClusterAssigner(ClusterAssigner):
             clusters
         ), "Items, clusters, and attributes must be the same length"
 
-        queries: list[list[dict[str, str]]] = [
+        queries: list[MessagesInput] = [
             [
                 *(
                     [{"role": "system", "content": self.system_prompt}]

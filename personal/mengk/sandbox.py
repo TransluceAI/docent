@@ -8,6 +8,85 @@ import IPython
 IPython.get_ipython().run_line_magic("load_ext", "autoreload")
 IPython.get_ipython().run_line_magic("autoreload", "2")
 
+# %%
+
+
+from docent_core._llm_util.prod_llms import get_llm_completions_async
+from docent_core._llm_util.providers.preferences import ModelOption
+
+
+async def test():
+    result = await get_llm_completions_async(
+        [
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Hello, world! Give me a paragraph about the history of this phrase.",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Explain the significance of the phrase 'carpe diem' in literature.",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "What is the origin of the phrase 'break a leg' and how is it used today?",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Describe the meaning and history of the phrase 'the pen is mightier than the sword.'",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Where does the phrase 'once in a blue moon' come from, and what does it mean?",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Tell me about the phrase 'raining cats and dogs' and its possible origins.",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "What does 'barking up the wrong tree' mean, and where did it originate?",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Give a brief history of the phrase 'let the cat out of the bag.'",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "Explain the phrase 'kick the bucket' and its etymology.",
+                }
+            ],
+            lambda: [
+                {
+                    "role": "user",
+                    "content": "What is the story behind the phrase 'costs an arm and a leg'?",
+                }
+            ],
+        ],
+        [ModelOption(provider="openai", model_name="gpt-4o")],
+        use_cache=True,
+    )
+    print(result)
+
+
+await test()
+
 
 # %%
 
