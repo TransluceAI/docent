@@ -60,10 +60,21 @@ async def _ingest_async(filename: str | None, importer: str | None):
     """Async implementation of ingest command."""
 
     if not filename:
-        filename = await _select_file_from_s3(for_ingest=True)
-        if not filename:
-            log_error("No file selected")
+        filenames = await _select_file_from_s3(for_ingest=True)
+        if not filenames:
+            log_error("No files selected")
             return
+
+        # Process multiple files with progress bar
+        from tqdm.auto import tqdm
+
+        for filename in tqdm(filenames, desc="Ingesting files"):
+            try:
+                await ingest_file(filename, importer_override=importer)
+            except Exception as e:
+                log_error(f"Failed to ingest {filename}: {e}")
+                # Continue with other files instead of exiting
+        return
 
     try:
         await ingest_file(filename, importer_override=importer)
@@ -75,10 +86,12 @@ async def _restore_async(filename: str | None):
     """Async implementation of restore command."""
 
     if not filename:
-        filename = await _select_file_from_s3(for_ingest=False)
-        if not filename:
+        filenames = await _select_file_from_s3(for_ingest=False)
+        if not filenames:
             log_error("No file selected")
             return
+        # For restore, we only expect one file (single selection)
+        filename = filenames[0]
     else:
         # Try to find a matching file with current alembic revision
         resolved_filename = await _resolve_restore_filename(filename)
@@ -154,8 +167,8 @@ async def _dump_async(collection_id: str | None, name: str | None):
         sys.exit(1)
 
 
-async def _select_file_from_s3(for_ingest: bool) -> str | None:
-    """Show a menu to select a file from S3 and local cache."""
+async def _select_file_from_s3(for_ingest: bool) -> list[str] | None:
+    """Show a menu to select file(s) from S3 and local cache."""
     import beaupy
 
     try:
@@ -182,15 +195,31 @@ async def _select_file_from_s3(for_ingest: bool) -> str | None:
         # Create aligned display options
         display_options, file_keys = create_aligned_file_display(filtered_files)
 
-        log_info("Select a file:")
-        selected_display = beaupy.select(display_options)
-        if selected_display is None:
-            return None
+        if for_ingest:
+            log_info("Select files to import (use SPACE to select/deselect, ENTER to confirm):")
+            selected_displays = beaupy.select_multiple(display_options, tick_character="✓")
+            if not selected_displays:
+                return None
 
-        # beaupy.select returns the selected item, find the corresponding key
-        for i, display_option in enumerate(display_options):
-            if display_option == selected_display:
-                return file_keys[i]
+            # Find corresponding file keys for selected displays
+            selected_keys = []
+            for selected_display in selected_displays:
+                for i, display_option in enumerate(display_options):
+                    if display_option == selected_display:
+                        selected_keys.append(file_keys[i])
+                        break
+            return selected_keys
+        else:
+            # For restore, keep single selection
+            log_info("Select a file:")
+            selected_display = beaupy.select(display_options)
+            if selected_display is None:
+                return None
+
+            # beaupy.select returns the selected item, find the corresponding key
+            for i, display_option in enumerate(display_options):
+                if display_option == selected_display:
+                    return [file_keys[i]]  # Return as list for consistency
 
         return None
     except Exception as e:
