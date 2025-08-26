@@ -23,7 +23,7 @@ Tracing allows you to:
 - Automatically instrument LLM provider calls (OpenAI, Anthropic)
 - Organize code into logical agent runs with metadata and scores
 - Track chat conversations and tool calls
-- Analyze performance and quality metrics
+- Attach metadata to your runs and transcripts
 - Resume agent runs across different parts of your codebase
 
 ### Getting Started with Tracing
