@@ -159,7 +159,7 @@ export default function HomePage() {
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href="https://docent.transluce.org/dashboard/8831255a-249e-46cc-a600-c27c3d3cbd28?rubricId=e32d434f-168b-4708-af77-095a936ccaf0"
+                  href="https://docent.transluce.org/sample"
                   target="_blank"
                   className="inline-flex items-center gap-1 ml-1"
                 >
