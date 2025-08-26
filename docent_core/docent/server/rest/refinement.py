@@ -73,9 +73,19 @@ async def start_refinement_session(
     refinement_svc: RefinementService = Depends(get_refinement_service),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     ctx: ViewContext = Depends(get_default_view_ctx),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ):
     # Attempt to start a refinement job
     job_id = await refinement_svc.start_or_get_agent_job(ctx, sq_rsession)
+
+    analytics.track_event(
+        "refinement_session_started",
+        properties={
+            "collection_id": collection_id,
+            "rubric_id": sq_rsession.rubric_id,
+            "refinement_session_id": sq_rsession.id,
+        },
+    )
 
     return {
         "session_id": sq_rsession.id,
