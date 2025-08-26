@@ -94,7 +94,6 @@ export function ChartsArea() {
         rubricFilter: currentChart?.rubric_filter || undefined,
       }).unwrap();
       updateActiveTabId(response.id);
-      console.log('response', response);
     } catch (error) {
       console.error('Failed to create chart:', error);
     }
