@@ -24,22 +24,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: docent_core/_web/package-lock.json
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Prepare Next.js cache directory
+        run: mkdir -p docent_core/_web/.next/cache
+
       - name: Restore Next.js cache
         uses: actions/cache@v4
         with:
           path: docent_core/_web/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('docent_core/_web/package-lock.json') }}-${{ hashFiles('docent_core/_web/**.[jt]s', 'docent_core/_web/**.[jt]sx') }}
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('docent_core/_web/bun.lock*') }}-${{ hashFiles('docent_core/_web/**.[jt]s', 'docent_core/_web/**.[jt]sx') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-
+
       - name: Install dependencies
-        run: npm ci
+        run: bun install
         working-directory: docent_core/_web
+
       - name: Build with Next.js
-        run: npm run build
+        run: bun run build
         working-directory: docent_core/_web

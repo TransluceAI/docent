@@ -5,7 +5,7 @@ repos:
     rev: v4.4.0
     hooks:
       - id: check-added-large-files
-        exclude: "website/public/.*|package-lock.json|poetry\\.lock|uv.lock"
+        exclude: "website/public/.*|package-lock.json|bun.lockb|poetry\\.lock|uv.lock"
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-json
@@ -66,7 +66,7 @@ repos:
     hooks:
       - id: eslint
         name: eslint
-        entry: bash -c 'cd docent_core/_web && npm run lint-fix'
+        entry: bash -c 'cd docent_core/_web && bun run lint-fix'
         language: system
         files: ^docent_core/_web/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false

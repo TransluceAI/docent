@@ -17,10 +17,15 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Install npm dependencies
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install web dependencies (bun)
         run: |
           cd docent_core/_web
-          npm install
+          bun install
 
       - name: Setup uv and run pre-commit
         run: |

@@ -36,7 +36,7 @@ async def test_default_chart(
     with open("tests/integration/data/ctf.json", "rb") as f:
         file_content = f.read()
     response = await authed_client.post(
-        f"/rest/{test_collection_id}/agent_runs",
+        f"/rest/{test_collection_id}/import_runs_from_file",
         files={"file": ("abc.json", file_content, "application/json")},
     )
     assert response.status_code == 200

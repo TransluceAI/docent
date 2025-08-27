@@ -1,0 +1,123 @@
+name: pytest
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      DOCENT_PG_USER: docent_user
+      DOCENT_PG_PASSWORD: docent_password
+      DOCENT_PG_DATABASE: docent_db
+      DOCENT_PG_PORT: 5432
+      DOCENT_REDIS_PORT: 6379
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create temporary .env file
+        run: |
+          cat > .env << EOF
+          DOCENT_PG_USER=${DOCENT_PG_USER}
+          DOCENT_PG_PASSWORD=${DOCENT_PG_PASSWORD}
+          DOCENT_PG_DATABASE=${DOCENT_PG_DATABASE}
+          DOCENT_PG_PORT=${DOCENT_PG_PORT}
+          DOCENT_REDIS_PORT=${DOCENT_REDIS_PORT}
+          EOF
+
+      # Use GH python action over uv's for speed
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install uv with cache
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # Lock the uv sync, the incoming PR should include an updated lockfile already
+      - name: Install dependencies
+        run: |
+          uv sync --locked --extra dev
+
+      - name: Compose services (DB + Redis)
+        run: |
+          docker compose -f docker-compose-db.yml up -d
+
+      - name: Await PG and create pytest database
+        run: |
+          for i in {1..60}; do
+            if docker exec docent_postgres pg_isready \
+            -U "${DOCENT_PG_USER}" \
+            -d "${DOCENT_PG_DATABASE}" >/dev/null 2>&1; then
+              echo "Postgres is ready";
+              break;
+            fi
+            sleep 1
+            if [[ "$i" == "60" ]]; then
+              echo "Timed out waiting for Postgres" >&2
+              exit 1
+            fi
+          done
+          bash scripts/create_pytest_db.sh
+
+      - name: Start docent_core server
+        run: |
+          nohup uv run docent_core server --port 8889 --workers 4 >/tmp/docent_server.log 2>&1 &
+          echo $! > /tmp/docent_server.pid
+          # Wait briefly for server to start
+          sleep 3
+
+      - name: Run tests
+        run: |
+          uv run python -m pytest tests/ -v --tb=short --junitxml=test-results.xml
+
+      - name: Create test report
+        id: test-report
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() }}
+        with:
+          name: Pytest Results
+          path: test-results.xml
+          reporter: java-junit
+
+      - name: Post test report comment
+        uses: peter-evans/create-or-update-comment@v4
+        if: always()
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Test Results
+
+            **Status**: ${{ steps.test-report.outputs.conclusion }} ${{ steps.test-report.outputs.conclusion == 'success' && '✅' || '❌' }}
+            **Passed**: ${{ steps.test-report.outputs.passed }}
+            **Failed**: ${{ steps.test-report.outputs.failed }}
+            **Skipped**: ${{ steps.test-report.outputs.skipped }}
+            **Duration**: ${{ steps.test-report.outputs.time }}ms
+
+            View detailed results in the [Actions tab](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          if [ -f /tmp/docent_server.log ]; then
+            echo "==== docent server logs ===="
+            tail -n 500 /tmp/docent_server.log
+          fi
+
+      - name: Shutdown services
+        if: always()
+        run: |
+          if [ -f /tmp/docent_server.pid ]; then kill $(cat /tmp/docent_server.pid) || true; fi
+          docker compose -f docker-compose-db.yml down -v

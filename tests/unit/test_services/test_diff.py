@@ -8,7 +8,7 @@ import pytest
 
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript
-from docent_core.services.diff import DiffService
+from docent_core.docent.services.diff import DiffService
 
 
 def create_agent_run(metadata: Dict[str, Any] | None = None) -> AgentRun:
@@ -59,9 +59,9 @@ def test_basic_pairing_validation(diff_service: DiffService):
 
     assert len(paired_runs) == 2
     for run1, run2 in paired_runs:
-        models = {run1.metadata.model, run2.metadata.model}  # type: ignore
+        models = {run1.metadata["model"], run2.metadata["model"]}
         assert models == {"gpt-4", "claude"}
-        assert run1.metadata.task == run2.metadata.task  # type: ignore
+        assert run1.metadata["task"] == run2.metadata["task"]
 
 
 def test_error_handling_when_errors_not_ok(diff_service: DiffService):
@@ -97,8 +97,8 @@ def test_complex_grouping_fields(diff_service: DiffService):
 
     assert len(paired_runs) == 1
     run1, run2 = paired_runs[0]
-    assert run1.metadata.task == "A" and run1.metadata.difficulty == "easy"  # type: ignore
-    assert run2.metadata.task == "A" and run2.metadata.difficulty == "easy"  # type: ignore
+    assert run1.metadata["task"] == "A" and run1.metadata["difficulty"] == "easy"
+    assert run2.metadata["task"] == "A" and run2.metadata["difficulty"] == "easy"
 
 
 @pytest.mark.parametrize(

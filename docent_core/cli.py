@@ -72,7 +72,7 @@ def web(
     build: bool = typer.Option(False, help="Build the web app"),
     install: bool = typer.Option(True, help="Install dependencies"),
 ):
-    # `cd` to the web directory; this is where we run npm from
+    # `cd` to the web directory; this is where we run bun from
     file_path = Path(__file__).parent / "_web"
     os.chdir(file_path)
 
@@ -83,14 +83,14 @@ def web(
 
     # Install dependencies if requested
     if install:
-        subprocess.run(["npm", "install", "--legacy-peer-deps"], check=True)
+        subprocess.run(["bun", "install", "--legacy-peer-deps"], check=True)
 
     # Either build or run in debug mode
     if build:
-        subprocess.run(["npm", "run", "build"], env=env, check=True)
-        subprocess.run(["npm", "run", "start", "--", "--port", str(port)], env=env, check=True)
+        subprocess.run(["bun", "run", "build"], env=env, check=True)
+        subprocess.run(["bun", "run", "start", "--", "--port", str(port)], env=env, check=True)
     else:
-        subprocess.run(["npm", "run", "dev", "--", "--port", str(port)], env=env, check=True)
+        subprocess.run(["bun", "run", "dev", "--", "--port", str(port)], env=env, check=True)
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ import httpx
 import pytest_asyncio
 from httpx import ASGITransport
 
-from docent_core._db_service.schemas.auth_models import User
 from docent_core._server.api import asgi_app
+from docent_core.docent.db.schemas.auth_models import User
 
 
 @pytest_asyncio.fixture(scope="function")

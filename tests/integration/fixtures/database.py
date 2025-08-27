@@ -15,17 +15,17 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.ext.asyncio.engine import AsyncConnection
 
 from docent_core._db_service.db import DocentDB
-from docent_core._db_service.schemas.auth_models import User
-from docent_core._db_service.schemas.base import SQLABase
-from docent_core._db_service.service import MonoService
-from docent_core._server._dependencies.database import get_db, get_mono_svc
 from docent_core._server.api import asgi_app
-from docent_core.services.charts import ChartsService
+from docent_core.docent.db.schemas.auth_models import User
+from docent_core.docent.db.schemas.tables import SQLABase
+from docent_core.docent.server.dependencies.database import get_db, get_mono_svc
+from docent_core.docent.services.charts import ChartsService
+from docent_core.docent.services.monoservice import MonoService
 
 TEST_DATABASE_URL = URL.create(
     drivername="postgresql+asyncpg",
-    username="ubuntu",
-    password="your_password_here",
+    username="docent_user",
+    password="docent_password",
     host="localhost",
     port=5432,
     database="_pytest_docent_test",
@@ -123,16 +123,16 @@ async def redis_client() -> AsyncGenerator[ArqRedis, None]:
     Test-scoped fixture that provides Redis client with test database.
     """
     client = ArqRedis(
-        connection_pool=redis.ConnectionPool.from_url(TEST_REDIS_URL, decode_responses=True)
+        connection_pool=redis.ConnectionPool.from_url(TEST_REDIS_URL, decode_responses=True)  # type: ignore
     )
     try:
         # Clear test database before test
-        await client.flushdb()
+        await client.flushdb()  # type: ignore
         yield client
     finally:
         try:
             # Clear test database after test
-            await client.flushdb()
+            await client.flushdb()  # type: ignore
             await client.aclose()
         except Exception:
             pass
@@ -147,7 +147,8 @@ async def override_db(
     # Import here to avoid circular imports
     from docent_core._server._broker import redis_client as redis_client_module
 
-    original_redis = redis_client_module.REDIS
+    # Capture the original client without triggering connection creation
+    original_redis = getattr(redis_client_module, "_redis_client", None)
 
     try:
 
@@ -161,7 +162,7 @@ async def override_db(
         asgi_app.dependency_overrides[get_mono_svc] = get_mono_svc_override
 
         # Override the global Redis client
-        redis_client_module.REDIS = redis_client
+        redis_client_module._redis_client = redis_client  # type: ignore
 
         yield
     finally:
@@ -169,4 +170,4 @@ async def override_db(
         asgi_app.dependency_overrides.update(original_overrides)
 
         # Restore original Redis client
-        redis_client_module.REDIS = original_redis
+        redis_client_module._redis_client = original_redis  # type: ignore
