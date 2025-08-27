@@ -60,6 +60,7 @@ TABLE_API_KEY = "api_keys"
 TABLE_TELEMETRY_LOG = "telemetry_logs"
 TABLE_USER_PROFILE = "user_profiles"
 TABLE_MODEL_API_KEYS = "model_api_keys"
+TABLE_TELEMETRY_ACCUMULATION = "telemetry_accumulation"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -819,3 +820,29 @@ class SQLAModelApiKey(SQLABase):
     user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
     provider = mapped_column(Text, nullable=False)
     api_key = mapped_column(Text, nullable=False)
+
+
+class SQLATelemetryAccumulation(SQLABase):
+    """
+    Key-value storage for telemetry accumulation data.
+    """
+
+    __tablename__ = "telemetry_accumulation"
+
+    id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+
+    key = mapped_column(String(255), nullable=False, index=True)
+
+    # Data type/category (e.g., "spans", "scores", "metadata", "transcript_metadata", "transcript_group_metadata")
+    data_type = mapped_column(Text, nullable=False, index=True)
+
+    data = mapped_column(JSONB, nullable=False)
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False, index=True
+    )
+
+    # Optional user ID for tracking who created this data
+    user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=True, index=True)
+
+    # Composite index for efficient queries by key and data type
+    __table_args__ = (Index("idx_telemetry_accumulation_key_type", "key", "data_type"),)
