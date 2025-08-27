@@ -156,6 +156,12 @@ export default function ExperimentViewer() {
     fetchedAgentRunIdsRef.current.clear();
   }, [agentRunIds]);
 
+  useEffect(() => {
+    if (agentRunIds && totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [agentRunIds, currentPage, totalPages]);
+
   // Pagination controls
   const goToPage = useCallback(
     (page: number) => {
