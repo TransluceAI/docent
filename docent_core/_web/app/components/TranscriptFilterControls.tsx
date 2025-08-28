@@ -45,6 +45,7 @@ export const TranscriptFilterControls = () => {
       filters={baseFilter ?? null}
       onFiltersChange={handleFiltersChange}
       metadataFields={agentRunMetadataFields ?? []}
+      collectionId={collectionId!}
     />
   );
 };

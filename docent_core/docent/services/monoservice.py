@@ -555,6 +555,41 @@ class MonoService:
         agent_runs = await self.get_agent_runs(ctx, _limit=1)
         return agent_runs[0] if agent_runs else None
 
+    async def get_unique_field_values(
+        self, ctx: ViewContext, field_name: str, limit: int = 100
+    ) -> list[str]:
+        """
+        Get unique values for a specific metadata field from agent runs in the collection.
+
+        Args:
+            ctx: The ViewContext to use for the query.
+            field_name: The field name (e.g., "metadata.task_id")
+            limit: Maximum number of unique values to return (default 100)
+
+        Returns:
+            List of unique string values for the field
+        """
+        async with self.db.session() as session:
+            field_parts = field_name.split(".")
+
+            if field_parts[0] == "metadata" and len(field_parts) > 1:
+                json_path = field_parts[1:]
+
+                query = (
+                    select(func.distinct(SQLAAgentRun.metadata_json.op("#>>")([json_path])))
+                    .where(
+                        ctx.get_base_where_clause(SQLAAgentRun),
+                        SQLAAgentRun.metadata_json.op("#>>")([json_path]).isnot(None),
+                    )
+                    .limit(limit)
+                )
+
+                result = await session.execute(query)
+                values = [row[0] for row in result.fetchall() if row[0] is not None]
+                return sorted(values)
+            else:
+                return []
+
     async def count_base_agent_runs(self, ctx: ViewContext) -> int:
 
         async with self.db.session() as session:

@@ -19,11 +19,13 @@ import React, { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { v4 as uuid4 } from 'uuid';
 import { FilterChips } from './FilterChips';
+import { FieldValueSelector } from './FieldValueSelector';
 
 interface FilterControlsProps {
   filters: ComplexFilter | undefined | null;
   onFiltersChange: (filters: ComplexFilter | null) => void;
   metadataFields: TranscriptMetadataField[];
+  collectionId: string;
   className?: string;
   showFilterChips?: boolean;
 }
@@ -32,6 +34,7 @@ export const FilterControls = ({
   filters,
   onFiltersChange,
   metadataFields,
+  collectionId,
   className,
   showFilterChips = true,
 }: FilterControlsProps) => {
@@ -238,6 +241,17 @@ export const FilterControls = ({
                 </SelectItem>
               </SelectContent>
             </Select>
+          ) : metadataType === 'str' && metadataOp === '==' ? (
+            <FieldValueSelector
+              collectionId={collectionId}
+              fieldName={metadataKey}
+              value={metadataValue}
+              onValueChange={onUpdateMetadataFilter}
+              placeholder={
+                metadataType === 'str' ? 'Select value...' : 'Select value...'
+              }
+              className="w-full"
+            />
           ) : (
             <Input
               value={metadataValue}

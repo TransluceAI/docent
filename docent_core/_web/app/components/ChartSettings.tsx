@@ -370,6 +370,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                 filters={runs_filter}
                 onFiltersChange={handleRunsFilterChange}
                 metadataFields={agentRunMetadataFields}
+                collectionId={collectionId!}
                 showFilterChips={false}
               />
             </PopoverContent>
