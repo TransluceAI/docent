@@ -573,13 +573,26 @@ class MonoService:
             field_parts = field_name.split(".")
 
             if field_parts[0] == "metadata" and len(field_parts) > 1:
-                json_path = field_parts[1:]
+                json_path_parts = field_parts[1:]
+                for part in json_path_parts:
+                    if not part.replace("_", "").replace("-", "").isalnum():
+                        return []
+
+                base_expr = SQLAAgentRun.metadata_json
+
+                if len(json_path_parts) == 1:
+                    expression = base_expr.op("->>")(json_path_parts[0])
+                else:
+                    nested_expr = base_expr
+                    for part in json_path_parts[:-1]:
+                        nested_expr = nested_expr.op("->")(part)
+                    expression = nested_expr.op("->>")(json_path_parts[-1])
 
                 query = (
-                    select(func.distinct(SQLAAgentRun.metadata_json.op("#>>")([json_path])))
+                    select(func.distinct(expression))
                     .where(
                         ctx.get_base_where_clause(SQLAAgentRun),
-                        SQLAAgentRun.metadata_json.op("#>>")([json_path]).isnot(None),
+                        expression.isnot(None),
                     )
                     .limit(limit)
                 )
