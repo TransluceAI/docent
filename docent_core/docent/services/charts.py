@@ -267,7 +267,9 @@ class ChartsService:
     async def get_charts(self, ctx: ViewContext) -> list[ChartSpec]:
         """Get all charts for a collection."""
         result = await self.session.execute(
-            select(SQLAChart).where(SQLAChart.collection_id == ctx.collection_id)
+            select(SQLAChart)
+            .where(SQLAChart.collection_id == ctx.collection_id)
+            .order_by(SQLAChart.created_at.asc())
         )
         charts = list(result.scalars().all())
 
