@@ -1037,11 +1037,13 @@ class MonoService:
             )
 
             existing_job_result = await session.execute(existing_job_query)
-            existing_job = existing_job_result.scalar_one_or_none()
+            existing_jobs = existing_job_result.scalars().all()
 
-            if existing_job:
+            if existing_jobs:
+                # Log all existing jobs for debugging
+                job_ids = [job.id for job in existing_jobs]
                 logger.debug(
-                    f"Telemetry processing job already exists for collection {collection_id}: {existing_job.id} (status: {existing_job.status})"
+                    f"Telemetry processing job(s) already exist for collection {collection_id}: {job_ids} (statuses: {[job.status for job in existing_jobs]})"
                 )
                 return None
 
