@@ -107,31 +107,51 @@ const TranscriptGroupNode: React.FC<{
 }) => {
   const isExpanded = expandedGroups.has(node.group.id);
   const isSelected = selectedTranscriptGroupId === node.group.id;
+  const hasTranscripts = node.transcripts.length > 0;
+  const hasChildren = node.children.length > 0;
+
+  // Check if this group or any of its descendants contain transcripts
+  const hasTranscriptsInSubtree = useMemo(() => {
+    if (hasTranscripts) return true;
+
+    const checkChildren = (children: TranscriptGroupNode[]): boolean => {
+      return children.some((child) => {
+        if (child.transcripts.length > 0) return true;
+        return checkChildren(child.children);
+      });
+    };
+
+    return checkChildren(node.children);
+  }, [hasTranscripts, node.children]);
 
   return (
     <div className="space-y-1">
-      {/* Group Header */}
-      <div
-        className={cn(
-          'flex items-center text-xs rounded border transition-colors cursor-pointer min-w-0',
-          isSelected
-            ? 'bg-indigo-bg border-indigo-border text-primary'
-            : 'bg-secondary border-border text-primary hover:bg-muted'
-        )}
-        onClick={() => onGroupToggle(node.group.id)}
-        style={{ marginLeft: `${node.level * 12}px` }}
-      >
-        <div className="flex items-center flex-1 px-2 py-1 min-w-0">
-          {isExpanded ? (
-            <FolderOpen className="h-3 w-3 mr-1 flex-shrink-0" />
-          ) : (
-            <Folder className="h-3 w-3 mr-1 flex-shrink-0" />
+      {/* Group Header - only show if it has transcripts or children with transcripts */}
+      {(hasTranscriptsInSubtree || hasChildren) && (
+        <div
+          className={cn(
+            'flex items-center text-xs rounded border transition-colors cursor-pointer min-w-0',
+            isSelected
+              ? 'bg-indigo-bg border-indigo-border text-primary'
+              : hasTranscriptsInSubtree
+                ? 'bg-muted/60 border-border/80 text-primary/80 hover:bg-muted hover:text-primary'
+                : 'bg-muted/30 border-border/30 text-muted-foreground/80 hover:bg-muted/50 hover:text-muted-foreground'
           )}
-          <span className="text-ellipsis whitespace-nowrap overflow-hidden min-w-0">
-            {node.group.name || node.group.id}
-          </span>
+          onClick={() => onGroupToggle(node.group.id)}
+          style={{ marginLeft: `${node.level * 12}px` }}
+        >
+          <div className="flex items-center flex-1 px-2 py-1 min-w-0">
+            {isExpanded ? (
+              <FolderOpen className="h-3 w-3 mr-1 flex-shrink-0" />
+            ) : (
+              <Folder className="h-3 w-3 mr-1 flex-shrink-0" />
+            )}
+            <span className="text-ellipsis whitespace-nowrap overflow-hidden min-w-0">
+              {node.group.name || node.group.id}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Group Transcripts */}
       {isExpanded && (
@@ -140,16 +160,16 @@ const TranscriptGroupNode: React.FC<{
             <div
               key={transcriptKey}
               className={cn(
-                'flex items-center text-xs rounded border transition-colors min-w-0',
+                'flex items-center text-xs rounded border transition-colors min-w-0 shadow-sm',
                 selectedTranscriptKey === transcriptKey
-                  ? 'bg-blue-bg border-blue-border text-primary'
-                  : 'bg-secondary border-border text-primary hover:bg-muted'
+                  ? 'bg-blue-bg border-blue-border text-primary shadow-md'
+                  : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
               )}
               style={{ marginLeft: `${(node.level + 1) * 12}px` }}
             >
               <button
                 onClick={() => onTranscriptSelect(transcriptKey)}
-                className="flex-1 text-left px-2 py-1 text-ellipsis whitespace-nowrap overflow-hidden min-w-0"
+                className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
                 title={transcriptKey}
               >
                 {transcriptKey}
@@ -749,7 +769,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         </Tooltip>
                       )}
                     </div>
-                    <div className="space-y-1 flex-1 overflow-y-auto min-h-0">
+                    <div className="space-y-1 flex-1 overflow-y-auto min-h-0 pr-1">
                       {/* Hierarchical Transcript Groups */}
                       {transcriptGroupTree.map((node) => (
                         <TranscriptGroupNode
@@ -769,17 +789,17 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         <div
                           key={transcriptKey}
                           className={cn(
-                            'flex items-center w-full text-xs rounded border transition-colors',
+                            'flex items-center w-full text-xs rounded border transition-colors shadow-sm',
                             selectedTranscriptKey === transcriptKey
-                              ? 'bg-blue-bg border-blue-border text-primary'
-                              : 'bg-secondary border-border text-primary hover:bg-muted'
+                              ? 'bg-blue-bg border-blue-border text-primary shadow-md'
+                              : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
                           )}
                         >
                           <button
                             onClick={() =>
                               handleTranscriptSelect(transcriptKey)
                             }
-                            className="flex-1 text-left px-2 py-1 text-ellipsis whitespace-nowrap overflow-hidden"
+                            className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden font-medium"
                             title={transcriptKey}
                           >
                             {transcriptKey}
