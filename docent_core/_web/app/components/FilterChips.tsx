@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleX, RefreshCw } from 'lucide-react';
+import { CircleX, Pencil, Eraser } from 'lucide-react';
 import {
   PrimitiveFilter,
   CollectionFilter,
@@ -10,6 +10,7 @@ import {
 interface FilterChipsProps {
   filters: ComplexFilter | undefined | null;
   onRemoveFilter: (filterId: string) => void;
+  onEditFilter: (filter: PrimitiveFilter) => void;
   onClearAllFilters: () => void;
   className?: string;
 }
@@ -17,6 +18,7 @@ interface FilterChipsProps {
 export const FilterChips = ({
   filters,
   onRemoveFilter,
+  onEditFilter,
   onClearAllFilters,
   className,
 }: FilterChipsProps) => {
@@ -51,9 +53,19 @@ export const FilterChips = ({
               return `${subFilter.type} filter`;
             }
           })()}
+          {subFilter.type === 'primitive' && (
+            <button
+              onClick={() => onEditFilter(subFilter as PrimitiveFilter)}
+              className="p-0.5 text-primary hover:text-primary/50 transition-colors"
+              title="Edit filter"
+            >
+              <Pencil size={10} />
+            </button>
+          )}
           <button
             onClick={() => onRemoveFilter(subFilter.id)}
             className="p-0.5 text-primary hover:text-primary/50 transition-colors"
+            title="Remove filter"
           >
             <CircleX size={10} />
           </button>
@@ -63,8 +75,8 @@ export const FilterChips = ({
         onClick={onClearAllFilters}
         className="inline-flex items-center gap-x-1 text-[11px] bg-red-bg text-primary border border-red-border px-1.5 py-0.5 rounded-md hover:bg-red-bg/50 transition-colors"
       >
-        Clear
-        <RefreshCw size={10} />
+        Clear All
+        <Eraser size={10} />
       </button>
     </div>
   );

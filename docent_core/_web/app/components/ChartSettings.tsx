@@ -21,6 +21,7 @@ import {
   ChartSpec,
   ChartDimension,
   ComplexFilter,
+  PrimitiveFilter,
 } from '../types/collectionTypes';
 import {
   useGetChartMetadataQuery,
@@ -86,6 +87,9 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
   );
   const agentRunMetadataFields = metadataFieldsData?.fields ?? [];
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+  const [editingFilter, setEditingFilter] = useState<PrimitiveFilter | null>(
+    null
+  );
 
   // Get chart metadata (fields + search queries) in one request
   const { data: chartMetadata } = useGetChartMetadataQuery(
@@ -163,6 +167,8 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
 
   function handleRunsFilterChange(runsFilter: ComplexFilter | null) {
     onChange({ ...chart, runs_filter: runsFilter });
+    // Clear the editing filter when filters change
+    setEditingFilter(null);
   }
 
   const removeFilter = (filterId: string) => {
@@ -178,6 +184,28 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
         filters: updatedFilters,
       });
     }
+  };
+
+  const editFilter = (filter: PrimitiveFilter) => {
+    if (!runs_filter) return;
+
+    // Remove the filter first
+    const updatedFilters = runs_filter.filters.filter(
+      (f) => f.id !== filter.id
+    );
+
+    if (updatedFilters.length === 0) {
+      handleRunsFilterChange(null);
+    } else {
+      handleRunsFilterChange({
+        ...runs_filter,
+        filters: updatedFilters,
+      });
+    }
+
+    // Set the filter to edit and open the popover
+    setEditingFilter(filter);
+    setFilterPopoverOpen(true);
   };
 
   const clearAllFilters = () => {
@@ -344,6 +372,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             <FilterChips
               filters={runs_filter}
               onRemoveFilter={removeFilter}
+              onEditFilter={editFilter}
               onClearAllFilters={clearAllFilters}
               className="mr-1"
             />
@@ -370,7 +399,9 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                 filters={runs_filter}
                 onFiltersChange={handleRunsFilterChange}
                 metadataFields={agentRunMetadataFields}
+                collectionId={collectionId!}
                 showFilterChips={false}
+                initialFilter={editingFilter}
               />
             </PopoverContent>
           </Popover>

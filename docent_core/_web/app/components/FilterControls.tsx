@@ -15,25 +15,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { v4 as uuid4 } from 'uuid';
 import { FilterChips } from './FilterChips';
+import { SmartValueInput } from './SmartValueInput';
 
 interface FilterControlsProps {
   filters: ComplexFilter | undefined | null;
   onFiltersChange: (filters: ComplexFilter | null) => void;
   metadataFields: TranscriptMetadataField[];
+  collectionId: string;
   className?: string;
   showFilterChips?: boolean;
+  initialFilter?: PrimitiveFilter | null;
 }
 
 export const FilterControls = ({
   filters,
   onFiltersChange,
   metadataFields,
+  collectionId,
   className,
   showFilterChips = true,
+  initialFilter = null,
 }: FilterControlsProps) => {
   const [metadataKey, setMetadataKey] = useState('');
   const [metadataValue, setMetadataValue] = useState('');
@@ -41,6 +46,27 @@ export const FilterControls = ({
     undefined
   );
   const [metadataOp, setMetadataOp] = useState<string>('==');
+  const valueFieldRef = useRef<HTMLInputElement>(null);
+
+  // Populate form when initialFilter is provided
+  useEffect(() => {
+    if (initialFilter) {
+      setMetadataKey(initialFilter.key_path.join('.'));
+      setMetadataValue(String(initialFilter.value));
+      setMetadataOp(initialFilter.op || '==');
+
+      // Set the metadata type based on the value type
+      if (typeof initialFilter.value === 'boolean') {
+        setMetadataType('bool');
+      } else if (typeof initialFilter.value === 'number') {
+        setMetadataType(
+          Number.isInteger(initialFilter.value) ? 'int' : 'float'
+        );
+      } else {
+        setMetadataType('str');
+      }
+    }
+  }, [initialFilter]);
 
   const onUpdateMetadataFilter = (value: string) => {
     if (!metadataKey.trim()) {
@@ -121,6 +147,39 @@ export const FilterControls = ({
     }
   };
 
+  const editFilter = (filter: PrimitiveFilter) => {
+    // Remove the filter first
+    removeFilter(filter.id);
+
+    // Populate the form with the filter's values
+    setMetadataKey(filter.key_path.join('.'));
+    setMetadataValue(String(filter.value));
+    setMetadataOp(filter.op || '==');
+
+    // Set the metadata type based on the value type
+    if (typeof filter.value === 'boolean') {
+      setMetadataType('bool');
+    } else if (typeof filter.value === 'number') {
+      setMetadataType(Number.isInteger(filter.value) ? 'int' : 'float');
+    } else {
+      setMetadataType('str');
+    }
+
+    // Focus the value field after a short delay to ensure the form is updated
+    setTimeout(() => {
+      valueFieldRef.current?.focus();
+    }, 100);
+  };
+
+  const handleOperatorChange = (value: string) => {
+    setMetadataOp(value);
+
+    // Focus the value field after a short delay
+    setTimeout(() => {
+      valueFieldRef.current?.focus();
+    }, 100);
+  };
+
   const clearAllFilters = () => {
     onFiltersChange(null);
   };
@@ -132,7 +191,26 @@ export const FilterControls = ({
     if (selectedField) {
       setMetadataType(selectedField.type);
       setMetadataValue('');
-      setMetadataOp(selectedField.type === 'str' ? '~*' : '==');
+
+      // Preserve the current operator if it's valid for the new field type
+      const currentOp = metadataOp;
+      const validOpsForType =
+        selectedField.type === 'str'
+          ? ['~*', '==', '!=']
+          : ['==', '!=', '<', '<=', '>', '>='];
+
+      if (validOpsForType.includes(currentOp)) {
+        // Keep the current operator if it's valid for the new field type
+        setMetadataOp(currentOp);
+      } else {
+        // Set default operator for the field type
+        setMetadataOp(selectedField.type === 'str' ? '~*' : '==');
+      }
+
+      // Focus the value field after a short delay
+      setTimeout(() => {
+        valueFieldRef.current?.focus();
+      }, 100);
     }
   };
 
@@ -166,7 +244,7 @@ export const FilterControls = ({
             <div className="text-xs text-muted-foreground font-mono mr-1 mb-1">
               Operator
             </div>
-            <Select value={metadataOp} onValueChange={setMetadataOp}>
+            <Select value={metadataOp} onValueChange={handleOperatorChange}>
               <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16">
                 <SelectValue placeholder="==" />
               </SelectTrigger>
@@ -197,7 +275,7 @@ export const FilterControls = ({
             <div className="text-xs text-muted-foreground font-mono mr-1 mb-1">
               Operator
             </div>
-            <Select value={metadataOp} onValueChange={setMetadataOp}>
+            <Select value={metadataOp} onValueChange={handleOperatorChange}>
               <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16">
                 <SelectValue placeholder="==" />
               </SelectTrigger>
@@ -238,8 +316,19 @@ export const FilterControls = ({
                 </SelectItem>
               </SelectContent>
             </Select>
+          ) : metadataType === 'str' ? (
+            <SmartValueInput
+              collectionId={collectionId}
+              fieldName={metadataKey}
+              value={metadataValue}
+              onValueChange={setMetadataValue}
+              onEnter={() => onUpdateMetadataFilter(metadataValue)}
+              placeholder="Enter value..."
+              ref={valueFieldRef}
+            />
           ) : (
             <Input
+              ref={valueFieldRef}
               value={metadataValue}
               onChange={(e) => setMetadataValue(e.target.value)}
               placeholder={metadataType === 'int' ? 'e.g. 42' : 'e.g. value'}
@@ -276,6 +365,7 @@ export const FilterControls = ({
         <FilterChips
           filters={filters}
           onRemoveFilter={removeFilter}
+          onEditFilter={editFilter}
           onClearAllFilters={clearAllFilters}
           className="mb-1.5"
         />
