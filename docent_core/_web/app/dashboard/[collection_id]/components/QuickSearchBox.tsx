@@ -16,6 +16,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip';
 
 const DEFAULT_PLACEHOLDER_TEXT =
   'Describe an agent behavior you want to explore...';
@@ -82,6 +87,83 @@ export default function QuickSearchBox({
 
   const hasWritePermission = useHasCollectionWritePermission();
 
+  const searchFieldset = (
+    <fieldset className="relative">
+      <Textarea
+        className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
+        placeholder={placeholderText}
+        value={isPresetHovered ? '' : searchQueryTextboxValue}
+        disabled={!hasWritePermission}
+        onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
+      />
+
+      <div className="absolute right-2 bottom-2 flex items-center">
+        <Button
+          type="button"
+          size="sm"
+          className="gap-2 h-7 text-xs rounded-r-none border-r-0"
+          onClick={() => onSubmit(searchQueryTextboxValue, searchMode)}
+          disabled={!hasWritePermission || emptyInput || isLoading}
+        >
+          {searchMode === 'explore' ? (
+            <FileSearch className="size-3 -ml-0.5" />
+          ) : (
+            <Search className="size-3 -ml-0.5" />
+          )}
+          {searchMode === 'explore' ? 'Explore' : 'Search'}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 w-7 px-1 rounded-l-none"
+              disabled={!hasWritePermission || emptyInput || isLoading}
+            >
+              <span className="sr-only">Toggle search mode</span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="size-3"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem
+              onClick={() => setSearchMode('full')}
+              className="text-xs"
+            >
+              <div className="flex flex-col">
+                <span>Direct Search</span>
+                <span className="text-muted-foreground text-[11px]">
+                  Run a quick search across all data
+                </span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setSearchMode('explore')}
+              className="text-xs"
+            >
+              <div className="flex flex-col">
+                <span>Create a rubric (Preview)</span>
+                <span className="text-muted-foreground text-[11px]">
+                  Refine a rubric with our agent
+                </span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </fieldset>
+  );
+
   return (
     // <div className="bg-muted rounded-md space-y-1 border p-2">
     <div className="space-y-2">
@@ -115,80 +197,19 @@ export default function QuickSearchBox({
         </div>
       </div>
       <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
-        <fieldset className="relative">
-          <Textarea
-            className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
-            placeholder={placeholderText}
-            value={isPresetHovered ? '' : searchQueryTextboxValue}
-            disabled={!hasWritePermission}
-            onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
-          />
-
-          <div className="absolute right-2 bottom-2 flex items-center">
-            <Button
-              type="button"
-              size="sm"
-              className="gap-2 h-7 text-xs rounded-r-none border-r-0"
-              onClick={() => onSubmit(searchQueryTextboxValue, searchMode)}
-              disabled={!hasWritePermission || emptyInput || isLoading}
-            >
-              {searchMode === 'explore' ? (
-                <FileSearch className="size-3 -ml-0.5" />
-              ) : (
-                <Search className="size-3 -ml-0.5" />
-              )}
-              {searchMode === 'explore' ? 'Explore' : 'Search'}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 w-7 px-1 rounded-l-none"
-                  disabled={!hasWritePermission || emptyInput || isLoading}
-                >
-                  <span className="sr-only">Toggle search mode</span>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className="size-3"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
-                  onClick={() => setSearchMode('full')}
-                  className="text-xs"
-                >
-                  <div className="flex flex-col">
-                    <span>Direct Search</span>
-                    <span className="text-muted-foreground text-[11px]">
-                      Run a quick search across all data
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setSearchMode('explore')}
-                  className="text-xs"
-                >
-                  <div className="flex flex-col">
-                    <span>Create a rubric (Preview)</span>
-                    <span className="text-muted-foreground text-[11px]">
-                      Refine a rubric with our agent
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </fieldset>
+        {!hasWritePermission ? (
+          <Tooltip>
+            <TooltipTrigger asChild>{searchFieldset}</TooltipTrigger>
+            <TooltipContent>
+              <p>
+                This search box is disabled because you&apos;re in read-only
+                mode
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          searchFieldset
+        )}
       </div>
     </div>
   );
