@@ -324,7 +324,6 @@ export const FilterControls = ({
               onValueChange={setMetadataValue}
               onEnter={() => onUpdateMetadataFilter(metadataValue)}
               placeholder="Enter value..."
-              className="w-full"
               ref={valueFieldRef}
             />
           ) : (

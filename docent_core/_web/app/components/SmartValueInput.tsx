@@ -7,6 +7,27 @@ import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { useGetFieldValuesQuery } from '../api/collectionApi';
 
+// Styling constants for easy maintenance
+const DROPDOWN_STYLES = {
+  // Font properties that affect text measurement
+  FONT_SIZE: '12px',
+  FONT_FAMILY: 'monospace',
+
+  // Spacing and sizing
+  PADDING: 24, // px on each side
+  MAX_WIDTH: 500, // px - reduced from 800px for better viewport fit
+  MIN_DROPDOWN_OFFSET: 4, // px below input
+
+  // Z-index for dropdown positioning
+  Z_INDEX: 9999,
+
+  // Dropdown appearance
+  MAX_HEIGHT: '12rem', // 48 * 0.25rem = 12rem
+
+  // Off-screen prevention
+  VIEWPORT_EDGE_BUFFER: 8, // px from viewport edges
+} as const;
+
 interface SmartValueInputProps {
   collectionId: string;
   fieldName: string;
@@ -17,6 +38,21 @@ interface SmartValueInputProps {
   className?: string;
   type?: 'text' | 'number';
 }
+
+// Helper function to measure text width consistently
+const measureTextWidth = (text: string): number => {
+  const span = document.createElement('span');
+  span.style.fontSize = DROPDOWN_STYLES.FONT_SIZE;
+  span.style.fontFamily = DROPDOWN_STYLES.FONT_FAMILY;
+  span.style.visibility = 'hidden';
+  span.style.position = 'absolute';
+  span.style.whiteSpace = 'nowrap';
+  span.textContent = text;
+  document.body.appendChild(span);
+  const width = span.getBoundingClientRect().width;
+  document.body.removeChild(span);
+  return width;
+};
 
 export const SmartValueInput = React.forwardRef<
   HTMLInputElement,
@@ -42,6 +78,7 @@ export const SmartValueInput = React.forwardRef<
       left: 0,
       width: 0,
     });
+    const [dropdownWidth, setDropdownWidth] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const { data: fieldValuesData, isLoading } = useGetFieldValuesQuery(
@@ -70,8 +107,11 @@ export const SmartValueInput = React.forwardRef<
 
       // Open suggestions if we have values (even when input is empty)
       if (values.length > 0) {
-        updateDropdownPosition();
-        setOpen(true);
+        // Use setTimeout to ensure displayValues is updated before calculating position
+        setTimeout(() => {
+          updateDropdownPosition();
+          setOpen(true);
+        }, 0);
       } else {
         setOpen(false);
       }
@@ -90,18 +130,73 @@ export const SmartValueInput = React.forwardRef<
       const currentRef = (ref as React.RefObject<HTMLInputElement>) || inputRef;
       if (currentRef?.current) {
         const rect = currentRef.current.getBoundingClientRect();
+        const inputWidth = rect.width;
+
+        // Calculate optimal dropdown width based on content
+        let maxContentWidth = 0;
+        if (displayValues.length > 0) {
+          maxContentWidth = Math.max(
+            ...displayValues.map((val) => measureTextWidth(val))
+          );
+        }
+
+        // Add padding and some buffer for better readability
+        let contentWidth = maxContentWidth + DROPDOWN_STYLES.PADDING * 2;
+
+        // If no display values yet, calculate width based on current input value
+        if (maxContentWidth === 0 && inputValue) {
+          const inputTextWidth = measureTextWidth(inputValue);
+          contentWidth = inputTextWidth + DROPDOWN_STYLES.PADDING * 2;
+        }
+
+        // Calculate final width: use content width, but don't go below input width or above max
+        const finalWidth = Math.max(
+          inputWidth,
+          Math.min(contentWidth, DROPDOWN_STYLES.MAX_WIDTH)
+        );
+
+        // Check if dropdown would go off-screen to the right or left
+        const viewportWidth = window.innerWidth;
+        const rightEdge = rect.left + finalWidth;
+        let adjustedLeft = rect.left;
+
+        // Handle case where dropdown is wider than viewport
+        if (
+          finalWidth >
+          viewportWidth - DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER * 2
+        ) {
+          // Dropdown is too wide for viewport - center it with minimum margins
+          adjustedLeft = DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER;
+        } else if (rightEdge > viewportWidth) {
+          // Would go off-screen to the right - position so dropdown ends at viewport edge
+          adjustedLeft =
+            viewportWidth - finalWidth - DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER;
+
+          // Ensure the adjusted position doesn't go off-screen to the left
+          if (adjustedLeft < DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER) {
+            adjustedLeft = DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER;
+          }
+        } else if (rect.left < DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER) {
+          // Would go off-screen to the left
+          adjustedLeft = DROPDOWN_STYLES.VIEWPORT_EDGE_BUFFER;
+        }
+
         setDropdownPosition({
           top: rect.bottom + window.scrollY,
-          left: rect.left + window.scrollX,
-          width: rect.width,
+          left: adjustedLeft + window.scrollX,
+          width: inputWidth, // Keep original input width for positioning
         });
+        setDropdownWidth(finalWidth);
       }
     };
 
     const handleInputFocus = () => {
       if (values.length > 0) {
-        updateDropdownPosition();
-        setOpen(true);
+        // Use setTimeout to ensure displayValues is calculated before positioning
+        setTimeout(() => {
+          updateDropdownPosition();
+          setOpen(true);
+        }, 0);
       }
     };
 
@@ -130,6 +225,13 @@ export const SmartValueInput = React.forwardRef<
           document.removeEventListener('mousedown', handleClickOutside);
       }
     }, [open, ref]);
+
+    // Recalculate dropdown position when displayValues change
+    useEffect(() => {
+      if (open && values.length > 0) {
+        updateDropdownPosition();
+      }
+    }, [displayValues, open]);
 
     const handleInputBlur = () => {
       // Delay closing to allow for selection
@@ -163,11 +265,13 @@ export const SmartValueInput = React.forwardRef<
           createPortal(
             <div
               data-dropdown="true"
-              className="fixed z-[9999] bg-background border border-border rounded-md shadow-lg max-h-48 overflow-y-auto"
+              className="fixed bg-background border border-border rounded-md shadow-lg overflow-y-auto overflow-x-auto"
               style={{
-                top: `${dropdownPosition.top + 4}px`,
+                top: `${dropdownPosition.top + DROPDOWN_STYLES.MIN_DROPDOWN_OFFSET}px`,
                 left: `${dropdownPosition.left}px`,
-                width: `${dropdownPosition.width}px`,
+                width: `${dropdownWidth}px`,
+                zIndex: DROPDOWN_STYLES.Z_INDEX,
+                maxHeight: DROPDOWN_STYLES.MAX_HEIGHT,
               }}
             >
               <div className="p-1">
@@ -176,7 +280,7 @@ export const SmartValueInput = React.forwardRef<
                     <div
                       key={val}
                       className={cn(
-                        'px-2 py-1 text-xs font-mono cursor-pointer hover:bg-secondary rounded-sm',
+                        'px-2 py-1 text-xs font-mono cursor-pointer hover:bg-secondary rounded-sm whitespace-nowrap',
                         inputValue === val && 'bg-secondary'
                       )}
                       onClick={() => handleSelectValue(val)}
