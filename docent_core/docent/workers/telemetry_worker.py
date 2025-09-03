@@ -52,9 +52,43 @@ async def telemetry_processing_job(ctx: ViewContext, job: SQLAJob) -> None:
         lock = redis_client.lock(f"telemetry_collection_lock_{collection_id}", timeout=0)
         try:
             async with lock:
-                async with mono_svc.db.session() as session:
-                    telemetry_svc = TelemetryService(session, mono_svc)
-                    await telemetry_svc.process_agent_runs_for_collection(collection_id, user)
+                # Continue processing agent runs as long as there are new ones to process
+                total_processed = 0
+                iteration = 0
+
+                while True:
+                    iteration += 1
+                    logger.info(
+                        f"Telemetry processing iteration {iteration} for collection {collection_id}"
+                    )
+
+                    async with mono_svc.db.session() as session:
+                        telemetry_svc = TelemetryService(session, mono_svc)
+                        processed_agent_run_ids = (
+                            await telemetry_svc.process_agent_runs_for_collection(
+                                collection_id, user
+                            )
+                        )
+
+                    if not processed_agent_run_ids:
+                        logger.info(
+                            f"No more agent runs to process for collection {collection_id} after {iteration} iterations"
+                        )
+                        break
+
+                    total_processed += len(processed_agent_run_ids)
+                    logger.info(
+                        f"Processed {len(processed_agent_run_ids)} agent runs in iteration {iteration}, total: {total_processed}"
+                    )
+
+                    # Small delay to prevent tight loops and allow for any new data to arrive
+                    import asyncio
+
+                    await asyncio.sleep(1)
+
+                logger.info(
+                    f"Completed telemetry processing for collection {collection_id}: {total_processed} agent runs processed in {iteration} iterations"
+                )
         except LockError:
             logger.info(f"Collection {collection_id} is already being processed, skipping")
             return

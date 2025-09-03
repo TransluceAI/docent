@@ -117,7 +117,7 @@ class TelemetryService:
     # Trace Processing   #
     ######################
 
-    async def process_agent_runs_for_collection(self, collection_id: str, user: User) -> None:
+    async def process_agent_runs_for_collection(self, collection_id: str, user: User) -> List[str]:
         """
         Process all agent runs that need processing for a collection.
 
@@ -128,6 +128,9 @@ class TelemetryService:
         Args:
             collection_id: The collection ID to process
             user: The user who initiated the processing
+
+        Returns:
+            List[str]: List of agent run IDs that were successfully processed
         """
         # Atomically get agent runs that need processing and mark them as processing
         agent_runs_needing_processing = await self.get_and_mark_agent_runs_for_processing(
@@ -136,7 +139,7 @@ class TelemetryService:
 
         if not agent_runs_needing_processing:
             logger.info(f"No agent runs need processing for collection {collection_id}")
-            return
+            return []
 
         logger.info(
             f"Found and marked {len(agent_runs_needing_processing)} agent runs for processing in collection {collection_id}"
@@ -144,6 +147,7 @@ class TelemetryService:
 
         # Process each agent run individually
         processed_count = 0
+        successfully_processed_agent_run_ids: List[str] = []
 
         for agent_run_id in agent_runs_needing_processing:
             try:
@@ -158,6 +162,7 @@ class TelemetryService:
 
                 if success:
                     processed_count += 1
+                    successfully_processed_agent_run_ids.append(agent_run_id)
                     logger.info(f"Successfully processed agent run {agent_run_id}")
                     # Mark agent run as completed only on success
                     await self._mark_agent_runs_as_completed(collection_id, {agent_run_id})
@@ -181,16 +186,19 @@ class TelemetryService:
         # Track with analytics if available
         try:
             analytics = AnalyticsClient()
-            analytics.track_event(
-                "telemetry_processing_completed",
-                properties={
-                    "collection_id": collection_id,
-                    "agent_runs_attempted": len(agent_runs_needing_processing),
-                    "agent_runs_processed": processed_count,
-                },
-            )
+            with analytics.user_context(user):
+                analytics.track_event(
+                    "telemetry_processing_completed",
+                    properties={
+                        "collection_id": collection_id,
+                        "agent_runs_attempted": len(agent_runs_needing_processing),
+                        "agent_runs_processed": processed_count,
+                    },
+                )
         except Exception as e:
             logger.warning(f"Failed to track analytics event: {str(e)}")
+
+        return successfully_processed_agent_run_ids
 
     async def _process_single_agent_run(
         self,
