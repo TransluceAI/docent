@@ -142,9 +142,9 @@ const TranscriptListItem: React.FC<{
 }) => (
   <div
     className={cn(
-      'flex items-center text-xs rounded border transition-colors min-w-0 shadow-sm',
+      'flex items-center text-xs rounded border transition-colors min-w-0',
       selectedTranscriptKey === transcriptKey
-        ? 'bg-blue-bg border-blue-border text-primary shadow-md'
+        ? 'bg-blue-bg border-blue-border text-primary'
         : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
     )}
     style={{ marginLeft: `${level * 12}px` }}
@@ -207,7 +207,7 @@ export const TranscriptNavigator: React.FC<{
   className,
 }) => {
   return (
-    <div className={cn('space-y-1', className)}>
+    <div className={cn('space-y-1 custom-scrollbar', className)}>
       {/* Hierarchical Transcript Groups */}
       {transcriptGroupTree.map((node) => (
         <TranscriptGroupNode

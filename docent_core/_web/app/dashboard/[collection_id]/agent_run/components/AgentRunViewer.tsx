@@ -214,7 +214,7 @@ const TranscriptPath: React.FC<{
         className
       )}
     >
-      <div className="flex items-center space-x-0.5 min-w-0 flex-1 overflow-x-auto">
+      <div className="flex items-center space-x-0.5 min-w-0 flex-1 overflow-x-auto custom-scrollbar">
         {path.map((item, index) => (
           <React.Fragment key={item.id}>
             {index > 0 && (
@@ -821,7 +821,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         </div>
                       </div>
                       {/* Expand/Collapse All Button */}
-                      {transcriptGroupTree.length > 0 && (
+                      {transcriptGroupTree.length >= 2 && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -865,7 +865,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   </div>
                 )}
               {/* Transcript Groups and Transcripts Sidebar */}
-              {transcriptKeys.length >= 2 && (
+              {transcriptKeys.length >= 0 && (
                 <>
                   <ResizablePanel
                     defaultSize={sidebarVisible ? 25 : 0}
@@ -932,7 +932,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   </ResizablePanel>
                   <ResizableHandle
                     withHandle={false}
-                    className={sidebarVisible ? '' : 'hidden'}
+                    className={cn('mx-2', sidebarVisible ? '' : 'hidden')}
                   />
                 </>
               )}
@@ -1655,13 +1655,13 @@ const MessageBox: React.FC<{
           <>
             {message.role === 'assistant' &&
               getReasoningContent(message.content) && (
-                <div className="mb-2 px-2 py-2 bg-muted border-l-2 border-border text-xs text-primary italic whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full overflow-x-auto font-mono rounded">
+                <div className="mb-2 px-2 py-2 bg-muted border-l-2 border-border text-xs text-primary italic whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full overflow-x-auto font-mono rounded custom-scrollbar">
                   {getReasoningContent(message.content)}
                 </div>
               )}
           </>
         )}
-        <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono">
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono custom-scrollbar">
           {renderMessageContent(
             message.content,
             citedRanges,
