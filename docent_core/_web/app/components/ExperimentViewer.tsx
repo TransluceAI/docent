@@ -36,6 +36,7 @@ import {
   useGetAgentRunMetadataQuery,
   collectionApi,
 } from '../api/collectionApi';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 // Constants for magic numbers
 const PAGINATION_LIMIT = 100;
@@ -49,6 +50,7 @@ export default function ExperimentViewer({
 
   // Get all state at the top level
   const collectionId = useAppSelector((state) => state.collection.collectionId);
+  const hasWritePermission = useHasCollectionWritePermission();
 
   const experimentViewerScrollPosition = useAppSelector(
     (state) => state.experimentViewer.experimentViewerScrollPosition
@@ -197,7 +199,10 @@ export default function ExperimentViewer({
           </div>
         </div>
 
-        <UploadRunsButton onImportSuccess={handleUploadSuccess} />
+        <UploadRunsButton
+          onImportSuccess={handleUploadSuccess}
+          disabled={!hasWritePermission}
+        />
       </div>
       <TranscriptFilterControls />
 

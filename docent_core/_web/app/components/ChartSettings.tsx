@@ -36,6 +36,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { exportChartToPng, exportChartToCsv } from '../utils/exportChart';
 
@@ -49,14 +50,16 @@ function DimensionSelect({
   onChange,
   fields,
   allowNone = true,
+  disabled = false,
 }: {
   dim: string | null;
   onChange: (dim: string) => void;
   fields: ChartDimension[];
   allowNone?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={dim || 'None'} onValueChange={onChange}>
+    <Select value={dim || 'None'} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger className="h-6 w-16 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
         <SelectValue />
       </SelectTrigger>
@@ -79,6 +82,7 @@ function DimensionSelect({
 export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
   const { x_key, y_key, series_key, runs_filter } = chart;
   const collectionId = useAppSelector((state) => state.collection.collectionId);
+  const hasWritePermission = useHasCollectionWritePermission();
   const { data: metadataFieldsData } = useGetAgentRunMetadataFieldsQuery(
     collectionId!,
     {
@@ -260,6 +264,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             dim={outerDim}
             onChange={handleOuterDimChange}
             fields={metadataKeys}
+            disabled={!hasWritePermission}
           />
           <Button
             variant="ghost"
@@ -267,7 +272,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             className="h-6 w-6 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-primary flex-shrink-0"
             onClick={handleSwapDimensions}
             title="Swap dimensions"
-            disabled={!showSwapButton}
+            disabled={!showSwapButton || !hasWritePermission}
           >
             <ArrowLeftRight size={14} className="stroke-[1.5]" />
           </Button>
@@ -280,12 +285,17 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             onChange={handleInnerDimChange}
             fields={metadataKeys}
             allowNone={false}
+            disabled={!hasWritePermission}
           />
 
           <span className="text-xs text-muted-foreground whitespace-nowrap">
             Y:
           </span>
-          <Select value={y_key} onValueChange={handleYDimChange}>
+          <Select
+            value={y_key}
+            onValueChange={handleYDimChange}
+            disabled={!hasWritePermission}
+          >
             <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
               <SelectValue />
             </SelectTrigger>
@@ -310,6 +320,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           <Select
             value={chart.chart_type}
             onValueChange={handleChartTypeChange}
+            disabled={!hasWritePermission}
           >
             <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
               <SelectValue />
@@ -336,6 +347,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           <Select
             value={chart.rubric_filter || 'None'}
             onValueChange={handleRubricFilterChange}
+            disabled={!hasWritePermission}
           >
             <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
               <SelectValue />
@@ -375,6 +387,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
               onEditFilter={editFilter}
               onClearAllFilters={clearAllFilters}
               className="mr-1"
+              disabled={!hasWritePermission}
             />
           )}
 
@@ -385,6 +398,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                 variant="outline"
                 className="h-6 px-1 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-primary flex-shrink-0"
                 title="Add filter"
+                disabled={!hasWritePermission}
               >
                 <FunnelPlus size={18} className="stroke-[1.5]" />
                 <span className="text-xs">Add Filter</span>

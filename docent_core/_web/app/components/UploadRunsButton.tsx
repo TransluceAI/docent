@@ -11,10 +11,12 @@ import UploadRunsDialog from './UploadRunsDialog';
 
 interface UploadRunsButtonProps {
   onImportSuccess?: () => void;
+  disabled?: boolean;
 }
 
 export default function UploadRunsButton({
   onImportSuccess,
+  disabled = false,
 }: UploadRunsButtonProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -66,7 +68,12 @@ export default function UploadRunsButton({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="pr-2 pl-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="pr-2 pl-1.5"
+            disabled={disabled}
+          >
             <PlusIcon size={14} className="mr-1" />
             Add Data
           </Button>

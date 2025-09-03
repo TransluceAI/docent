@@ -13,6 +13,7 @@ interface FilterChipsProps {
   onEditFilter: (filter: PrimitiveFilter) => void;
   onClearAllFilters: () => void;
   className?: string;
+  disabled?: boolean;
 }
 
 export const FilterChips = ({
@@ -21,6 +22,7 @@ export const FilterChips = ({
   onEditFilter,
   onClearAllFilters,
   className,
+  disabled = false,
 }: FilterChipsProps) => {
   const currentFilters = filters?.filters || [];
 
@@ -33,7 +35,7 @@ export const FilterChips = ({
       {currentFilters.map((subFilter: CollectionFilter) => (
         <div
           key={subFilter.id}
-          className="inline-flex items-center gap-x-1 text-[11px] bg-indigo-bg text-primary border border-indigo-border pl-1.5 pr-1 py-0 rounded-md"
+          className="inline-flex items-center gap-x-1 text-[11px] bg-indigo-bg text-primary border border-indigo-border pl-1.5 pr-1 py-0.5 rounded-md"
         >
           {(() => {
             if (subFilter.type === 'primitive') {
@@ -58,6 +60,7 @@ export const FilterChips = ({
               onClick={() => onEditFilter(subFilter as PrimitiveFilter)}
               className="p-0.5 text-primary hover:text-primary/50 transition-colors"
               title="Edit filter"
+              disabled={disabled}
             >
               <Pencil size={10} />
             </button>
@@ -66,6 +69,7 @@ export const FilterChips = ({
             onClick={() => onRemoveFilter(subFilter.id)}
             className="p-0.5 text-primary hover:text-primary/50 transition-colors"
             title="Remove filter"
+            disabled={disabled}
           >
             <CircleX size={10} />
           </button>
@@ -74,6 +78,7 @@ export const FilterChips = ({
       <button
         onClick={onClearAllFilters}
         className="inline-flex items-center gap-x-1 text-[11px] bg-red-bg text-primary border border-red-border px-1.5 py-0.5 rounded-md hover:bg-red-bg/50 transition-colors"
+        disabled={disabled}
       >
         Clear All
         <Eraser size={10} />
