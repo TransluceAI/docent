@@ -199,7 +199,7 @@ export default function UploadRunsDialog({
 
         {uploadState === uploadStates.PROCESSING && (
           <div className="flex flex-col items-center space-y-2 py-8">
-            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
             <div className="text-sm text-muted-foreground">
               Processing file...
             </div>
@@ -320,7 +320,10 @@ export default function UploadRunsDialog({
               disabled={!!error || uploadState !== uploadStates.REVIEWING}
             >
               {uploadState === uploadStates.UPLOADING && (
-                <Loader2 size={16} className="animate-spin mr-2" />
+                <Loader2
+                  size={16}
+                  className="animate-spin text-muted-foreground mr-2"
+                />
               )}
               {uploadState !== uploadStates.UPLOADING && (
                 <UploadIcon size={16} className="mr-2" />

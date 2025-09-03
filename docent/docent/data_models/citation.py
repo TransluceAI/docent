@@ -33,7 +33,7 @@ def _extract_range_pattern(range_part: str) -> str | None:
     return start_pattern
 
 
-def _scan_brackets(text: str) -> list[tuple[int, int, str]]:
+def scan_brackets(text: str) -> list[tuple[int, int, str]]:
     """Scan text for bracketed segments, respecting RANGE markers and nested brackets.
 
     Returns a list of (start_index, end_index_exclusive, inner_content).
@@ -70,7 +70,7 @@ def _scan_brackets(text: str) -> list[tuple[int, int, str]]:
     return matches
 
 
-def _parse_single_citation(part: str) -> tuple[int, int, str | None] | None:
+def parse_single_citation(part: str) -> tuple[int, int, str | None] | None:
     """
     Parse a single citation token inside a bracket and return its components.
 
@@ -117,7 +117,7 @@ def parse_citations(text: str) -> tuple[str, list[Citation]]:
     citations: list[Citation] = []
     cleaned_text = ""
 
-    bracket_matches = _scan_brackets(text)
+    bracket_matches = scan_brackets(text)
 
     last_end = 0
     for start, end, bracket_content in bracket_matches:
@@ -125,7 +125,7 @@ def parse_citations(text: str) -> tuple[str, list[Citation]]:
         cleaned_text += text[last_end:start]
 
         # Parse a single citation token inside the bracket
-        parsed = _parse_single_citation(bracket_content)
+        parsed = parse_single_citation(bracket_content)
         if parsed:
             transcript_idx, block_idx, start_pattern = parsed
             replacement = f"T{transcript_idx}B{block_idx}"

@@ -1,13 +1,11 @@
 import {
   ChevronDown,
   ChevronUp,
-  FileText,
   Loader2,
-  Folder,
-  FolderOpen,
+  FolderTree,
+  ChevronRight,
   Maximize2,
   Minimize2,
-  ChevronRight,
 } from 'lucide-react';
 import React, {
   forwardRef,
@@ -19,7 +17,6 @@ import React, {
 
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
-  addMatchedCitations,
   clearHighlightedCitation,
   selectAllCitations,
 } from '@/app/store/transcriptSlice';
@@ -28,7 +25,9 @@ import {
   Content,
   AgentRun,
   TranscriptGroup,
+  ToolCall,
 } from '@/app/types/transcriptTypes';
+import { TranscriptNavigator } from './TranscriptNavigator';
 import { Card } from '@/components/ui/card';
 import {
   Tooltip,
@@ -98,173 +97,10 @@ interface TranscriptGroupNode {
   level: number;
 }
 
-// Component for rendering a single transcript group node (recursive)
-const TranscriptGroupNode: React.FC<{
-  node: TranscriptGroupNode;
-  selectedTranscriptKey: string | null;
-  selectedTranscriptGroupId: string | null;
-  expandedGroups: Set<string>;
-  onTranscriptSelect: (transcriptKey: string) => void;
-  onGroupToggle: (groupId: string) => void;
-  agentRun: AgentRun;
-}> = ({
-  node,
-  selectedTranscriptKey,
-  selectedTranscriptGroupId,
-  expandedGroups,
-  onTranscriptSelect,
-  onGroupToggle,
-  agentRun,
-}) => {
-  const isExpanded = expandedGroups.has(node.group.id);
-  const isSelected = selectedTranscriptGroupId === node.group.id;
-  const hasTranscripts = node.transcripts.length > 0;
-  const hasChildren = node.children.length > 0;
-
-  // Check if this group or any of its descendants contain transcripts
-  const hasTranscriptsInSubtree = useMemo(() => {
-    if (hasTranscripts) return true;
-
-    const checkChildren = (children: TranscriptGroupNode[]): boolean => {
-      return children.some((child) => {
-        if (child.transcripts.length > 0) return true;
-        return checkChildren(child.children);
-      });
-    };
-
-    return checkChildren(node.children);
-  }, [hasTranscripts, node.children]);
-
-  return (
-    <div className="space-y-1">
-      {/* Group Header - only show if it has transcripts or children with transcripts */}
-      {(hasTranscriptsInSubtree || hasChildren) && (
-        <div
-          className={cn(
-            'flex items-center text-xs rounded border transition-colors min-w-0',
-            isSelected
-              ? 'bg-indigo-bg border-indigo-border text-primary'
-              : hasTranscriptsInSubtree
-                ? 'bg-muted/60 border-border/80 text-primary/80 hover:bg-muted hover:text-primary'
-                : 'bg-muted/30 border-border/30 text-muted-foreground/80 hover:bg-muted/50 hover:text-muted-foreground'
-          )}
-          style={{ marginLeft: `${node.level * 12}px` }}
-        >
-          <button
-            onClick={() => onGroupToggle(node.group.id)}
-            className="flex items-center flex-1 px-2 py-1 min-w-0 cursor-pointer"
-          >
-            {isExpanded ? (
-              <FolderOpen className="h-3 w-3 mr-1 flex-shrink-0" />
-            ) : (
-              <Folder className="h-3 w-3 mr-1 flex-shrink-0" />
-            )}
-            <span className="text-ellipsis whitespace-nowrap overflow-hidden min-w-0">
-              {node.group.name || node.group.id}
-            </span>
-          </button>
-          {Object.keys(node.group.metadata || {}).length > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex h-full items-center">
-                  <MetadataDialog
-                    metadata={node.group.metadata || {}}
-                    title={`Transcript Group Metadata - ${node.group.name || node.group.id}`}
-                    trigger={
-                      <button
-                        className={cn(
-                          'p-0.5 mr-1 rounded transition-colors',
-                          isSelected
-                            ? 'hover:bg-indigo-bg text-primary'
-                            : hasTranscriptsInSubtree
-                              ? 'hover:bg-muted text-primary/80'
-                              : 'hover:bg-muted/50 text-muted-foreground/80'
-                        )}
-                      >
-                        <FileText className="h-3 w-3" />
-                      </button>
-                    }
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="left" align="center">
-                <p>View transcript group metadata</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      )}
-
-      {/* Group Transcripts */}
-      {isExpanded && (
-        <div className="space-y-1">
-          {node.transcripts.map((transcriptKey) => (
-            <div
-              key={transcriptKey}
-              className={cn(
-                'flex items-center text-xs rounded border transition-colors min-w-0 shadow-sm',
-                selectedTranscriptKey === transcriptKey
-                  ? 'bg-blue-bg border-blue-border text-primary shadow-md'
-                  : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
-              )}
-              style={{ marginLeft: `${(node.level + 1) * 12}px` }}
-            >
-              <button
-                onClick={() => onTranscriptSelect(transcriptKey)}
-                className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
-                title={transcriptKey}
-              >
-                {transcriptKey}
-              </button>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex h-full items-center">
-                    <MetadataDialog
-                      metadata={
-                        agentRun?.transcripts[transcriptKey]?.metadata || {}
-                      }
-                      title={`Transcript Metadata - ${transcriptKey}`}
-                      trigger={
-                        <button
-                          className={cn(
-                            'p-0.5 mr-1 rounded transition-colors',
-                            selectedTranscriptKey === transcriptKey
-                              ? 'hover:bg-blue-bg text-primary'
-                              : 'hover:bg-accent text-muted-foreground'
-                          )}
-                        >
-                          <FileText className="h-3 w-3" />
-                        </button>
-                      }
-                    />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="left" align="center">
-                  <p>View transcript metadata</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Child Groups (recursive) */}
-      {isExpanded &&
-        node.children.map((childNode) => (
-          <TranscriptGroupNode
-            key={childNode.group.id}
-            node={childNode}
-            selectedTranscriptKey={selectedTranscriptKey}
-            selectedTranscriptGroupId={selectedTranscriptGroupId}
-            expandedGroups={expandedGroups}
-            onTranscriptSelect={onTranscriptSelect}
-            onGroupToggle={onGroupToggle}
-            agentRun={agentRun}
-          />
-        ))}
-    </div>
-  );
-};
+function stringify(x: any): string {
+  if (typeof x === 'string') return x;
+  return JSON.stringify(x);
+}
 
 // Helper function to detect if content contains JSON
 const hasJsonContent = (text: string): boolean => {
@@ -367,11 +203,17 @@ const buildTranscriptPath = (
 // Component for displaying transcript path
 const TranscriptPath: React.FC<{
   path: Array<{ id: string; name: string; type: 'group' | 'transcript' }>;
-}> = ({ path }) => {
+  className?: string;
+}> = ({ path, className }) => {
   if (path.length === 0) return null;
 
   return (
-    <div className="flex items-center text-xs text-muted-foreground/70 mb-1 px-1 overflow-hidden">
+    <div
+      className={cn(
+        'flex items-center text-xs text-muted-foreground/70 mb-1 pr-1 overflow-hidden',
+        className
+      )}
+    >
       <div className="flex items-center space-x-0.5 min-w-0 flex-1 overflow-x-auto">
         {path.map((item, index) => (
           <React.Fragment key={item.id}>
@@ -412,15 +254,21 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const [selectedTranscriptKey, setSelectedTranscriptKey] = useState<
       string | null
     >(null);
-    const [selectedTranscriptGroupId, setSelectedTranscriptGroupId] = useState<
-      string | null
-    >(null);
+    const [selectedTranscriptGroupId] = useState<string | null>(null);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
       new Set()
     );
     const [prettyPrintJsonMessages, setPrettyPrintJsonMessages] = useState<
       Set<number>
     >(new Set());
+
+    // State for sidebar toggle and hover functionality
+    const [sidebarVisible, setSidebarVisible] = useState(true);
+    const [sidebarHovering, setSidebarHovering] = useState(false);
+
+    // Helper for sidebar-aware styling
+    const getSidebarStyles = (baseClasses: string, sidebarClasses?: string) =>
+      cn(baseClasses, sidebarVisible && sidebarClasses);
 
     // Initialize expanded groups when transcript groups are available
     useEffect(() => {
@@ -676,8 +524,12 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         setSelectedTranscriptKey(transcriptKey);
         // Clear any highlighted citations when switching transcripts
         dispatch(clearHighlightedCitation());
+        // Close floating sidebar when transcript is selected
+        if (!sidebarVisible) {
+          setSidebarHovering(false);
+        }
       },
-      [dispatch]
+      [dispatch, sidebarVisible]
     );
 
     /**
@@ -917,7 +769,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     return (
       <Card
-        className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-3"
+        className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
         style={{ flexGrow: '2' }}
       >
         {/* Header area Content */}
@@ -948,22 +800,27 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             </div>
             <ResizablePanelGroup
               direction="horizontal"
-              className="flex flex-1 min-h-0 w-full overflow-hidden relative"
+              className="flex flex-1 min-h-0 w-full relative"
+              style={{ overflow: 'visible' }} // need style attr to override style attr
             >
-              {/* Transcript Groups and Transcripts Sidebar */}
-              {transcriptKeys.length >= 2 && (
-                <>
-                  <ResizablePanel
-                    defaultSize={25}
-                    minSize={20}
-                    maxSize={50}
-                    className="flex flex-col"
+              {/* Floating Sidebar - shows when sidebar is hidden and hovering */}
+              {transcriptKeys.length >= 2 &&
+                !sidebarVisible &&
+                sidebarHovering && (
+                  <div
+                    className="absolute -top-3 -left-3 w-1/4 min-w-[250px] max-w-[400px] bg-background border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[80vh]"
+                    onMouseEnter={() => setSidebarHovering(true)}
+                    onMouseLeave={() => setSidebarHovering(false)}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs font-medium text-primary">
-                        Transcripts
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-2 p-3 pb-1">
+                      <div className="flex items-center space-x-1">
+                        <div className="p-1 w-6 h-6 flex-shrink-0"></div>
+                        <div className="text-xs font-medium text-primary">
+                          Transcripts
+                        </div>
                       </div>
-                      {/* Expand/Collapse All Button - only show if there are transcript groups */}
+                      {/* Expand/Collapse All Button */}
                       {transcriptGroupTree.length > 0 && (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -993,84 +850,118 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         </Tooltip>
                       )}
                     </div>
-                    <div className="space-y-1 flex-1 overflow-y-auto min-h-0 pr-1">
-                      {/* Hierarchical Transcript Groups */}
-                      {transcriptGroupTree.map((node) => (
-                        <TranscriptGroupNode
-                          key={node.group.id}
-                          node={node}
-                          selectedTranscriptKey={selectedTranscriptKey}
-                          selectedTranscriptGroupId={selectedTranscriptGroupId}
-                          expandedGroups={expandedGroups}
-                          onTranscriptSelect={handleTranscriptSelect}
-                          onGroupToggle={handleGroupToggle}
-                          agentRun={agentRun}
-                        />
-                      ))}
-
-                      {/* Root Level Transcripts (ungrouped) */}
-                      {ungroupedTranscripts.map((transcriptKey) => (
-                        <div
-                          key={transcriptKey}
-                          className={cn(
-                            'flex items-center w-full text-xs rounded border transition-colors shadow-sm',
-                            selectedTranscriptKey === transcriptKey
-                              ? 'bg-blue-bg border-blue-border text-primary shadow-md'
-                              : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
-                          )}
+                    {/* Navigation */}
+                    <TranscriptNavigator
+                      transcriptGroupTree={transcriptGroupTree}
+                      ungroupedTranscripts={ungroupedTranscripts}
+                      selectedTranscriptKey={selectedTranscriptKey}
+                      selectedTranscriptGroupId={selectedTranscriptGroupId}
+                      expandedGroups={expandedGroups}
+                      agentRun={agentRun}
+                      onTranscriptSelect={handleTranscriptSelect}
+                      onGroupToggle={handleGroupToggle}
+                      className="overflow-y-auto px-3 pb-3 flex-shrink-0"
+                    />
+                  </div>
+                )}
+              {/* Transcript Groups and Transcripts Sidebar */}
+              {transcriptKeys.length >= 2 && (
+                <>
+                  <ResizablePanel
+                    defaultSize={sidebarVisible ? 25 : 0}
+                    minSize={sidebarVisible ? 20 : 0}
+                    maxSize={sidebarVisible ? 50 : 0}
+                    className={sidebarVisible ? 'flex flex-col' : 'hidden'}
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => setSidebarVisible(false)}
+                          className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          aria-label="Hide transcript hierarchy"
                         >
-                          <button
-                            onClick={() =>
-                              handleTranscriptSelect(transcriptKey)
-                            }
-                            className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden font-medium"
-                            title={transcriptKey}
-                          >
-                            {transcriptKey}
-                          </button>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex h-full items-center">
-                                <MetadataDialog
-                                  metadata={
-                                    agentRun?.transcripts[transcriptKey]
-                                      ?.metadata || {}
-                                  }
-                                  title={`Transcript Metadata - ${transcriptKey}`}
-                                  trigger={
-                                    <button
-                                      className={cn(
-                                        'p-0.5 mr-1 rounded transition-colors',
-                                        selectedTranscriptKey === transcriptKey
-                                          ? 'hover:bg-blue-bg text-primary'
-                                          : 'hover:bg-accent text-muted-foreground'
-                                      )}
-                                    >
-                                      <FileText className="h-3 w-3" />
-                                    </button>
-                                  }
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" align="center">
-                              <p>View transcript metadata</p>
-                            </TooltipContent>
-                          </Tooltip>
+                          <FolderTree className="h-4 w-4" />
+                        </button>
+                        <div className="text-xs font-medium text-primary">
+                          Transcripts
                         </div>
-                      ))}
+                      </div>
+                      {/* Expand/Collapse All Button */}
+                      {transcriptGroupTree.length > 0 && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={handleToggleAllGroups}
+                              className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                              aria-label={
+                                allGroupsExpanded
+                                  ? 'Collapse all groups'
+                                  : 'Expand all groups'
+                              }
+                            >
+                              {allGroupsExpanded ? (
+                                <Minimize2 className="h-3 w-3" />
+                              ) : (
+                                <Maximize2 className="h-3 w-3" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" align="end">
+                            <p>
+                              {allGroupsExpanded
+                                ? 'Collapse all groups'
+                                : 'Expand all groups'}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
+                    {/* Navigation */}
+                    <TranscriptNavigator
+                      transcriptGroupTree={transcriptGroupTree}
+                      ungroupedTranscripts={ungroupedTranscripts}
+                      selectedTranscriptKey={selectedTranscriptKey}
+                      selectedTranscriptGroupId={selectedTranscriptGroupId}
+                      expandedGroups={expandedGroups}
+                      agentRun={agentRun}
+                      onTranscriptSelect={handleTranscriptSelect}
+                      onGroupToggle={handleGroupToggle}
+                      className="flex-1 overflow-y-auto min-h-0 pr-1"
+                    />
                   </ResizablePanel>
-                  <ResizableHandle withHandle={false} />
+                  <ResizableHandle
+                    withHandle={false}
+                    className={sidebarVisible ? '' : 'hidden'}
+                  />
                 </>
               )}
 
               {transcript && (
                 <ResizablePanel defaultSize={75} className="flex flex-col">
                   {/* Transcript content */}
-                  <div className="space-y-1 mb-2 px-1">
+                  <div className={getSidebarStyles('space-y-1 mb-2 pr-1')}>
                     <div className="flex items-center justify-between">
                       {selectedTranscriptKey && (
                         <div className="flex items-center space-x-1">
+                          {/* Only show toggle button if there are multiple transcripts and sidebar is hidden */}
+                          {transcriptKeys.length >= 2 && !sidebarVisible && (
+                            <div
+                              onMouseEnter={() => setSidebarHovering(true)}
+                              onMouseLeave={() => setSidebarHovering(false)}
+                              className="relative z-20"
+                            >
+                              <button
+                                onClick={() =>
+                                  setSidebarVisible(!sidebarVisible)
+                                }
+                                className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                                aria-label="Show transcript hierarchy"
+                              >
+                                <FolderTree className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
                           <div className="font-semibold text-sm">
                             Transcript
                           </div>
@@ -1089,6 +980,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       agentRun?.transcripts[selectedTranscriptKey]
                         ?.transcript_group_id && (
                         <TranscriptPath
+                          className={getSidebarStyles('')}
                           path={buildTranscriptPath(
                             selectedTranscriptKey,
                             agentRun
@@ -1097,7 +989,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       )}
                   </div>
                   <div
-                    className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pl-1"
+                    className="space-y-2 overflow-y-auto custom-scrollbar flex-1"
                     ref={scrollContainerRef}
                   >
                     {transcript.messages.map((message, index) => {
@@ -1150,7 +1042,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         )}
         {!agentRun && (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         )}
       </Card>
@@ -1180,8 +1072,6 @@ const MessageBox: React.FC<{
   prettyPrintJsonMessages,
   setPrettyPrintJsonMessages,
 }) => {
-  const dispatch = useAppDispatch();
-
   const highlightedCitationId = useAppSelector(
     (state) => state.transcript.highlightedCitationId
   );
@@ -1205,7 +1095,110 @@ const MessageBox: React.FC<{
     }
   }, [highlightedCitationId]);
 
-  // Helper function to extract text content from message content
+  // Helper functions for tool call formatting (DRY) - memoized to avoid dependency issues
+  const formatToolCallArgs = useCallback(
+    (args: Record<string, unknown> | undefined) =>
+      Object.entries(args || {})
+        .map(([k, v]) => `${k}=${stringify(v)}`)
+        .join(', '),
+    []
+  );
+
+  const getToolCallLLMFormat = useCallback(
+    (tool: ToolCall) =>
+      tool.view
+        ? `\n<tool call>\n${tool.view.content}\n</tool call>`
+        : `\n<tool call>\n${tool.function}(${formatToolCallArgs(tool.arguments)})\n</tool call>`,
+    [formatToolCallArgs]
+  );
+
+  const getToolCallDisplayContent = useCallback(
+    (tool: ToolCall) =>
+      tool.view
+        ? tool.view.content
+        : `${tool.function}(${formatToolCallArgs(tool.arguments)})`,
+    [formatToolCallArgs]
+  );
+
+  // Helper function to render text with citation highlights (simpler version for tool calls)
+  const renderTextWithHighlights = (
+    text: string,
+    intervals: { start: number; end: number; id: string }[]
+  ) => {
+    if (!intervals.length) return text;
+
+    const parts: JSX.Element[] = [];
+    let lastIndex = 0;
+
+    // Sort intervals by start position
+    const sortedIntervals = [...intervals].sort((a, b) => a.start - b.start);
+
+    sortedIntervals.forEach((interval, i) => {
+      // Add text before highlight
+      if (interval.start > lastIndex) {
+        parts.push(
+          <span key={`text-${i}`}>{text.slice(lastIndex, interval.start)}</span>
+        );
+      }
+
+      // Add highlighted text
+      const highlightedText = text.slice(interval.start, interval.end);
+      parts.push(
+        <span
+          key={`highlight-${i}`}
+          className={cn(
+            'px-0.5 py-0.25 rounded transition-colors',
+            getCitationColors(message.role, true)
+          )}
+        >
+          {highlightedText}
+        </span>
+      );
+
+      lastIndex = interval.end;
+    });
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(<span key="text-end">{text.slice(lastIndex)}</span>);
+    }
+
+    return <>{parts}</>;
+  };
+
+  // Helper function to extract text content from message content for citation matching
+  // This includes tool calls in the same format as shown to LLMs, but only for citation matching
+  const getMessageContentForCitations = (message: ChatMessage): string => {
+    let textContent = '';
+
+    if (typeof message.content === 'string') {
+      textContent = message.content;
+    } else {
+      // If content is an array of Content objects
+      textContent = message.content
+        .filter(
+          (item): item is Content & { text: string } =>
+            item.type === 'text' && typeof item.text === 'string'
+        )
+        .map((item) => item.text)
+        .join('\n');
+    }
+
+    // Add tool call content in the same format as shown to LLMs for citation matching
+    if (
+      message?.role === 'assistant' &&
+      'tool_calls' in message &&
+      message.tool_calls
+    ) {
+      for (const toolCall of message.tool_calls) {
+        textContent += getToolCallLLMFormat(toolCall);
+      }
+    }
+
+    return textContent;
+  };
+
+  // Helper function to extract text content from message content for display (no tool calls)
   const getMessageContent = (content: string | Content[]): string => {
     if (typeof content === 'string') {
       return content;
@@ -1327,27 +1320,9 @@ const MessageBox: React.FC<{
 
   // Memoize citation intervals computation for all messages with citations
   const allCitationIntervals = useMemo(() => {
-    const messageContent = getMessageContent(message.content);
+    const messageContent = getMessageContentForCitations(message);
     return computeCitationIntervals(messageContent, citedRanges);
-  }, [message.content, citedRanges]);
-
-  // Memoize matched citation IDs for dispatch
-  const matchedCitationIds = useMemo(() => {
-    const ids = new Set<string>();
-    allCitationIntervals.forEach(({ start, end, id }) => {
-      if (start < end) {
-        ids.add(id);
-      }
-    });
-    return Array.from(ids);
-  }, [allCitationIntervals]);
-
-  // Dispatch matched citations after render to avoid state updates during render
-  useEffect(() => {
-    if (matchedCitationIds.length > 0) {
-      dispatch(addMatchedCitations(matchedCitationIds));
-    }
-  }, [dispatch, matchedCitationIds]);
+  }, [message, citedRanges, getMessageContentForCitations]);
 
   const getRoleStyle = (role: string, isHighlighted: boolean) => {
     const transitionClasses = 'transition-colors duration-500 ease-out';
@@ -1525,33 +1500,115 @@ const MessageBox: React.FC<{
     return null;
   };
 
-  // Helper to render tool calls for assistant messages
+  // Helper to render tool calls with citation highlighting for assistant messages
   const renderToolCalls = () => {
     if (message.role === 'assistant' && message.tool_calls) {
-      return message.tool_calls.map((tool, i) => (
-        <div
-          key={i}
-          className="mt-1 p-1.5 bg-secondary/85 rounded text-xs break-all whitespace-pre-wrap"
-        >
-          <div className="text-[10px] text-muted-foreground mb-0.5">
-            Tool Call ID: {tool.id}
-          </div>
-          {tool.view ? (
-            <span className="font-mono">{tool.view.content}</span>
-          ) : (
-            <div className="font-mono">
-              <span className="font-semibold">{tool.function}</span>
-              <span className="text-muted-foreground">
-                (
-                {Object.entries(tool.arguments || {})
-                  .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-                  .join(', ')}
-                )
-              </span>
+      // Calculate the offset where tool calls start in the citation content
+      const mainContentLength = getMessageContent(message.content).length;
+
+      return message.tool_calls.map((tool, i) => {
+        // Calculate the start position of this tool call in the full citation content
+        let toolCallStartOffset = mainContentLength;
+
+        // Add the length of previous tool calls
+        for (let j = 0; j < i; j++) {
+          const prevTool = message.tool_calls![j];
+          toolCallStartOffset += getToolCallLLMFormat(prevTool).length;
+        }
+
+        // Get the tool call content in LLM format
+        const toolCallContent = getToolCallLLMFormat(tool);
+
+        const toolCallEndOffset = toolCallStartOffset + toolCallContent.length;
+
+        // Find citation intervals that overlap with this tool call
+        const toolCallIntervals = allCitationIntervals
+          .filter(
+            (interval) =>
+              interval.start < toolCallEndOffset &&
+              interval.end > toolCallStartOffset
+          )
+          .map((interval) => ({
+            ...interval,
+            // Adjust positions relative to the tool call content
+            start: Math.max(0, interval.start - toolCallStartOffset),
+            end: Math.min(
+              toolCallContent.length,
+              interval.end - toolCallStartOffset
+            ),
+          }))
+          .filter((interval) => interval.start < interval.end);
+
+        // Extract just the inner content (without the <tool call> wrapper for display)
+        const displayContent = getToolCallDisplayContent(tool);
+
+        // Adjust intervals to match display content (subtract the "<tool call>\n" prefix)
+        const prefixLength = '\n<tool call>\n'.length;
+        const adjustedIntervals = toolCallIntervals
+          .map((interval) => ({
+            ...interval,
+            start: Math.max(0, interval.start - prefixLength),
+            end: Math.min(displayContent.length, interval.end - prefixLength),
+          }))
+          .filter(
+            (interval) =>
+              interval.start < interval.end &&
+              interval.start < displayContent.length
+          );
+
+        return (
+          <div
+            key={i}
+            className="mt-1 p-1.5 bg-secondary/85 rounded text-xs break-all whitespace-pre-wrap"
+          >
+            <div className="text-[10px] text-muted-foreground mb-0.5">
+              Tool Call ID: {tool.id}
             </div>
-          )}
-        </div>
-      ));
+            {tool.view ? (
+              <span className="font-mono">
+                {adjustedIntervals.length > 0
+                  ? renderTextWithHighlights(displayContent, adjustedIntervals)
+                  : displayContent}
+              </span>
+            ) : (
+              <div className="font-mono">
+                <span className="font-semibold">{tool.function}</span>
+                <span className="text-muted-foreground">
+                  (
+                  {adjustedIntervals.length > 0
+                    ? renderTextWithHighlights(
+                        formatToolCallArgs(tool.arguments),
+                        adjustedIntervals
+                          .map((interval) => {
+                            // Adjust for the function name and opening parenthesis
+                            const functionPrefixLength =
+                              tool.function.length + 1; // +1 for "("
+                            return {
+                              ...interval,
+                              start: Math.max(
+                                0,
+                                interval.start - functionPrefixLength
+                              ),
+                              end: Math.max(
+                                0,
+                                interval.end - functionPrefixLength
+                              ),
+                            };
+                          })
+                          .filter(
+                            (interval) =>
+                              interval.start >= 0 &&
+                              interval.end > interval.start
+                          )
+                      )
+                    : formatToolCallArgs(tool.arguments)}
+                  )
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      });
     }
     return null;
   };

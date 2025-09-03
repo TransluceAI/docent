@@ -54,7 +54,7 @@ export function CollectionsTable({
   if (isLoading || !collections) {
     return (
       <div className="flex-1 flex items-center justify-center h-full min-h-[200px]">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 size={16} className="animate-spin text-muted-foreground" />
       </div>
     );
   }

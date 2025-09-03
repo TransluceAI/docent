@@ -1,7 +1,7 @@
 'use client';
 import { ModeToggle } from '@/components/ui/theme-toggle';
 
-import { Loader2, PlusIcon, BookOpenIcon } from 'lucide-react';
+import { PlusIcon, BookOpenIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -222,14 +222,7 @@ export default function HomePage() {
               onClick={handleCreateCollection}
               disabled={isCreatingCollection}
             >
-              {isCreatingCollection ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                'Create Collection'
-              )}
+              {isCreatingCollection ? 'Creating...' : 'Create Collection'}
             </Button>
           </DialogFooter>
         </DialogContent>

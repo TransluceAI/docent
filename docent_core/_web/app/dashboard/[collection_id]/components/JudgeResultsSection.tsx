@@ -199,8 +199,6 @@ export const JudgeResultsList = ({
     [centroidAssignments]
   );
 
-  if (!judgeResultsMap) return null;
-
   return (
     <div
       className={cn(

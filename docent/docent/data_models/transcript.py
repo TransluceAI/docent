@@ -28,10 +28,11 @@ A citation may include a specific range of text within a block. Use {RANGE_BEGIN
 
 Important notes:
 - You must include the full content of the text range {RANGE_BEGIN} and {RANGE_END}, EXACTLY as it appears in the transcript, word-for-word, including any markers or punctuation that appear in the middle of the text.
-- Citations must be specific. When possible, include a text range to be more specific. If you omit the text range you will cite the entire block.
+- Citations must be as specific as possible. This means you should usually cite a specific text range within a block.
 - A citation is not a quote. For brevity, text ranges will not be rendered inline. The user will have to click on the citation to see the full text range.
 - Citations are self-contained. Do NOT label them as citation or evidence. Just insert the citation by itself at the appropriate place in the text.
 - Citations must come immediately after the part of a claim that they support. This may be in the middle of a sentence.
+- Each pair of brackets must contain only one citation. To cite multiple blocks, use multiple pairs of brackets, like [T0B0] [T0B1].
 """
 
 BLOCK_CITE_INSTRUCTION = f"""Each transcript and each block has a unique index. Cite the relevant indices in brackets when relevant, like [T<idx>B<idx>]. Use multiple tags to cite multiple blocks, like [T<idx1>B<idx1>][T<idx2>B<idx2>]. Remember to cite specific blocks and NOT action units."""

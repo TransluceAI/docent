@@ -84,7 +84,7 @@ const MetadataDialog: React.FC<MetadataDialogProps> = ({
           <Button
             size="sm"
             variant="outline"
-            className="text-xs flex items-center gap-1 h-7 px-1 py-0.5 shadow-none"
+            className="text-xs flex items-center gap-1 h-6 px-1 py-0.5 shadow-none"
             disabled={!hasMetadata}
           >
             <FileText className="h-3 w-3" />

@@ -1,6 +1,14 @@
 'use client';
 
-import { Plus, Play, FileText, Trash2, Pause, PickaxeIcon } from 'lucide-react';
+import {
+  Plus,
+  Play,
+  FileText,
+  Trash2,
+  Pause,
+  PickaxeIcon,
+  Loader2,
+} from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { type Rubric } from '@/app/store/rubricSlice';
 import { Button } from '@/components/ui/button';
@@ -268,12 +276,12 @@ export default function RubricList() {
       {/* Rubrics List */}
       <div className="space-y-1.5">
         {!effectiveCollectionId ? (
-          <div className="text-xs text-muted-foreground text-center py-4">
-            Loading rubrics...
+          <div className="flex justify-center py-4">
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         ) : isLoadingRubrics ? (
-          <div className="text-xs text-muted-foreground text-center py-4">
-            Loading rubrics...
+          <div className="flex justify-center py-4">
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         ) : rubrics?.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-4">

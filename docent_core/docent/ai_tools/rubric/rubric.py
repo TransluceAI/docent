@@ -9,6 +9,7 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat import ChatMessage
 from docent.data_models.citation import Citation, parse_citations
+from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import MessagesInput, get_llm_completions_async
@@ -105,10 +106,42 @@ class JudgeResultStreamingCallback(Protocol):
     ) -> None: ...
 
 
+def _validate_rubric_results(results: list[str] | None, agent_run: AgentRun) -> list[str] | None:
+    """Validate and filter citation text ranges in rubric results.
+
+    Args:
+        results: Raw results from LLM judge
+        agent_run: Agent run containing transcript data for validation
+
+    Returns:
+        List of validated result strings with invalid citations removed
+    """
+    if results is None:
+        return None
+
+    validated_values: list[str] = []
+
+    for value in results:
+        # Parse citations and validate them in one pass
+        validated_text = remove_invalid_citation_ranges(value, agent_run)
+        validated_values.append(validated_text)
+
+        if validated_text != value:
+            logger.info(
+                f"Citation validation removed invalid text range from citation in judge result. "
+                f"Agent run ID: {agent_run.id}, "
+                f"Original text: {value}, "
+                f"Validated text: {validated_text}, "
+            )
+
+    return validated_values
+
+
 def _get_llm_callback(
     rubric_id: str,
     rubric_version: int,
     agent_run_ids: list[str],
+    agent_runs: list[AgentRun],
     callback: JudgeResultStreamingCallback,
     result_type: ResultType,
 ):
@@ -119,7 +152,11 @@ def _get_llm_callback(
         if results is None:
             await callback(batch_index, None)
         else:
-            values: list[str | None] = results if len(results) > 0 else [None]  # type: ignore
+            # Validate citations and clean up text
+            validated_values = _validate_rubric_results(results, agent_runs[batch_index])
+            if validated_values is None:
+                validated_values = [None]
+
             await callback(
                 batch_index,
                 [
@@ -130,9 +167,7 @@ def _get_llm_callback(
                         value=value,
                         result_type=result_type,
                     )
-                    # If there were no matches, return a single None result
-                    # Otherwise, return all results
-                    for value in values
+                    for value in validated_values
                 ],
             )
 
@@ -174,6 +209,7 @@ async def evaluate_rubric(
                 rubric.id,
                 rubric.version,
                 [ar.id for ar in agent_runs],
+                agent_runs,
                 callback,
                 ResultType.DIRECT_RESULT,
             )
@@ -184,7 +220,10 @@ async def evaluate_rubric(
 
     ans: list[list[str] | None] = [None] * len(prompt_resolvers)
     for i, output in enumerate(outputs):
-        ans[i] = _parse_rubric_outputs(output)
+        results = _parse_rubric_outputs(output)
+        agent_run = agent_runs[i]
+        validated_results = _validate_rubric_results(results, agent_run)
+        ans[i] = validated_results if validated_results else None
 
     return ans
 
@@ -245,6 +284,7 @@ async def evaluate_rubric_max_recall(
                 rubric.id,
                 rubric.version,
                 [ar.id for ar in agent_runs],
+                agent_runs,
                 callback,
                 ResultType.NEAR_MISS,
             )
@@ -255,6 +295,7 @@ async def evaluate_rubric_max_recall(
 
     ans: list[list[str] | None] = [None] * len(prompt_resolvers)
     for i, output in enumerate(outputs):
-        ans[i] = _parse_rubric_outputs(output)
+        results = _parse_rubric_outputs(output)
+        ans[i] = _validate_rubric_results(results, agent_runs[i])
 
     return ans

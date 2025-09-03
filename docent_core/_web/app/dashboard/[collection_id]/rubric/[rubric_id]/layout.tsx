@@ -7,6 +7,7 @@ import {
   CitationNavigationProvider,
   useCitationNavigation,
 } from './NavigateToCitationContext';
+import { Card } from '@/components/ui/card';
 
 export default function RubricLayout({
   children,
@@ -21,12 +22,12 @@ export default function RubricLayout({
     <Suspense>
       <CitationNavigationProvider>
         <div className="flex-1 flex space-x-3 min-h-0 shrink-0">
-          <div className="flex min-w-0 basis-1/3 max-w-1/3 grow-0 shrink-0">
+          <Card className="flex min-w-0 basis-1/3 max-w-1/3 grow-0 shrink-0">
             <RubricLeftColumn
               rubricId={rubricId}
               selectedResultId={selectedResultId}
             />
-          </div>
+          </Card>
           {children}
         </div>
       </CitationNavigationProvider>

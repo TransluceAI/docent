@@ -11,6 +11,7 @@ import { ChartData, getScoreAt, parseChartData } from '../utils/chartDataUtils';
 import { useGetChartDataQuery } from '../api/chartApi';
 import { useChartFilters } from '../../hooks/use-chart-filters';
 import { CustomBarTooltip, CustomLineTooltip } from './CustomTooltips';
+import { Loader2 } from 'lucide-react';
 
 type GraphValue = string | number;
 
@@ -58,7 +59,7 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-4 text-sm">
-        Loading chart...
+        <Loader2 size={16} className="animate-spin text-muted-foreground" />
       </div>
     );
   }

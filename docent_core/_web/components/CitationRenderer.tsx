@@ -6,7 +6,6 @@ import { useAppSelector } from '../app/store/hooks';
 import {
   selectIsCitationHighlighted,
   useCitationHighlight,
-  generateCitationId,
 } from '../lib/citationUtils';
 
 /**
@@ -279,12 +278,8 @@ export const CitationButton: React.FC<{
   const isHighlighted = useAppSelector((state) =>
     selectIsCitationHighlighted(state, citation)
   );
-  const hasMatches = useAppSelector(
-    (state) =>
-      citation.start_pattern &&
-      state.transcript.matchedCitationIds?.[generateCitationId(citation)] ===
-        true
-  );
+  // Server-side validation ensures that any citation with start_pattern is valid
+  const hasMatches = Boolean(citation.start_pattern);
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     highlightCitation(citation);

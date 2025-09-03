@@ -437,11 +437,17 @@ export default function SingleRubricArea({
 
       {/* Loading indicator */}
       {isLoadingRubricRunState && Object.keys(judgeResultsMap).length === 0 && (
-        <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Loading rubric results
+        <div className="flex items-center justify-center">
+          <Loader2 size={16} className="animate-spin text-muted-foreground" />
         </div>
       )}
+      {/* Not loading but no results */}
+      {!isLoadingRubricRunState &&
+        Object.keys(judgeResultsMap).length === 0 && (
+          <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+            No results yet. Run the rubric to see results!
+          </div>
+        )}
 
       {/* Results */}
       <JudgeResultsList

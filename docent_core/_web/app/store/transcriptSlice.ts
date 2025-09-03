@@ -54,14 +54,17 @@ export interface TranscriptState {
   allCitations?: Citation[];
   // Citation highlighting
   highlightedCitationId?: string;
-  // Citation match presence (computed on FE) keyed by citationId
-  matchedCitationIds?: Record<string, boolean>;
   // Agent run sidebar state
-  agentRunSidebarOpen?: boolean;
   agentRunSidebarTab?: string;
+  // Sidebar visibility states for different routes
+  leftSidebarOpen?: boolean;
+  rightSidebarOpen?: boolean;
 }
 
-const initialState: TranscriptState = {};
+const initialState: TranscriptState = {
+  leftSidebarOpen: undefined, // Hidden by default, shown when clicking agent run card
+  rightSidebarOpen: true,
+};
 
 export const getActionsSummary = createAsyncThunk(
   'transcript/getActionsSummary',
@@ -447,21 +450,20 @@ export const transcriptSlice = createSlice({
     clearHighlightedCitation: (state) => {
       state.highlightedCitationId = undefined;
     },
-    addMatchedCitations: (state, action: PayloadAction<string[]>) => {
-      if (!state.matchedCitationIds) state.matchedCitationIds = {};
-      for (const id of action.payload) state.matchedCitationIds[id] = true;
-    },
-    clearMatchedCitations: (state) => {
-      state.matchedCitationIds = {};
-    },
-    setAgentRunSidebarOpen: (state, action: PayloadAction<boolean>) => {
-      state.agentRunSidebarOpen = action.payload;
-    },
-    toggleAgentRunSidebar: (state) => {
-      state.agentRunSidebarOpen = !state.agentRunSidebarOpen;
-    },
     setAgentRunSidebarTab: (state, action: PayloadAction<string>) => {
       state.agentRunSidebarTab = action.payload;
+    },
+    setLeftSidebarOpen: (state, action: PayloadAction<boolean>) => {
+      state.leftSidebarOpen = action.payload;
+    },
+    toggleLeftSidebar: (state) => {
+      state.leftSidebarOpen = !(state.leftSidebarOpen ?? false);
+    },
+    setRightSidebarOpen: (state, action: PayloadAction<boolean>) => {
+      state.rightSidebarOpen = action.payload;
+    },
+    toggleRightSidebar: (state) => {
+      state.rightSidebarOpen = !state.rightSidebarOpen;
     },
     resetTranscriptSlice: () => initialState,
   },
@@ -487,11 +489,11 @@ export const {
   setAllCitations,
   setHighlightedCitation,
   clearHighlightedCitation,
-  addMatchedCitations,
-  clearMatchedCitations,
-  setAgentRunSidebarOpen,
-  toggleAgentRunSidebar,
   setAgentRunSidebarTab,
+  setLeftSidebarOpen,
+  toggleLeftSidebar,
+  setRightSidebarOpen,
+  toggleRightSidebar,
 } = transcriptSlice.actions;
 
 // Memoized selectors to prevent unnecessary rerenders

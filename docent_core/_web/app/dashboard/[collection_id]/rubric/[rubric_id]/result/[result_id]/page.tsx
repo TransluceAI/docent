@@ -18,16 +18,21 @@ import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useGetAgentRunQuery } from '@/app/api/collectionApi';
 
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useAppDispatch } from '@/app/store/hooks';
+import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { setAllCitations } from '@/app/store/transcriptSlice';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { useCitationNavigation } from '../../NavigateToCitationContext';
+import { Loader2 } from 'lucide-react';
 
 export default function JudgeResultPage() {
   const params = useParams();
   const dispatch = useAppDispatch();
   const router = useRouter();
   const citationNav = useCitationNavigation();
+
+  const rightSidebarOpen = useAppSelector(
+    (state) => state.transcript.rightSidebarOpen ?? true
+  );
 
   const resultId = params.result_id as string;
   const collectionId = params.collection_id as string;
@@ -162,14 +167,14 @@ export default function JudgeResultPage() {
   if (isLoadingRubricRunState) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-0">
-        Loading rubric run state...
+        <Loader2 size={16} className="animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (isErrorRubricRunState || !rubricRunState) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-0">
+      <div className="flex-1 flex items-center text-xs text-muted-foreground justify-center min-h-0">
         Failed to load rubric run state.
       </div>
     );

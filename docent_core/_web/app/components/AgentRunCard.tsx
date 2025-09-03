@@ -1,7 +1,7 @@
 'use client';
 import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
-import { useAppSelector } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { cn } from '@/lib/utils';
 import { BaseAgentRunMetadata } from '../types/collectionTypes';
@@ -19,8 +19,12 @@ export default function AgentRunCard({
   isActive,
 }: AgentRunCardProps) {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   // Collection slice
   const collectionId = useAppSelector((state) => state.collection.collectionId);
+  const leftSidebarOpen = useAppSelector(
+    (state) => state.transcript.leftSidebarOpen
+  );
   const shortUuid = agentRunId.split('-')[0];
   return (
     <div
@@ -39,6 +43,11 @@ export default function AgentRunCard({
           posthog.capture('agent_run_clicked', {
             agent_run_id: agentRunId,
           });
+
+          // // Show left sidebar when clicking agent run card, but only if state is undefined
+          // if (leftSidebarOpen === undefined) {
+          //   dispatch(setLeftSidebarOpen(true));
+          // }
 
           navToAgentRun(
             router,

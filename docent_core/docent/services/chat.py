@@ -18,6 +18,7 @@ from docent.data_models.chat.message import (
 from docent.data_models.citation import (
     parse_citations,
 )
+from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import get_llm_completions_async
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
@@ -43,7 +44,7 @@ class ChatEventCallback(Protocol):
         pass
 
 
-def parse_suggestions(content: str) -> tuple[str, list[str]]:
+def parse_suggestions(content: str, streaming: bool) -> tuple[str, list[str]]:
     """Parse suggestions from assistant message content.
 
     Args:
@@ -53,6 +54,15 @@ def parse_suggestions(content: str) -> tuple[str, list[str]]:
         Tuple of (cleaned_content, suggestions_list)
     """
     import re
+
+    if streaming:
+        # Hide an unclosed <SUGGESTIONS> while streaming
+        try:
+            suggestions_start_idx = content.index("<SUGGESTIONS>")
+        except ValueError:
+            suggestions_start_idx = 0
+        cleaned_content = content[:suggestions_start_idx]
+        return cleaned_content, []
 
     pattern = r"<SUGGESTIONS>\s*(.*?)\s*</SUGGESTIONS>"
     match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
@@ -78,7 +88,9 @@ def parse_suggestions(content: str) -> tuple[str, list[str]]:
     return cleaned_content, suggestions
 
 
-def _parse_citations_in_messages(messages: list[ChatMessage], run: AgentRun) -> list[ChatMessage]:
+def _parse_citations_in_messages(
+    messages: list[ChatMessage], run: AgentRun, streaming: bool = False
+) -> list[ChatMessage]:
     """Parse citations and suggestions in assistant messages and return updated messages."""
 
     parsed_messages: list[ChatMessage] = []
@@ -88,7 +100,7 @@ def _parse_citations_in_messages(messages: list[ChatMessage], run: AgentRun) -> 
             try:
                 # Parse suggestions first, then citations from the content
                 content_text = message.text
-                cleaned_text_suggestions, suggestions = parse_suggestions(content_text)
+                cleaned_text_suggestions, suggestions = parse_suggestions(content_text, streaming)
                 cleaned_text, citations = parse_citations(cleaned_text_suggestions)
 
                 # Create new message with parsed citations and suggestions
@@ -133,10 +145,13 @@ class ChatService:
         )
         return result.scalar_one_or_none()
 
-    async def get_session_by_run(self, run_id: str, judge_result_id: str | None = None):
+    async def get_session_by_run(
+        self, run_id: str, user_id: str, judge_result_id: str | None = None
+    ):
         result = await self.session.execute(
             select(SQLAChatSession)
             .where(SQLAChatSession.agent_run_id == run_id)
+            .where(SQLAChatSession.user_id == user_id)
             .where(SQLAChatSession.judge_result_id == judge_result_id)
             .order_by(SQLAChatSession.updated_at.desc())
             .limit(1)
@@ -153,7 +168,7 @@ class ChatService:
         async with self.mono_svc.advisory_lock(agent_run_id, f"create_session_{agent_run_id}"):
             sqla_session: SQLAChatSession | None = None
             if not force_create:
-                sqla_session = await self.get_session_by_run(agent_run_id, judge_result_id)
+                sqla_session = await self.get_session_by_run(agent_run_id, user_id, judge_result_id)
             if sqla_session is None:
                 # Ensure required fields are initialized so the instance is usable pre-flush
                 sqla_session = SQLAChatSession(
@@ -197,7 +212,9 @@ class ChatService:
             return session
 
         # Parse citations in assistant messages
-        parsed_messages = _parse_citations_in_messages(session.messages, run=agent_run)
+        parsed_messages = _parse_citations_in_messages(
+            session.messages, run=agent_run, streaming=False
+        )
         return session.model_copy(update={"messages": parsed_messages})
 
     @staticmethod
@@ -367,13 +384,18 @@ class ChatService:
         async def _streaming_callback(batch_index: int, llm_output: LLMOutput):
             if callback and (completion := llm_output.first):
                 # Create assistant message and parse citations
+                if not completion.text:
+                    return
+                cleaned_text = remove_invalid_citation_ranges(completion.text, agent_run)
                 assistant_msg = AssistantMessage(
-                    content=completion.text or "",
+                    content=cleaned_text,
                     tool_calls=completion.tool_calls,
                 )
 
                 # Parse citations before sending to callback
-                parsed_messages = _parse_citations_in_messages([assistant_msg], run=agent_run)
+                parsed_messages = _parse_citations_in_messages(
+                    [assistant_msg], run=agent_run, streaming=True
+                )
 
                 await callback(
                     parsed_chat_session.model_copy(
@@ -395,11 +417,11 @@ class ChatService:
 
         # Parse completion and append to messages
         completion = outputs[0].first
-        if completion is None:
+        if completion is None or completion.text is None:
             return
-        assistant_msg = AssistantMessage(
-            content=completion.text or "", tool_calls=completion.tool_calls
-        )
+
+        cleaned_text = remove_invalid_citation_ranges(completion.text, agent_run)
+        assistant_msg = AssistantMessage(content=cleaned_text, tool_calls=completion.tool_calls)
         new_chat_session_messages = chat_session_messages + [assistant_msg]
 
         # Update session
@@ -410,7 +432,9 @@ class ChatService:
         await self.session.commit()
 
         final_state = sqla_session.to_pydantic()
-        final_parsed_messages = _parse_citations_in_messages(final_state.messages, run=agent_run)
+        final_parsed_messages = _parse_citations_in_messages(
+            final_state.messages, run=agent_run, streaming=False
+        )
         final_state_with_citations = final_state.model_copy(
             update={"messages": final_parsed_messages}
         )

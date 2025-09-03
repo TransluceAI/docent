@@ -17,7 +17,10 @@ export const ProgressBar = ({
         <span className="flex items-center">
           Processing...
           {!paused && (
-            <Loader2 className="h-3 w-3 ml-1.5 animate-spin text-muted-foreground" />
+            <Loader2
+              size={12}
+              className="ml-1.5 animate-spin text-muted-foreground"
+            />
           )}
         </span>
         <span>

@@ -7,7 +7,9 @@ import dynamic from 'next/dynamic';
 const Chart = dynamic(() => import('./Chart'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center p-4">Loading chart...</div>
+    <div className="flex items-center justify-center p-4">
+      <Loader2 size={16} className="animate-spin text-muted-foreground" />
+    </div>
   ),
 });
 import {
@@ -17,6 +19,7 @@ import {
   Table,
   X,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import ChartSettings from './ChartSettings';
 import { getChartExportElementId } from '../utils/exportChart';
@@ -173,7 +176,7 @@ export function ChartsArea() {
     return (
       <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
         <div className="flex items-center justify-center p-4 text-sm">
-          Loading charts...
+          <Loader2 size={16} className="animate-spin text-muted-foreground" />
         </div>
       </div>
     );
@@ -184,7 +187,7 @@ export function ChartsArea() {
     return (
       <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
         <div className="flex items-center justify-center p-4 text-sm">
-          Loading charts...
+          <Loader2 size={16} className="animate-spin text-muted-foreground" />
         </div>
       </div>
     );

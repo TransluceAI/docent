@@ -6,7 +6,6 @@ import React, { Suspense, useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   getCurAgentRun,
-  toggleAgentRunSidebar,
   setAgentRunSidebarTab,
 } from '@/app/store/transcriptSlice';
 import { Card } from '@/components/ui/card';
@@ -17,9 +16,6 @@ import AgentSummary from '../components/AgentSummary';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../components/AgentRunViewer';
-import { Button } from '@/components/ui/button';
-import { PanelRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import TranscriptChat from '@/components/TranscriptChat';
 
 export default function AgentRunPage() {
@@ -32,8 +28,8 @@ export default function AgentRunPage() {
   const hasInitSearchQuery = useAppSelector(
     (state) => state.collection?.hasInitSearchQuery
   );
-  const showSidebar = useAppSelector(
-    (state) => state.transcript?.agentRunSidebarOpen ?? false
+  const rightSidebarOpen = useAppSelector(
+    (state) => state.transcript?.rightSidebarOpen ?? true
   );
   const selectedTab = useAppSelector(
     (state) => state.transcript?.agentRunSidebarTab ?? 'chat'
@@ -122,35 +118,21 @@ export default function AgentRunPage() {
       <AgentRunViewer ref={agentRunViewerRef} secondary={false} />
 
       {/* Assistant summary / transcript chat */}
-      <Card
-        className={cn(
-          'shrink-0 grow-1 h-full p-3 flex flex-col min-w-0 min-h-0 bg-background',
-          showSidebar && 'basis-1/4'
-        )}
-      >
-        {showSidebar ? (
+      {rightSidebarOpen && (
+        <Card className="shrink-0 grow-1 h-full p-3 flex flex-col min-w-0 min-h-0 bg-background basis-2/5">
           <Tabs
             value={selectedTab}
             onValueChange={(value) => dispatch(setAgentRunSidebarTab(value))}
             className="h-full flex flex-col"
           >
-            <div className="flex items-center justify-between">
-              <TabsList className="grid w-full grid-cols-2 h-8">
-                <TabsTrigger value="agent" className="text-xs">
-                  Summary
-                </TabsTrigger>
-                <TabsTrigger value="chat" className="text-xs">
-                  Chat
-                </TabsTrigger>
-              </TabsList>
-              <Button
-                variant="ghost"
-                className="px-1 ml-2"
-                onClick={() => dispatch(toggleAgentRunSidebar())}
-              >
-                <PanelRight />
-              </Button>
-            </div>
+            <TabsList className="grid w-full grid-cols-2 h-8">
+              <TabsTrigger value="agent" className="text-xs">
+                Summary
+              </TabsTrigger>
+              <TabsTrigger value="chat" className="text-xs">
+                Chat
+              </TabsTrigger>
+            </TabsList>
 
             <TabsContent value="agent" className="flex-1 mt-0 min-h-0">
               <ScrollArea className="h-full pt-2">
@@ -179,16 +161,8 @@ export default function AgentRunPage() {
               </div>
             </TabsContent>
           </Tabs>
-        ) : (
-          <Button
-            variant="ghost"
-            className="px-1"
-            onClick={() => dispatch(toggleAgentRunSidebar())}
-          >
-            <PanelRight />
-          </Button>
-        )}
-      </Card>
+        </Card>
+      )}
     </Suspense>
   );
 }

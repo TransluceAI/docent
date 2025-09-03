@@ -10,6 +10,18 @@ logger = get_logger(__name__)
 app = typer.Typer(add_completion=False)
 
 
+def _run_worker_process(worker_id: int) -> None:
+    """Spawnable worker entrypoint.
+
+    Defined at module top-level so it is picklable under the 'spawn' start method
+    used by macOS. Sets WORKER_ID in the environment and executes the worker loop.
+    """
+    os.environ["WORKER_ID"] = str(worker_id)
+    from docent_core._worker import worker as docent_worker
+
+    docent_worker.run()
+
+
 @app.command(help="Run the server")
 def server(
     host: str = typer.Option("0.0.0.0", help="Host address to bind to"),
@@ -74,11 +86,7 @@ def worker(
         for i in range(workers):
             worker_id = i + 1
 
-            def run_worker_with_id(worker_id: int = worker_id):
-                os.environ["WORKER_ID"] = str(worker_id)
-                docent_worker.run()
-
-            p = Process(target=run_worker_with_id)
+            p = Process(target=_run_worker_process, args=(worker_id,))
             p.start()
             processes.append(p)
             logger.info(f"Started worker {worker_id} (PID: {p.pid})")
