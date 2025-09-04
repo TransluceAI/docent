@@ -43,6 +43,7 @@ export const collectionApi = createApi({
     'Collection',
     'AgentRunMetadata',
     'AgentRunMetadataFields',
+    'AgentRunMetadataFieldValues',
     'BaseFilter',
     'AgentRunIds',
   ],
@@ -94,7 +95,11 @@ export const collectionApi = createApi({
         method: 'POST',
         body,
       }),
-      invalidatesTags: ['BaseFilter', 'AgentRunIds'],
+      invalidatesTags: [
+        'BaseFilter',
+        'AgentRunIds',
+        'AgentRunMetadataFieldValues',
+      ],
     }),
     getAgentRunIds: build.query<string[], { collectionId: string }>({
       query: ({ collectionId }) => `/${collectionId}/agent_run_ids`,
@@ -109,11 +114,13 @@ export const collectionApi = createApi({
     }),
     getFieldValues: build.query<
       { values: string[] },
-      { collectionId: string; fieldName: string }
+      { collectionId: string; fieldName: string; search?: string }
     >({
-      query: ({ collectionId, fieldName }) =>
-        `/${collectionId}/field_values/${encodeURIComponent(fieldName)}`,
-      providesTags: ['AgentRunMetadataFields'],
+      query: ({ collectionId, fieldName, search }) => {
+        const url = `/${collectionId}/field_values/${encodeURIComponent(fieldName)}`;
+        return search ? `${url}?search=${encodeURIComponent(search)}` : url;
+      },
+      providesTags: ['AgentRunMetadataFieldValues'],
     }),
     getAgentRunMetadata: build.query<
       Record<string, BaseAgentRunMetadata>,

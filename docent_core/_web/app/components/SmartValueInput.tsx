@@ -1,11 +1,18 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
 import { Input } from '@/components/ui/input';
 import { useGetFieldValuesQuery } from '../api/collectionApi';
+import { useDebounce } from '../../hooks/use-debounce';
 
 // Styling constants for easy maintenance
 const DROPDOWN_STYLES = {
@@ -80,52 +87,79 @@ export const SmartValueInput = React.forwardRef<
     });
     const [dropdownWidth, setDropdownWidth] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
+    const blurTimeoutRef = useRef<NodeJS.Timeout>();
 
-    const { data: fieldValuesData, isLoading } = useGetFieldValuesQuery(
-      { collectionId, fieldName },
-      { skip: !collectionId || !fieldName }
+    // Debounce search to avoid too many API calls
+    const debouncedSearch = useDebounce(inputValue, 300);
+
+    // Only enable dropdown/search for metadata fields
+    const isMetadataField = fieldName.startsWith('metadata.');
+
+    const { data: fieldValuesData, isFetching } = useGetFieldValuesQuery(
+      {
+        collectionId,
+        fieldName,
+        search: debouncedSearch || undefined,
+      },
+      {
+        skip: !collectionId || !fieldName || !isMetadataField,
+      }
     );
 
     const values = fieldValuesData?.values || [];
 
-    // Filter values based on input, or show all if no input
-    const displayValues = inputValue
-      ? values.filter((val) =>
+    // Track the previous fieldName to detect field changes
+    const prevFieldNameRef = useRef(fieldName);
+    const [isFieldChanging, setIsFieldChanging] = useState(false);
+
+    // Close dropdown when fieldName changes to prevent showing stale values
+    useEffect(() => {
+      if (prevFieldNameRef.current !== fieldName) {
+        setOpen(false);
+        setIsFieldChanging(true);
+        prevFieldNameRef.current = fieldName;
+      }
+    }, [fieldName]);
+
+    // Reset field changing state when new data loads
+    useEffect(() => {
+      if (isFieldChanging && !isFetching && fieldValuesData) {
+        setIsFieldChanging(false);
+      }
+    }, [isFieldChanging, isFetching, fieldValuesData]);
+
+    const displayValues = useMemo(() => {
+      if (isFieldChanging) {
+        return [];
+      }
+
+      if (inputValue) {
+        const clientFiltered = values.filter((val) =>
           val.toLowerCase().includes(inputValue.toLowerCase())
-        )
-      : values;
+        );
+
+        return clientFiltered;
+      }
+
+      // Default: use server results
+      return values;
+    }, [isFieldChanging, inputValue, values]);
 
     // Update input value when value prop changes
     useEffect(() => {
       setInputValue(value);
     }, [value]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newValue = e.target.value;
-      setInputValue(newValue);
-      onValueChange(newValue);
+    // Cleanup timeout on unmount
+    useEffect(() => {
+      return () => {
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current);
+        }
+      };
+    }, []);
 
-      // Open suggestions if we have values (even when input is empty)
-      if (values.length > 0) {
-        // Use setTimeout to ensure displayValues is updated before calculating position
-        setTimeout(() => {
-          updateDropdownPosition();
-          setOpen(true);
-        }, 0);
-      } else {
-        setOpen(false);
-      }
-    };
-
-    const handleSelectValue = (selectedValue: string) => {
-      setInputValue(selectedValue);
-      onValueChange(selectedValue);
-      setOpen(false);
-      // Focus back to input after selection
-      setTimeout(() => inputRef.current?.focus(), 0);
-    };
-
-    const updateDropdownPosition = () => {
+    const updateDropdownPosition = useCallback(() => {
       // Use the forwarded ref if available, otherwise fall back to internal ref
       const currentRef = (ref as React.RefObject<HTMLInputElement>) || inputRef;
       if (currentRef?.current) {
@@ -188,15 +222,89 @@ export const SmartValueInput = React.forwardRef<
         });
         setDropdownWidth(finalWidth);
       }
+    }, [displayValues, inputValue, ref]);
+
+    // Open dropdown when data finishes loading and input is focused, or show loading state
+    useEffect(() => {
+      const currentRef = (ref as React.RefObject<HTMLInputElement>) || inputRef;
+      if (currentRef?.current === document.activeElement) {
+        const isSearching = isFetching || inputValue !== debouncedSearch;
+        if (
+          (values.length > 0 && !isSearching) ||
+          (isSearching && collectionId && fieldName)
+        ) {
+          setOpen(true);
+          requestAnimationFrame(() => {
+            updateDropdownPosition();
+          });
+        }
+      }
+    }, [
+      values.length,
+      isFetching,
+      ref,
+      updateDropdownPosition,
+      collectionId,
+      fieldName,
+      inputValue,
+      debouncedSearch,
+    ]);
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = e.target.value;
+      setInputValue(newValue);
+      onValueChange(newValue);
+
+      // Clear any existing blur timeout
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+
+      // Open suggestions if we have values and not currently fetching new data
+      // OR show loading state if we're fetching/debouncing and focused
+      const isSearching = isFetching || inputValue !== debouncedSearch;
+      if (
+        (values.length > 0 && !isSearching) ||
+        (isSearching && collectionId && fieldName)
+      ) {
+        setOpen(true);
+        // Update position after state change
+        requestAnimationFrame(() => {
+          updateDropdownPosition();
+        });
+      } else {
+        setOpen(false);
+      }
+    };
+
+    const handleSelectValue = (selectedValue: string) => {
+      setInputValue(selectedValue);
+      onValueChange(selectedValue);
+      setOpen(false);
+      // Focus back to input after selection
+      requestAnimationFrame(() => {
+        const currentRef =
+          (ref as React.RefObject<HTMLInputElement>) || inputRef;
+        currentRef?.current?.focus();
+      });
     };
 
     const handleInputFocus = () => {
-      if (values.length > 0) {
-        // Use setTimeout to ensure displayValues is calculated before positioning
-        setTimeout(() => {
+      const isSearching = isFetching || inputValue !== debouncedSearch;
+      if (
+        (values.length > 0 && !isSearching) ||
+        (isSearching && collectionId && fieldName)
+      ) {
+        // Clear any existing blur timeout
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current);
+        }
+
+        setOpen(true);
+        // Update position after state change
+        requestAnimationFrame(() => {
           updateDropdownPosition();
-          setOpen(true);
-        }, 0);
+        });
       }
     };
 
@@ -231,11 +339,16 @@ export const SmartValueInput = React.forwardRef<
       if (open && values.length > 0) {
         updateDropdownPosition();
       }
-    }, [displayValues, open]);
+    }, [displayValues, open, updateDropdownPosition, values.length]);
 
     const handleInputBlur = () => {
+      // Clear any existing timeout
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+
       // Delay closing to allow for selection
-      setTimeout(() => setOpen(false), 200);
+      blurTimeoutRef.current = setTimeout(() => setOpen(false), 200);
     };
 
     return (
@@ -260,7 +373,6 @@ export const SmartValueInput = React.forwardRef<
           }}
         />
         {open &&
-          values.length > 0 &&
           typeof window !== 'undefined' &&
           createPortal(
             <div
@@ -274,25 +386,69 @@ export const SmartValueInput = React.forwardRef<
                 maxHeight: DROPDOWN_STYLES.MAX_HEIGHT,
               }}
             >
-              <div className="p-1">
-                {displayValues.length > 0 ? (
-                  displayValues.map((val) => (
-                    <div
-                      key={val}
-                      className={cn(
-                        'px-2 py-1 text-xs font-mono cursor-pointer hover:bg-secondary rounded-sm whitespace-nowrap',
-                        inputValue === val && 'bg-secondary'
-                      )}
-                      onClick={() => handleSelectValue(val)}
-                    >
-                      {val}
+              <div className="p-1 relative">
+                {(() => {
+                  const isSearching =
+                    isFetching || inputValue !== debouncedSearch;
+                  const isInitialLoad =
+                    (isSearching || isFieldChanging) &&
+                    displayValues.length === 0;
+
+                  // If we're searching/changing field but have no current results, show loading message
+                  if (isInitialLoad) {
+                    return (
+                      <div className="px-2 py-2 text-xs text-muted-foreground text-center">
+                        {isFieldChanging
+                          ? 'Loading values...'
+                          : inputValue !== debouncedSearch
+                            ? 'Searching...'
+                            : 'Loading values...'}
+                      </div>
+                    );
+                  }
+
+                  // Show current results (even while searching for new ones)
+                  if (displayValues.length > 0) {
+                    return (
+                      <>
+                        {/* Search indicator - absolute positioned so it doesn't affect layout */}
+                        {isSearching && !isFieldChanging && (
+                          <div className="absolute -top-6 left-0 right-0 px-2 py-1 text-xs text-muted-foreground text-center bg-background border border-border rounded-t-md shadow-sm">
+                            {inputValue !== debouncedSearch
+                              ? 'Searching...'
+                              : 'Loading...'}
+                          </div>
+                        )}
+
+                        {/* Results list - position unchanged */}
+                        <div
+                          className={cn(
+                            isSearching && 'opacity-70 transition-opacity'
+                          )}
+                        >
+                          {displayValues.map((val) => (
+                            <div
+                              key={val}
+                              className={cn(
+                                'px-2 py-1 text-xs font-mono cursor-pointer hover:bg-secondary rounded-sm whitespace-nowrap',
+                                inputValue === val && 'bg-secondary'
+                              )}
+                              onClick={() => handleSelectValue(val)}
+                            >
+                              {val}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  }
+
+                  return (
+                    <div className="px-2 py-2 text-xs text-muted-foreground text-center">
+                      No matches found
                     </div>
-                  ))
-                ) : (
-                  <div className="px-2 py-2 text-xs text-muted-foreground text-center">
-                    No matches found
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>,
             document.body

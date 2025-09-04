@@ -316,13 +316,13 @@ export const FilterControls = ({
             </Select>
           ) : metadataType === 'str' ? (
             <SmartValueInput
+              ref={valueFieldRef}
               collectionId={collectionId}
               fieldName={metadataKey}
               value={metadataValue}
               onValueChange={setMetadataValue}
               onEnter={() => onUpdateMetadataFilter(metadataValue)}
               placeholder="Enter value..."
-              ref={valueFieldRef}
             />
           ) : (
             <Input

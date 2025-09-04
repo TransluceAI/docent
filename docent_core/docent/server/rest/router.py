@@ -585,12 +585,13 @@ async def agent_run_metadata_fields(
 @user_router.get("/{collection_id}/field_values/{field_name}")
 async def get_field_values(
     field_name: str,
+    search: str | None = None,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
     """Get unique values for a specific metadata field, limited to 100 items."""
-    unique_values = await mono_svc.get_unique_field_values(ctx, field_name)
+    unique_values = await mono_svc.get_unique_field_values(ctx, field_name, search)
     return {"values": unique_values}
 
 
