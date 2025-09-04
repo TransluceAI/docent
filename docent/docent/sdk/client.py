@@ -350,3 +350,20 @@ class Docent:
 
         logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
         return response.json()
+
+    def list_agent_run_ids(self, collection_id: str) -> list[str]:
+        """Get all agent run IDs for a collection.
+
+        Args:
+            collection_id: ID of the Collection.
+
+        Returns:
+            str: JSON string containing the list of agent run IDs.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/agent_run_ids"
+        response = self._session.get(url)
+        response.raise_for_status()
+        return response.json()

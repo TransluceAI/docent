@@ -11,6 +11,21 @@ IPython.get_ipython().run_line_magic("autoreload", "2")
 
 # %%
 
+
+from docent import Docent
+
+DOCENT_API_KEY = "dk_TpS2w6n02SdCNV_z9gbY_3TzlJddLXoT72KyH7bs6G0"
+docent_client = Docent(api_key=DOCENT_API_KEY, server_url="http://localhost:8890")
+
+
+# %%
+
+
+docent_client.list_agent_run_ids("8e8ebe90-c506-4826-b02f-ea201e45f040")
+
+
+# %%
+
 from docent import Docent
 
 DOCENT_API_KEY = "dk_dv2itpQ6xW0cHV6xfdT5YOOUWLUUhZj3qao56XtVkWs"
