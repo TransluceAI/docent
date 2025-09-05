@@ -20,9 +20,9 @@ class ToolCall:
     """
 
     id: str
-    type: Literal["function"] | None
     function: str
     arguments: dict[str, Any]
+    type: Literal["function"] | None = None
     parse_error: str | None = None
     view: ToolCallContent | None = None
 
