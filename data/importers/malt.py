@@ -6,7 +6,7 @@ from typing import Any, List, Tuple
 
 from datasets import load_dataset
 
-from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat import parse_chat_message
 from docent.data_models.chat.message import ChatMessage
 from docent.data_models.transcript import Transcript
@@ -256,7 +256,7 @@ async def process_malt_file_json(json_path: str | Path) -> Tuple[List[AgentRun],
 
         for i, serialized_run in enumerate(serialized_runs):
             try:
-                agent_run = AgentRunWithoutMetadataValidator.model_validate(serialized_run)
+                agent_run = AgentRun.model_validate(serialized_run)
                 agent_runs.append(agent_run)
             except Exception as e:
                 print(f"Warning: Failed to deserialize agent run {i}: {e}")

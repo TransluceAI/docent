@@ -408,18 +408,19 @@ class MonoService:
             if hasattr(ar, "transcript_groups") and ar.transcript_groups:
                 for tg in ar.transcript_groups.values():
                     # Use the existing from_transcript_group method to get all fields properly
-                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg)
+                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(
+                        tg, ctx.collection_id
+                    )
                     transcript_group_data.append(sqla_transcript_group)
+
+        # Sort transcript groups so they don't violate foreign key constraints when inserted at once
+        transcript_group_data = sort_transcript_groups_by_parent_order(transcript_group_data)
 
         # Insert all rows in a single transaction using add_all
         async with self.db.session() as session:
-            # Handle transcript groups - SQLAlchemy will handle foreign key ordering
-            if transcript_group_data:
-                session.add_all(transcript_group_data)
-
-            # Insert agent runs and transcripts
-            # Note: order does not matter as both are in the same transaction
             session.add_all(agent_run_data)
+            session.add_all(transcript_group_data)
+            await session.flush()  # (mengk) seems necessary to avoid FK violations, for some strange reason
             session.add_all(transcript_data)
 
         logger.info(
@@ -1756,3 +1757,59 @@ class MonoService:
             )
             await session.commit()
             return result.rowcount > 0
+
+
+def sort_transcript_groups_by_parent_order(
+    transcript_group_data: list[SQLATranscriptGroup],
+) -> list[SQLATranscriptGroup]:
+    """
+    Sort transcript groups so that parent groups come before their children.
+    This ensures that foreign key constraints are satisfied when saving to the database.
+
+    Args:
+        transcript_group_data: List of SQLATranscriptGroup objects to sort
+
+    Returns:
+        Sorted list of SQLATranscriptGroup objects with parents before children
+    """
+    # Create a mapping of group ID to group object
+    group_map = {group.id: group for group in transcript_group_data}
+
+    # Create a mapping of parent ID to list of child IDs
+    parent_to_children: dict[str, list[str]] = {}
+    for group in transcript_group_data:
+        if group.parent_transcript_group_id:
+            if group.parent_transcript_group_id not in parent_to_children:
+                parent_to_children[group.parent_transcript_group_id] = []
+            parent_to_children[group.parent_transcript_group_id].append(group.id)
+
+    # Topological sort: start with groups that have no parents
+    sorted_groups: list[SQLATranscriptGroup] = []
+    visited: set[str] = set()
+
+    def visit(group_id: str) -> None:
+        if group_id in visited:
+            return
+        visited.add(group_id)
+
+        # Add this group to the sorted list first (parents before children)
+        if group_id in group_map:
+            sorted_groups.append(group_map[group_id])
+
+        # Then visit all children
+        if group_id in parent_to_children:
+            for child_id in parent_to_children[group_id]:
+                if child_id in group_map:  # Only visit if child is in our data
+                    visit(child_id)
+
+    # Visit all groups that have no parents first
+    for group in transcript_group_data:
+        if not group.parent_transcript_group_id:
+            visit(group.id)
+
+    # Visit any remaining groups (shouldn't happen in a valid tree, but just in case)
+    for group in transcript_group_data:
+        if group.id not in visited:
+            visit(group.id)
+
+    return sorted_groups

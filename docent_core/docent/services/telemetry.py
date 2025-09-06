@@ -30,7 +30,10 @@ from docent_core.docent.db.schemas.tables import (
     TelemetryAgentRunStatus,
     sanitize_pg_text,
 )
-from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.monoservice import (
+    MonoService,
+    sort_transcript_groups_by_parent_order,
+)
 from docent_core.docent.services.telemetry_accumulation import TelemetryAccumulationService
 
 logger = get_logger(__name__)
@@ -987,7 +990,9 @@ class TelemetryService:
             # Process transcript groups for this agent run
             if hasattr(agent_run, "transcript_groups") and agent_run.transcript_groups:
                 for tg in agent_run.transcript_groups.values():
-                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(tg)
+                    sqla_transcript_group = SQLATranscriptGroup.from_transcript_group(
+                        tg, ctx.collection_id
+                    )
                     transcript_group_data.append(sqla_transcript_group)
 
         # Handle agent runs - upsert (insert or update)
@@ -1002,7 +1007,7 @@ class TelemetryService:
         # Handle transcript groups
         if transcript_group_data:
             # Sort transcript groups to ensure parent groups come before children
-            sorted_transcript_group_data = self._sort_transcript_groups_by_parent_order(
+            sorted_transcript_group_data = sort_transcript_groups_by_parent_order(
                 transcript_group_data
             )
             for sqla_transcript_group in sorted_transcript_group_data:
@@ -1029,61 +1034,6 @@ class TelemetryService:
         logger.info(
             f"Added {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
         )
-
-    def _sort_transcript_groups_by_parent_order(
-        self, transcript_group_data: List[SQLATranscriptGroup]
-    ) -> List[SQLATranscriptGroup]:
-        """
-        Sort transcript groups so that parent groups come before their children.
-        This ensures that foreign key constraints are satisfied when saving to the database.
-
-        Args:
-            transcript_group_data: List of SQLATranscriptGroup objects to sort
-
-        Returns:
-            Sorted list of SQLATranscriptGroup objects with parents before children
-        """
-        # Create a mapping of group ID to group object
-        group_map = {group.id: group for group in transcript_group_data}
-
-        # Create a mapping of parent ID to list of child IDs
-        parent_to_children: Dict[str, List[str]] = {}
-        for group in transcript_group_data:
-            if group.parent_transcript_group_id:
-                if group.parent_transcript_group_id not in parent_to_children:
-                    parent_to_children[group.parent_transcript_group_id] = []
-                parent_to_children[group.parent_transcript_group_id].append(group.id)
-
-        # Topological sort: start with groups that have no parents
-        sorted_groups: List[SQLATranscriptGroup] = []
-        visited: set[str] = set()
-
-        def visit(group_id: str) -> None:
-            if group_id in visited:
-                return
-            visited.add(group_id)
-
-            # Add this group to the sorted list first (parents before children)
-            if group_id in group_map:
-                sorted_groups.append(group_map[group_id])
-
-            # Then visit all children
-            if group_id in parent_to_children:
-                for child_id in parent_to_children[group_id]:
-                    if child_id in group_map:  # Only visit if child is in our data
-                        visit(child_id)
-
-        # Visit all groups that have no parents first
-        for group in transcript_group_data:
-            if not group.parent_transcript_group_id:
-                visit(group.id)
-
-        # Visit any remaining groups (shouldn't happen in a valid tree, but just in case)
-        for group in transcript_group_data:
-            if group.id not in visited:
-                visit(group.id)
-
-        return sorted_groups
 
     async def _validate_transcript_group_parent_references(
         self, transcript_group_data: List[SQLATranscriptGroup]
@@ -1256,7 +1206,6 @@ class TelemetryService:
                 id=transcript_group_id,
                 name=name,
                 description=description,
-                collection_id=collection_id,
                 agent_run_id=agent_run_id,
                 parent_transcript_group_id=parent_transcript_group_id,
                 metadata=metadata_dict if metadata_dict else {},

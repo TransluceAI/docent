@@ -823,7 +823,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.12a0"
+version = "0.1.13a0"
 source = { editable = "docent" }
 dependencies = [
     { name = "opentelemetry-api" },

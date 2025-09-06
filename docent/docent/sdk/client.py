@@ -4,7 +4,7 @@ from typing import Any
 import requests
 
 from docent._log_util.logger import get_logger
-from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
+from docent.data_models.agent_run import AgentRun
 
 logger = get_logger(__name__)
 
@@ -302,7 +302,7 @@ class Docent:
         else:
             # We do this to avoid metadata validation failing
             # TODO(mengk): kinda hacky
-            return AgentRunWithoutMetadataValidator.model_validate(response.json())
+            return AgentRun.model_validate(response.json())
 
     def make_collection_public(self, collection_id: str) -> dict[str, Any]:
         """Make a collection publicly accessible to anyone with the link.

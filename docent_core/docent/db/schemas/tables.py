@@ -291,7 +291,9 @@ class SQLATranscriptGroup(SQLABase):
     )
 
     @classmethod
-    def from_transcript_group(cls, transcript_group: TranscriptGroup) -> "SQLATranscriptGroup":
+    def from_transcript_group(
+        cls, transcript_group: TranscriptGroup, collection_id: str
+    ) -> "SQLATranscriptGroup":
         # Convert metadata to JSON-serializable dict for JSONB column
         metadata_json = to_jsonable_python(transcript_group.metadata)
 
@@ -300,8 +302,8 @@ class SQLATranscriptGroup(SQLABase):
             "id": transcript_group.id,
             "name": transcript_group.name,
             "description": transcript_group.description,
+            "collection_id": collection_id,
             "parent_transcript_group_id": transcript_group.parent_transcript_group_id,
-            "collection_id": transcript_group.collection_id,
             "agent_run_id": transcript_group.agent_run_id,
             "metadata_json": metadata_json,
         }
@@ -317,7 +319,6 @@ class SQLATranscriptGroup(SQLABase):
             id=self.id,
             name=self.name,
             description=self.description,
-            collection_id=self.collection_id,
             agent_run_id=self.agent_run_id,
             parent_transcript_group_id=self.parent_transcript_group_id,
             created_at=self.created_at,

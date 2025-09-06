@@ -16,7 +16,6 @@ from docent.data_models._tiktoken_util import get_token_count, group_messages_in
 from docent.data_models.transcript import (
     Transcript,
     TranscriptGroup,
-    TranscriptWithoutMetadataValidator,
     fake_model_dump,
 )
 
@@ -284,16 +283,16 @@ class AgentRun(BaseModel):
         return result
 
 
-class AgentRunWithoutMetadataValidator(AgentRun):
-    """
-    A version of AgentRun that doesn't have the model_validator on metadata.
-    Needed for sending/receiving agent runs via JSON, since they incorrectly trip the existing model_validator.
-    """
+# class AgentRunWithoutMetadataValidator(AgentRun):
+#     """
+#     A version of AgentRun that doesn't have the model_validator on metadata.
+#     Needed for sending/receiving agent runs via JSON, since they incorrectly trip the existing model_validator.
+#     """
 
-    transcripts: dict[str, TranscriptWithoutMetadataValidator]  # type: ignore
+#     transcripts: dict[str, TranscriptWithoutMetadataValidator]  # type: ignore
 
-    @field_validator("metadata", mode="before")
-    @classmethod
-    def _validate_metadata_type(cls, v: Any) -> Any:
-        # Bypass the model_validator
-        return v
+#     @field_validator("metadata", mode="before")
+#     @classmethod
+#     def _validate_metadata_type(cls, v: Any) -> Any:
+#         # Bypass the model_validator
+#         return v

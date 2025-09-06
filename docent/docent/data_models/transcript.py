@@ -94,11 +94,29 @@ class TranscriptGroup(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str | None = None
     description: str | None = None
-    collection_id: str
     agent_run_id: str
     parent_transcript_group_id: str | None = None
     created_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _validate_created_at(cls, v: Any) -> datetime | None:
+        if v is None or isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            iso_str = v.replace("Z", "+00:00") if v.endswith("Z") else v
+            try:
+                return datetime.fromisoformat(iso_str)
+            except ValueError as e:
+                raise ValueError(f"created_at must be an ISO 8601 datetime string: {e}")
+        raise ValueError(
+            f"created_at must be a datetime or ISO 8601 string, got {type(v).__name__}"
+        )
+
+    @field_serializer("created_at", when_used="json-unless-none")
+    def serialize_created_at(self, created_at: datetime | None, _info: Any) -> str | None:
+        return created_at.isoformat() if created_at is not None else None
 
     @field_serializer("metadata")
     def serialize_metadata(self, metadata: dict[str, Any], _info: Any) -> dict[str, Any]:
@@ -151,6 +169,25 @@ class Transcript(BaseModel):
     messages: list[ChatMessage]
     metadata: dict[str, Any] = Field(default_factory=dict)
     _units_of_action: list[list[int]] | None = PrivateAttr(default=None)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _validate_created_at(cls, v: Any) -> datetime | None:
+        if v is None or isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            iso_str = v.replace("Z", "+00:00") if v.endswith("Z") else v
+            try:
+                return datetime.fromisoformat(iso_str)
+            except ValueError as e:
+                raise ValueError(f"created_at must be an ISO 8601 datetime string: {e}")
+        raise ValueError(
+            f"created_at must be a datetime or ISO 8601 string, got {type(v).__name__}"
+        )
+
+    @field_serializer("created_at", when_used="json-unless-none")
+    def serialize_created_at(self, created_at: datetime | None, _info: Any) -> str | None:
+        return created_at.isoformat() if created_at is not None else None
 
     @field_serializer("metadata")
     def serialize_metadata(self, metadata: dict[str, Any], _info: Any) -> dict[str, Any]:
@@ -485,14 +522,14 @@ class Transcript(BaseModel):
         )
 
 
-class TranscriptWithoutMetadataValidator(Transcript):
-    """
-    A version of Transcript that doesn't have the model_validator on metadata.
-    Needed for sending/receiving transcripts via JSON, since they incorrectly trip the existing model_validator.
-    """
+# class TranscriptWithoutMetadataValidator(Transcript):
+#     """
+#     A version of Transcript that doesn't have the model_validator on metadata.
+#     Needed for sending/receiving transcripts via JSON, since they incorrectly trip the existing model_validator.
+#     """
 
-    @field_validator("metadata", mode="before")
-    @classmethod
-    def _validate_metadata_type(cls, v: Any) -> Any:
-        # Bypass the model_validator
-        return v
+#     @field_validator("metadata", mode="before")
+#     @classmethod
+#     def _validate_metadata_type(cls, v: Any) -> Any:
+#         # Bypass the model_validator
+#         return v

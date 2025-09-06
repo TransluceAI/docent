@@ -27,7 +27,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util.logger import get_logger
-from docent.data_models.agent_run import AgentRun, AgentRunWithoutMetadataValidator
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import fake_model_dump
 from docent.loaders import load_inspect
 from docent_core._server._analytics.posthog import AnalyticsClient
@@ -642,7 +642,7 @@ async def get_agent_run_metadata(
 
 
 class PostAgentRunsRequest(BaseModel):
-    agent_runs: list[AgentRunWithoutMetadataValidator]
+    agent_runs: list[AgentRun]
 
 
 @user_router.post("/{collection_id}/agent_runs")

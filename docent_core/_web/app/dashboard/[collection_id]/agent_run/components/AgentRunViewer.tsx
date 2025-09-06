@@ -780,7 +780,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                 !sidebarVisible &&
                 sidebarHovering && (
                   <div
-                    className="absolute -top-3 -left-3 w-1/4 min-w-[250px] max-w-[400px] bg-background border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[80vh]"
+                    className="absolute -top-3 -left-3 w-1/4 min-w-[250px] max-w-[400px] bg-background border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[80vh] overflow-y-auto custom-scrollbar"
                     onMouseEnter={() => setSidebarHovering(true)}
                     onMouseLeave={() => setSidebarHovering(false)}
                   >

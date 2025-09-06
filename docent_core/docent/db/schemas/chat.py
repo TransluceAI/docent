@@ -31,7 +31,7 @@ class SQLAChatSession(SQLABase):
     )
 
     agent_run_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=True
+        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"), nullable=True
     )
     judge_result_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey(f"{TABLE_JUDGE_RESULT}.id"), nullable=True, index=True
