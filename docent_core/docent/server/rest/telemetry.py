@@ -2,9 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from docent._log_util import get_logger
-from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.db.schemas.auth_models import Permission, User
-from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import require_collection_exists
 from docent_core.docent.server.dependencies.permissions import require_collection_permission
 from docent_core.docent.server.dependencies.services import (
@@ -30,7 +28,6 @@ telemetry_router = APIRouter()
 async def trace_endpoint(
     request: Request,
     user: User = Depends(get_authenticated_user),
-    analytics: AnalyticsClient = Depends(use_posthog_user_context),
     accumulation_service: TelemetryAccumulationService = Depends(
         get_telemetry_accumulation_service
     ),
@@ -108,10 +105,6 @@ async def trace_endpoint(
 async def trace_done_endpoint(
     request: Request,
     user: User = Depends(get_authenticated_user),
-    analytics: AnalyticsClient = Depends(use_posthog_user_context),
-    accumulation_service: TelemetryAccumulationService = Depends(
-        get_telemetry_accumulation_service
-    ),
     telemetry_svc: TelemetryService = Depends(get_telemetry_service),
 ):
     """
