@@ -1,5 +1,4 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { Citation } from '../types/experimentViewerTypes';
 
 export interface JudgeModel {
   provider: string;
@@ -13,18 +12,19 @@ export interface Rubric {
   version: number;
   rubric_text: string;
   judge_model: JudgeModel | null;
+  output_schema: Record<string, any>;
 }
 
 export interface JudgeResult {
   id: string;
   agent_run_id: string;
   rubric_id: string;
-  value: string | null;
+  output: Record<string, any>;
 }
 
-export interface JudgeResultWithCitations extends JudgeResult {
-  citations: Citation[] | null;
-}
+export type JudgeResultWithCitations = JudgeResult & {
+  readonly _brand: 'citations';
+};
 
 export interface RubricCentroid {
   id: string;
@@ -42,7 +42,5 @@ export const rubricSlice = createSlice({
   initialState,
   reducers: {},
 });
-
-// export const {} = rubricSlice.actions;
 
 export default rubricSlice.reducer;

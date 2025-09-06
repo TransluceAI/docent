@@ -1,3 +1,5 @@
+import json
+
 import tiktoken
 
 from docent.data_models.agent_run import AgentRun
@@ -47,13 +49,19 @@ You are a chat assistant that analyzes a TRANSCRIPT of a conversation between a 
 {{transcript}}
 </TRANSCRIPT>
 
-You are currently discussing whether the TRANSCRIPT matches the following RUBRIC:
+You are currently discussing the TRANSCRIPT in light of the following RUBRIC:
 
 <RUBRIC>
 {{rubric}}
 </RUBRIC>
 
-We asked a JUDGE AI whether the transcript matches the rubric. It concluded that the transcript does match the rubric. It produced the following JUDGE RESULT:
+We asked a JUDGE AI to evaluate the transcript based on the rubric and produce a result according to the JUDGE RESULT SCHEMA.
+
+<JUDGE RESULT SCHEMA>
+{{judge_result_schema}}
+</JUDGE RESULT SCHEMA>
+
+Here is the JUDGE RESULT produced by the JUDGE AI:
 
 <JUDGE RESULT>
 {{judge_result}}
@@ -65,7 +73,7 @@ All past human messages came from the USER. The USER is no longer interacting wi
 
 You will now talk to a different human, the ANALYST. The ANALYST is not the USER. They are not interested in achieving the USER's goals. They are solely interested in analyzing the TRANSCRIPT and how it relates to the RUBRIC and the JUDGE RESULT. All future messages are from the ANALYST.
 
-If the ANALYST refers to a "result" or "judge result", they are referring specifically to the JUDGE RESULT above. If the analyst refers to a "rubric" or a "match", they are referring specifically to the RUBRIC above.
+If the ANALYST refers to a "result" or "judge result", they are referring specifically to the JUDGE RESULT above. If the analyst refers to a "rubric", they are referring specifically to the RUBRIC above.
 
 You must adhere exactly to the following: {TEXT_RANGE_CITE_INSTRUCTION}
 
@@ -82,7 +90,7 @@ At the end of each response, provide 1-3 suggested followup questions that would
 <SUGGESTIONS>
 - What's the best argument against the claim you just made?
 - Does the transcript contain other instances of similar behavior?
-- What part of the transcript is the most clear-cut match for the rubric?
+- What part of the transcript provides the most clear-cut evidence for the judge result?
 - Did the user ask for this behavior at any point?
 - Was the agent correct when it said "[...]"?
 </SUGGESTIONS>
@@ -99,7 +107,8 @@ def make_system_prompt(
     if judge_result is not None and rubric is not None:
         return JUDGE_RESULT_CHAT_SYSTEM_PROMPT_TEMPLATE.format(
             transcript=truncated_transcript,
-            judge_result=judge_result.value,
+            judge_result_schema=json.dumps(rubric.output_schema, indent=2),
+            judge_result=json.dumps(judge_result.output, indent=2),
             rubric=rubric.rubric_text,
         )
     else:

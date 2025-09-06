@@ -11,6 +11,7 @@ import {
   MarkdownWithCitations,
   NavigateToCitation,
 } from '@/components/CitationRenderer';
+import posthog from 'posthog-js';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -187,7 +188,19 @@ export function ChatMessage({
                       <MarkdownWithCitations
                         text={text}
                         citations={citations}
-                        onNavigate={onNavigateToCitation}
+                        onNavigate={({ citation, newTab }) => {
+                          if (citation) {
+                            posthog.capture('citation_clicked', {
+                              source: 'chat',
+                              transcript_idx: citation.transcript_idx,
+                              block_idx: citation.block_idx,
+                              start_pattern: citation.start_pattern,
+                            });
+                          }
+                          if (onNavigateToCitation) {
+                            onNavigateToCitation({ citation, newTab });
+                          }
+                        }}
                       />
                     </div>
                   );

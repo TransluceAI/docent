@@ -29,6 +29,7 @@ import {
   useGetClusteringStateQuery,
   useCancelClusteringJobMutation,
   useClearClustersMutation,
+  useGetRubricQuery,
 } from '../../../api/rubricApi';
 import { toast } from '@/hooks/use-toast';
 import { NavigateToCitation } from '@/components/CitationRenderer';
@@ -298,6 +299,13 @@ export default function SingleRubricArea({
     [judgeResultsMap]
   );
 
+  const { data: rubric } = useGetRubricQuery({
+    collectionId,
+    rubricId,
+    version: null,
+  });
+  const labels = rubric?.output_schema?.properties?.label?.enum ?? [];
+
   return (
     <div className="space-y-2 flex flex-col flex-1 min-w-0">
       <RubricEditor
@@ -451,6 +459,7 @@ export default function SingleRubricArea({
       {/* Results */}
       <JudgeResultsList
         judgeResultsMap={judgeResultsMap}
+        labels={labels}
         centroidsMap={centroidsMap}
         centroidAssignments={centroidAssignments}
         isPollingAssignments={activeClusteringJobId !== null}

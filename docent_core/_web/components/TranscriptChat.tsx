@@ -7,13 +7,11 @@ import {
   SuggestedMessage,
 } from '@/app/dashboard/[collection_id]/components/chat/ChatArea';
 import { ChatHeader } from '@/app/dashboard/[collection_id]/components/chat/ChatHeader';
-import {
-  NavigateToCitation,
-  TextWithCitations,
-} from '@/components/CitationRenderer';
+import { NavigateToCitation } from '@/components/CitationRenderer';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { useTranscriptChat } from '@/app/hooks/use-transcript-chat';
 import { cn } from '@/lib/utils';
+import JudgeResultDetail from './JudgeResultDetail';
 
 export interface TranscriptChatProps {
   runId: string;
@@ -53,17 +51,17 @@ const resultSpecificSuggestedMessages: SuggestedMessage[] = [
   {
     label: "Play devil's advocate",
     message:
-      "Play devil's advocate. The judge result claims that the transcript matches the rubric. Is there a reasonable case to be made that the transcript *does not* match the rubric?",
+      "Play devil's advocate. Is there a reasonable case to be made that the judge result is incorrect?",
   },
   {
-    label: 'Provide context for rubric match',
+    label: 'Provide context for judge result',
     message:
-      'Summarize the context leading up to the behavior that matched the rubric',
+      'Summarize the context leading up to the behavior relevant to the rubric.',
   },
   {
     label: 'Explain judge result in more detail',
     message:
-      'Please explain the judge result in more detail. Walk through the rubric step by step and explain why the result matched.',
+      'Walk through the rubric step by step and explain why the judge produced this result.',
   },
 ];
 
@@ -111,19 +109,6 @@ export default function TranscriptChat({
     ? resultSpecificSuggestedMessages
     : defaultSuggestedMessages;
 
-  // Generate header element if judge result provided
-  const judgeResultElement = judgeResult?.value ? (
-    <div className="w-full mx-auto max-w-4xl">
-      <div className="bg-indigo-bg border border-indigo-border rounded-md p-2 mt-2 text-xs text-primary leading-snug">
-        <TextWithCitations
-          text={judgeResult.value}
-          citations={judgeResult.citations || []}
-          onNavigate={handleNavigateToCitation}
-        />
-      </div>
-    </div>
-  ) : undefined;
-
   const headerElement = (
     <ChatHeader
       title={title}
@@ -148,7 +133,12 @@ export default function TranscriptChat({
           headerElement={
             <>
               {headerElement}
-              {judgeResultElement}
+              {judgeResult && (
+                <JudgeResultDetail
+                  judgeResult={judgeResult}
+                  handleNavigateToCitation={handleNavigateToCitation}
+                />
+              )}
             </>
           }
           hideAssistantAvatar={true}

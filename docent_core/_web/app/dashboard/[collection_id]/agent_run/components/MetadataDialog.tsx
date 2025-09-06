@@ -70,6 +70,26 @@ const CopyButton: React.FC<{ value: any }> = ({ value }) => {
   );
 };
 
+function MetadataBlock({ metadata }: { metadata: BaseMetadata }) {
+  return (
+    <div className="bg-secondary rounded-lg border border-border overflow-hidden">
+      <div className="divide-y divide-border">
+        {Object.entries(metadata).map(([key, value]) => (
+          <div key={key} className="flex p-2 hover:bg-muted transition-colors">
+            <div className="w-1/3 font-medium text-sm text-primary break-words pr-4">
+              {key}
+            </div>
+            <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-start justify-between">
+              <span className="flex-1">{formatMetadataValue(value)}</span>
+              <CopyButton value={value} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const MetadataDialog: React.FC<MetadataDialogProps> = ({
   metadata = {},
   title = 'Metadata Details',
@@ -100,26 +120,7 @@ const MetadataDialog: React.FC<MetadataDialogProps> = ({
         <div className="flex-1 overflow-auto custom-scrollbar">
           <div className="space-y-3">
             {hasMetadata ? (
-              <div className="bg-secondary rounded-lg border border-border overflow-hidden">
-                <div className="divide-y divide-border">
-                  {Object.entries(metadata).map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="flex p-2 hover:bg-muted transition-colors"
-                    >
-                      <div className="w-1/3 font-medium text-sm text-primary break-words pr-4">
-                        {key}
-                      </div>
-                      <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-start justify-between">
-                        <span className="flex-1">
-                          {formatMetadataValue(value)}
-                        </span>
-                        <CopyButton value={value} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <MetadataBlock metadata={metadata} />
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 No metadata available
@@ -140,4 +141,4 @@ const MetadataDialog: React.FC<MetadataDialogProps> = ({
   );
 };
 
-export default MetadataDialog;
+export { MetadataDialog, MetadataBlock };

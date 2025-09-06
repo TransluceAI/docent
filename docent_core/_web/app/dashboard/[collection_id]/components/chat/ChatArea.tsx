@@ -88,8 +88,7 @@ export function ChatArea({
   const coreComponent = (
     <>
       <div
-        className="flex-1 flex flex-col min-w-0 gap-6 overflow-y-scroll relative custom-scrollbar pt-3"
-        // Explaining the pt-3: The card has padding 3, and the gap is 6, so 6-3=3
+        className="flex-1 flex flex-col min-w-0 gap-3 overflow-y-scroll relative custom-scrollbar"
         ref={containerRef}
       >
         {headerElement}

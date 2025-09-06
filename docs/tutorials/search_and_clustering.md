@@ -43,6 +43,29 @@ You can also link to specific parts of the agent run:
 - If you *do* know what you're looking for, feel free to provide lots of detail in your rubric; that's why the text box is so large.
 - Use appropriate metadata filters to narrow the scope of your search.
 
+### Customizing the judge output schema
+
+Judges produce data in a JSON format. Each judge has an associated schema that is used to prompt the language model and validate its output. The default schema is:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "explanation": {
+          "type": "string",
+          "citations": true
+        },
+        "label": {
+          "type": "string",
+          "enum": ["match", "no match"]
+        },
+    }
+}
+```
+
+You can edit this schema in the rubric editor. For example, if you want the judge to classify transcripts into one of three categories, you can put those categories in `properties.label.enum`. See the [JSON Schema documentation](https://json-schema.org/learn/getting-started-step-by-step) for more information on how to write a schema.
+
+`"citations"` is a non-standard keyword which indicates whether a string property should include citations to a run's transcript(s). If any part of the schema uses citations, the judge model will receive a prompt about how to write them. Citations are rendered as clickable links.
 
 ### Retrieving results from the SDK
 

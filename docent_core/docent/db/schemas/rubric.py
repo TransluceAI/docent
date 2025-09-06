@@ -47,6 +47,9 @@ class SQLARubric(SQLABase):
     rubric_text: Mapped[str] = mapped_column(Text, nullable=False)
     judge_model: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Follows https://json-schema.org standard
+    output_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
     # --- START DEPRECATED ---
     high_level_description: Mapped[str] = mapped_column(Text, nullable=True)
     inclusion_rules: Mapped[list[str]] = mapped_column(JSONB, nullable=True)
@@ -88,6 +91,7 @@ class SQLARubric(SQLABase):
             collection_id=collection_id,
             rubric_text=rubric.rubric_text,
             judge_model=rubric.judge_model.model_dump() if rubric.judge_model else None,
+            output_schema=rubric.output_schema,
         )
 
     def to_pydantic(self) -> Rubric:
@@ -105,6 +109,7 @@ class SQLARubric(SQLABase):
             version=self.version,
             rubric_text=self.rubric_text,
             judge_model=jm,
+            output_schema=self.output_schema,
         )
 
 
@@ -117,7 +122,11 @@ class SQLAJudgeResult(SQLABase):
     )
     rubric_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     rubric_version: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+    # Deprecated
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_type: Mapped[ResultType] = mapped_column(Enum(ResultType), nullable=False)
 
     # Composite foreign key constraint
@@ -150,6 +159,7 @@ class SQLAJudgeResult(SQLABase):
             rubric_version=judge_result.rubric_version,
             value=judge_result.value,
             result_type=judge_result.result_type,
+            output=judge_result.output,
         )
 
     def to_pydantic(self) -> JudgeResult:
@@ -160,6 +170,7 @@ class SQLAJudgeResult(SQLABase):
             rubric_version=self.rubric_version,
             value=self.value,
             result_type=self.result_type,
+            output=self.output,
         )
 
 

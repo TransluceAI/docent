@@ -7,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import MetadataDialog from './MetadataDialog';
+import { MetadataDialog } from './MetadataDialog';
 
 // Interface for hierarchical transcript group structure
 interface TranscriptGroupNode {

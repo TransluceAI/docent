@@ -53,7 +53,7 @@ export default function AgentRunCard({
         }}
       >
         <div className="flex justify-between pb-0.5 items-center">
-          <span className="text-primary">
+          <span className="text-primary shrink-0">
             Agent Run <span className="font-mono">{shortUuid}</span>
           </span>
         </div>

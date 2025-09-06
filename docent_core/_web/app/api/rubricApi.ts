@@ -19,6 +19,7 @@ export interface UpdateRubricRequest {
     id: string;
     rubric_text: string;
     judge_model: JudgeModel | null;
+    output_schema: Record<string, any>;
   };
 }
 

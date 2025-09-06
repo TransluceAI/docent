@@ -1,6 +1,12 @@
 'use client';
 
-import { Save, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import {
+  Save,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Braces,
+} from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 
@@ -14,10 +20,10 @@ import { JudgeModel, type Rubric } from '@/app/store/rubricSlice';
 import {
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
+  useGetJudgeModelsQuery,
   rubricApi,
 } from '@/app/api/rubricApi';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import { useGetJudgeModelsQuery } from '@/app/api/rubricApi';
 import {
   Select,
   SelectContent,
@@ -26,6 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { KeyRound } from 'lucide-react';
+import OutputSchemaDialog from './OutputSchemaDialog';
 
 function DescriptionInlineDiff({
   previous,
@@ -207,6 +214,7 @@ export default function RubricEditor({
 
   // Inline editing state
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isSchemaDialogOpen, setIsSchemaDialogOpen] = useState(false);
 
   // Helper function to create a new rubric with updates
   const updateRubric = (updates: Partial<Rubric>) => {
@@ -264,7 +272,9 @@ export default function RubricEditor({
     return (
       rubric?.rubric_text !== remoteRubric?.rubric_text ||
       JSON.stringify(rubric?.judge_model) !==
-        JSON.stringify(remoteRubric?.judge_model)
+        JSON.stringify(remoteRubric?.judge_model) ||
+      JSON.stringify(rubric?.output_schema) !==
+        JSON.stringify(remoteRubric?.output_schema)
     );
   }, [rubric, remoteRubric, editable]);
   useEffect(() => {
@@ -386,49 +396,76 @@ export default function RubricEditor({
             {showAdvanced && (
               <div className="ml-4 border-l p-2 rounded-sm space-y-2">
                 {/* Judge model */}
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
-                    Judge Model
-                  </label>
-                  <Select
-                    value={nameJudgeModel(rubric.judge_model)}
-                    onValueChange={(value) => {
-                      if (!editable) return;
-                      const selected = availableJudgeModels?.find(
-                        (jm) => nameJudgeModel(jm) === value
-                      );
-                      updateRubric({
-                        judge_model: selected || null,
-                      });
-                    }}
-                    disabled={isDisabled}
-                  >
-                    <SelectTrigger className="w-full h-7 text-xs border bg-background px-2 font-normal">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Default" className="text-xs">
-                        Default
-                      </SelectItem>
-                      {availableJudgeModels?.map((jm) => (
-                        <SelectItem
-                          key={nameJudgeModel(jm)}
-                          value={nameJudgeModel(jm)}
-                          className="text-xs"
-                        >
-                          <span className="flex flex-row items-center gap-1">
-                            <span className="flex-1">{nameJudgeModel(jm)}</span>
-                            {jm.uses_byok && <KeyRound className="h-3 w-3" />}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-col">
+                  <div className="flex flex-row items-center">
+                    <label className="block text-xs font-medium text-muted-foreground mr-2 shrink-0">
+                      Judge Model
+                    </label>
+                    <div className="min-w-0">
+                      <Select
+                        value={nameJudgeModel(rubric.judge_model)}
+                        onValueChange={(value) => {
+                          if (!editable) return;
+                          const selected = availableJudgeModels?.find(
+                            (jm) => nameJudgeModel(jm) === value
+                          );
+                          updateRubric({
+                            judge_model: selected || null,
+                          });
+                        }}
+                        disabled={isDisabled}
+                      >
+                        <SelectTrigger className="w-full h-7 text-xs border bg-background px-2 font-normal">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Default" className="text-xs">
+                            Default
+                          </SelectItem>
+                          {availableJudgeModels?.map((jm) => (
+                            <SelectItem
+                              key={nameJudgeModel(jm)}
+                              value={nameJudgeModel(jm)}
+                              className="text-xs"
+                            >
+                              <span className="flex flex-row items-center gap-1">
+                                <span className="flex-1">
+                                  {nameJudgeModel(jm)}
+                                </span>
+                                {jm.uses_byok && (
+                                  <KeyRound className="h-3 w-3" />
+                                )}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   {rubric.judge_model?.uses_byok && (
                     <div className="text-xs text-muted-foreground mt-1">
                       This model uses your own API key.
                     </div>
                   )}
+                </div>
+                <div className="flex flex-row items-center">
+                  <label className="block text-xs font-medium text-muted-foreground mr-2 shrink-0">
+                    Output Schema
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => {
+                      if (!rubric) return;
+                      setIsSchemaDialogOpen(true);
+                    }}
+                    disabled={isDisabled}
+                  >
+                    <Braces className="h-4 w-4" />
+                    Edit
+                  </Button>
                 </div>
               </div>
             )}
@@ -466,6 +503,16 @@ export default function RubricEditor({
           </div>
         )}
       </div>
+      <OutputSchemaDialog
+        open={isSchemaDialogOpen}
+        onOpenChange={(open) => setIsSchemaDialogOpen(open)}
+        initialSchema={rubric?.output_schema}
+        editable={editable}
+        onSave={(parsed) => {
+          updateRubric({ output_schema: parsed });
+          setIsSchemaDialogOpen(false);
+        }}
+      />
     </div>
   );
 }

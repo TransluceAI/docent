@@ -236,6 +236,7 @@ async def start_eval_rubric_job(
 async def get_rubric_run_state(
     collection_id: str,
     rubric_id: str,
+    sqla_rubric: SQLARubric = Depends(get_rubric),
     rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
@@ -243,7 +244,11 @@ async def get_rubric_run_state(
     cur_job = await rubric_svc.get_active_job_for_rubric(rubric_id)
     # Get current results
     results = await rubric_svc.get_rubric_results(rubric_id)
-    results_parsed = [JudgeResultWithCitations.from_judge_result(result) for result in results]
+
+    results_parsed = [
+        JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
+        for result in results
+    ]
     # Get the total number of agent runs
     total_agent_runs = cur_job.job_json.get("total_agent_runs") if cur_job else None
 

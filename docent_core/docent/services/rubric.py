@@ -1,6 +1,7 @@
 import asyncio
+import json
 import random
-from typing import AsyncContextManager, Callable, Sequence, cast
+from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
@@ -29,7 +30,6 @@ from docent_core.docent.ai_tools.rubric.rubric import (
     ResultType,
     Rubric,
     evaluate_rubric,
-    evaluate_rubric_max_recall,
 )
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
@@ -246,7 +246,7 @@ class RubricService:
         user: User | None = None,
         callback: JudgeResultStreamingCallback | None = None,
         max_recall: bool = False,
-    ) -> list[list[str] | None]:
+    ) -> list[dict[str, Any] | None]:
         """
         Helper to evaluate a rubric with the appropriate API keys for a user.
         Raises an error if trying to call a non-default model without a custom API key.
@@ -264,20 +264,13 @@ class RubricService:
                     f"but no API key override was provided for provider {rubric.judge_model.provider}"
                 )
 
-        if max_recall:
-            return await evaluate_rubric_max_recall(
-                agent_runs,
-                rubric,
-                callback=callback,
-                api_key_overrides=api_key_overrides,
-            )
-        else:
-            return await evaluate_rubric(
-                agent_runs,
-                rubric,
-                callback=callback,
-                api_key_overrides=api_key_overrides,
-            )
+        return await evaluate_rubric(
+            agent_runs,
+            rubric,
+            callback=callback,
+            api_key_overrides=api_key_overrides,
+            max_recall=max_recall,
+        )
 
     async def run_rubric_job(self, ctx: ViewContext, job: SQLAJob):
         """Run a rubric job. Should only be called by the worker."""
@@ -298,7 +291,6 @@ class RubricService:
                     SQLAJudgeResult.rubric_id == rubric_id,
                     SQLAJudgeResult.rubric_version == rubric.version,
                     SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
-                    SQLAJudgeResult.value.isnot(None),
                 )
             )
             num_existing_results = existing_results.scalar_one()
@@ -331,7 +323,6 @@ class RubricService:
         agent_runs = await self.service.get_agent_runs(ctx, agent_run_ids=agent_run_ids)
 
         num_results = 0
-        rubric_results: list[list[str] | None] = [None] * len(agent_runs)
 
         async with BatchedWriter(self.session_cm_factory) as writer:
             # Use taskgroup for cancellation instead of events
@@ -343,7 +334,7 @@ class RubricService:
                         return
 
                     nonlocal num_results
-                    num_results += sum(1 for j in judge_results if j.value is not None)
+                    num_results += len(judge_results)
 
                     await writer.add_all(
                         [
@@ -351,9 +342,7 @@ class RubricService:
                             for judge_result in judge_results
                         ]
                     )
-                    rubric_results[batch_index] = [
-                        j.value for j in judge_results if j.value is not None
-                    ]
+
                     if (
                         max_results is not None
                         and num_results >= max_results
@@ -515,7 +504,6 @@ class RubricService:
 
         # Get all non-null judge results for this rubric
         judge_results = await self.get_rubric_results(rubric.id, sq_rubric.version)
-        judge_results = [jr for jr in judge_results if jr.value is not None]
         if not judge_results:
             logger.info(f"No judge results with values found for rubric {rubric.id}")
             return []
@@ -550,7 +538,7 @@ class RubricService:
             # Propose centroids
             guidance = f"These are results for the rubric: {rubric.rubric_text}"
             centroids: list[str] = await propose_clusters(
-                [str(j.value) for j in judge_results if j.result_type == result_type],
+                [json.dumps(j.output) for j in judge_results if j.result_type == result_type],
                 extra_instructions_list=[guidance],
                 feedback_list=(
                     [
@@ -636,27 +624,22 @@ class RubricService:
 
         # Get all non-null judge results for this rubric
         judge_results = await self.get_rubric_results(sqla_rubric.id, sqla_rubric.version)
-        judge_results = [jr for jr in judge_results if jr.value is not None]
         if not judge_results:
             logger.info(f"No judge results with values found for rubric {sqla_rubric.id}")
             return
 
         # Construct inputs to the clustering function, filtering out assigned pairs
         pairs_to_assign = [
-            (jr.id, jr.value, sc.centroid)
+            (jr.id, jr.output, sc.centroid)
             for jr in judge_results
             for sc in sqla_centroids
-            if (jr.id, sc.id) not in assigned_pairs
-            and jr.value is not None
-            and sc.result_type == jr.result_type
+            if (jr.id, sc.id) not in assigned_pairs and sc.result_type == jr.result_type
         ]
         result_types = [
             jr.result_type
             for jr in judge_results
             for sc in sqla_centroids
-            if (jr.id, sc.id) not in assigned_pairs
-            and jr.value is not None
-            and sc.result_type == jr.result_type
+            if (jr.id, sc.id) not in assigned_pairs and sc.result_type == jr.result_type
         ]
         if len(pairs_to_assign) == 0:
             logger.info(f"No pairs to assign, already found {len(assigned_pairs)}")

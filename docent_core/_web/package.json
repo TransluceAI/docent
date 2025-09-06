@@ -10,6 +10,8 @@
     "lint-fix": "eslint . --ext .ts,.tsx --fix --quiet"
   },
   "dependencies": {
+    "@codemirror/lang-json": "^6.0.1",
+    "@uiw/react-codemirror": "^4.23.7",
     "@dagrejs/dagre": "^1.1.4",
     "@nivo/bar": "^0.99.0",
     "@nivo/line": "^0.99.0",

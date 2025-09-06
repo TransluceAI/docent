@@ -1,10 +1,4 @@
 'use client';
-import { useRouter } from 'next/navigation';
-import { useAppSelector } from '@/app/store/hooks';
-import {
-  NavigateToCitation,
-  TextWithCitations,
-} from '@/components/CitationRenderer';
 import { cn } from '@/lib/utils';
 import {
   JudgeResultWithCitations,
@@ -12,15 +6,13 @@ import {
 } from '@/app/store/rubricSlice';
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useCitationNavigation } from '../rubric/[rubric_id]/NavigateToCitationContext';
-import posthog from 'posthog-js';
-import { useCitationHighlight } from '@/lib/citationUtils';
+import { JudgeResultCard } from './JudgeResultCard';
 
 interface CollapsibleResultsSectionProps {
   title: string;
   judgeResultIds: string[];
   judgeResultsMap: Record<string, JudgeResultWithCitations>;
+  clickable: boolean;
   isPollingAssignments: boolean;
   isExpanded?: boolean;
   onToggle?: () => void;
@@ -31,24 +23,16 @@ const CollapsibleResultsSection = ({
   title,
   judgeResultIds,
   judgeResultsMap,
+  clickable,
   isPollingAssignments,
   isExpanded = true,
   onToggle,
   selectedResultId,
 }: CollapsibleResultsSectionProps) => {
-  const [showUniqueAgentRuns, setShowUniqueAgentRuns] = useState(false);
-
-  const toggleShowUniqueAgentRuns = () => {
-    setShowUniqueAgentRuns(!showUniqueAgentRuns);
-  };
-
   // Count only judge results with non-null values (what actually gets displayed)
   const resultHits = useMemo(() => {
     return judgeResultIds
-      .map((id) => {
-        const result = judgeResultsMap[id];
-        return result && result.value ? result : null;
-      })
+      .map((id) => judgeResultsMap[id])
       .filter((result) => result !== null);
   }, [judgeResultIds, judgeResultsMap]);
 
@@ -66,49 +50,31 @@ const CollapsibleResultsSection = ({
 
   const uniqueAgentRunCount = Object.keys(groupedResults).length;
 
-  const AgentRunGroupHeader = ({
-    agentRunId,
-    resultCount,
-  }: {
-    agentRunId: string;
-    resultCount: number;
-  }) => {
+  const AgentRunGroupHeader = ({ agentRunId }: { agentRunId: string }) => {
     return (
       <div className="text-[10px] text-muted-foreground font-medium px-2 py-1 bg-secondary/50 rounded-sm mb-1 flex items-center justify-between">
         <span>Agent Run {agentRunId.slice(0, 8)}</span>
-        <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded">
-          {resultCount}
-        </span>
       </div>
     );
   };
 
   return (
     <div className="space-y-2">
-      <div className="text-xs p-1.5 bg-background rounded border border-border flex items-center gap-1.5">
+      <div
+        onClick={onToggle}
+        className="text-xs p-1.5 bg-background rounded border border-border flex  cursor-pointer items-center gap-1.5"
+      >
         {/* Expand/collapse button on the left */}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-5 w-5 flex-shrink-0"
-          onClick={onToggle}
-        >
-          {isExpanded ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          )}
-        </Button>
+        {isExpanded ? (
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+        )}
 
         {/* Count */}
         <div className="flex-shrink-0 flex items-center">
-          <span
-            className="text-xs px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground cursor-pointer flex items-center min-w-[2rem] justify-center hover:bg-muted/80 transition-colors"
-            onClick={toggleShowUniqueAgentRuns}
-          >
-            {showUniqueAgentRuns
-              ? `${uniqueAgentRunCount} runs`
-              : `${resultHits.length} hits`}
+          <span className="text-xs px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground flex items-center min-w-[2rem] justify-center hover:bg-muted/80 transition-colors">
+            {`${uniqueAgentRunCount} runs`}
             {isPollingAssignments && (
               <div className="animate-spin ml-1 rounded-full h-2 w-2 border-[1.5px] border-border border-t-gray-500 inline-block" />
             )}
@@ -126,13 +92,11 @@ const CollapsibleResultsSection = ({
         <div className="pl-4 space-y-2">
           {Object.entries(groupedResults).map(([agentRunId, results]) => (
             <div key={agentRunId} className="space-y-1">
-              <AgentRunGroupHeader
-                agentRunId={agentRunId}
-                resultCount={results.length}
-              />
+              <AgentRunGroupHeader agentRunId={agentRunId} />
               <div className="space-y-1">
                 {results.map((judgeResult, idx) => (
                   <JudgeResultCard
+                    clickable={clickable}
                     key={`${agentRunId}-${idx}`}
                     judgeResult={judgeResult}
                     isActive={selectedResultId === judgeResult.id}
@@ -148,15 +112,19 @@ const CollapsibleResultsSection = ({
 };
 
 interface JudgeResultsListProps {
+  clickable?: boolean;
   judgeResultsMap: Record<string, JudgeResultWithCitations>;
-  centroidsMap: Record<string, RubricCentroid>;
+  labels?: string[];
+  centroidsMap: Record<string, RubricCentroid> | null;
   centroidAssignments: Record<string, string[]>;
   isPollingAssignments: boolean;
   selectedResultId?: string;
 }
 
 export const JudgeResultsList = ({
+  clickable = true,
   judgeResultsMap,
+  labels,
   centroidsMap,
   centroidAssignments,
   isPollingAssignments,
@@ -199,128 +167,90 @@ export const JudgeResultsList = ({
     [centroidAssignments]
   );
 
-  return (
-    <div
-      className={cn(
-        'overflow-y-auto space-y-2 custom-scrollbar transition-all duration-200'
-      )}
-    >
-      {/* Render centroid clusters */}
-      {Object.keys(centroidsMap).map((centroidId) => {
-        const judgeResultIds = centroidAssignments[centroidId] || [];
-        const centroidTitle =
-          centroidsMap[centroidId]?.centroid || `Cluster ${centroidId}`;
+  const labelAssignments = useMemo(() => {
+    return labels?.map((label) => {
+      return {
+        label,
+        judgeResultIds: Object.values(judgeResultsMap)
+          .filter(
+            (result: JudgeResultWithCitations) => result.output.label === label
+          )
+          .map((result) => result.id),
+      };
+    });
+  }, [labels, judgeResultsMap]);
 
-        return (
+  const hasCentroids = centroidsMap && Object.keys(centroidsMap).length > 0;
+
+  if (!hasCentroids && labelAssignments && labelAssignments.length > 0) {
+    return (
+      <div
+        className={cn(
+          'overflow-y-auto space-y-2 custom-scrollbar transition-all duration-200'
+        )}
+      >
+        {/* Render results grouped by label */}
+        {labelAssignments.map(({ label, judgeResultIds }) => {
+          return (
+            <CollapsibleResultsSection
+              clickable={clickable}
+              key={label}
+              title={label}
+              judgeResultIds={judgeResultIds}
+              judgeResultsMap={judgeResultsMap}
+              isPollingAssignments={isPollingAssignments}
+              isExpanded={expandedSections.has(label)}
+              onToggle={() => toggleSectionExpansion(label)}
+              selectedResultId={selectedResultId}
+            />
+          );
+        })}
+      </div>
+    );
+  } else if (centroidsMap) {
+    return (
+      <div
+        className={cn(
+          'overflow-y-auto space-y-2 custom-scrollbar transition-all duration-200'
+        )}
+      >
+        {/* Render centroid clusters */}
+        {Object.keys(centroidsMap).map((centroidId) => {
+          const judgeResultIds = centroidAssignments[centroidId] || [];
+          const centroidTitle =
+            centroidsMap[centroidId]?.centroid || `Cluster ${centroidId}`;
+
+          return (
+            <CollapsibleResultsSection
+              clickable={clickable}
+              key={centroidId}
+              title={centroidTitle}
+              judgeResultIds={judgeResultIds}
+              judgeResultsMap={judgeResultsMap}
+              isPollingAssignments={isPollingAssignments}
+              isExpanded={expandedSections.has(centroidId)}
+              onToggle={() => toggleSectionExpansion(centroidId)}
+              selectedResultId={selectedResultId}
+            />
+          );
+        })}
+
+        {/* Render residuals */}
+        {residualResultIds.length > 0 && (
           <CollapsibleResultsSection
-            key={centroidId}
-            title={centroidTitle}
-            judgeResultIds={judgeResultIds}
+            clickable={clickable}
+            title={
+              Object.keys(centroidsMap).length > 0 ? 'Residuals' : 'Results'
+            }
+            judgeResultIds={residualResultIds}
             judgeResultsMap={judgeResultsMap}
             isPollingAssignments={isPollingAssignments}
-            isExpanded={expandedSections.has(centroidId)}
-            onToggle={() => toggleSectionExpansion(centroidId)}
+            isExpanded={expandedSections.has('residuals')}
+            onToggle={() => toggleSectionExpansion('residuals')}
             selectedResultId={selectedResultId}
           />
-        );
-      })}
-
-      {/* Render residuals */}
-      {residualResultIds.length > 0 && (
-        <CollapsibleResultsSection
-          title={Object.keys(centroidsMap).length > 0 ? 'Residuals' : 'Results'}
-          judgeResultIds={residualResultIds}
-          judgeResultsMap={judgeResultsMap}
-          isPollingAssignments={isPollingAssignments}
-          isExpanded={expandedSections.has('residuals')}
-          onToggle={() => toggleSectionExpansion('residuals')}
-          selectedResultId={selectedResultId}
-        />
-      )}
-    </div>
-  );
-};
-
-interface JudgeResultCardProps {
-  judgeResult: JudgeResultWithCitations;
-  isActive: boolean;
-}
-
-export const JudgeResultCard = ({
-  judgeResult,
-  isActive,
-}: JudgeResultCardProps) => {
-  const router = useRouter();
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const { highlightCitation } = useCitationHighlight();
-  const citationNav = useCitationNavigation();
-  const resultText = judgeResult.value;
-  if (!resultText) {
-    return null;
-  }
-  const agentRunId = judgeResult.agent_run_id;
-  const citations = judgeResult.citations || [];
-
-  const handleNavigateToCitation: NavigateToCitation = ({
-    citation,
-    newTab,
-  }) => {
-    const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`;
-    if (!isActive) {
-      if (citationNav?.prepareForNavigation) {
-        citationNav.prepareForNavigation(); // Clear current handler for proper timing
-      }
-      if (newTab) {
-        window.open(url, '_blank');
-      } else {
-        router.push(url, { scroll: false } as any);
-      }
-    }
-    if (citationNav?.navigateToCitation) {
-      citationNav.navigateToCitation({ citation, newTab });
-    }
-    highlightCitation(citation);
-  };
-
-  return (
-    <div
-      className={cn(
-        'group rounded-md p-1 border text-xs leading-snug mt-1 transition-colors cursor-pointer border',
-        isActive
-          ? 'border-indigo-border text-primary bg-indigo-bg'
-          : 'bg-secondary/30 hover:bg-indigo-bg text-primary'
-      )}
-      onClick={(e) => {
-        e.stopPropagation();
-        const firstCitation = citations.length > 0 ? citations[0] : null;
-
-        posthog.capture('rubric_result_clicked', {
-          query: judgeResult.rubric_id,
-          agent_run_id: agentRunId,
-        });
-
-        if (firstCitation) {
-          handleNavigateToCitation({
-            citation: firstCitation,
-            newTab: e.metaKey || e.ctrlKey,
-          });
-        }
-      }}
-    >
-      <div className="flex flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <p
-            className="mb-0.5 flex-1 wrap-anywhere"
-            style={{ overflowWrap: 'anywhere' }}
-          >
-            <TextWithCitations
-              text={resultText}
-              citations={citations}
-              onNavigate={handleNavigateToCitation}
-            />
-          </p>
-        </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  }
 };

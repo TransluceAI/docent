@@ -4,7 +4,7 @@ import { generateCitationId } from './citationUtils';
 export interface Interval {
   start: number;
   end: number;
-  id: string; // citation id
+  citationId: string;
 }
 
 // Simple capped cache (LRU-ish) keyed by text + citations signature
@@ -67,7 +67,7 @@ const findMatchesForCitation = (
       startRe.lastIndex++;
       continue;
     }
-    result.push({ start: m.index, end: m.index + m[0].length, id });
+    result.push({ start: m.index, end: m.index + m[0].length, citationId: id });
     if (result.length >= CAP_MATCHES_PER_CITATION) break;
   }
   return result;
@@ -98,3 +98,143 @@ export const computeCitationIntervals = (
   cache.set(key, intervals);
   return intervals;
 };
+
+export type TextSpanWithCitations = {
+  start: number;
+  end: number;
+  citationId: string;
+};
+export type TextSegment = { text: string; citationIds: string[] };
+
+export const computeSegmentsFromIntervals = (
+  text: string,
+  intervals: TextSpanWithCitations[]
+): TextSegment[] => {
+  if (!intervals || intervals.length === 0) return [{ text, citationIds: [] }];
+
+  const opens: Record<number, string[]> = {};
+  const closes: Record<number, string[]> = {};
+  intervals.forEach(({ start, end, citationId }) => {
+    if (start >= end) return;
+    if (!opens[start]) opens[start] = [];
+    if (!closes[end]) closes[end] = [];
+    opens[start].push(citationId);
+    closes[end].push(citationId);
+  });
+
+  const boundaries = new Set<number>([0, text.length]);
+  Object.keys(opens).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(closes).forEach((k) => boundaries.add(Number(k)));
+  const sorted = Array.from(boundaries).sort((a, b) => a - b);
+
+  const segments: TextSegment[] = [];
+  const active = new Set<string>();
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const idx = sorted[i];
+    const next = sorted[i + 1];
+
+    (closes[idx] || []).forEach((id) => active.delete(id));
+    (opens[idx] || []).forEach((id) => active.add(id));
+
+    if (next <= idx) continue;
+    const slice = text.slice(idx, next);
+    if (!slice) continue;
+
+    segments.push({ text: slice, citationIds: Array.from(active) });
+  }
+
+  return segments;
+};
+
+export const sliceIntervals = (
+  intervals: TextSpanWithCitations[],
+  sliceStart: number,
+  sliceEnd: number
+): TextSpanWithCitations[] => {
+  return intervals
+    .filter(
+      (interval) => interval.start < sliceEnd && interval.end > sliceStart
+    )
+    .map((interval) => ({
+      ...interval,
+      start: Math.max(0, interval.start - sliceStart),
+      end: Math.min(interval.end - sliceStart, sliceEnd - sliceStart),
+    }))
+    .filter((interval) => interval.start < interval.end);
+};
+
+// Helper function to create character position mapping between original and pretty-printed JSON
+function createPrettyPrintJsonPositionMapping(
+  originalText: string,
+  prettyText: string
+) {
+  // Create a mapping from original positions to pretty positions by finding matching content
+  const originalToPretty: number[] = new Array(originalText.length);
+
+  let originalPos = 0;
+  let prettyPos = 0;
+
+  while (originalPos < originalText.length && prettyPos < prettyText.length) {
+    const originalChar = originalText[originalPos];
+    const prettyChar = prettyText[prettyPos];
+
+    if (originalChar === prettyChar) {
+      // Exact match - record the mapping
+      originalToPretty[originalPos] = prettyPos;
+      originalPos++;
+      prettyPos++;
+    } else if (/\s/.test(originalChar) && /\s/.test(prettyChar)) {
+      // Both are whitespace - advance both but prefer the pretty position mapping
+      originalToPretty[originalPos] = prettyPos;
+      originalPos++;
+      prettyPos++;
+    } else if (/\s/.test(prettyChar)) {
+      // Pretty has extra whitespace (common in formatted JSON)
+      prettyPos++;
+    } else if (/\s/.test(originalChar)) {
+      // Original has whitespace that was removed/changed
+      originalToPretty[originalPos] = prettyPos;
+      originalPos++;
+    } else {
+      throw new Error('JSON pretty-print resulted in non-matching characters');
+    }
+  }
+
+  // Fill in any remaining positions
+  while (originalPos < originalText.length) {
+    originalToPretty[originalPos] = prettyText.length;
+    originalPos++;
+  }
+  while (prettyPos < prettyText.length) {
+    prettyPos++;
+  }
+
+  return originalToPretty;
+}
+
+// Helper function to transform citation intervals from original to pretty-printed positions
+export function transformCitationIntervalsForPrettyPrintJson(
+  intervals: { start: number; end: number; citationId: string }[],
+  originalText: string,
+  prettyText: string
+) {
+  const originalToPretty = createPrettyPrintJsonPositionMapping(
+    originalText,
+    prettyText
+  );
+
+  return intervals
+    .map((interval) => {
+      // Map the start and end positions
+      const newStart = originalToPretty[interval.start] ?? interval.start;
+      const newEnd = originalToPretty[interval.end - 1] ?? interval.end;
+
+      return {
+        ...interval,
+        start: newStart,
+        end: newEnd + 1, // Add 1 back since we mapped end-1
+      };
+    })
+    .filter((interval) => interval.start < interval.end); // Remove invalid intervals
+}

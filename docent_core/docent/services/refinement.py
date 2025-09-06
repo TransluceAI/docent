@@ -353,7 +353,15 @@ class RefinementService:
                 """This *does* store judge results in the session state."""
                 if callback and judge_results:
                     async with lock:
-                        rsession.judge_results.extend(judge_results)
+                        # FIXME(mengk): this is only a temporary hack to ensure that we only store match results
+                        #   fix soon!
+                        rsession.judge_results.extend(
+                            [
+                                result
+                                for result in judge_results
+                                if result.output.get("label") == "match"
+                            ]
+                        )
                         await callback(trim_messages_from_state(rsession))
 
                         if len(rsession.judge_results) >= cancel_at_num_results:

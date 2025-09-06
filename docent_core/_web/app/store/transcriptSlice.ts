@@ -47,7 +47,7 @@ export interface TranscriptState {
   // All citations
   allCitations: Record<string, Citation[]>;
   // Citation highlighting
-  highlightedCitationId?: string;
+  highlightedCitationId: string | null;
   // Agent run sidebar state
   agentRunSidebarTab?: string;
   // Sidebar visibility states for different routes
@@ -61,6 +61,7 @@ const initialState: TranscriptState = {
   judgeLeftSidebarOpen: true,
   rightSidebarOpen: true,
   allCitations: {},
+  highlightedCitationId: null,
 };
 
 export const getActionsSummary = createAsyncThunk(
@@ -406,14 +407,11 @@ export const transcriptSlice = createSlice({
         state.allCitations[key] = value;
       }
     },
-    setHighlightedCitation: (
-      state,
-      action: PayloadAction<string | undefined>
-    ) => {
+    setHighlightedCitation: (state, action: PayloadAction<string | null>) => {
       state.highlightedCitationId = action.payload;
     },
     clearHighlightedCitation: (state) => {
-      state.highlightedCitationId = undefined;
+      state.highlightedCitationId = null;
     },
     setAgentRunSidebarTab: (state, action: PayloadAction<string>) => {
       state.agentRunSidebarTab = action.payload;

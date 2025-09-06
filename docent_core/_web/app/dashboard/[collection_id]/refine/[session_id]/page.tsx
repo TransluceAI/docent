@@ -260,6 +260,7 @@ export default function RefinePage() {
           />
         )}
         <JudgeResultsList
+          clickable={false}
           judgeResultsMap={judgeResultsMap}
           centroidsMap={{}}
           centroidAssignments={{}}

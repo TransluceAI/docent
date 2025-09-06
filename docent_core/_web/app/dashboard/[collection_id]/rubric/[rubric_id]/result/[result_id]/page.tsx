@@ -85,17 +85,19 @@ export default function JudgeResultPage() {
   // scroll and is reset when the selected result changes.
   const alreadyScrolledRef = useRef(false);
 
+  const resultCitations = result?.output.explanation?.citations;
+
   // Calculate initial transcript index from citations
   const initialTranscriptIdx = useMemo(() => {
-    if (!result?.citations || result.citations.length === 0) return undefined;
-    return result.citations[0].transcript_idx ?? 0;
-  }, [result?.citations]);
+    if (!resultCitations || resultCitations.length === 0) return undefined;
+    return resultCitations[0].transcript_idx ?? 0;
+  }, [resultCitations]);
 
   useEffect(() => {
     if (agentRunId) {
       dispatch(
         setRunCitations({
-          [agentRunId]: result?.citations || [],
+          [agentRunId]: resultCitations || [],
         })
       );
     }
@@ -124,9 +126,7 @@ export default function JudgeResultPage() {
     if (!agentRun || !result) return;
 
     const citation =
-      result.citations && result.citations.length > 0
-        ? result.citations[0]
-        : null;
+      resultCitations && resultCitations.length > 0 ? resultCitations[0] : null;
     if (!citation) return;
 
     const blockIdx = citation.block_idx ?? 0;

@@ -36,7 +36,7 @@ import {
 import UuidPill from '@/components/UuidPill';
 import { useDebounce } from '@/hooks/use-debounce';
 
-import MetadataDialog from './MetadataDialog';
+import { MetadataDialog } from './MetadataDialog';
 import { cn } from '@/lib/utils';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { generateCitationId } from '@/lib/citationUtils';
@@ -749,7 +749,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
           <>
             <div className="flex flex-col gap-1">
               <div className="flex items-center space-x-1">
-                <div className="font-semibold text-sm">Agent Run</div>
+                <div className="font-semibold text-sm shrink-0">Agent Run</div>
                 <UuidPill uuid={agentRun?.id} />
                 {agentRun && (
                   <MetadataDialog

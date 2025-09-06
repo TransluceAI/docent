@@ -23,6 +23,7 @@ export function useTranscriptChat({
   collectionId,
   judgeResult,
 }: UseTranscriptChatOptions) {
+  const judgeResultCitations = judgeResult?.output.explanation?.citations;
   const dispatch = useAppDispatch();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -100,8 +101,8 @@ export function useTranscriptChat({
 
       // Merge with existing judge result citations if they exist
       const allCitationsArray = [...chatCitations];
-      if (judgeResult?.citations && judgeResult.citations.length > 0) {
-        allCitationsArray.push(...judgeResult.citations);
+      if (judgeResultCitations && judgeResultCitations.length > 0) {
+        allCitationsArray.push(...judgeResultCitations);
       }
 
       // Only update if we have citations to avoid unnecessary dispatches
@@ -109,7 +110,7 @@ export function useTranscriptChat({
         dispatch(setRunCitations({ [runId]: allCitationsArray }));
       }
     }
-  }, [messages, judgeResult?.citations, dispatch]);
+  }, [messages, judgeResultCitations, dispatch]);
 
   // Handle sending messages
   const [postMessage] = usePostChatMessageMutation();
@@ -132,7 +133,7 @@ export function useTranscriptChat({
   const resetChat = useCallback(() => {
     if (!sessionId) return;
 
-    dispatch(setRunCitations({ [runId]: judgeResult?.citations || [] }));
+    dispatch(setRunCitations({ [runId]: judgeResultCitations || [] }));
 
     // Clear current session's cache before creating new one
     dispatch(
