@@ -63,13 +63,15 @@ const TranscriptGroupNode: React.FC<{
             {node.group.name || node.group.id}
           </span>
         </button>
-        {Object.keys(node.group.metadata || {}).length > 0 && (
+        {(Object.keys(node.group.metadata || {}).length > 0 ||
+          node.group.id) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex h-full items-center">
                 <MetadataDialog
                   metadata={node.group.metadata || {}}
                   title={`Transcript Group Metadata - ${node.group.name || node.group.id}`}
+                  id={node.group.id}
                   trigger={
                     <button
                       className={cn(
@@ -161,7 +163,8 @@ const TranscriptListItem: React.FC<{
         <div className="flex h-full items-center">
           <MetadataDialog
             metadata={agentRun?.transcripts[transcriptKey]?.metadata || {}}
-            title={`Transcript Metadata - ${transcriptKey}`}
+            title={`Transcript Metadata`}
+            id={transcriptKey}
             trigger={
               <button
                 className={cn(

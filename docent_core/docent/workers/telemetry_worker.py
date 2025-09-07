@@ -9,6 +9,7 @@ from redis.exceptions import LockError
 
 from docent._log_util import get_logger
 from docent_core._server._broker.redis_client import get_redis_client
+from docent_core._worker.worker import JOB_TIMEOUT_SECONDS
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.tables import SQLAJob
 from docent_core.docent.services.monoservice import MonoService
@@ -48,7 +49,11 @@ async def telemetry_processing_job(ctx: ViewContext, job: SQLAJob) -> None:
 
         # Use Redis lock to prevent concurrent processing of the same collection
         redis_client = await get_redis_client()
-        lock = redis_client.lock(f"telemetry_collection_lock_{collection_id}", timeout=0)
+        lock = redis_client.lock(
+            f"telemetry_collection_lock_{collection_id}",
+            timeout=JOB_TIMEOUT_SECONDS + 60,
+            blocking=False,
+        )
         try:
             async with lock:
                 # Process agent runs once

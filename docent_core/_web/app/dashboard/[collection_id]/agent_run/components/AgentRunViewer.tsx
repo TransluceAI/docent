@@ -755,6 +755,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   <MetadataDialog
                     metadata={agentRun.metadata}
                     title="Agent Run Metadata"
+                    id={agentRun.id}
                   />
                 )}
               </div>
@@ -944,6 +945,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                 ?.metadata || {}
                             }
                             title={`Transcript Metadata - ${selectedTranscriptKey}`}
+                            id={selectedTranscriptKey}
                           />
                         </div>
                       )}

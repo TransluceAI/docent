@@ -1651,7 +1651,8 @@ class TelemetryService:
             f"Processing span with {len(span_attrs)} attributes: {self._get_span_debug_info(span)}"
         )
 
-        llm_request_type = span_attrs.get("llm", {}).get("request", {}).get("type", None)
+        # Check for embedding request type
+        llm_request_type = span_attrs.get("llm.request.type")
         if llm_request_type == "embedding":
             logger.info(f"Skipping embedding span: {self._get_span_debug_info(span)}")
             return []

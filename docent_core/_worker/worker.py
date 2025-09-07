@@ -22,6 +22,8 @@ from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 
+JOB_TIMEOUT_SECONDS = 10 * 60  # 10 minutes
+
 
 async def run_job(_: Any, ctx: ViewContext, job_id: str):
     mono_svc = await MonoService.init()
@@ -159,6 +161,6 @@ def run():
             "redis_settings": redis_settings,
             "queue_name": WORKER_QUEUE_NAME,
             "max_jobs": 1,  # per worker
-            "job_timeout": 10 * 60,  # 10 minutes
+            "job_timeout": JOB_TIMEOUT_SECONDS,
         }
     )

@@ -11,6 +11,7 @@ import {
   DialogTrigger,
   DialogClose,
 } from '@/components/ui/dialog';
+import UuidPill from '@/components/UuidPill';
 
 // Helper function to format different types of metadata values
 const formatMetadataValue = (value: any): string => {
@@ -39,6 +40,7 @@ type MetadataDialogProps = {
   metadata: BaseMetadata;
   title?: string;
   trigger?: React.ReactNode;
+  id?: string;
 };
 
 // Component for copy button with success feedback
@@ -94,6 +96,7 @@ const MetadataDialog: React.FC<MetadataDialogProps> = ({
   metadata = {},
   title = 'Metadata Details',
   trigger,
+  id,
 }) => {
   const hasMetadata = !isEmptyObject(metadata);
 
@@ -114,7 +117,10 @@ const MetadataDialog: React.FC<MetadataDialogProps> = ({
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col p-3">
         <DialogHeader>
-          <DialogTitle className="text-base font-medium">{title}</DialogTitle>
+          <div className="flex items-center space-x-2">
+            <DialogTitle className="text-base font-medium">{title}</DialogTitle>
+            {id && <UuidPill uuid={id} />}
+          </div>
         </DialogHeader>
 
         <div className="flex-1 overflow-auto custom-scrollbar">
