@@ -3,6 +3,7 @@ from enum import Enum
 WORKER_QUEUE_NAME = "docent_worker_queue"
 JOB_TIMEOUT_SECONDS = 10 * 60  # 10 minutes
 
+
 class WorkerFunction(str, Enum):
     COMPUTE_EMBEDDINGS = "compute_embeddings"
     RUBRIC_JOB = "rubric_job"

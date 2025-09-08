@@ -87,21 +87,35 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
         sudo docker compose -f docker-compose-db.yml up --build
         ```
 
-    after which Postgres and Redis will be available at the addresses set in [`.env`](./concepts/configuration/environment_variables.md). To set up your own databases, visit the official docs for [Postgres](https://www.postgresql.org/download/) and [Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/).
+    after which Postgres and Redis will be available at the addresses set in [`.env`](./environment_variables.md). To set up your own databases, visit the official docs for [Postgres](https://www.postgresql.org/download/) and [Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/).
 
-    Once your databases are up, run:
+    Then run:
 
     === "uv"
         ```bash
-        uv sync
+        uv sync --extra dev
         ```
 
     === "pip"
         ```bash
-        pip install -e .
+        pip install -e .[dev]
         ```
 
-    to install the relevant server packages, then
+    to install the core library, and
+
+    ```bash
+    pre-commit install
+    ```
+
+    to set up pre-commit hooks for development.
+
+    Before running the application, you need to set up your database with Alembic migrations. First create a PostgreSQL database that matches the name in your `.env` file. Then run
+
+    ```bash
+    alembic upgrade head
+    ```
+
+    to create all database tables. Now run
 
     === "Prod"
         ```bash
@@ -113,7 +127,14 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
         docent_core server --port 8889 --reload
         ```
 
-    to run the server, then
+    to start the API server,
+
+    === "Prod"
+        ```bash
+        docent_core worker --workers 4
+        ```
+
+    to start the worker, which handles background work, and
 
     === "Prod"
         ```bash
@@ -125,7 +146,7 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
         docent_core web --port 3001 --backend-url http://localhost:8889
         ```
 
-    to run the frontend. You may need to [install Node.js](https://nodejs.org/en/download/) first.
+    to start the frontend. You may need to [install Bun](https://bun.com/docs/installation) first.
 
 Finally, try accessing the Docent UI at `http://$DOCENT_HOST:$DOCENT_WEB_PORT`.
 

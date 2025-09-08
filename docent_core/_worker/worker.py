@@ -14,13 +14,14 @@ from arq.worker import run_worker
 from docent._log_util import get_logger
 from docent_core._env_util import ENV, get_deployment_id
 from docent_core._server._broker.redis_client import get_redis_client
-from docent_core._worker.constants import WORKER_QUEUE_NAME, JOB_TIMEOUT_SECONDS
+from docent_core._worker.constants import JOB_TIMEOUT_SECONDS, WORKER_QUEUE_NAME
 from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
+
 
 async def run_job(_: Any, ctx: ViewContext, job_id: str):
     mono_svc = await MonoService.init()
