@@ -1,4 +1,4 @@
-## Docent helps summarize, cluster, and search over agent transcripts
+## Docent is an AI agent analysis platform
 
 <!-- <p align="center">
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License: Apache 2.0" src="https://img.shields.io/github/license/TransluceAI/docent"/></a>
