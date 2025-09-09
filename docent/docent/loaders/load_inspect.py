@@ -6,8 +6,11 @@ from zipfile import ZipFile
 from inspect_ai.log import EvalLog
 from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER, PARTIAL, Score
 
+from docent._log_util.logger import get_logger
 from docent.data_models import AgentRun, Transcript
 from docent.data_models.chat import parse_chat_message
+
+logger = get_logger(__name__)
 
 
 def _normalize_inspect_score(score: Score | dict[str, Any]) -> Any:
@@ -166,8 +169,12 @@ def _runs_from_eval_file(
     file: BinaryIO,
 ) -> Tuple[dict[str, Any], Generator[AgentRun, None, None]]:
     zip = ZipFile(file, mode="r")
-    header: dict[str, Any] = json.load(zip.open("header.json", "r"))
-    header_metadata = _run_metadata_from_header(header)
+    try:
+        header: dict[str, Any] = json.load(zip.open("header.json", "r"))
+        header_metadata = _run_metadata_from_header(header)
+    except KeyError:
+        logger.warning(f"No header found in {file.name} file")
+        header_metadata = {}
 
     def _iter_runs() -> Generator[AgentRun, None, None]:
         try:

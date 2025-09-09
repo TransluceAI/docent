@@ -12,13 +12,22 @@ IPython.get_ipython().run_line_magic("autoreload", "2")
 # %%
 
 
+from docent import Docent
+from docent_core._env_util import ENV
+
+docent_client = Docent(api_key=ENV.get("DOCENT_API_KEY"), server_url="http://localhost:8890")
+
 # %%
 
+collection_id = docent_client.create_collection(
+    name="inspect example", description="example inspect log that comes with the Docent repo"
+)
 
-from docent import Docent
+# %%
 
-DOCENT_API_KEY = "dk_TpS2w6n02SdCNV_z9gbY_3TzlJddLXoT72KyH7bs6G0"
-docent_client = Docent(api_key=DOCENT_API_KEY, server_url="http://localhost:8890")
+docent_client.recursively_ingest_inspect_logs(
+    collection_id, "/Users/mengk/Downloads/eval logs subset"
+)
 
 
 # %%

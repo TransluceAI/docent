@@ -1,0 +1,5 @@
+---
+alwaysApply: false
+---
+
+See docs/self_hosting/self_host_docent.md for instructions on how to start the complete application. Use the **manual installation**, in which you can use Docker compose to start databases, but you must manually start each service. Use autoreload for the frontend. For the api server and worker, do **not** use autoreload; manually interrupt + restart the process after making a change.

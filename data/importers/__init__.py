@@ -11,7 +11,7 @@ from rich.console import Console
 from .agent_run_dump import import_agent_runs_from_json
 from .agentic_misalignment import load_agent_runs as process_agentic_misalignment_file
 from .cursor import process_cursor_file
-from .inspect_log import process_inspect_file
+from .inspect_log import process_inspect_file, recursively_process_inspect_files
 from .malt import process_malt_file_json
 from .oh_swe_bench import process_oh_swe_bench_file
 from .tau_bench import process_tau_bench_file
@@ -22,6 +22,7 @@ console = Console()
 IMPORTERS = {
     "agent_run_dump": import_agent_runs_from_json,
     "inspect": process_inspect_file,
+    "inspect_dir": recursively_process_inspect_files,
     "oh_swe_bench": process_oh_swe_bench_file,
     "tau_bench": process_tau_bench_file,
     "agentic_misalignment": process_agentic_misalignment_file,

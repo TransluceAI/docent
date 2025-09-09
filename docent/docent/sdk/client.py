@@ -1,10 +1,14 @@
+import itertools
 import os
+from pathlib import Path
 from typing import Any
 
 import requests
+from tqdm import tqdm
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent.loaders import load_inspect
 
 logger = get_logger(__name__)
 
@@ -99,48 +103,6 @@ class Docent:
             f"Collection creation complete. Frontend available at: {self._web_url}/dashboard/{collection_id}"
         )
         return collection_id
-
-    def set_io_bin_keys(
-        self, collection_id: str, inner_bin_key: str | None, outer_bin_key: str | None
-    ):
-        """Set inner and outer bin keys for a collection."""
-        response = self._session.post(
-            f"{self._server_url}/{collection_id}/set_io_bin_keys",
-            json={"inner_bin_key": inner_bin_key, "outer_bin_key": outer_bin_key},
-        )
-        response.raise_for_status()
-
-    def set_inner_bin_key(self, collection_id: str, dim: str):
-        """Set the inner bin key for a collection."""
-        current_io_bin_keys = self.get_io_bin_keys(collection_id)
-        if current_io_bin_keys is None:
-            current_io_bin_keys = (None, None)
-        self.set_io_bin_keys(collection_id, dim, current_io_bin_keys[1])  # Set inner, keep outer
-
-    def set_outer_bin_key(self, collection_id: str, dim: str):
-        """Set the outer bin key for a collection."""
-        current_io_bin_keys = self.get_io_bin_keys(collection_id)
-        if current_io_bin_keys is None:
-            current_io_bin_keys = (None, None)
-        self.set_io_bin_keys(collection_id, current_io_bin_keys[0], dim)  # Keep inner, set outer
-
-    def get_io_bin_keys(self, collection_id: str) -> tuple[str | None, str | None] | None:
-        """Gets the current inner and outer bin keys for a Collection.
-
-        Args:
-            collection_id: ID of the Collection.
-
-        Returns:
-            tuple: (inner_bin_key | None, outer_bin_key | None)
-
-        Raises:
-            requests.exceptions.HTTPError: If the API request fails.
-        """
-        url = f"{self._server_url}/{collection_id}/io_bin_keys"
-        response = self._session.get(url)
-        response.raise_for_status()
-        data = response.json()
-        return (data.get("inner_bin_key"), data.get("outer_bin_key"))
 
     def add_agent_runs(self, collection_id: str, agent_runs: list[AgentRun]) -> dict[str, Any]:
         """Adds agent runs to a Collection.
@@ -367,3 +329,84 @@ class Docent:
         response = self._session.get(url)
         response.raise_for_status()
         return response.json()
+
+    def recursively_ingest_inspect_logs(self, collection_id: str, fpath: str):
+        """Recursively search directory for .eval files and ingest them as agent runs.
+
+        Args:
+            collection_id: ID of the Collection to add agent runs to.
+            fpath: Path to directory to search recursively.
+
+        Raises:
+            ValueError: If the path doesn't exist or isn't a directory.
+            requests.exceptions.HTTPError: If any API requests fail.
+        """
+        root_path = Path(fpath)
+        if not root_path.exists():
+            raise ValueError(f"Path does not exist: {fpath}")
+        if not root_path.is_dir():
+            raise ValueError(f"Path is not a directory: {fpath}")
+
+        # Find all .eval files recursively
+        eval_files = list(root_path.rglob("*.eval"))
+
+        if not eval_files:
+            logger.info(f"No .eval files found in {fpath}")
+            return
+
+        logger.info(f"Found {len(eval_files)} .eval files in {fpath}")
+
+        total_runs_added = 0
+        batch_size = 100
+
+        # Process each .eval file
+        for eval_file in tqdm(eval_files, desc="Processing .eval files", unit="files"):
+            # Get total samples for progress tracking
+            total_samples = load_inspect.get_total_samples(eval_file, format="eval")
+
+            if total_samples == 0:
+                logger.info(f"No samples found in {eval_file}")
+                continue
+
+            # Load runs from file
+            with open(eval_file, "rb") as f:
+                _, runs_generator = load_inspect.runs_from_file(f, format="eval")
+
+                # Process runs in batches
+                runs_from_file = 0
+                batches = itertools.batched(runs_generator, batch_size)
+
+                with tqdm(
+                    total=total_samples,
+                    desc=f"Processing {eval_file.name}",
+                    unit="runs",
+                    leave=False,
+                ) as file_pbar:
+                    for batch in batches:
+                        batch_list = list(batch)  # Convert generator batch to list
+                        if not batch_list:
+                            break
+
+                        # Add batch to collection
+                        url = f"{self._server_url}/{collection_id}/agent_runs"
+                        payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch_list]}
+
+                        response = self._session.post(url, json=payload)
+                        response.raise_for_status()
+
+                        runs_from_file += len(batch_list)
+                        file_pbar.update(len(batch_list))
+
+            total_runs_added += runs_from_file
+            logger.info(f"Added {runs_from_file} runs from {eval_file}")
+
+        # Compute embeddings after all files are processed
+        if total_runs_added > 0:
+            logger.info("Computing embeddings for added runs...")
+            url = f"{self._server_url}/{collection_id}/compute_embeddings"
+            response = self._session.post(url)
+            response.raise_for_status()
+
+        logger.info(
+            f"Successfully ingested {total_runs_added} total agent runs from {len(eval_files)} files"
+        )
