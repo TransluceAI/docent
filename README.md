@@ -7,9 +7,9 @@
   <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/TransluceAI/docent"/>
 </p> -->
 
-<p align="center">
+<!-- <p align="center">
   <a href="https://docs.transluce.org">Docs</a> - <a href="https://github.com/TransluceAI/docent/issues/new?assignees=&labels=bug">Bug reports</a> - <a href="https://transluce.org/docent/slack">Community</a> - <a href="https://transluce.org/docent/changelog">Changelog</a>
-</p>
+</p> -->
 
 ### Quickstart
 
