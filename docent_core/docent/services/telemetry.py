@@ -1918,7 +1918,6 @@ class TelemetryService:
                     )
                     # Continue without tool calls from content
 
-            # content = "\n".join(content_parts) if content_parts else ""
             content = content_parts
             if len(content_parts) == 1 and content_parts[0].type == "text":
                 content = content_parts[0].text
