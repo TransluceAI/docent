@@ -28,7 +28,6 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
-from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
 from docent_core._llm_util.providers.openai import get_chunked_openai_embeddings_async
 from docent_core._server._broker.redis_client import enqueue_job
@@ -1626,14 +1625,8 @@ class MonoService:
         import hashlib
         import hmac
 
-        pepper = ENV.get("API_KEY_PEPPER")
-        if not pepper:
-            raise ValueError("API_KEY_PEPPER environment variable is required")
-
-        # Hash the pepper to ensure consistent key length and higher entropy
-        pepper_bytes = pepper.encode("utf-8")
-        hashed_pepper = hashlib.sha256(pepper_bytes).digest()
-        return hmac.new(hashed_pepper, raw_api_key.encode("utf-8"), hashlib.sha256).hexdigest()
+        key = b"04142e6e-b7c7-46c6-a1f3-5c044a7c31e4"
+        return hmac.new(key, raw_api_key.encode("utf-8"), hashlib.sha256).hexdigest()
 
     async def create_api_key(self, user_id: str, name: str) -> tuple[str, str]:
         """
@@ -1703,37 +1696,36 @@ class MonoService:
             # Parse key_id from API key format: dk_{key_id}_{secret}
             key_id = None
             api_key_data = None
-            if raw_api_key.startswith("dk_"):
-                parts = raw_api_key.split("_", 2)
-                if len(parts) == 3:
-                    key_id = parts[1]
+            parts = raw_api_key.split("_", 2)
+            if len(parts) == 3:
+                key_id = parts[1]
 
-                if key_id:
-                    # Try new key_id pattern first
-                    result = await session.execute(
-                        select(SQLAApiKey)
-                        .options(selectinload(SQLAApiKey.user))
-                        .where(
-                            SQLAApiKey.key_id == key_id,
-                            SQLAApiKey.disabled_at.is_(None),  # type: ignore
-                        )
+            if key_id:
+                # Try new key_id pattern first
+                result = await session.execute(
+                    select(SQLAApiKey)
+                    .options(selectinload(SQLAApiKey.user))
+                    .where(
+                        SQLAApiKey.key_id == key_id,
+                        SQLAApiKey.disabled_at.is_(None),  # type: ignore
                     )
-                    api_key_data = result.scalar_one_or_none()
-                    logger.info(f"Found key with key_id: {api_key_data is not None}")
+                )
+                api_key_data = result.scalar_one_or_none()
 
-                # If key_id lookup failed, try fingerprint lookup for legacy keys
-                if not api_key_data:
-                    fingerprint = self._create_fingerprint(raw_api_key)
-                    result = await session.execute(
-                        select(SQLAApiKey)
-                        .options(selectinload(SQLAApiKey.user))
-                        .where(
-                            SQLAApiKey.fingerprint == fingerprint,
-                            SQLAApiKey.disabled_at.is_(None),  # type: ignore
-                        )
+            # If key_id lookup failed, try fingerprint lookup for legacy keys
+            if not api_key_data:
+                fingerprint = self._create_fingerprint(raw_api_key)
+                result = await session.execute(
+                    select(SQLAApiKey)
+                    .options(selectinload(SQLAApiKey.user))
+                    .where(
+                        SQLAApiKey.fingerprint == fingerprint,
+                        SQLAApiKey.disabled_at.is_(None),  # type: ignore
                     )
-                    api_key_data = result.scalar_one_or_none()
+                )
+                api_key_data = result.scalar_one_or_none()
 
+            # if either key_id or fingerprint is found, we can verify the key
             if api_key_data and api_key_data.key_hash:
                 # Verify the raw key against Argon2 hash
                 if pwd_context.verify(raw_api_key, api_key_data.key_hash):
@@ -1757,7 +1749,7 @@ class MonoService:
 
             for api_key_data in result.scalars().all():
                 if api_key_data.key_hash and pwd_context.verify(raw_api_key, api_key_data.key_hash):
-                    # Backfill fingerprint for very legacy key on first successful use
+                    # Backfill fingerprint for legacy key on first successful use
                     fingerprint = self._create_fingerprint(raw_api_key)
                     await session.execute(
                         update(SQLAApiKey)
