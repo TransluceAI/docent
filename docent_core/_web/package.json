@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.1",
-    "@uiw/react-codemirror": "^4.23.7",
     "@dagrejs/dagre": "^1.1.4",
     "@nivo/bar": "^0.99.0",
     "@nivo/line": "^0.99.0",
@@ -40,6 +39,7 @@
     "@types/event-source-polyfill": "^1.0.5",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
+    "@uiw/react-codemirror": "^4.23.7",
     "ansi-to-html": "^0.7.2",
     "axios": "^1.7.7",
     "class-variance-authority": "^0.7.0",
@@ -51,6 +51,7 @@
     "eventsource": "^2.0.2",
     "framer-motion": "^11.11.9",
     "html-to-image": "^1.11.13",
+    "lossless-json": "^4.2.0",
     "lucide-react": "^0.534.0",
     "motion": "^12.23.12",
     "next": "14.2.7",

@@ -11,6 +11,10 @@ import {
   TextSpanWithCitations,
   transformCitationIntervalsForPrettyPrintJson,
 } from '@/lib/citationMatch';
+import {
+  stringify as losslessStringify,
+  parse as losslessParse,
+} from 'lossless-json';
 
 function stringify(x: any): string {
   if (typeof x === 'string') return x;
@@ -265,8 +269,11 @@ export function MessageBox({
         (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
         (trimmed.startsWith('[') && trimmed.endsWith(']'))
       ) {
-        const parsed = JSON.parse(trimmed);
-        return JSON.stringify(parsed, null, 2);
+        const parsed = losslessParse(trimmed);
+        const stringified = losslessStringify(parsed, null, 2);
+        if (stringified) {
+          return stringified;
+        }
       }
     } catch (e) {
       // If parsing fails, return original text
