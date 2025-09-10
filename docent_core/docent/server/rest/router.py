@@ -21,7 +21,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_core import to_jsonable_python
 from sqlalchemy import or_, select
 from sqlalchemy.inspection import inspect as sqla_inspect
@@ -650,6 +650,10 @@ class PostAgentRunsRequest(BaseModel):
     agent_runs: list[AgentRun]
 
 
+class DeleteAgentRunsRequest(BaseModel):
+    agent_run_ids: list[str]
+
+
 @user_router.post("/{collection_id}/agent_runs")
 async def post_agent_runs(
     collection_id: str,
@@ -671,6 +675,31 @@ async def post_agent_runs(
             "num_runs": len(request.agent_runs),
         },
     )
+
+
+@user_router.delete("/{collection_id}/agent_runs")
+async def delete_agent_runs(
+    collection_id: str,
+    request: DeleteAgentRunsRequest,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Delete specific agent runs from a collection."""
+    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
+        deleted_count = await mono_svc.delete_agent_runs(collection_id, request.agent_run_ids)
+
+    # Track with PostHog
+    analytics.track_event(
+        "agent_runs_deleted",
+        properties={
+            "collection_id": collection_id,
+            "requested_runs": len(request.agent_run_ids),
+            "num_runs_deleted": deleted_count,
+        },
+    )
+
+    return {"deleted_count": deleted_count, "requested_count": len(request.agent_run_ids)}
 
 
 ########
@@ -858,9 +887,6 @@ async def get_collection_collaborators(
             resource_type=ResourceType.COLLECTION,
         )
     ]
-
-
-from pydantic import model_validator
 
 
 class UpsertCollaboratorRequest(BaseModel):

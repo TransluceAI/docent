@@ -178,6 +178,15 @@ class MonoService:
                 delete(SQLATelemetryLog).where(SQLATelemetryLog.collection_id == collection_id)
             )
 
+        # Delete telemetry accumulation data for the collection
+        async with self.db.session() as session:
+            from docent_core.docent.services.telemetry_accumulation import (
+                TelemetryAccumulationService,
+            )
+
+            accumulation_service = TelemetryAccumulationService(session)
+            await accumulation_service.delete_accumulation_data(collection_id)
+
         # delete all search result clusters joining on search result id to get collection_id
         async with self.db.session() as session:
             await session.execute(
@@ -425,6 +434,65 @@ class MonoService:
         logger.info(
             f"Added {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
         )
+
+    async def delete_agent_runs(self, collection_id: str, agent_run_ids: list[str]) -> int:
+        """
+        Delete specific agent runs from a collection.
+
+        This method deletes agent runs and their associated data.
+
+        Args:
+            collection_id: The collection ID
+            agent_run_ids: List of agent run IDs to delete
+
+        Returns:
+            Number of agent runs deleted
+        """
+        if not agent_run_ids:
+            return 0
+
+        async with self.db.session() as session:
+            # Delete telemetry agent run status records first
+            # (These don't have CASCADE delete since they intentionally don't have FK constraint)
+            telemetry_result = await session.execute(
+                delete(SQLATelemetryAgentRunStatus).where(
+                    SQLATelemetryAgentRunStatus.agent_run_id.in_(agent_run_ids),
+                    SQLATelemetryAgentRunStatus.collection_id == collection_id,
+                )
+            )
+            telemetry_count = telemetry_result.rowcount or 0
+
+            # Delete telemetry accumulation data for these agent runs
+            from docent_core.docent.services.telemetry_accumulation import (
+                TelemetryAccumulationService,
+            )
+
+            accumulation_service = TelemetryAccumulationService(session)
+            accumulation_count = 0
+            for agent_run_id in agent_run_ids:
+                count = 0
+                if agent_run_id:
+                    count = await accumulation_service.delete_accumulation_data(
+                        collection_id, agent_run_id=agent_run_id
+                    )
+                accumulation_count += count
+
+            agent_run_result = await session.execute(
+                delete(SQLAAgentRun).where(
+                    SQLAAgentRun.id.in_(agent_run_ids), SQLAAgentRun.collection_id == collection_id
+                )
+            )
+            deleted_count = agent_run_result.rowcount or 0
+
+            await session.commit()
+
+        logger.info(
+            f"Deleted {deleted_count} agent runs, {telemetry_count} telemetry records, "
+            f"and {accumulation_count} accumulation records from collection {collection_id} "
+            f"(transcripts and transcript groups deleted via CASCADE)"
+        )
+
+        return deleted_count
 
     async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
         collection_id = ctx.collection_id

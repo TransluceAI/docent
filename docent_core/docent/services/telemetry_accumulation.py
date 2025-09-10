@@ -522,22 +522,46 @@ class TelemetryAccumulationService:
 
         return metadata
 
-    async def cleanup_collection_data(self, collection_id: str) -> None:
-        """Clean up all accumulation data for a collection."""
-        # Use pattern matching to find all data for this collection
-        key = self._build_key(collection_id)
-        stmt = select(SQLATelemetryAccumulation).where(
-            SQLATelemetryAccumulation.key.like(f"{key}%")
+    async def delete_accumulation_data(
+        self,
+        collection_id: str,
+        agent_run_id: Optional[str] = None,
+        transcript_group_id: Optional[str] = None,
+        transcript_id: Optional[str] = None,
+    ) -> int:
+        """
+        Delete accumulation data matching the specified criteria.
+
+        Args:
+            collection_id: The collection ID (required)
+            agent_run_id: Optional agent run ID to delete data for
+            transcript_group_id: Optional transcript group ID to delete data for
+            transcript_id: Optional transcript ID to delete data for
+
+        Returns:
+            Number of accumulation records deleted
+        """
+        # Build the key pattern to match
+        key_pattern = self._build_key(
+            collection_id=collection_id,
+            agent_run_id=agent_run_id,
+            transcript_group_id=transcript_group_id,
+            transcript_id=transcript_id,
         )
 
-        result = await self.session.execute(stmt)
-        entries = result.scalars().all()
+        from sqlalchemy import delete
 
-        for entry in entries:
-            await self.session.delete(entry)
+        result = await self.session.execute(
+            delete(SQLATelemetryAccumulation).where(
+                SQLATelemetryAccumulation.key.like(f"{key_pattern}%")
+            )
+        )
 
+        deleted_count = result.rowcount or 0
         await self.session.commit()
-        logger.info(f"Cleaned up accumulation data for collection {collection_id}")
+
+        logger.info(f"Deleted {deleted_count} accumulation records matching {key_pattern}")
+        return deleted_count
 
     async def _mark_agent_runs_for_processing(
         self, collection_id: str, agent_run_ids: set[str]

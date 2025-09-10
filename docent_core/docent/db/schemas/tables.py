@@ -197,7 +197,10 @@ class SQLATranscript(SQLABase):
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     agent_run_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     # Key in the transcripts dict in `AgentRun`
     dict_key = mapped_column(Text, nullable=False)
@@ -273,7 +276,10 @@ class SQLATranscriptGroup(SQLABase):
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
     agent_run_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id"), nullable=False, index=True
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     name = mapped_column(Text, nullable=True)
@@ -792,7 +798,7 @@ class SQLAApiKey(SQLABase):
         Text, nullable=False, unique=True, index=True
     )  # Argon2 hash of the raw API key
     key_id = mapped_column(
-        String(12), nullable=True, unique=True, index=True
+        String(32), nullable=True, unique=True, index=True
     )  # New: short key ID for O(1) lookup
     fingerprint = mapped_column(
         String(64), nullable=True, unique=True, index=True
