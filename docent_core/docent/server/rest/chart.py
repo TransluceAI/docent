@@ -16,14 +16,15 @@ from docent_core.docent.server.dependencies.permissions import (
 from docent_core.docent.server.dependencies.services import (
     get_chart_service,
     get_mono_svc,
-    get_rubric_service,
 )
 from docent_core.docent.server.dependencies.user import (
     get_default_view_ctx,
 )
-from docent_core.docent.services.charts import ChartSpec, ChartsService
+from docent_core.docent.services.charts import (
+    ChartSpec,
+    ChartsService,
+)
 from docent_core.docent.services.monoservice import MonoService
-from docent_core.docent.services.rubric import RubricService
 
 chart_router = APIRouter()
 
@@ -34,7 +35,6 @@ class CreateChartRequest(BaseModel):
     x_key: str | None = None
     y_key: str | None = None
     chart_type: str = "bar"
-    rubric_filter: str | None = None
 
 
 @chart_router.post("/{collection_id}/create")
@@ -56,7 +56,6 @@ async def create_chart(
                 x_key=request.x_key,
                 y_key=request.y_key,
                 chart_type=request.chart_type,
-                rubric_filter=request.rubric_filter,
             )
 
     analytics.track_event(
@@ -77,7 +76,6 @@ class UpdateChartRequest(BaseModel):
     x_key: str | None = None
     y_key: str | None = None
     chart_type: str = "bar"
-    rubric_filter: str | None = None
     runs_filter: ComplexFilter | None = None
 
 
@@ -143,9 +141,7 @@ async def get_charts(
 ) -> list[ChartSpec]:
     """Get all charts for the current view."""
     try:
-        charts = await chart_service.get_charts(ctx)
-        return charts
-
+        return await chart_service.get_charts(ctx)
     except HTTPException:
         raise
     except Exception as e:
@@ -181,36 +177,16 @@ async def get_chart_data(
 async def get_chart_metadata(
     collection_id: str,
     chart_service: ChartsService = Depends(get_chart_service),
-    rubric_service: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> dict[str, Any]:
-    """Get chart metadata including available fields and search queries."""
+    """Get chart metadata including available fields."""
     try:
-        result: dict[str, Any] = {}
-
-        # Get dynamic fields from database
-        dimensions = await chart_service.get_available_dimensions(ctx)
-        measures = await chart_service.get_available_measures(ctx)
-
-        result["fields"] = {
-            "dimensions": dimensions,
-            "measures": measures,
+        available = await chart_service.get_available_dimensions_and_measures(ctx)
+        return {
+            "dimensions": available.dimensions,
+            "measures": available.measures,
         }
-
-        # Only return the most recent version of each rubric, including version number
-        rubrics = await rubric_service.get_all_rubrics(collection_id, latest_only=True)
-        result["rubrics"] = [
-            {
-                "id": rubric.id,
-                "version": rubric.version,
-                "description": rubric.rubric_text,
-            }
-            for rubric in rubrics
-        ]
-
-        return result
-
     except HTTPException:
         raise
     except Exception as e:

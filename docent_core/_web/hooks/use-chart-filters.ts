@@ -17,18 +17,18 @@ export function useChartFilters(collectionId: string | null | undefined) {
     (dimId: string, value: string): PrimitiveFilter | undefined => {
       // Find the dimension in the chart metadata
       const allDimensions = [
-        ...(chartMetadata?.fields?.dimensions || []),
-        ...(chartMetadata?.fields?.measures || []),
+        ...(chartMetadata?.dimensions || []),
+        ...(chartMetadata?.measures || []),
       ];
       const dimension = allDimensions.find((dim) => dim.key === dimId);
 
-      // We can't filter on anything besides run metadata, e.g. cluster centroid
-      if (!dimension?.extra?.metadata_key) {
+      // We can't filter on anything besides run metadata (for now)
+      if (dimension?.kind !== 'run_metadata') {
         return undefined;
       }
 
       // Build key path from dimension metadata
-      const key_path = ['metadata', ...dimension.extra.metadata_key.split('.')];
+      const key_path = ['metadata', ...dimension.json_path.split('.')];
 
       return {
         type: 'primitive',
@@ -40,7 +40,7 @@ export function useChartFilters(collectionId: string | null | undefined) {
         supports_sql: true,
       };
     },
-    [chartMetadata?.fields?.dimensions, chartMetadata?.fields?.measures]
+    [chartMetadata?.dimensions, chartMetadata?.measures]
   );
 
   const handleCellClick = useCallback(
@@ -57,7 +57,9 @@ export function useChartFilters(collectionId: string | null | undefined) {
         const validFilters = [xFilter, seriesFilter].filter(
           (f): f is PrimitiveFilter => f !== undefined
         );
-        dispatch(replaceFilters(validFilters));
+        if (validFilters.length > 0) {
+          dispatch(replaceFilters(validFilters));
+        }
       } else {
         // 1D case: add single filter
         const filter = createFilter(xKey, xValue);

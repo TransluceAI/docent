@@ -51,6 +51,32 @@ def upgrade() -> None:
         nullable=False,
     )
 
+    # Add CASCADE delete to judge_result_centroids foreign key constraint (need this later when deleting judge results)
+    op.drop_constraint(
+        "fk_judge_result_centroids__judge_result_id__judge_results",
+        "judge_result_centroids",
+        type_="foreignkey",
+    )
+    op.create_foreign_key(
+        "fk_judge_result_centroids__judge_result_id__judge_results",
+        "judge_result_centroids",
+        "judge_results",
+        ["judge_result_id"],
+        ["id"],
+        ondelete="CASCADE",
+    )
+
+    # Add CASCADE delete to chat_sessions foreign key constraint for judge_result_id
+    op.drop_constraint("fk_chat_sessions_judge_result_id", "chat_sessions", type_="foreignkey")
+    op.create_foreign_key(
+        "fk_chat_sessions_judge_result_id",
+        "chat_sessions",
+        "judge_results",
+        ["judge_result_id"],
+        ["id"],
+        ondelete="CASCADE",
+    )
+
     # Create judge_results.output as nullable first
     op.add_column(
         "judge_results", sa.Column("output", postgresql.JSONB(astext_type=sa.Text()), nullable=True)
@@ -112,5 +138,19 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # Restore original foreign key constraint without CASCADE
+    op.drop_constraint(
+        "fk_judge_result_centroids__judge_result_id__judge_results",
+        "judge_result_centroids",
+        type_="foreignkey",
+    )
+    op.create_foreign_key(
+        "fk_judge_result_centroids__judge_result_id__judge_results",
+        "judge_result_centroids",
+        "judge_results",
+        ["judge_result_id"],
+        ["id"],
+    )
+
     op.drop_column("rubrics", "output_schema")
     op.drop_column("judge_results", "output")

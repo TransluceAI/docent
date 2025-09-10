@@ -94,17 +94,65 @@ async def test_available_metadata_keys(
     )
     assert response.status_code == 200
 
+    # Create a rubric with a custom output schema
+    rubric_payload = {
+        "rubric": {
+            "rubric_text": "Evaluate the quality of the response",
+            "judge_model": {
+                "provider": "anthropic",
+                "model_name": "claude-3-5-sonnet-20241022",
+                "reasoning_effort": "low",
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "quality_score": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10,
+                        "description": "Quality score from 0-10",
+                    },
+                    "summary": {"type": "string"},  # Not a valid key because not an enum
+                    "category": {"type": "string", "enum": ["excellent", "good", "fair", "poor"]},
+                    "is_helpful": {"type": "boolean"},
+                },
+            },
+        }
+    }
+
+    response = await authed_client.post(
+        f"/rest/rubric/{test_collection_id}/rubric",
+        json=rubric_payload,
+    )
+    assert response.status_code == 200
+
     response = await authed_client.get(
         f"/rest/chart/{test_collection_id}/metadata",
     )
     assert response.status_code == 200
     data = response.json()
-    dimensions = data["fields"]["dimensions"]
-    measures = data["fields"]["measures"]
+    dimension_names = [m["name"] for m in data["dimensions"]]
+    measure_names = [m["name"] for m in data["measures"]]
 
-    assert any("agent_scaffold" in m["name"] for m in dimensions)
+    assert "agent_scaffold" in dimension_names
 
-    assert any("int_float_bool_null" in m["name"] for m in measures)
+    assert "scores.int_float_bool_null" in measure_names
+
+    # Integer can be dimension or measure
+    assert "quality_score" in measure_names
+    assert "quality_score" in dimension_names
+
+    # String enum can only be dimension
+    assert "category" in dimension_names
+    assert "category" not in measure_names
+
+    # Boolean can be measure or dimension
+    assert "is_helpful" in measure_names
+    assert "is_helpful" in dimension_names
+
+    # Non-enum string can't be either
+    assert "explanation" not in dimension_names
+    assert "explanation" not in measure_names
 
 
 @pytest.mark.integration

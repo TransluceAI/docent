@@ -34,7 +34,10 @@ class SQLAChatSession(SQLABase):
         String(36), ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"), nullable=True
     )
     judge_result_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey(f"{TABLE_JUDGE_RESULT}.id"), nullable=True, index=True
+        String(36),
+        ForeignKey(f"{TABLE_JUDGE_RESULT}.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     # JSON field to store all messages

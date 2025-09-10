@@ -1,6 +1,7 @@
 import { ArrowLeftRight, FunnelPlus, Download } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import posthog from 'posthog-js';
+import { Scale } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import SelectWithSubmenus, {
+  SelectWithSubmenusItem,
+  SelectWithSubmenusSub,
+  SelectWithSubmenusSubContent,
+  SelectWithSubmenusSubTrigger,
+} from '@/components/ui/select-with-submenus';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { exportChartToPng, exportChartToCsv } from '../utils/exportChart';
@@ -51,31 +58,100 @@ function DimensionSelect({
   fields,
   allowNone = true,
   disabled = false,
+  widthClass = 'w-16',
 }: {
   dim: string | null;
-  onChange: (dim: string) => void;
+  onChange: (dim: string | null) => void;
   fields: ChartDimension[];
   allowNone?: boolean;
   disabled?: boolean;
+  widthClass?: string;
 }) {
+  const judgeGroups: Record<
+    string,
+    {
+      name: string;
+      judge_version: number;
+      items: { key: string; label: string }[];
+    }
+  > = {};
+  const allItems = fields.map((f) => ({ key: f.key, label: f.name }));
+  const selectedLabel = useMemo(() => {
+    if (dim == null) return 'None';
+    return allItems.find((i) => i.key === dim)?.label || dim;
+  }, [dim, allItems]);
+  const runMetadataFields = [] as ChartDimension[];
+  const judgeFields = [] as ChartDimension[];
+  const countFields = [] as ChartDimension[];
+  for (const field of fields) {
+    if (field.kind === 'judge_output') {
+      judgeGroups[field.judge_id] = judgeGroups[field.judge_id] || {
+        name: field.judge_name,
+        judge_version: field.judge_version,
+        items: [],
+      };
+      judgeGroups[field.judge_id].items.push({
+        key: field.key,
+        label: field.name,
+      });
+    } else {
+      if (field.key.startsWith('ar.metadata_json')) {
+        runMetadataFields.push(field);
+      } else if (field.key.startsWith('jr.output')) {
+        judgeFields.push(field);
+      } else {
+        countFields.push(field);
+      }
+    }
+  }
+
   return (
-    <Select value={dim || 'None'} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="h-6 w-16 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {allowNone && (
-          <SelectItem value="None" className="text-xs">
-            None
-          </SelectItem>
-        )}
-        {fields.map((field) => (
-          <SelectItem key={field.key} value={field.key} className="text-xs">
-            {field.name}
-          </SelectItem>
+    <div className={widthClass}>
+      <SelectWithSubmenus
+        selectedKey={dim}
+        onChange={onChange}
+        selectedLabel={selectedLabel}
+        allowNone={allowNone}
+        disabled={disabled}
+        className="h-6 text-xs px-2"
+      >
+        {countFields.map((f) => (
+          <SelectWithSubmenusItem key={f.key} value={f.key}>
+            {f.name}
+          </SelectWithSubmenusItem>
         ))}
-      </SelectContent>
-    </Select>
+        {runMetadataFields.length > 0 && (
+          <SelectWithSubmenusSub>
+            <SelectWithSubmenusSubTrigger className="text-xs">
+              Run Metadata
+            </SelectWithSubmenusSubTrigger>
+            <SelectWithSubmenusSubContent>
+              {runMetadataFields.map((f) => (
+                <SelectWithSubmenusItem key={f.key} value={f.key}>
+                  {f.name}
+                </SelectWithSubmenusItem>
+              ))}
+            </SelectWithSubmenusSubContent>
+          </SelectWithSubmenusSub>
+        )}
+        {Object.values(judgeGroups).map((jg) => (
+          <SelectWithSubmenusSub key={jg.name}>
+            <SelectWithSubmenusSubTrigger className="text-xs">
+              <Scale className="h-4 w-4 mr-2 text-muted-foreground" />
+              <span className="mr-1">{jg.name}</span>
+              <span className="text-muted-foreground">v{jg.judge_version}</span>
+            </SelectWithSubmenusSubTrigger>
+            <SelectWithSubmenusSubContent>
+              {jg.items.map((item) => (
+                <SelectWithSubmenusItem key={item.key} value={item.key}>
+                  {item.label}
+                </SelectWithSubmenusItem>
+              ))}
+            </SelectWithSubmenusSubContent>
+          </SelectWithSubmenusSub>
+        ))}
+      </SelectWithSubmenus>
+    </div>
   );
 }
 
@@ -119,19 +195,14 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
     return series_key;
   }, [series_key]);
 
-  const handleInnerDimChange = (value: string) => {
-    if (!collectionId) return;
+  const handleInnerDimChange = (value: string | null) => {
+    if (!collectionId || value == null) return;
     onChange({ ...chart, x_key: value, series_key });
   };
 
-  const handleOuterDimChange = (value: string) => {
+  const handleOuterDimChange = (value: string | null) => {
     if (!collectionId) return;
-
-    if (value === 'None') {
-      onChange({ ...chart, x_key, series_key: null });
-    } else {
-      onChange({ ...chart, x_key, series_key: value });
-    }
+    onChange({ ...chart, x_key, series_key: value });
   };
 
   const handleSwapDimensions = () => {
@@ -144,29 +215,15 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
     }
   };
 
-  const showSwapButton = innerDim && outerDim && outerDim !== 'None';
-
-  const metadataKeys = chartMetadata?.fields?.dimensions || [];
-
-  const scoreKeys = chartMetadata?.fields?.measures || [];
+  const showSwapButton = innerDim && outerDim;
 
   function handleChartTypeChange(value: string) {
     onChange({ ...chart, chart_type: value as 'bar' | 'line' | 'table' });
   }
 
-  function handleYDimChange(value: string) {
+  function handleYDimChange(value: string | null) {
+    if (value == null) return;
     onChange({ ...chart, y_key: value });
-  }
-
-  function handleRubricFilterChange(rubricFilter: string) {
-    if (rubricFilter === 'None') {
-      onChange({ ...chart, rubric_filter: null });
-    } else {
-      onChange({
-        ...chart,
-        rubric_filter: rubricFilter,
-      });
-    }
   }
 
   function handleRunsFilterChange(runsFilter: ComplexFilter | null) {
@@ -253,6 +310,9 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
     }
   };
 
+  const dimensions = chartMetadata?.dimensions || [];
+  const measures = chartMetadata?.measures || [];
+
   return (
     <div className="flex flex-row flex-wrap p-2">
       <div className="flex flex-row flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -263,7 +323,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           <DimensionSelect
             dim={outerDim}
             onChange={handleOuterDimChange}
-            fields={metadataKeys}
+            fields={dimensions}
             disabled={!hasWritePermission}
           />
           <Button
@@ -283,7 +343,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           <DimensionSelect
             dim={innerDim}
             onChange={handleInnerDimChange}
-            fields={metadataKeys}
+            fields={dimensions}
             allowNone={false}
             disabled={!hasWritePermission}
           />
@@ -291,26 +351,14 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           <span className="text-xs text-muted-foreground whitespace-nowrap">
             Y:
           </span>
-          <Select
-            value={y_key}
-            onValueChange={handleYDimChange}
+          <DimensionSelect
+            dim={y_key ?? null}
+            onChange={handleYDimChange}
+            fields={measures}
+            allowNone={false}
             disabled={!hasWritePermission}
-          >
-            <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {scoreKeys.map((field) => (
-                <SelectItem
-                  key={field.key}
-                  value={field.key}
-                  className="text-xs"
-                >
-                  {field.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            widthClass="w-24"
+          />
         </div>
 
         <div className="flex items-center gap-x-1">
@@ -335,42 +383,6 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
               <SelectItem value="table" className="text-xs">
                 Table
               </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-x-1">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Rubric:
-          </span>
-
-          <Select
-            value={chart.rubric_filter || 'None'}
-            onValueChange={handleRubricFilterChange}
-            disabled={!hasWritePermission}
-          >
-            <SelectTrigger className="h-6 max-w-24 w-24 text-xs border-border bg-transparent hover:bg-secondary px-2 font-normal">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="None" className="text-xs">
-                All Data
-              </SelectItem>
-              {chartMetadata?.rubrics.map((rubric) => (
-                <SelectItem
-                  key={rubric.id}
-                  value={rubric.id}
-                  className="text-xs"
-                >
-                  {rubric.description.length > 60
-                    ? `${rubric.description.slice(0, 60)}...`
-                    : rubric.description}
-                  <span className="text-xs text-muted-foreground">
-                    {' '}
-                    v{rubric.version}
-                  </span>
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
         </div>

@@ -74,16 +74,23 @@ export interface ChartSpec {
   series_label?: string;
   runs_filter?: ComplexFilter | null;
 
-  rubric_filter: string | null;
-
   chart_type: ChartType;
 }
 
-export type ChartDimension = {
+type BaseDimension = {
   key: string;
   name: string;
-  extra: Record<string, any>;
 };
+
+export type ChartDimension =
+  | (BaseDimension & { kind: 'run_metadata'; json_path: string })
+  | (BaseDimension & {
+      kind: 'judge_output';
+      judge_id: string;
+      judge_version: number;
+      judge_name: string;
+    })
+  | (BaseDimension & { kind: 'aggregation' });
 
 export type CollectionFilter =
   | PrimitiveFilter

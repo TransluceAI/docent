@@ -225,7 +225,7 @@ async def load_agent_runs(tar_path: Path) -> Tuple[List[AgentRun], Dict[str, Any
             # Extract model, condition, sample from path
             relative_path = response_path[len(f"{base_path}models/") :]
             path_parts = relative_path.split("/")
-            _model_name, condition, _sample_id = path_parts
+            _model_name, condition, _sample_id, _file_name = path_parts
 
             try:
                 # Get prompts for this condition

@@ -28,7 +28,6 @@ export const chartApi = createApi({
         xKey,
         yKey,
         chartType = 'table',
-        rubricFilter,
       }) => ({
         url: `/${collectionId}/create`,
         method: 'POST',
@@ -37,7 +36,6 @@ export const chartApi = createApi({
           x_key: xKey,
           y_key: yKey,
           chart_type: chartType,
-          rubric_filter: rubricFilter,
         },
       }),
       invalidatesTags: ['Charts', 'ChartData'],
@@ -89,8 +87,8 @@ export const chartApi = createApi({
     }),
     getChartMetadata: build.query<
       {
-        fields?: { dimensions: ChartDimension[]; measures: ChartDimension[] };
-        rubrics: { id: string; description: string; version: number }[];
+        dimensions: ChartDimension[];
+        measures: ChartDimension[];
       },
       { collectionId: string }
     >({

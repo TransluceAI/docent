@@ -104,6 +104,17 @@ class SQLARubric(SQLABase):
             output_schema=self.output_schema,
         )
 
+    @property
+    def short_name(self) -> str:
+        text = self.rubric_text.strip()
+        if not text:
+            return "Untitled rubric"
+        first_line = text.split("\n")[0]
+        first_line_truncate_len = 50
+        if len(first_line) > first_line_truncate_len:
+            return first_line[:first_line_truncate_len] + "..."
+        return first_line
+
 
 class SQLAJudgeResult(SQLABase):
     __tablename__ = TABLE_JUDGE_RESULT
@@ -207,7 +218,10 @@ class SQLAJudgeResultCentroid(SQLABase):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     judge_result_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey(f"{TABLE_JUDGE_RESULT}.id"), nullable=False, index=True
+        String(36),
+        ForeignKey(f"{TABLE_JUDGE_RESULT}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     centroid_id: Mapped[str] = mapped_column(
         String(36), ForeignKey(f"{TABLE_RUBRIC_CENTROID}.id"), nullable=False, index=True

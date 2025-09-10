@@ -101,7 +101,6 @@ export function ChartsArea() {
         xKey: currentChart?.x_key || undefined,
         yKey: currentChart?.y_key || undefined,
         chartType: currentChart?.chart_type || 'table',
-        rubricFilter: currentChart?.rubric_filter || undefined,
       }).unwrap();
       updateActiveTabId(response.id);
     } catch (error) {
@@ -145,7 +144,6 @@ export function ChartsArea() {
             x_key: chart.x_key,
             y_key: chart.y_key,
             chart_type: chart.chart_type,
-            rubric_filter: chart.rubric_filter,
           },
         }).unwrap();
       } catch (error) {

@@ -36,9 +36,6 @@ class SQLAChart(SQLABase):
     x_key = mapped_column(Text, nullable=True)
     y_key = mapped_column(Text, nullable=True)
 
-    # If set, chart only shows results/judgements associated with this rubric
-    rubric_filter = mapped_column(Text, nullable=True)
-
     # If set, chart only shows data from these runs
     runs_filter_dict = mapped_column(JSONB, nullable=True)
 
