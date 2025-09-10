@@ -1443,11 +1443,11 @@ class TelemetryService:
                 # Determine transcript_group_id for this thread based on contributing spans
                 thread_transcript_group_id = None
                 if thread_span_indices[i]:
-                    # Use the transcript_group_id from the first span that contributed to this thread
-                    first_contributing_span_idx = thread_span_indices[i][0]
-                    first_contributing_span = transcript_spans[first_contributing_span_idx]
-                    first_span_attrs = first_contributing_span.get("attributes", {})
-                    thread_transcript_group_id = first_span_attrs.get("transcript_group_id")
+                    # Use the transcript_group_id from the last span that contributed to this thread
+                    last_contributing_span_idx = thread_span_indices[i][-1]
+                    last_contributing_span = transcript_spans[last_contributing_span_idx]
+                    last_span_attrs = last_contributing_span.get("attributes", {})
+                    thread_transcript_group_id = last_span_attrs.get("transcript_group_id")
 
                 transcript = Transcript(
                     id=thread_transcript_id,

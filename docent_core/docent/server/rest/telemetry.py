@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -39,6 +41,9 @@ async def trace_endpoint(
     This endpoint accepts OTLP HTTP format telemetry data and logs it.
     Requires authentication via bearer token (API key) in the Authorization header.
     """
+
+    start_time = time.time()
+
     try:
         # Check content type
         content_type = request.headers.get("content-type", "")
@@ -97,7 +102,10 @@ async def trace_endpoint(
             status_code=200, content={"status": "success", "spans_accumulated": len(spans)}
         )
     except Exception as e:
-        logger.error(f"Error processing traces: {str(e)}", exc_info=True)
+        processing_time = time.time() - start_time
+        logger.error(
+            f"Error processing traces after {processing_time:.3f}s: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
