@@ -17,7 +17,13 @@ from docent.data_models import (
     Transcript,
     TranscriptGroup,
 )
-from docent.data_models.chat import ChatMessage, parse_chat_message
+from docent.data_models.chat import (
+    ChatMessage,
+    Content,
+    ContentReasoning,
+    ContentText,
+    parse_chat_message,
+)
 from docent.data_models.chat.tool import ToolCall
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.db.contexts import ViewContext
@@ -1802,6 +1808,7 @@ class TelemetryService:
                     messages.append(message)
 
         # Process completion messages
+        fields_moved_from_previous_key = {}
         if "completion" in gen_ai:
             # Sort keys numerically to maintain proper order
             for key in sorted(
@@ -1812,11 +1819,27 @@ class TelemetryService:
                     logger.info(f"Skipping non-digit key: {key}")
                     continue
 
-                completion_data: dict[str, Any] = gen_ai["completion"][key]
+                # openllmetry anthropic instrumentation handles thinking blocks by changing the role to "thinking" and then incrementing the key used for subsequent blocks
+                # https://github.com/traceloop/openllmetry/blob/84f5ee346baa5f7bc323f03b58f19167c87c6062/packages/opentelemetry-instrumentation-anthropic/opentelemetry/instrumentation/anthropic/span_utils.py#L193-L214
+                if (
+                    "role" in gen_ai["completion"][key]
+                    and gen_ai["completion"][key]["role"] == "thinking"
+                ):
+                    # Use this in the next iteration of the loop
+                    fields_moved_from_previous_key = {
+                        "reasoning": gen_ai["completion"][key]["content"],
+                    }
+                    continue
+
+                completion_data: dict[str, Any] = (
+                    gen_ai["completion"][key] | fields_moved_from_previous_key
+                )
 
                 message = self._create_message_from_data(
                     completion_data, span, f"completion_{key}", assume_role="assistant"
                 )
+                # Reset this, since if it was used it should not be used again
+                fields_moved_from_previous_key = {}
                 if message:
                     messages.append(message)
 
@@ -1854,14 +1877,15 @@ class TelemetryService:
                 return None
 
             # Build content from available fields
-            content_parts: List[str] = []
+            content_parts: List[Content] = []
 
             # Add reasoning if present
             if "reasoning" in data:
                 reasoning = data["reasoning"]
-                if isinstance(reasoning, list):
-                    reasoning = "\n".join(str(item) for item in reasoning)  # type: ignore
-                content_parts.append(str(reasoning))
+                if isinstance(reasoning, str):
+                    reasoning = [reasoning]
+                for reasoning_item in reasoning:
+                    content_parts.append(ContentReasoning(reasoning=reasoning_item))
 
             # Find the content key to use
             content_key = None
@@ -1886,7 +1910,7 @@ class TelemetryService:
                     )
                     if content_tool_calls:
                         tool_calls.extend(content_tool_calls)
-                    content_parts.append(extracted_content)
+                    content_parts.append(ContentText(text=extracted_content))
 
                 except Exception as e:
                     logger.warning(
@@ -1894,7 +1918,10 @@ class TelemetryService:
                     )
                     # Continue without tool calls from content
 
-            content = "\n".join(content_parts) if content_parts else ""
+            # content = "\n".join(content_parts) if content_parts else ""
+            content = content_parts
+            if len(content_parts) == 1 and content_parts[0].type == "text":
+                content = content_parts[0].text
 
             # Handle structured tool calls
             if "tool_calls" in data:
