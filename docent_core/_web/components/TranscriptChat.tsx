@@ -120,7 +120,7 @@ export default function TranscriptChat({
   return (
     <div
       className={cn(
-        'flex flex-col min-w-0 h-full w-full mx-auto max-w-4xl',
+        'flex flex-col min-w-0 w-full mx-auto max-w-4xl',
         className
       )}
     >

@@ -13,12 +13,15 @@ import {
 import CodeMirror from '@uiw/react-codemirror';
 import { json as jsonLanguage } from '@codemirror/lang-json';
 import { EditorView } from '@codemirror/view';
+import { useTheme } from 'next-themes';
+import { SchemaDefinition } from '@/app/types/schema';
+import posthog from 'posthog-js';
 
 interface OutputSchemaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialSchema: Record<string, any> | null | undefined;
-  onSave: (schema: Record<string, any>) => void;
+  initialSchema: SchemaDefinition | null | undefined;
+  onSave: (schema: SchemaDefinition) => void;
   editable: boolean;
 }
 
@@ -31,6 +34,7 @@ export default function OutputSchemaDialog({
 }: OutputSchemaDialogProps) {
   const [schemaText, setSchemaText] = useState<string>('');
   const [schemaError, setSchemaError] = useState<string | null>(null);
+  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     if (open) {
@@ -58,7 +62,7 @@ export default function OutputSchemaDialog({
         </DialogHeader>
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            Enter a JSON Schema for the judge output to follow.{' '}
+            Nested schemas are not supported.{' '}
             <a
               href="https://json-schema.org/learn/getting-started-step-by-step"
               target="_blank"
@@ -66,12 +70,13 @@ export default function OutputSchemaDialog({
             >
               Learn more about JSON Schema
             </a>
+            .
           </div>
           <div className="border rounded-sm">
             <CodeMirror
               value={schemaText}
               height="50vh"
-              theme={undefined}
+              theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
               extensions={extensions}
               onChange={(value) => {
                 setSchemaText(value);
@@ -97,7 +102,10 @@ export default function OutputSchemaDialog({
                     setSchemaError('Schema must be a JSON object');
                     return;
                   }
-                  onSave(parsed as Record<string, any>);
+                  onSave(parsed as SchemaDefinition);
+                  posthog.capture('output_schema_saved', {
+                    schema: parsed,
+                  });
                 } catch (err: any) {
                   setSchemaError(err?.message || 'Invalid JSON');
                 }

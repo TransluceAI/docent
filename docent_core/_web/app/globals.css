@@ -156,3 +156,16 @@
   background-color: rgba(155, 155, 155, 0.5);
   border-radius: 20px;
 }
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  /* For Firefox */
+  scrollbar-width: none;
+  /* For Internet Explorer and Edge */
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  /* For Chrome, Safari, and Opera */
+  display: none;
+}

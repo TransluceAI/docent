@@ -1,120 +1,194 @@
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
-import { useRouter } from 'next/navigation';
-import { useAppSelector } from '@/app/store/hooks';
-import { useCitationHighlight } from '@/lib/citationUtils';
-import { useCitationNavigation } from '../rubric/[rubric_id]/NavigateToCitationContext';
-import { useMemo } from 'react';
+import {
+  JudgeRunLabel,
+  JudgeResultWithCitations,
+} from '@/app/store/rubricSlice';
 import { cn } from '@/lib/utils';
 import { TextWithCitations } from '@/components/CitationRenderer';
 import posthog from 'posthog-js';
-import { AgentRunMetadata } from '@/app/components/AgentRunMetadata';
+import { Tag, X } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  useDeleteJudgeRunLabelMutation,
+  useUpdateJudgeRunLabelMutation,
+} from '@/app/api/rubricApi';
+import { useCitationNav } from '@/hooks/use-citation-nav';
 import { Citation } from '@/app/types/experimentViewerTypes';
 
 interface JudgeResultCardProps {
-  clickable: boolean;
   judgeResult: JudgeResultWithCitations;
-  isActive: boolean;
+  judgeRunLabel?: JudgeRunLabel;
+  navToTranscriptOnClick?: boolean;
 }
 
 export const JudgeResultCard = ({
-  clickable,
   judgeResult,
-  isActive,
+  judgeRunLabel,
+  navToTranscriptOnClick = true,
 }: JudgeResultCardProps) => {
   const router = useRouter();
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
-  const { highlightCitation } = useCitationHighlight();
-  const citationNav = useCitationNavigation();
+  const { collection_id: collectionId } = useParams<{
+    collection_id: string;
+  }>();
   const agentRunId = judgeResult.agent_run_id;
 
-  const handleNavigateToCitation = ({
-    citation,
-    newTab,
-  }: {
-    citation: Citation | null;
-    newTab?: boolean;
-  }) => {
-    const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`;
-    if (!isActive && clickable) {
-      if (citationNav?.prepareForNavigation) {
-        citationNav.prepareForNavigation(); // Clear current handler for proper timing
-      }
-      if (newTab) {
-        window.open(url, '_blank');
-      } else {
-        router.push(url, { scroll: false } as any);
-      }
-    }
-    if (citation && clickable) {
-      posthog.capture('citation_clicked', {
-        source: 'judge_result',
-        agent_run_id: agentRunId,
-        transcript_idx: citation.transcript_idx,
-        block_idx: citation.block_idx,
-        start_pattern: citation.start_pattern,
+  const { handleNavigateToCitation } = useCitationNav(judgeResult);
+  const [updateJudgeRunLabel] = useUpdateJudgeRunLabelMutation();
+  const [deleteJudgeRunLabel] = useDeleteJudgeRunLabelMutation();
+
+  const clearLabelField = (key: string) => {
+    // Clear the label if there is only one remaining field
+    if (Object.keys(judgeRunLabel?.label || {}).length <= 1) {
+      deleteJudgeRunLabel({
+        collectionId: collectionId,
+        rubricId: judgeResult.rubric_id,
+        agentRunId: judgeResult.agent_run_id,
       });
-      if (citationNav?.navigateToCitation) {
-        citationNav.navigateToCitation({ citation, newTab });
-      }
-      highlightCitation(citation);
+    } else {
+      const newLabel = { ...judgeRunLabel?.label };
+      delete newLabel[key];
+
+      updateJudgeRunLabel({
+        collectionId: collectionId,
+        rubricId: judgeResult.rubric_id,
+        agentRunId: judgeResult.agent_run_id,
+        label: newLabel,
+      });
     }
   };
 
-  const explanation = judgeResult.output.explanation;
-  const citations = explanation.citations || [];
-  const explanationText =
-    explanation instanceof Object ? explanation.text : explanation;
-  const otherOutput = useMemo(() => {
-    const copy = { ...judgeResult.output };
-    delete copy.explanation;
-    return copy;
-  }, [judgeResult.output]);
+  if (Object.keys(judgeResult.output).length === 0) {
+    return <span className="text-muted-foreground italic">Empty</span>;
+  }
 
   return (
-    <div>
+    <div className="flex gap-2 group cursor-pointer">
       <div
         className={cn(
-          'group rounded-md p-1 border text-xs leading-snug mt-1 transition-colors cursor-pointer border',
-          isActive
-            ? 'border-indigo-border text-primary bg-indigo-bg'
-            : 'bg-secondary/30 hover:bg-indigo-bg text-primary'
+          'self-stretch w-[2.5px] rounded-full flex-shrink-0 my-0.5',
+          'bg-border group-hover:bg-indigo-border transition-colors duration-200'
         )}
+      />
+      <div
+        className="flex-1 text-xs space-y-2"
         onClick={(e) => {
+          if (!navToTranscriptOnClick) return;
           e.stopPropagation();
-          const firstCitation = citations.length > 0 ? citations[0] : null;
 
-          posthog.capture('rubric_result_clicked', {
-            query: judgeResult.rubric_id,
-            agent_run_id: agentRunId,
-          });
+          // Get the first entry with citations
+          const entryWithCitations = Object.entries(judgeResult.output).find(
+            ([key, value]) => value.citations
+          );
+          const firstCitation = entryWithCitations?.[1]?.citations?.[0] || null;
 
-          handleNavigateToCitation({
-            citation: firstCitation,
-            newTab: e.metaKey || e.ctrlKey,
-          });
+          // Navigate to the first citation
+          if (firstCitation) {
+            posthog.capture('rubric_result_clicked', {
+              query: judgeResult.rubric_id,
+              agent_run_id: agentRunId,
+            });
+
+            handleNavigateToCitation({
+              citation: firstCitation,
+              newTab: e.metaKey || e.ctrlKey,
+            });
+          } else {
+            router.push(
+              `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`
+            );
+          }
         }}
       >
-        <div className="flex flex-col">
-          <div className="flex items-start justify-between gap-2">
-            <p
-              className="mb-0.5 flex-1 wrap-anywhere"
-              style={{ overflowWrap: 'anywhere' }}
-            >
-              {explanationText ? (
-                <TextWithCitations
-                  text={explanationText}
-                  citations={explanation.citations || []}
-                  onNavigate={handleNavigateToCitation}
-                />
-              ) : (
-                <span className="text-muted-foreground">No explanation</span>
-              )}
-            </p>
-          </div>
+        <div className="space-y-1.5">
+          {Object.entries(judgeResult.output).map(([key, value]) => (
+            <FieldWithLabel
+              key={key}
+              fieldName={key}
+              judgeResultValue={value}
+              labeledValue={judgeRunLabel?.label?.[key]}
+              clearLabelField={clearLabelField}
+              handleNavigateToCitation={handleNavigateToCitation}
+            />
+          ))}
         </div>
       </div>
-      <div>
-        <AgentRunMetadata metadata={otherOutput} />
+    </div>
+  );
+};
+
+interface FieldWithLabelProps {
+  fieldName: string;
+  judgeResultValue: any;
+  labeledValue?: any;
+  clearLabelField?: (key: string) => void;
+  handleNavigateToCitation?: (args: {
+    citation: Citation | null;
+    newTab?: boolean;
+  }) => void;
+}
+
+const FieldWithLabel = ({
+  fieldName,
+  judgeResultValue,
+  labeledValue,
+  clearLabelField,
+  handleNavigateToCitation,
+}: FieldWithLabelProps) => {
+  const labelIsDifferent = labeledValue && labeledValue !== judgeResultValue;
+
+  const hasCitation = judgeResultValue.citations !== undefined;
+  const resolvedJudgeResultValue = hasCitation
+    ? judgeResultValue.text
+    : String(judgeResultValue);
+
+  const resolvedLabeledValue =
+    labeledValue && hasCitation ? labeledValue.text : String(labeledValue);
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex-1 items-start">
+        <span className="font-semibold shrink-0">{fieldName}: </span>
+        {hasCitation ? (
+          <TextWithCitations
+            text={resolvedJudgeResultValue}
+            citations={judgeResultValue.citations || []}
+            onNavigate={handleNavigateToCitation}
+          />
+        ) : (
+          <span className={cn(labelIsDifferent && 'line-through opacity-50')}>
+            {resolvedJudgeResultValue || (
+              <span className="text-muted-foreground italic">Empty</span>
+            )}
+          </span>
+        )}
+      </div>
+
+      {labeledValue !== undefined && (
+        <Label
+          fieldName={fieldName}
+          labeledValue={resolvedLabeledValue}
+          clearLabelField={clearLabelField}
+        />
+      )}
+    </div>
+  );
+};
+
+interface LabelProps {
+  fieldName: string;
+  labeledValue?: any;
+  clearLabelField?: (key: string) => void;
+}
+
+const Label = ({ fieldName, labeledValue, clearLabelField }: LabelProps) => {
+  return (
+    <div className="flex w-fit px-1.5 py-0.5 cursor-default border relative bg-indigo-bg border-indigo-border rounded group/label">
+      <div className="flex items-start gap-1">
+        <Tag className="size-3 mt-0.5 flex-shrink-0 group-hover/label:hidden text-indigo-text" />
+        <X
+          className="size-3 mt-0.5 flex-shrink-0 group-hover/label:inline-flex hidden text-indigo-text cursor-pointer"
+          onClick={() => clearLabelField?.(fieldName)}
+        />
+        <span className="text-primary text-xs">{labeledValue}</span>
       </div>
     </div>
   );

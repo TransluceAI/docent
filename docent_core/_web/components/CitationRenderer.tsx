@@ -289,9 +289,9 @@ export const CitationButton: React.FC<{
   return (
     <button
       className={cn(
-        'px-0.5 py-0.25 rounded font-medium transition-colors',
+        'px-0.5 py-0.25 rounded font-medium',
         isHighlighted
-          ? 'bg-blue-500 text-white'
+          ? 'bg-indigo-500 text-white'
           : 'bg-indigo-muted text-primary hover:bg-indigo-muted/50'
       )}
       onClick={handleClick}
@@ -301,7 +301,7 @@ export const CitationButton: React.FC<{
         {hasMatches && (
           <Quote
             className={cn(
-              'w-4 h-4 ml-1 inline',
+              'w-3 h-3 ml-0.5 inline',
               isHighlighted ? 'text-white' : 'text-indigo-400'
             )}
           />

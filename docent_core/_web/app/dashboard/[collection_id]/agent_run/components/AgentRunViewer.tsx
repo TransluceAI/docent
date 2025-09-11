@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Maximize2,
   Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import React, {
   forwardRef,
@@ -19,6 +21,7 @@ import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   clearHighlightedCitation,
   selectRunCitationsById,
+  toggleRightSidebar,
 } from '@/app/store/transcriptSlice';
 import {
   Content,
@@ -26,7 +29,6 @@ import {
   TranscriptGroup,
 } from '@/app/types/transcriptTypes';
 import { TranscriptNavigator } from './TranscriptNavigator';
-import { Card } from '@/components/ui/card';
 import {
   Tooltip,
   TooltipContent,
@@ -46,6 +48,7 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable';
 import { MessageBox, hasJsonContent } from './MessageBox';
+import { Button } from '@/components/ui/button';
 
 // Export interface for use in other components
 export interface AgentRunViewerHandle {
@@ -237,6 +240,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // State for sidebar toggle and hover functionality
     const [sidebarVisible, setSidebarVisible] = useState(true);
+    const rightSidebarOpen = useAppSelector(
+      (state) => state.transcript?.rightSidebarOpen
+    );
     const [sidebarHovering, setSidebarHovering] = useState(false);
 
     // Helper for sidebar-aware styling
@@ -740,24 +746,42 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
 
     return (
-      <Card
-        className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
-        style={{ flexGrow: '2' }}
-      >
+      // <Card
+      //   className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
+      //   style={{ flexGrow: '2' }}
+      // >
+
+      <>
         {/* Header area Content */}
         {agentRun && (
           <>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center space-x-1">
-                <div className="font-semibold text-sm shrink-0">Agent Run</div>
-                <UuidPill uuid={agentRun?.id} />
-                {agentRun && (
-                  <MetadataDialog
-                    metadata={agentRun.metadata}
-                    title="Agent Run Metadata"
-                    id={agentRun.id}
-                  />
-                )}
+              <div className="flex items-center justify-between space-x-1">
+                <div className="flex items-center space-x-1">
+                  <div className="font-semibold text-sm shrink-0">
+                    Agent Run
+                  </div>
+                  <UuidPill uuid={agentRun?.id} />
+                  {agentRun && (
+                    <MetadataDialog
+                      metadata={agentRun.metadata}
+                      title="Agent Run Metadata"
+                      id={agentRun.id}
+                    />
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 cursor-default"
+                  onClick={() => dispatch(toggleRightSidebar())}
+                >
+                  {rightSidebarOpen ? (
+                    <PanelRightClose className="h-4 w-4" />
+                  ) : (
+                    <PanelRightOpen className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
               <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">
                 {Object.entries(agentRun.metadata).map(([key, value]) => (
@@ -1019,7 +1043,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         )}
-      </Card>
+      </>
     );
   }
 );

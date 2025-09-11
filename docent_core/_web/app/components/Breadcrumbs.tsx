@@ -4,8 +4,8 @@ import {
   ChevronRight,
   Layers,
   MessageCircle,
-  PanelLeft,
-  PanelRight,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useParams, usePathname } from 'next/navigation';
@@ -27,9 +27,7 @@ import { useGetCollectionNameQuery } from '@/app/api/collectionApi';
 import {
   toggleAgentRunLeftSidebar,
   toggleJudgeLeftSidebar,
-  toggleRightSidebar,
 } from '../store/transcriptSlice';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 const Breadcrumbs: React.FC = () => {
   const router = useRouter();
@@ -55,10 +53,6 @@ const Breadcrumbs: React.FC = () => {
       : state.transcript.agentRunLeftSidebarOpen
   );
 
-  const rightSidebarOpen = useSelector(
-    (state: RootState) => state.transcript.rightSidebarOpen
-  );
-
   // check if we are "home", i.e. at /dashboard/[collection_id]
   const effectiveCollectionId =
     collectionId || (params?.collection_id as string | undefined);
@@ -81,10 +75,6 @@ const Breadcrumbs: React.FC = () => {
 
   // Check if we're on a page that should show sidebar toggles
   const showSidebarToggles = isAgentRunView || isJudgeResultView;
-
-  // Determine if left sidebar should be disabled (no run/result selected)
-  const leftSidebarDisabled =
-    showSidebarToggles && !agentRunId && !(rubricId && resultId);
 
   const collectionBreadcrumbText = collectionName
     ? `Collection: ${collectionName}`
@@ -205,73 +195,25 @@ const Breadcrumbs: React.FC = () => {
           <ShareViewPopover collectionId={effectiveCollectionId} />
         )}
 
-        {/* Sidebar toggles */}
         {showSidebarToggles && (
-          <ToggleGroup
-            className="h-7"
-            type="multiple"
-            value={[
-              ...(!leftSidebarDisabled && leftSidebarOpen ? ['left'] : []),
-              ...(rightSidebarOpen ? ['right'] : []),
-            ]}
-            onValueChange={(value) => {
-              const newLeftOpen = value.includes('left');
-              const newRightOpen = value.includes('right');
-
-              if (newLeftOpen !== leftSidebarOpen && !leftSidebarDisabled) {
-                dispatch(
-                  isJudgeResultView
-                    ? toggleJudgeLeftSidebar()
-                    : toggleAgentRunLeftSidebar()
-                );
-              }
-              if (newRightOpen !== rightSidebarOpen) {
-                dispatch(toggleRightSidebar());
-              }
-            }}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-x-2 h-7 cursor-default px-2"
+            onClick={() =>
+              dispatch(
+                isJudgeResultView
+                  ? toggleJudgeLeftSidebar()
+                  : toggleAgentRunLeftSidebar()
+              )
+            }
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem
-                  value="left"
-                  data-state={
-                    (leftSidebarDisabled ? false : leftSidebarOpen)
-                      ? 'on'
-                      : 'off'
-                  }
-                  disabled={leftSidebarDisabled}
-                  segment="left"
-                >
-                  <PanelLeft size={14} />
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {leftSidebarOpen ? 'Hide left sidebar' : 'Show left sidebar'}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem
-                  value="right"
-                  data-state={rightSidebarOpen ? 'on' : 'off'}
-                  disabled={false}
-                  segment="right"
-                >
-                  <PanelRight size={14} />
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {rightSidebarOpen
-                    ? 'Hide right sidebar'
-                    : 'Show right sidebar'}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </ToggleGroup>
+            {leftSidebarOpen ? (
+              <PanelLeftClose size={14} />
+            ) : (
+              <PanelLeftOpen size={14} />
+            )}
+          </Button>
         )}
 
         <ModeToggle />

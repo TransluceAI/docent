@@ -6,14 +6,21 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import TranscriptChat from '@/components/TranscriptChat';
-import { Card } from '@/components/ui/card';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useGetAgentRunQuery } from '@/app/api/collectionApi';
 
@@ -23,9 +30,20 @@ import { setRunCitations } from '@/app/store/transcriptSlice';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { useCitationNavigation } from '../../NavigateToCitationContext';
 import { Loader2 } from 'lucide-react';
+import LabelArea from './components/LabelArea';
+import { useRubricVersion } from '@/providers/use-rubric-version';
 
 export default function JudgeResultPage() {
-  const params = useParams();
+  const {
+    result_id: resultId,
+    collection_id: collectionId,
+    rubric_id: rubricId,
+  } = useParams<{
+    result_id: string;
+    collection_id: string;
+    rubric_id: string;
+  }>();
+
   const dispatch = useAppDispatch();
   const router = useRouter();
   const citationNav = useCitationNavigation();
@@ -34,9 +52,12 @@ export default function JudgeResultPage() {
     (state) => state.transcript.rightSidebarOpen
   );
 
-  const resultId = params.result_id as string;
-  const collectionId = params.collection_id as string;
-  const rubricId = params.rubric_id as string;
+  const searchParams = useSearchParams();
+  const { version } = useRubricVersion();
+  const activeTabFromUrl = searchParams.get('tab');
+
+  // Local state for active tab, initialized from URL or default to 'chat'
+  const [activeTab, setActiveTab] = useState(activeTabFromUrl || 'chat');
 
   const {
     data: rubricRunState,
@@ -46,17 +67,21 @@ export default function JudgeResultPage() {
     {
       collectionId,
       rubricId,
+      version: version ?? null,
     },
     {
       pollingInterval: 0,
+      refetchOnMountOrArgChange: true,
     }
   );
 
   const results = rubricRunState?.results;
   const result = results?.find((result) => result.id === resultId);
+  const citations = result?.output?.explanation?.citations;
   const agentRunId = result?.agent_run_id as string | undefined;
 
   // Route guard: redirect if result not found after rubric run state loads
+  // But first try refetching once in case the cache is stale
   useEffect(() => {
     if (
       !isLoadingRubricRunState &&
@@ -85,19 +110,17 @@ export default function JudgeResultPage() {
   // scroll and is reset when the selected result changes.
   const alreadyScrolledRef = useRef(false);
 
-  const resultCitations = result?.output.explanation?.citations;
-
   // Calculate initial transcript index from citations
   const initialTranscriptIdx = useMemo(() => {
-    if (!resultCitations || resultCitations.length === 0) return undefined;
-    return resultCitations[0].transcript_idx ?? 0;
-  }, [resultCitations]);
+    if (!citations || citations.length === 0) return undefined;
+    return citations[0].transcript_idx ?? 0;
+  }, [citations]);
 
   useEffect(() => {
     if (agentRunId) {
       dispatch(
         setRunCitations({
-          [agentRunId]: resultCitations || [],
+          [agentRunId]: citations || [],
         })
       );
     }
@@ -125,8 +148,7 @@ export default function JudgeResultPage() {
     if (alreadyScrolledRef.current) return;
     if (!agentRun || !result) return;
 
-    const citation =
-      resultCitations && resultCitations.length > 0 ? resultCitations[0] : null;
+    const citation = citations && citations.length > 0 ? citations[0] : null;
     if (!citation) return;
 
     const blockIdx = citation.block_idx ?? 0;
@@ -177,6 +199,18 @@ export default function JudgeResultPage() {
     };
   }, [citationNav, handleNavigateToCitation, agentRun]);
 
+  // Update local state when URL parameter changes
+  useEffect(() => {
+    if (activeTabFromUrl) {
+      setActiveTab(activeTabFromUrl);
+    }
+  }, [activeTabFromUrl]);
+
+  // Handle tab changes by updating local state
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value);
+  }, []);
+
   if (isLoadingRubricRunState) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-0">
@@ -201,33 +235,70 @@ export default function JudgeResultPage() {
       agentRunViewerContent = <div>Failed to load agent run.</div>;
     } else if (agentRun) {
       agentRunViewerContent = (
-        <AgentRunViewer
-          ref={agentRunViewerRef}
-          agentRun={agentRun}
-          initialTranscriptIdx={initialTranscriptIdx}
-        />
+        <ResizablePanelGroup
+          direction="horizontal"
+          className="h-full min-h-0 min-w-0 flex flex-row border rounded-xl"
+          style={{ flexGrow: '2' }}
+        >
+          <ResizablePanel
+            defaultSize={70}
+            className="min-w-0 p-3  min-h-0 flex flex-col overflow-hidden"
+          >
+            <AgentRunViewer
+              ref={agentRunViewerRef}
+              agentRun={agentRun}
+              initialTranscriptIdx={initialTranscriptIdx}
+            />
+          </ResizablePanel>
+
+          {agentRun && rightSidebarOpen && (
+            <ResizableHandle withHandle={true} />
+          )}
+
+          {agentRun && rightSidebarOpen && (
+            <ResizablePanel
+              defaultSize={30}
+              className="p-3 min-w-0 min-h-0 h-full flex flex-col"
+            >
+              <Tabs
+                className="flex flex-col h-full min-h-0"
+                value={activeTab}
+                onValueChange={handleTabChange}
+              >
+                <TabsList className="grid w-full grid-cols-2 mb-2">
+                  <TabsTrigger value="chat">Chat</TabsTrigger>
+                  <TabsTrigger value="label">Label</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="chat" className="flex-1 h-full min-h-0">
+                  {/* Transcript chat */}
+                  <TranscriptChat
+                    runId={agentRun.id}
+                    collectionId={collectionId}
+                    judgeResult={result}
+                    resultContext={{
+                      rubricId,
+                      resultId: result?.id || '',
+                    }}
+                    onNavigateToCitation={handleNavigateToCitation}
+                    className="flex flex-col min-w-0 h-full"
+                  />
+                </TabsContent>
+
+                <TabsContent value="label" className="flex-1 min-h-0">
+                  <LabelArea
+                    result={result!}
+                    collectionId={collectionId}
+                    rubricId={rubricId}
+                  />
+                </TabsContent>
+              </Tabs>
+            </ResizablePanel>
+          )}
+        </ResizablePanelGroup>
       );
     }
   }
 
-  return (
-    <Suspense>
-      {agentRunViewerContent}
-      {agentRun && rightSidebarOpen && (
-        <Card className="shrink-0 grow-1 basis-1/4 flex flex-col min-w-0 min-h-0 bg-background h-full">
-          <TranscriptChat
-            runId={agentRun.id}
-            collectionId={collectionId}
-            judgeResult={result}
-            resultContext={{
-              rubricId,
-              resultId: result?.id || '',
-            }}
-            onNavigateToCitation={handleNavigateToCitation}
-            className="flex-1 flex flex-col min-w-0 min-h-0"
-          />
-        </Card>
-      )}
-    </Suspense>
-  );
+  return <Suspense>{agentRunViewerContent}</Suspense>;
 }

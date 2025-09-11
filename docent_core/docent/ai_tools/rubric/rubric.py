@@ -83,6 +83,13 @@ class ResultType(enum.Enum):
     NEAR_MISS = "near_miss"
 
 
+class JudgeRunLabel(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    agent_run_id: str
+    rubric_id: str
+    label: dict[str, Any]
+
+
 class JudgeResult(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_run_id: str

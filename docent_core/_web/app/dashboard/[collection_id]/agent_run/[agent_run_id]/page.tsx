@@ -118,7 +118,12 @@ export default function AgentRunPage() {
   return (
     <Suspense>
       {/* Transcript */}
-      <AgentRunViewer ref={agentRunViewerRef} />
+      <Card
+        className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
+        style={{ flexGrow: '2' }}
+      >
+        <AgentRunViewer ref={agentRunViewerRef} />
+      </Card>
 
       {/* Assistant summary / transcript chat */}
       {rightSidebarOpen && (

@@ -253,7 +253,7 @@ export default function ExperimentViewer({
           )}
 
           {agentRunIds === undefined && (
-            <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs items-center">
+            <div className="h-full flex items-center justify-center text-center min-h-[200px] text-xs">
               <Loader2
                 size={16}
                 className="animate-spin text-muted-foreground"

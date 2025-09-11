@@ -5,7 +5,7 @@ from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import exists, func, select
+from sqlalchemy import and_, delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
@@ -27,6 +27,7 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
 from docent_core.docent.ai_tools.rubric.rubric import (
     JudgeResult,
     JudgeResultStreamingCallback,
+    JudgeRunLabel,
     ResultType,
     Rubric,
     evaluate_rubric,
@@ -36,6 +37,7 @@ from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
+    SQLAJudgeRunLabel,
     SQLARubric,
     SQLARubricCentroid,
 )
@@ -185,6 +187,7 @@ class RubricService:
         ctx: ViewContext,
         rubric_id: str,
         max_results: int | None = None,
+        only_run_on_labeled_runs: bool = False,
     ):
         """Start a job to evaluate the rubric."""
 
@@ -202,6 +205,7 @@ class RubricService:
                 job_json={
                     "rubric_id": rubric_id,
                     "max_results": max_results,
+                    "only_run_on_labeled_runs": only_run_on_labeled_runs,
                 },
             )
         )
@@ -300,9 +304,25 @@ class RubricService:
                 return
             max_results -= num_existing_results
 
-        # Filter out agent runs with existing judge results
-        result = await self.session.execute(
-            select(SQLAAgentRun.id).where(
+        only_run_on_labeled_runs = bool(job.job_json.get("only_run_on_labeled_runs", False))
+
+        if only_run_on_labeled_runs:
+            # When only_run_on_labeled_runs=true, only select agent runs that have existing labels for this specific rubric
+            query = (
+                select(SQLAAgentRun.id)
+                .distinct()
+                .where(SQLAAgentRun.collection_id == ctx.collection_id)
+                .join(
+                    SQLAJudgeRunLabel,
+                    and_(
+                        SQLAJudgeRunLabel.agent_run_id == SQLAAgentRun.id,
+                        SQLAJudgeRunLabel.rubric_id == rubric_id,
+                    ),
+                )
+            )
+        else:
+            # Default behavior: select agent runs without existing results
+            query = select(SQLAAgentRun.id).where(
                 SQLAAgentRun.collection_id == ctx.collection_id,
                 ~exists().where(
                     SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
@@ -311,8 +331,17 @@ class RubricService:
                     SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
                 ),
             )
-        )
+
+        result = await self.session.execute(query)
         agent_run_ids = cast(list[str], result.scalars().all())
+
+        # Update the job with the actual total number of agent runs to process
+        await self.service.set_job_json(
+            job.id, job.job_json | {"total_agent_runs": len(agent_run_ids)}
+        )
+
+        logger.info(f"Evaluating rubrics for {len(agent_run_ids)} agent runs missing results")
+
         random.shuffle(agent_run_ids)
         if len(agent_run_ids) == 0:
             logger.info("Skipping rubric evaluation because no agent runs are missing results")
@@ -390,11 +419,12 @@ class RubricService:
                 return []
             version = latest_rubric.version
 
-        result = await self.session.execute(
-            select(SQLAJudgeResult).where(
-                SQLAJudgeResult.rubric_id == rubric_id, SQLAJudgeResult.rubric_version == version
-            )
+        search_query = select(SQLAJudgeResult).where(
+            SQLAJudgeResult.rubric_id == rubric_id,
+            SQLAJudgeResult.rubric_version == version,
         )
+
+        result = await self.session.execute(search_query)
         sqla_results = result.scalars().all()
         return [sqla_result.to_pydantic() for sqla_result in sqla_results]
 
@@ -722,3 +752,61 @@ class RubricService:
             result[assignment.centroid_id].append(assignment.judge_result_id)
 
         return result
+
+    ######################
+    # Result Labels CRUD #
+    ######################
+
+    async def create_judge_run_label(self, new_label: JudgeRunLabel) -> bool:
+        """Add a run label to a judge result."""
+        self.session.add(SQLAJudgeRunLabel.from_pydantic(new_label))
+        return True
+
+    async def update_judge_run_label(self, agent_run_id: str, label: dict[str, Any]) -> bool:
+        """Update a run label for a judge result."""
+        await self.session.execute(
+            update(SQLAJudgeRunLabel)
+            .where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
+            .values(label=label)
+        )
+        return True
+
+    async def get_judge_run_labels(self, rubric_id: str) -> list[JudgeRunLabel]:
+        """Get all result labels for a rubric.
+
+        Returns a list of labels with agent_run_id.
+        """
+        result = await self.session.execute(
+            select(SQLAJudgeRunLabel)
+            .where(SQLAJudgeRunLabel.rubric_id == rubric_id)
+            .order_by(SQLAJudgeRunLabel.id)
+        )
+        rows = result.scalars().all()
+        return [row.to_pydantic() for row in rows]
+
+    async def delete_all_judge_run_labels(self, rubric_id: str):
+        """Delete all run labels for a rubric."""
+        await self.session.execute(
+            delete(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.rubric_id == rubric_id)
+        )
+
+    async def get_judge_run_label(self, agent_run_id: str) -> JudgeRunLabel | None:
+        """Get a run label for a judge result."""
+        result = await self.session.execute(
+            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
+        )
+
+        result_label = result.scalar_one_or_none()
+        if result_label is None:
+            return None
+        return result_label.to_pydantic()
+
+    async def delete_judge_run_label(self, agent_run_id: str):
+        """Delete a judge run label from a judge result."""
+        # We only need agent_run_id since there's one label per agent run
+        result = await self.session.execute(
+            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
+        )
+        label_to_delete = result.scalar_one_or_none()
+        if label_to_delete:
+            await self.session.delete(label_to_delete)

@@ -1,15 +1,26 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util.logger import get_logger
-from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, ModelOption
+from docent_core._llm_util.providers.preferences import (
+    PROVIDER_PREFERENCES,
+    ModelOption,
+)
 from docent_core._server._analytics.posthog import AnalyticsClient
-from docent_core.docent.ai_tools.rubric.rubric import JudgeResultWithCitations, Rubric
+from docent_core.docent.ai_tools.rubric.rubric import (
+    JudgeResultWithCitations,
+    JudgeRunLabel,
+    Rubric,
+)
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.rubric import SQLARubric
-from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
+from docent_core.docent.server.dependencies.analytics import (
+    use_posthog_user_context,
+)
 from docent_core.docent.server.dependencies.database import get_session
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
@@ -20,7 +31,10 @@ from docent_core.docent.server.dependencies.services import (
     get_mono_svc,
     get_rubric_service,
 )
-from docent_core.docent.server.dependencies.user import get_default_view_ctx, get_user_anonymous_ok
+from docent_core.docent.server.dependencies.user import (
+    get_default_view_ctx,
+    get_user_anonymous_ok,
+)
 from docent_core.docent.services import monoservice
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.monoservice import MonoService
@@ -185,11 +199,22 @@ class StartClusteringJobRequest(BaseModel):
     recluster: bool
 
 
+class RubricRunStateResponse(BaseModel):
+    results: list[JudgeResultWithCitations]
+    job_id: str | None
+    total_agent_runs: int | None
+
+
+class StartFilteredEvalJobRequest(BaseModel):
+    max_results: int | None = None
+    only_run_on_labeled_runs: bool = False
+
+
 @rubric_router.post("/{collection_id}/{rubric_id}/evaluate")
 async def start_eval_rubric_job(
     collection_id: str,
     rubric_id: str,
-    max_results: int | None = None,
+    request: StartFilteredEvalJobRequest,
     mono_svc: MonoService = Depends(get_mono_svc),
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -203,8 +228,12 @@ async def start_eval_rubric_job(
     if sqla_rubric is None:
         raise HTTPException(status_code=404, detail=f"Rubric {rubric_id} not found")
 
-    logger.info(f"Starting evaluation job for rubric {rubric_id} with max results {max_results}")
-    job_id = await rubric_svc.start_or_get_eval_rubric_job(ctx, rubric_id, max_results)
+    logger.info(
+        f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results} and labeled {request.only_run_on_labeled_runs}"
+    )
+    job_id = await rubric_svc.start_or_get_eval_rubric_job(
+        ctx, rubric_id, request.max_results, request.only_run_on_labeled_runs
+    )
 
     # Check if user has a custom API key (just for analytics purposes)
     if ctx.user:
@@ -232,27 +261,40 @@ async def start_eval_rubric_job(
 async def get_rubric_run_state(
     collection_id: str,
     rubric_id: str,
-    sqla_rubric: SQLARubric = Depends(get_rubric),
+    version: int | None = None,
+    sqla_rubric_latest: SQLARubric = Depends(get_rubric),
     rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.READ)),
-):
+) -> RubricRunStateResponse:
+    if version is not None:
+        sqla_rubric_for_schema = await rubric_svc.get_rubric(rubric_id, version)
+        if sqla_rubric_for_schema is None:
+            # If requested version doesn't exist, behave like empty results
+            return RubricRunStateResponse(results=[], job_id=None, total_agent_runs=None)
+    else:
+        sqla_rubric_for_schema = sqla_rubric_latest
+
     # What's the ID of the job that's currently running, if any?
-    cur_job = await rubric_svc.get_active_job_for_rubric(rubric_id)
-    # Get current results
-    results = await rubric_svc.get_rubric_results(rubric_id)
+    # Only expose job/progress for latest (no explicit version provided)
+    cur_job = None
+    total_agent_runs = None
+    if version is None:
+        cur_job = await rubric_svc.get_active_job_for_rubric(rubric_id)
+        total_agent_runs = cur_job.job_json.get("total_agent_runs") if cur_job else None
+
+    # Get current results for the specified version (defaults to latest inside service)
+    results = await rubric_svc.get_rubric_results(rubric_id, version)
 
     results_parsed = [
-        JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
+        JudgeResultWithCitations.from_judge_result(result, sqla_rubric_for_schema.output_schema)
         for result in results
     ]
-    # Get the total number of agent runs
-    total_agent_runs = cur_job.job_json.get("total_agent_runs") if cur_job else None
 
-    return {
-        "results": results_parsed,
-        "job_id": cur_job.id if cur_job else None,
-        "total_agent_runs": total_agent_runs,
-    }
+    return RubricRunStateResponse(
+        results=results_parsed,
+        job_id=cur_job.id if cur_job else None,
+        total_agent_runs=total_agent_runs,
+    )
 
 
 @rubric_router.get("/{collection_id}/{rubric_id}/job")
@@ -370,3 +412,99 @@ async def clear_clusters(
 ):
     """Clear all centroids (and cascaded assignments) for the latest version of a rubric."""
     await rubric_svc.clear_centroids(sq_rubric.id, sq_rubric.version)
+
+
+###############
+# Labels CRUD #
+###############
+
+
+class CreateRunLabelRequest(BaseModel):
+    label: JudgeRunLabel
+
+
+class DeleteRunLabelRequest(BaseModel):
+    agent_run_id: str
+
+
+class UpdateRunLabelRequest(BaseModel):
+    agent_run_id: str
+    label: dict[str, Any]
+
+
+@rubric_router.post("/{collection_id}/rubric/{rubric_id}/label")
+async def create_judge_run_label(
+    collection_id: str,
+    rubric_id: str,
+    request: CreateRunLabelRequest,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Add a label to a judge result."""
+    success = await rubric_svc.create_judge_run_label(request.label)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in label")
+    return {"message": "Label added successfully"}
+
+
+@rubric_router.put("/{collection_id}/rubric/{rubric_id}/label")
+async def update_judge_run_label(
+    collection_id: str,
+    rubric_id: str,
+    request: UpdateRunLabelRequest,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Update a label for a judge result."""
+    success = await rubric_svc.update_judge_run_label(request.agent_run_id, request.label)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in label")
+    return {"message": "Label updated successfully"}
+
+
+@rubric_router.get("/{collection_id}/rubric/{rubric_id}/labels")
+async def get_judge_run_labels(
+    collection_id: str,
+    rubric_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[JudgeRunLabel]:
+    """Get all labels for judge results of a rubric across all versions."""
+    return await rubric_svc.get_judge_run_labels(rubric_id)
+
+
+@rubric_router.get("/{collection_id}/rubric/{rubric_id}/label/{agent_run_id}")
+async def get_judge_run_label(
+    collection_id: str,
+    rubric_id: str,
+    agent_run_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> JudgeRunLabel | None:
+    """Get a specific label for a judge result."""
+    return await rubric_svc.get_judge_run_label(agent_run_id)
+
+
+@rubric_router.delete("/{collection_id}/rubric/{rubric_id}/label")
+async def delete_judge_run_label(
+    collection_id: str,
+    rubric_id: str,
+    request: DeleteRunLabelRequest,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Delete a label from a judge result."""
+    await rubric_svc.delete_judge_run_label(request.agent_run_id)
+    return {"message": "Label deleted successfully"}
+
+
+@rubric_router.delete("/{collection_id}/rubric/{rubric_id}/labels")
+async def delete_all_judge_run_labels(
+    collection_id: str,
+    rubric_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Delete all labels for a rubric."""
+    await rubric_svc.delete_all_judge_run_labels(rubric_id)
+    return {"message": "All labels deleted successfully"}

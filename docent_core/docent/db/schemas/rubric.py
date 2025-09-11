@@ -23,11 +23,17 @@ if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, ResultType, Rubric
+from docent_core.docent.ai_tools.rubric.rubric import (
+    JudgeResult,
+    JudgeRunLabel,
+    ResultType,
+    Rubric,
+)
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
 
 TABLE_RUBRIC = "rubrics"
 TABLE_JUDGE_RESULT = "judge_results"
+TABLE_JUDGE_RUN_LABEL = "judge_run_labels"
 TABLE_RUBRIC_CENTROID = "rubric_centroids"
 TABLE_JUDGE_RESULT_CENTROIDS = "judge_result_centroids"
 
@@ -116,6 +122,37 @@ class SQLARubric(SQLABase):
         return first_line
 
 
+class SQLAJudgeRunLabel(SQLABase):
+    __tablename__ = TABLE_JUDGE_RUN_LABEL
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    agent_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rubric_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    label: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    @classmethod
+    def from_pydantic(cls, judge_run_label: JudgeRunLabel) -> "SQLAJudgeRunLabel":
+        return cls(
+            id=judge_run_label.id,
+            agent_run_id=judge_run_label.agent_run_id,
+            rubric_id=judge_run_label.rubric_id,
+            label=judge_run_label.label,
+        )
+
+    def to_pydantic(self) -> JudgeRunLabel:
+        return JudgeRunLabel(
+            id=self.id,
+            agent_run_id=self.agent_run_id,
+            rubric_id=self.rubric_id,
+            label=self.label,
+        )
+
+
 class SQLAJudgeResult(SQLABase):
     __tablename__ = TABLE_JUDGE_RESULT
 
@@ -152,6 +189,7 @@ class SQLAJudgeResult(SQLABase):
         back_populates="judge_result",
         cascade="all, delete-orphan",
     )
+    # Relationship to result labels removed; labels are tied to agent_run_id now
 
     @classmethod
     def from_pydantic(cls, judge_result: JudgeResult) -> "SQLAJudgeResult":

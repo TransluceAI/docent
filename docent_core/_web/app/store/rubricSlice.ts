@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { SchemaDefinition } from '@/app/types/schema';
 
 export interface JudgeModel {
   provider: string;
@@ -7,18 +8,26 @@ export interface JudgeModel {
   uses_byok?: boolean;
 }
 
+export interface JudgeRunLabel {
+  id: string;
+  agent_run_id: string;
+  rubric_id: string;
+  label: Record<string, any>;
+}
+
 export interface Rubric {
   id: string;
   version: number;
   rubric_text: string;
   judge_model: JudgeModel;
-  output_schema: Record<string, any>;
+  output_schema: SchemaDefinition;
 }
 
 export interface JudgeResult {
   id: string;
   agent_run_id: string;
   rubric_id: string;
+  rubric_version: number;
   output: Record<string, any>;
 }
 

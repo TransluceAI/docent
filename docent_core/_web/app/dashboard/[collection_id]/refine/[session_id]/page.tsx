@@ -17,17 +17,19 @@ import { useRouter } from 'next/navigation';
 import { JudgeResultWithCitations, Rubric } from '@/app/store/rubricSlice';
 import { RefinementAgentSession } from '@/app/store/refinementSlice';
 import RefinementTimeline from '../../components/RefinementTimeline';
-import { JudgeResultsList } from '../../components/JudgeResultsSection';
+import { ResultsSection } from '../../components/JudgeResultsList';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/app/components/ProgressBar';
 import posthog from 'posthog-js';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+import { ResultFilterControlsProvider } from '@/providers/use-result-filters';
 
 export default function RefinePage() {
-  const params = useParams();
+  const { collection_id: collectionId, session_id: sessionId } = useParams<{
+    collection_id: string;
+    session_id: string;
+  }>();
   const router = useRouter();
-  const collectionId = (params as any)?.collection_id as string | undefined;
-  const sessionId = (params as any)?.session_id as string | undefined;
 
   const hasWritePermission = useHasCollectionWritePermission();
 
@@ -42,7 +44,6 @@ export default function RefinePage() {
   const [startRefinementSession] = useStartRefinementSessionMutation();
   // useEffect is safe because the endpoint is idempotent
   useEffect(() => {
-    if (!collectionId || !sessionId) return;
     startRefinementSession({ collectionId, sessionId })
       .unwrap()
       .then((res) => {
@@ -59,7 +60,6 @@ export default function RefinePage() {
     useStartEvaluationMutation();
   const onSendMessage = useCallback(
     (message: string) => {
-      if (!collectionId || !sessionId) return;
       postMessage({ collectionId, sessionId, message })
         .unwrap()
         .then((res) => {
@@ -145,7 +145,6 @@ export default function RefinePage() {
   const [hasChanges, setHasChanges] = useState<boolean>(false);
 
   const handleRubricSave = (rubric: Rubric) => {
-    if (!collectionId || !sessionId) return;
     if (isSSEConnected) {
       throw new Error('Cannot save rubric while SSE is connected');
     }
@@ -161,7 +160,7 @@ export default function RefinePage() {
   };
 
   const handleFinalizeAndRunRubric = async () => {
-    if (!collectionId || !rubricId) return;
+    if (!rubricId) return;
 
     posthog.capture('refinement_finalized', {
       collection_id: collectionId,
@@ -183,15 +182,20 @@ export default function RefinePage() {
     const judgeResultsList = curRsession?.judge_results ?? [];
     return judgeResultsList.reduce(
       (acc, judgeResult) => {
-        acc[judgeResult.id] = judgeResult;
+        acc[judgeResult.id] = [judgeResult];
         return acc;
       },
-      {} as Record<string, JudgeResultWithCitations>
+      {} as Record<string, JudgeResultWithCitations[]>
     );
   }, [curRsession]);
 
   const uniqueAgentRunsInJudgeResults = useMemo(
-    () => new Set(Object.values(judgeResultsMap).map((r) => r.agent_run_id)),
+    () =>
+      new Set(
+        Object.values(judgeResultsMap).flatMap((r) =>
+          r.map((r) => r.agent_run_id)
+        )
+      ),
     [judgeResultsMap]
   );
 
@@ -218,6 +222,7 @@ export default function RefinePage() {
         {rubricId && (
           <div className="space-y-3">
             <RubricEditor
+              collectionId={collectionId}
               rubricId={rubricId}
               rubricVersion={refinementRubricVersion}
               setRubricVersion={setRefinementRubricVersion}
@@ -259,13 +264,17 @@ export default function RefinePage() {
             total={null}
           />
         )}
-        <JudgeResultsList
-          clickable={false}
-          judgeResultsMap={judgeResultsMap}
-          centroidsMap={{}}
-          centroidAssignments={{}}
-          isPollingAssignments={false}
-        />
+        <ResultFilterControlsProvider
+          rubricId={rubricId ?? ''}
+          collectionId={collectionId}
+        >
+          <div className="overflow-y-auto">
+            <ResultsSection
+              resultsByAgentRun={judgeResultsMap}
+              navToTranscriptOnClick={false}
+            />
+          </div>
+        </ResultFilterControlsProvider>
       </div>
     </Card>
   );

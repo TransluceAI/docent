@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  Save,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Braces,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 
@@ -14,8 +8,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
-import { JudgeModel, type Rubric } from '@/app/store/rubricSlice';
+import { type Rubric } from '@/app/store/rubricSlice';
 
 import {
   useGetRubricQuery,
@@ -23,16 +22,8 @@ import {
   useGetJudgeModelsQuery,
   rubricApi,
 } from '@/app/api/rubricApi';
-import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { KeyRound } from 'lucide-react';
-import OutputSchemaDialog from './OutputSchemaDialog';
+import { useAppDispatch } from '@/app/store/hooks';
+import SettingsPopover from './rubric/SettingsPopover';
 
 function DescriptionInlineDiff({
   previous,
@@ -121,17 +112,10 @@ function DescriptionInlineDiff({
   );
 }
 
-function nameJudgeModel(jm: JudgeModel | null) {
-  if (!jm) {
-    return 'Default';
-  }
-  if (jm.reasoning_effort) {
-    return `${jm.provider}/${jm.model_name} (${jm.reasoning_effort} reasoning effort)`;
-  }
-  return `${jm.provider}/${jm.model_name}`;
-}
+//
 
 interface RubricEditorProps {
+  collectionId: string;
   rubricId: string;
   rubricVersion: number | null;
   setRubricVersion?: (version: number) => void;
@@ -141,9 +125,11 @@ interface RubricEditorProps {
   onCloseWithoutSave?: () => void;
   editable: boolean;
   onHasUnsavedChangesUpdated?: (hasChanges: boolean) => void;
+  shouldConfirmOnSave?: boolean;
 }
 
 export default function RubricEditor({
+  collectionId,
   rubricId,
   rubricVersion,
   setRubricVersion,
@@ -153,22 +139,18 @@ export default function RubricEditor({
   onCloseWithoutSave,
   editable,
   onHasUnsavedChangesUpdated,
+  shouldConfirmOnSave,
 }: RubricEditorProps) {
   const isDisabled = !editable;
 
-  const collectionId = useAppSelector((state) => state.collection.collectionId);
   const dispatch = useAppDispatch();
 
   // Get the remote rubric
-  const { data: remoteRubric } = useGetRubricQuery(
-    collectionId
-      ? {
-          collectionId: collectionId,
-          rubricId: rubricId,
-          version: rubricVersion,
-        }
-      : skipToken
-  );
+  const { data: remoteRubric } = useGetRubricQuery({
+    collectionId,
+    rubricId,
+    version: rubricVersion,
+  });
 
   // Local rubric is for editing
   const [localRubric, setLocalRubric] = useState<Rubric | null>(null);
@@ -180,14 +162,10 @@ export default function RubricEditor({
 
   // Get the latest version number
   const minVersion = 1;
-  const { data: maxVersion } = useGetLatestRubricVersionQuery(
-    collectionId
-      ? {
-          collectionId: collectionId,
-          rubricId: rubricId,
-        }
-      : skipToken
-  );
+  const { data: maxVersion } = useGetLatestRubricVersionQuery({
+    collectionId,
+    rubricId,
+  });
 
   // When the rubric version changes, invalidate the latest rubric version query
   useEffect(() => {
@@ -203,18 +181,16 @@ export default function RubricEditor({
 
   // Previous version state
   const { data: prevRubricRemote } = useGetRubricQuery(
-    collectionId && rubric && rubric.version >= 2 && showDiff
+    rubric && rubric.version >= 2 && showDiff
       ? {
-          collectionId: collectionId as string,
-          rubricId: rubricId,
+          collectionId,
+          rubricId,
           version: Math.max(1, rubric.version - 1),
         }
       : skipToken
   );
 
   // Inline editing state
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [isSchemaDialogOpen, setIsSchemaDialogOpen] = useState(false);
 
   // Helper function to create a new rubric with updates
   const updateRubric = (updates: Partial<Rubric>) => {
@@ -267,6 +243,18 @@ export default function RubricEditor({
     }
   };
 
+  // Save with confirmation flow
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const handleSaveClick = async () => {
+    if (!shouldConfirmOnSave || !schemaChanged) {
+      handleSave();
+      return;
+    }
+
+    setConfirmOpen(true);
+  };
+
   const hasChanges = useMemo(() => {
     if (!editable) return false;
     return (
@@ -283,6 +271,15 @@ export default function RubricEditor({
     }
   }, [hasChanges, onHasUnsavedChangesUpdated]);
 
+  // Only warn if the schema changed (labels are schema-dependent)
+  const schemaChanged = useMemo(() => {
+    if (!editable) return false;
+    return (
+      JSON.stringify(rubric?.output_schema) !==
+      JSON.stringify(remoteRubric?.output_schema)
+    );
+  }, [editable, rubric?.output_schema, remoteRubric?.output_schema]);
+
   return (
     <div className="space-y-2">
       <div className="flex justify-between">
@@ -298,19 +295,34 @@ export default function RubricEditor({
         </div>
 
         <div className="flex items-center gap-2">
+          {rubric && (
+            <SettingsPopover
+              judgeModel={rubric.judge_model}
+              availableJudgeModels={availableJudgeModels}
+              onChange={(jm) => {
+                if (!editable) return;
+                updateRubric({ judge_model: jm });
+              }}
+              outputSchema={rubric.output_schema}
+              onSchemaChange={(schema) => {
+                if (!editable) return;
+                updateRubric({ output_schema: schema });
+              }}
+              editable={editable}
+            />
+          )}
+
           <div className="text-xs text-muted-foreground">Version:</div>
           <div className="flex items-center gap-0.5 bg-secondary rounded border px-1 py-0.5">
-            {setRubricVersion && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-4 w-4 p-0 hover:bg-background/50"
-                onClick={handleVersionDecrement}
-                disabled={!rubric || rubric.version <= minVersion}
-              >
-                <ChevronLeft className="h-2.5 w-2.5" />
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-4 w-4 p-0 hover:bg-background/50"
+              onClick={handleVersionDecrement}
+              disabled={!rubric || rubric.version <= minVersion}
+            >
+              <ChevronLeft className="h-2.5 w-2.5" />
+            </Button>
             <div className="text-xs font-mono px-1.5 min-w-[2.5rem] text-center">
               {rubric && maxVersion !== undefined
                 ? `${rubric.version}/${maxVersion}`
@@ -318,21 +330,19 @@ export default function RubricEditor({
                   ? rubric.version
                   : '-'}
             </div>
-            {setRubricVersion && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-4 w-4 p-0 hover:bg-background/50"
-                onClick={handleVersionIncrement}
-                disabled={
-                  !rubric ||
-                  maxVersion === undefined ||
-                  rubric.version >= maxVersion
-                }
-              >
-                <ChevronRight className="h-2.5 w-2.5" />
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-4 w-4 p-0 hover:bg-background/50"
+              onClick={handleVersionIncrement}
+              disabled={
+                !rubric ||
+                maxVersion === undefined ||
+                rubric.version >= maxVersion
+              }
+            >
+              <ChevronRight className="h-2.5 w-2.5" />
+            </Button>
           </div>
           {showDiff !== undefined && setShowDiff !== undefined && (
             <div className="flex items-center gap-1 pl-2 border-l">
@@ -352,12 +362,9 @@ export default function RubricEditor({
           )}
         </div>
       </div>
-      <div className="border rounded-sm bg-secondary p-2 space-y-2 relative">
-        {/* High-level Description */}
+      <div className="space-y-2 relative">
+        {/* Rubric Text */}
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs text-primary">
-            High-level Description
-          </div>
           <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
             {showDiff && prevRubricRemote && rubric ? (
               <DescriptionInlineDiff
@@ -366,7 +373,7 @@ export default function RubricEditor({
               />
             ) : (
               <Textarea
-                className="h-[40vh] max-h-[50vh] resize-y border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
+                className="h-[30vh] max-h-[50vh] resize-y border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
                 placeholder="Enter a high-level description of what this rubric evaluates..."
                 value={rubric?.rubric_text || ''}
                 onChange={handleDescriptionChange}
@@ -376,141 +383,82 @@ export default function RubricEditor({
                 }
               />
             )}
-          </div>
-        </div>
 
-        {rubric && (
-          <div className="space-y-1">
-            <button
-              type="button"
-              className="w-full flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-              onClick={() => setShowAdvanced((v) => !v)}
-            >
-              {showAdvanced ? (
-                <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ChevronRight className="h-3 w-3" />
-              )}
-              <span className="font-medium">Additional settings</span>
-            </button>
-            {showAdvanced && (
-              <div className="ml-4 border-l p-2 rounded-sm space-y-2">
-                {/* Judge model */}
-                <div className="flex flex-col">
-                  <div className="flex flex-row items-center">
-                    <label className="block text-xs font-medium text-muted-foreground mr-2 shrink-0">
-                      Judge Model
-                    </label>
-                    <div className="min-w-0">
-                      <Select
-                        value={nameJudgeModel(rubric.judge_model)}
-                        onValueChange={(value) => {
-                          if (!editable) return;
-                          const selected = availableJudgeModels?.find(
-                            (jm) => nameJudgeModel(jm) === value
-                          );
-                          if (!selected) return;
-                          updateRubric({
-                            judge_model: selected,
-                          });
-                        }}
-                        disabled={isDisabled}
-                      >
-                        <SelectTrigger className="w-full h-7 text-xs border bg-background px-2 font-normal">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableJudgeModels?.map((jm) => (
-                            <SelectItem
-                              key={nameJudgeModel(jm)}
-                              value={nameJudgeModel(jm)}
-                              className="text-xs"
-                            >
-                              <span className="flex flex-row items-center gap-1">
-                                <span className="flex-1">
-                                  {nameJudgeModel(jm)}
-                                </span>
-                                {jm.uses_byok && (
-                                  <KeyRound className="h-3 w-3" />
-                                )}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  {rubric.judge_model?.uses_byok && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      This model uses your own API key.
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-row items-center">
-                  <label className="block text-xs font-medium text-muted-foreground mr-2 shrink-0">
-                    Output Schema
-                  </label>
+            {/* Save Button */}
+            {hasChanges && (
+              <div className="flex absolute bottom-2 right-2 justify-end gap-2">
+                {onCloseWithoutSave && (
                   <Button
-                    type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs gap-1.5"
                     onClick={() => {
-                      if (!rubric) return;
-                      setIsSchemaDialogOpen(true);
+                      // Reset local changes to the latest remote rubric
+                      if (remoteRubric) {
+                        setLocalRubric(remoteRubric);
+                      }
+                      // Clear any inline edit state
+                      onCloseWithoutSave();
                     }}
-                    disabled={isDisabled}
                   >
-                    <Braces className="h-4 w-4" />
-                    Edit
+                    Cancel
                   </Button>
-                </div>
+                )}
+                {shouldConfirmOnSave && schemaChanged ? (
+                  <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        size="sm"
+                        disabled={isDisabled}
+                        onClick={handleSaveClick}
+                        className="gap-1.5"
+                      >
+                        Save
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-3 space-y-2" align="end">
+                      <div className="text-sm font-medium">
+                        You have existing labels
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Versioning the rubric with a new schema will clear all
+                        existing labels.
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConfirmOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setConfirmOpen(false);
+                            handleSave();
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={isDisabled}
+                    onClick={handleSaveClick}
+                    className="gap-1.5"
+                  >
+                    Save
+                  </Button>
+                )}
               </div>
             )}
           </div>
-        )}
-
-        {/* Save Button */}
-        {hasChanges && (
-          <div className="flex justify-end gap-2">
-            {onCloseWithoutSave && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  // Reset local changes to the latest remote rubric
-                  if (remoteRubric) {
-                    setLocalRubric(remoteRubric);
-                  }
-                  // Clear any inline edit state
-                  onCloseWithoutSave();
-                }}
-              >
-                Cancel
-              </Button>
-            )}
-            <Button
-              size="sm"
-              disabled={isDisabled}
-              onClick={handleSave}
-              className="gap-1.5"
-            >
-              <Save className="h-4 w-4" />
-              Save changes
-            </Button>
-          </div>
-        )}
+        </div>
       </div>
-      <OutputSchemaDialog
-        open={isSchemaDialogOpen}
-        onOpenChange={(open) => setIsSchemaDialogOpen(open)}
-        initialSchema={rubric?.output_schema}
-        editable={editable}
-        onSave={(parsed) => {
-          updateRubric({ output_schema: parsed });
-          setIsSchemaDialogOpen(false);
-        }}
-      />
     </div>
   );
 }
