@@ -83,7 +83,7 @@ export function SelectWithSubmenus({
           <CaretSortIcon className="h-4 w-4 opacity-50" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" enableScrolling={true}>
         <SelectWithSubmenusContext.Provider value={contextValue}>
           {allowNone && (
             <DropdownMenuItem
@@ -147,6 +147,14 @@ SelectWithSubmenusItem.displayName = 'SelectWithSubmenusItem';
 // Re-export submenu primitives for convenience
 export const SelectWithSubmenusSub = DropdownMenuSub;
 export const SelectWithSubmenusSubTrigger = DropdownMenuSubTrigger;
-export const SelectWithSubmenusSubContent = DropdownMenuSubContent;
 export const SelectWithSubmenusLabel = DropdownMenuLabel;
 export const SelectWithSubmenusSeparator = DropdownMenuSeparator;
+
+// Re-export submenu content with scrolling enabled by default
+export const SelectWithSubmenusSubContent = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuSubContent>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuSubContent>
+>(({ ...props }, ref) => (
+  <DropdownMenuSubContent ref={ref} enableScrolling={true} {...props} />
+));
+SelectWithSubmenusSubContent.displayName = 'SelectWithSubmenusSubContent';
