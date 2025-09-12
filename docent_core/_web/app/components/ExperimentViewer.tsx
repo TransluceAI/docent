@@ -27,8 +27,10 @@ import UploadRunsButton from './UploadRunsButton';
 import UploadRunsDialog from './UploadRunsDialog';
 
 import { TranscriptFilterControls } from './TranscriptFilterControls';
+import { SortControls } from './SortControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
+import { setSorting, setSortField } from '../store/collectionSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
@@ -57,9 +59,28 @@ export default function ExperimentViewer({
     (state) => state.experimentViewer.experimentViewerScrollPosition
   );
 
+  const sortField = useAppSelector((state) => state.collection.sortField);
+  const sortDirection = useAppSelector(
+    (state) => state.collection.sortDirection
+  );
+
+  // Reset sort field when collection changes
+  useEffect(() => {
+    if (collectionId) {
+      // Reset to no sorting when switching collections
+      dispatch(setSortField(null));
+    }
+  }, [collectionId, dispatch]);
+
   // Fetch agent run IDs using RTK skipToken
   const { data: agentRunIds } = useGetAgentRunIdsQuery(
-    collectionId ? { collectionId } : skipToken
+    collectionId
+      ? {
+          collectionId,
+          sortField: sortField || undefined,
+          sortDirection,
+        }
+      : skipToken
   );
 
   /**
@@ -220,7 +241,19 @@ export default function ExperimentViewer({
           disabled={!hasWritePermission}
         />
       </div>
-      <TranscriptFilterControls />
+      <div className="p-3 space-y-3 border-b">
+        <TranscriptFilterControls />
+      </div>
+
+      <div className="px-3">
+        <SortControls
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSortChange={(field, direction) => {
+            dispatch(setSorting({ field, direction }));
+          }}
+        />
+      </div>
 
       <div className="flex-1 custom-scrollbar min-w-0 overflow-y-auto relative">
         <div

@@ -34,9 +34,15 @@ export interface CollectionState {
   baseFilter?: ComplexFilter;
   // Global variables
   collectionId?: string;
+  // Collection-specific sorting
+  sortField: string | null;
+  sortDirection: 'asc' | 'desc';
 }
 
-const initialState: CollectionState = {};
+const initialState: CollectionState = {
+  sortField: null,
+  sortDirection: 'asc',
+};
 
 export const postFilter = createAsyncThunk(
   'collection/postFilter',
@@ -118,6 +124,19 @@ export const collectionSlice = createSlice({
     setHasInitSearchQuery: (state, action: PayloadAction<boolean>) => {
       state.hasInitSearchQuery = action.payload;
     },
+    setSortField: (state, action: PayloadAction<string | null>) => {
+      state.sortField = action.payload;
+    },
+    setSortDirection: (state, action: PayloadAction<'asc' | 'desc'>) => {
+      state.sortDirection = action.payload;
+    },
+    setSorting: (
+      state,
+      action: PayloadAction<{ field: string | null; direction: 'asc' | 'desc' }>
+    ) => {
+      state.sortField = action.payload.field;
+      state.sortDirection = action.payload.direction;
+    },
     resetCollectionSlice: (state) => {
       return initialState;
     },
@@ -138,7 +157,13 @@ export const collectionSlice = createSlice({
   },
 });
 
-export const { setCollectionId, setHasInitSearchQuery, resetCollectionSlice } =
-  collectionSlice.actions;
+export const {
+  setCollectionId,
+  setHasInitSearchQuery,
+  setSortField,
+  setSortDirection,
+  setSorting,
+  resetCollectionSlice,
+} = collectionSlice.actions;
 
 export default collectionSlice.reducer;

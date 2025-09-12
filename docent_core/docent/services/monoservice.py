@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import (
     Any,
     AsyncIterator,
+    Literal,
     ParamSpec,
     Sequence,
     TypeVar,
@@ -25,7 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import selectinload
 
 from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun
+from docent.data_models.agent_run import AgentRun, FilterableField
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
 from docent_core._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
@@ -515,13 +516,42 @@ class MonoService:
 
             logger.info(f"Enqueued embedding job {job_id} for collection {collection_id}")
 
-    async def get_agent_run_ids(self, ctx: ViewContext) -> list[str]:
+    async def get_agent_run_ids(
+        self,
+        ctx: ViewContext,
+        sort_field: str | None = None,
+        sort_direction: Literal["asc", "desc"] = "asc",
+    ) -> list[str]:
         """
         Get agent run IDs for a given Collection ID without fetching transcripts.
         This is more efficient than get_agent_runs when you only need the IDs.
+
+        Args:
+            ctx: View context
+            sort_field: Field to sort by (e.g., "metadata.model", "metadata.score")
+            sort_direction: Sort direction ("asc" or "desc")
         """
         async with self.db.session() as session:
             query = select(SQLAAgentRun.id).where(ctx.get_base_where_clause(SQLAAgentRun))
+
+            # Add sorting if specified
+            if sort_field and sort_field.startswith("metadata."):
+                # Extract the JSON path from metadata.field.subfield
+                path_parts = sort_field.split(".")
+                path_parts = path_parts[1:]  # Remove "metadata." prefix
+
+                # Build the JSON path expression for PostgreSQL
+                # Convert "field.subfield" to ->'field'->'subfield'
+                json_expr = SQLAAgentRun.metadata_json
+                for part in path_parts:
+                    json_expr = json_expr[part]
+
+                # Apply sorting
+                if sort_direction == "desc":
+                    query = query.order_by(json_expr.desc())
+                else:
+                    query = query.order_by(json_expr.asc())
+
             result = await session.execute(query)
             agent_run_ids = result.scalars().all()
             logger.info(f"get_agent_run_ids: Found {len(agent_run_ids)} agent run IDs")
@@ -1889,6 +1919,30 @@ class MonoService:
             )
             await session.commit()
             return result.rowcount > 0
+
+    async def get_agent_run_metadata_fields(self, ctx: ViewContext) -> list[FilterableField]:
+        """
+        Get all metadata fields from agent runs that can be used for filtering.
+
+        Args:
+            ctx: View context
+
+        Returns:
+            List of all filterable fields
+        """
+        # Get up to 20 agent runs to get the union of metadata fields
+        agent_runs = await self.get_agent_runs(ctx, _limit=20)
+
+        # Collect all unique filterable fields from all runs
+        all_fields: dict[str, FilterableField] = {}
+        for run in agent_runs:
+            for field in run.get_filterable_fields():
+                # Use field name as key to ensure uniqueness
+                all_fields[field["name"]] = field
+
+        # Convert to sorted list
+        fields = sorted(all_fields.values(), key=lambda f: f["name"])
+        return fields
 
 
 def sort_transcript_groups_by_parent_order(

@@ -101,8 +101,21 @@ export const collectionApi = createApi({
         'AgentRunMetadataFieldValues',
       ],
     }),
-    getAgentRunIds: build.query<string[], { collectionId: string }>({
-      query: ({ collectionId }) => `/${collectionId}/agent_run_ids`,
+    getAgentRunIds: build.query<
+      string[],
+      {
+        collectionId: string;
+        sortField?: string;
+        sortDirection?: 'asc' | 'desc';
+      }
+    >({
+      query: ({ collectionId, sortField, sortDirection }) => {
+        const params = new URLSearchParams();
+        if (sortField) params.append('sort_field', sortField);
+        if (sortDirection) params.append('sort_direction', sortDirection);
+        const queryString = params.toString();
+        return `/${collectionId}/agent_run_ids${queryString ? `?${queryString}` : ''}`;
+      },
       providesTags: ['AgentRunIds'],
     }),
     getAgentRunMetadataFields: build.query<
@@ -110,6 +123,13 @@ export const collectionApi = createApi({
       string
     >({
       query: (collectionId) => `/${collectionId}/agent_run_metadata_fields`,
+      providesTags: ['AgentRunMetadataFields'],
+    }),
+    getAgentRunSortableFields: build.query<
+      AgentRunMetadataFieldsResponse,
+      string
+    >({
+      query: (collectionId) => `/${collectionId}/agent_run_sortable_fields`,
       providesTags: ['AgentRunMetadataFields'],
     }),
     getFieldValues: build.query<
@@ -233,6 +253,7 @@ export const {
   useGetBaseFilterQuery,
   usePostBaseFilterMutation,
   useGetAgentRunMetadataFieldsQuery,
+  useGetAgentRunSortableFieldsQuery,
   useGetFieldValuesQuery,
   useGetAgentRunMetadataQuery,
   useGetAgentRunIdsQuery,

@@ -572,18 +572,20 @@ async def agent_run_metadata_fields(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ) -> dict[str, list[FilterableField]]:
-    # Get up to 20 agent runs to get the union of metadata fields
-    agent_runs = await mono_svc.get_agent_runs(ctx, _limit=20)
+    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(ctx)
+    return {"fields": fields}
 
-    # Collect all unique filterable fields from all runs
-    all_fields: dict[str, FilterableField] = {}
-    for run in agent_runs:
-        for field in run.get_filterable_fields():
-            # Use field name as key to ensure uniqueness
-            all_fields[field["name"]] = field
 
-    # Convert to sorted list
-    fields = sorted(all_fields.values(), key=lambda f: f["name"])
+@user_router.get("/{collection_id}/agent_run_sortable_fields")
+async def agent_run_sortable_fields(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+) -> dict[str, list[FilterableField]]:
+    """Get sortable fields for agent runs. Currently supports metadata.x.y fields."""
+    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(ctx)
+    # Only include metadata fields for sorting (metadata.x.y format)
+    fields = [field for field in fields if field["name"].startswith("metadata.")]
     return {"fields": fields}
 
 
@@ -624,11 +626,15 @@ async def get_agent_run(
 
 @user_router.get("/{collection_id}/agent_run_ids")
 async def get_agent_run_ids(
+    sort_field: str | None = None,
+    sort_direction: Literal["asc", "desc"] = "asc",
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
-):
-    return await mono_svc.get_agent_run_ids(ctx)
+) -> list[str]:
+    return await mono_svc.get_agent_run_ids(
+        ctx, sort_field=sort_field, sort_direction=sort_direction
+    )
 
 
 class AgentRunMetadataRequest(BaseModel):
