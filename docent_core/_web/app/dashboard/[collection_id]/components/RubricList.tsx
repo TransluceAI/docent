@@ -9,7 +9,7 @@ import {
   PickaxeIcon,
   Loader2,
 } from 'lucide-react';
-import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
+import { useAppSelector } from '@/app/store/hooks';
 import { type Rubric } from '@/app/store/rubricSlice';
 import { Button } from '@/components/ui/button';
 import { useParams, useRouter } from 'next/navigation';
@@ -36,7 +36,6 @@ function RubricCard({
   collectionId,
   hasWritePermission,
 }: RubricCardProps) {
-  const dispatch = useAppDispatch();
   const router = useRouter();
   const [
     createOrGetRefinementSession,

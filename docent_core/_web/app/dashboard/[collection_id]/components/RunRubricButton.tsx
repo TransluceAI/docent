@@ -11,6 +11,12 @@ import {
   useCancelEvaluationMutation,
 } from '@/app/api/rubricApi';
 import { ChevronDown } from 'lucide-react';
+import { useRubricVersion } from '@/providers/use-rubric-version';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface RunRubricButtonProps {
   collectionId: string;
@@ -33,8 +39,11 @@ const RunRubricButton = ({
     useCancelEvaluationMutation();
 
   const [runMode, setRunMode] = useState<'all' | 'labeled'>('all');
+  const { version, latestVersion } = useRubricVersion();
+  const isLatestVersion = version === latestVersion;
 
   const handleStartRubricJob = async () => {
+    if (!isLatestVersion) return;
     await startEvaluation({
       collectionId,
       rubricId,
@@ -51,30 +60,52 @@ const RunRubricButton = ({
     });
   };
 
+  const isButtonDisabled =
+    isStartingEvaluation || hasUnsavedChanges || !isLatestVersion;
+
+  const RunButton = () => {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        className="gap-1 h-7 text-xs rounded-r-none border-r-0"
+        disabled={isButtonDisabled}
+        onClick={handleStartRubricJob}
+      >
+        {isStartingEvaluation
+          ? 'Starting rubric...'
+          : runMode === 'labeled'
+            ? 'Run over labels'
+            : 'Run rubric'}
+      </Button>
+    );
+  };
+
   return (
     <>
       {!rubricJobId && (
         <div className="flex flex-row">
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1 h-7 text-xs rounded-r-none border-r-0"
-            disabled={isStartingEvaluation || hasUnsavedChanges}
-            onClick={handleStartRubricJob}
-          >
-            {isStartingEvaluation
-              ? 'Starting rubric...'
-              : runMode === 'labeled'
-                ? 'Run over labels'
-                : 'Run rubric'}
-          </Button>
+          {isButtonDisabled ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <RunButton />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Switch to the latest version to run.</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <RunButton />
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="sm"
                 className="h-7 w-7 px-1 rounded-l-none"
-                disabled={isStartingEvaluation || hasUnsavedChanges}
+                disabled={isButtonDisabled}
               >
                 <ChevronDown className="h-3 w-3 text-primary-foreground" />
               </Button>

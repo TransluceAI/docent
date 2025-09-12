@@ -10,6 +10,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useRubricVersion } from '@/providers/use-rubric-version';
 import { useState } from 'react';
 
 interface ClusterButtonProps {
@@ -78,6 +84,24 @@ const ClusterButton = ({
     setFeedbackText('');
   };
 
+  const { latestVersion, version } = useRubricVersion();
+  const isLatestVersion = version === latestVersion;
+
+  const StartButton = () => {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        className="gap-1 h-7 text-xs"
+        disabled={hasUnsavedChanges || isStartingClustering || !isLatestVersion}
+        variant="outline"
+        onClick={() => handleStartClustering(undefined, false)}
+      >
+        {isStartingClustering ? 'Starting clustering...' : 'Cluster results'}
+      </Button>
+    );
+  };
+
   const reclusterPopover = (
     <Popover
       open={isReclusterPopoverOpen}
@@ -134,16 +158,22 @@ const ClusterButton = ({
   return (
     <>
       {!clusteringJobId && !hasCentroids && (
-        <Button
-          type="button"
-          size="sm"
-          className="gap-1 h-7 text-xs"
-          disabled={hasUnsavedChanges || isStartingClustering}
-          variant="outline"
-          onClick={() => handleStartClustering(undefined, false)}
-        >
-          {isStartingClustering ? 'Starting clustering...' : 'Cluster results'}
-        </Button>
+        <>
+          {isLatestVersion ? (
+            <StartButton />
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <StartButton />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Switch to the latest version to cluster.
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </>
       )}
       {!clusteringJobId && hasCentroids && (
         <>
