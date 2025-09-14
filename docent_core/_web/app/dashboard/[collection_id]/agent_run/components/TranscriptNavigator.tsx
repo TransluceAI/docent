@@ -248,7 +248,7 @@ export const TranscriptNavigator: React.FC<{
   const hasGroups = (agentRun?.transcript_groups || []).length > 0;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col min-h-0">
       {showHeader && (
         <div
           className={cn(

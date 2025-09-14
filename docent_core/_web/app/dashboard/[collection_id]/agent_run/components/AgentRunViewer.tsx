@@ -816,7 +816,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       defaultSize={sidebarVisible ? 25 : 0}
                       minSize={sidebarVisible ? 20 : 0}
                       maxSize={sidebarVisible ? 50 : 0}
-                      className={sidebarVisible ? 'flex flex-col' : 'hidden'}
+                      className={
+                        sidebarVisible ? 'flex flex-col min-h-0' : 'hidden'
+                      }
                     >
                       <TranscriptNavigator
                         nodes={nodeTree}
@@ -853,7 +855,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                 )}
 
               {transcript && (
-                <ResizablePanel defaultSize={75} className="flex flex-col">
+                <ResizablePanel
+                  defaultSize={75}
+                  className="flex flex-col min-h-0"
+                >
                   {/* Transcript content */}
                   <div className={getSidebarStyles('space-y-1 mb-2 pr-1')}>
                     <div className="flex items-center justify-between">
@@ -912,7 +917,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       )}
                   </div>
                   <div
-                    className="space-y-2 overflow-y-auto custom-scrollbar flex-1"
+                    className="space-y-2 overflow-y-auto custom-scrollbar flex-1 min-h-0"
                     ref={scrollContainerRef}
                   >
                     {transcript.messages.map((message, index) => {
