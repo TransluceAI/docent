@@ -37,6 +37,10 @@ export interface TranscriptChatProps {
 
 const defaultSuggestedMessages: SuggestedMessage[] = [
   {
+    label: 'Summarize',
+    message: 'Summarize the transcript succinctly.',
+  },
+  {
     label: 'Explain mistakes',
     message: 'Explain mistakes the agent made, if there are any.',
   },
