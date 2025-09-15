@@ -1,15 +1,24 @@
 'use client';
 
+import { useState } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { cn } from '@/lib/utils';
 import { ChartData, getScoreAt } from '../utils/chartDataUtils';
 import ChartContainer from './ChartContainer';
 import { useChartFilters } from '../../hooks/use-chart-filters';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 
 // Constants
 const MAX_DIMENSION_VALUES = 100;
 const HIGH_SCORE_THRESHOLD = 0.8;
 const LOW_SCORE_THRESHOLD = 0;
+
+// Types
+type SortDirection = 'asc' | 'desc' | 'none';
+type SortConfig = {
+  columnKey: string; // Which column we're sorting by
+  direction: SortDirection;
+};
 
 const getScoreDisplay = (score: number | null, ci?: number | null) => {
   if (typeof score !== 'number') return '';
@@ -45,8 +54,67 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
   const { handleCellClick, handleDimensionClick } =
     useChartFilters(collectionId);
 
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+
+  const handleSort = (columnKey: string) => {
+    const nextDirection: SortDirection =
+      !sortConfig || sortConfig.columnKey !== columnKey
+        ? 'asc'
+        : sortConfig.direction === 'asc'
+          ? 'desc'
+          : sortConfig.direction === 'desc'
+            ? 'none'
+            : 'asc';
+
+    if (nextDirection === 'none') {
+      setSortConfig(null);
+    } else {
+      setSortConfig({ columnKey, direction: nextDirection });
+    }
+  };
+
+  const getSortIcon = (columnKey: string) => {
+    if (
+      !sortConfig ||
+      sortConfig.columnKey !== columnKey ||
+      sortConfig.direction === 'none'
+    ) {
+      return (
+        <ChevronsUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />
+      );
+    }
+    return sortConfig.direction === 'asc' ? (
+      <ChevronUp className="w-3 h-3 opacity-70" />
+    ) : (
+      <ChevronDown className="w-3 h-3 opacity-70" />
+    );
+  };
+
+  // Sort rows based on column values
+  const getSortedRows = () => {
+    if (!sortConfig || sortConfig.direction === 'none') {
+      return chartData.xValues; // Return original order
+    }
+
+    const sortedRows = [...chartData.xValues].sort((rowA, rowB) => {
+      const scoreDataA = getScoreAt(chartData, sortConfig.columnKey, rowA);
+      const scoreDataB = getScoreAt(chartData, sortConfig.columnKey, rowB);
+
+      const scoreA = scoreDataA?.score ?? -Infinity;
+      const scoreB = scoreDataB?.score ?? -Infinity;
+
+      if (sortConfig.direction === 'asc') {
+        return scoreA - scoreB;
+      } else {
+        return scoreB - scoreA;
+      }
+    });
+
+    return sortedRows;
+  };
+
   const tableData = {
-    rows: chartData.xValues,
+    rows: getSortedRows(),
     cols: chartData.seriesValues,
     rowDimId: chartData.xKey,
     colDimId: chartData.seriesKey,
@@ -73,33 +141,47 @@ export default function TableChart({ chartData }: { chartData: ChartData }) {
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-background z-10">
             <tr>
-              <th className="border-r border-b border-border px-2 py-1 sticky left-0" />
+              <th className="border-r border-b border-border px-2 py-1 sticky left-0 bg-background" />
               {tableData.cols.map((colValue: string, colIdx: number) => (
                 <th
                   key={colValue}
                   className={cn(
                     colIdx !== tableData.cols.length - 1 && 'border-r',
-                    'border-b border-border px-2 py-1 text-center font-normal text-primary cursor-pointer hover:bg-muted transition-colors relative max-w-[200px]'
+                    'border-b border-border px-2 py-1 text-center font-normal text-primary relative max-w-[200px] group'
                   )}
-                  title={
-                    tableData.colDimId
-                      ? `Filter to ${tableData.colDimId}: ${colValue}`
-                      : undefined
-                  }
-                  onClick={() => {
-                    if (tableData.is2d && tableData.colDimId) {
-                      handleDimensionClick(tableData.colDimId, colValue);
-                    }
-                  }}
                 >
-                  <span className="block truncate overflow-hidden text-ellipsis whitespace-nowrap">
-                    {chartData.seriesLabel && (
-                      <span className="font-mono font-bold">
-                        {chartData.seriesLabel}:{' '}
-                      </span>
-                    )}
-                    <span className="font-mono">{colValue}</span>
-                  </span>
+                  <div className="flex items-center justify-center gap-1">
+                    <span
+                      className="block truncate overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer hover:bg-muted transition-colors rounded px-1 py-0.5"
+                      title={
+                        tableData.colDimId
+                          ? `Filter to ${tableData.colDimId}: ${colValue}`
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (tableData.is2d && tableData.colDimId) {
+                          handleDimensionClick(tableData.colDimId, colValue);
+                        }
+                      }}
+                    >
+                      {chartData.seriesLabel && (
+                        <span className="font-mono font-bold">
+                          {chartData.seriesLabel}:{' '}
+                        </span>
+                      )}
+                      <span className="font-mono">{colValue}</span>
+                    </span>
+                    <button
+                      className="ml-1 p-0.5 rounded hover:bg-muted transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSort(colValue);
+                      }}
+                      title="Sort rows by this column"
+                    >
+                      {getSortIcon(colValue)}
+                    </button>
+                  </div>
                 </th>
               ))}
             </tr>
