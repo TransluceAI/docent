@@ -21,6 +21,9 @@ interface UseJobStatusResponse {
   clusteringJobId: string | null;
   centroids: RubricCentroid[];
   assignments: Record<string, string[]>;
+  // Loading flags
+  isResultsLoading: boolean;
+  isClusteringLoading: boolean;
 }
 
 const useJobStatus = ({
@@ -32,31 +35,33 @@ const useJobStatus = ({
 
   // Maintain a local state + effect so we can start a job back up on page reload
   const [rubricJobId, setRubricJobId] = useState<string | null>(null);
-  const { data: rubricRunState } = useGetRubricRunStateQuery(
-    {
-      collectionId,
-      rubricId,
-      version,
-    },
-    {
-      pollingInterval: rubricJobId !== null ? 1000 : 0,
-    }
-  );
+  const { data: rubricRunState, isLoading: isRubricRunLoading } =
+    useGetRubricRunStateQuery(
+      {
+        collectionId,
+        rubricId,
+        version,
+      },
+      {
+        pollingInterval: rubricJobId !== null ? 1000 : 0,
+      }
+    );
   useEffect(() => {
     setRubricJobId(rubricRunState?.job_id ?? null);
   }, [rubricRunState?.job_id]);
 
   // Clustering job status
   const [clusteringJobId, setClusteringJobId] = useState<string | null>(null);
-  const { data: clusteringState } = useGetClusteringStateQuery(
-    {
-      collectionId,
-      rubricId,
-    },
-    {
-      pollingInterval: clusteringJobId !== null ? 1000 : 0,
-    }
-  );
+  const { data: clusteringState, isLoading: isClusteringLoading } =
+    useGetClusteringStateQuery(
+      {
+        collectionId,
+        rubricId,
+      },
+      {
+        pollingInterval: clusteringJobId !== null ? 1000 : 0,
+      }
+    );
   useEffect(() => {
     setClusteringJobId(clusteringState?.job_id ?? null);
   }, [clusteringState?.job_id]);
@@ -76,6 +81,10 @@ const useJobStatus = ({
     // Clustering results
     centroids: clusteringState?.centroids ?? [],
     assignments: clusteringState?.assignments ?? {},
+
+    // Loading flags
+    isResultsLoading: isRubricRunLoading,
+    isClusteringLoading,
   };
 };
 

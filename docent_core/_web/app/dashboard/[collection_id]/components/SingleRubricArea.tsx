@@ -6,7 +6,7 @@ import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Pickaxe, Tags } from 'lucide-react';
+import { Pickaxe, Tags, Loader2 } from 'lucide-react';
 import RubricEditor from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
 import {
@@ -64,6 +64,9 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
 
     // Clustering results
     assignments,
+    // Loading flags
+    isResultsLoading,
+    isClusteringLoading,
   } = useJobStatus({
     collectionId,
     rubricId,
@@ -196,14 +199,32 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
         />
       )}
 
+      {/* Clustering loader (non-blocking) */}
+      {clusteringJobId !== null && (
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground px-0.5">
+          <Loader2 size={16} className="animate-spin text-muted-foreground" />
+          Clustering results...
+        </div>
+      )}
+
       {/* Results */}
-      <JudgeResultsList
-        judgeRunLabels={labels ?? []}
-        centroids={centroids}
-        assignments={assignments}
-        judgeResults={judgeResults}
-        isClusteringActive={clusteringJobId !== null}
-      />
+      {isResultsLoading ? (
+        <div className="flex items-center justify-center">
+          <Loader2 size={16} className="animate-spin text-muted-foreground" />
+        </div>
+      ) : !rubricJobId && judgeResults.length === 0 ? (
+        <div className="text-xs text-muted-foreground text-center">
+          No results yet
+        </div>
+      ) : (
+        <JudgeResultsList
+          judgeRunLabels={labels ?? []}
+          centroids={centroids}
+          assignments={assignments}
+          judgeResults={judgeResults}
+          isClusteringActive={clusteringJobId !== null}
+        />
+      )}
     </div>
   );
 }
