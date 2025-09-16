@@ -187,15 +187,24 @@ class JudgeOutputDimension(ChartDimension):
 
     def __init__(
         self,
+        *,
+        judge_id: str,
+        judge_name: str,
+        judge_version: int,
         name: str,
         json_path: str,
         data_type: ChartDimensionDataType = ChartDimensionDataType.TEXT,
         **kwargs: Any,
     ):
+        # Include rubric/judge ID in the key prefix so fields from different
+        # rubrics don't collide (e.g., two rubrics both with "score").
+        # Keep the prefix starting with "jr.output" for frontend grouping.
+        key_prefix = f"jr.output.{judge_id}"
+
         expression, key, short_name = _build_json_expr_key_shortname(
             SQLAJudgeResult.output,
             json_path,
-            "jr.output",
+            key_prefix,
             data_type,
         )
 
@@ -205,6 +214,9 @@ class JudgeOutputDimension(ChartDimension):
             short_name=short_name,
             expression=expression,
             data_type=data_type,
+            judge_id=judge_id,
+            judge_name=judge_name,
+            judge_version=judge_version,
             **kwargs,
         )
 
