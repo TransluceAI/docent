@@ -8,6 +8,19 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aioboto3"
+version = "15.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiobotocore", extra = ["boto3"] },
+    { name = "aiofiles" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/d0/ed107e16551ba1b93ddcca9a6bf79580450945268a8bc396530687b3189f/aioboto3-15.0.0.tar.gz", hash = "sha256:dce40b701d1f8e0886dc874d27cd9799b8bf6b32d63743f57e7bef7e4a562756", size = 225278, upload-time = "2025-06-26T16:30:48.967Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/95/d69c744f408e5e4592fe53ed98fc244dd13b83d84cf1f83b2499d98bfcc9/aioboto3-15.0.0-py3-none-any.whl", hash = "sha256:9cf54b3627c8b34bb82eaf43ab327e7027e37f92b1e10dd5cfe343cd512568d0", size = 35785, upload-time = "2025-06-26T16:30:47.444Z" },
+]
+
+[[package]]
 name = "aiobotocore"
 version = "2.23.0"
 source = { registry = "https://pypi.org/simple" }
@@ -23,6 +36,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9d/25/4b06ea1214ddf020a28df27dc7136ac9dfaf87929d51e6f6044dd350ed67/aiobotocore-2.23.0.tar.gz", hash = "sha256:0333931365a6c7053aee292fe6ef50c74690c4ae06bb019afdf706cb6f2f5e32", size = 115825, upload-time = "2025-06-12T23:46:38.055Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ea/43/ccf9b29669cdb09fd4bfc0a8effeb2973b22a0f3c3be4142d0b485975d11/aiobotocore-2.23.0-py3-none-any.whl", hash = "sha256:8202cebbf147804a083a02bc282fbfda873bfdd0065fd34b64784acb7757b66e", size = 84161, upload-time = "2025-06-12T23:46:36.305Z" },
+]
+
+[package.optional-dependencies]
+boto3 = [
+    { name = "boto3" },
+]
+
+[[package]]
+name = "aiofiles"
+version = "24.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/03/a88171e277e8caa88a4c77808c20ebb04ba74cc4681bf1e9416c862de237/aiofiles-24.1.0.tar.gz", hash = "sha256:22a075c9e5a3810f0c2e48f3008c94d68c65d763b9b03857924c99e57355166c", size = 30247, upload-time = "2024-06-24T11:02:03.584Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/45/30bb92d442636f570cb5651bc661f52b610e2eec3f891a5dc3a4c3667db0/aiofiles-24.1.0-py3-none-any.whl", hash = "sha256:b4ec55f4195e3eb5d7abd1bf7e061763e864dd4954231fb8539a0ef8bb8260e5", size = 15896, upload-time = "2024-06-24T11:02:01.529Z" },
 ]
 
 [[package]]
@@ -823,9 +850,11 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.13a0"
+version = "0.1.15a0"
 source = { editable = "docent" }
 dependencies = [
+    { name = "backoff" },
+    { name = "inspect-ai" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -843,6 +872,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backoff", specifier = ">=2.2.1" },
+    { name = "inspect-ai", specifier = ">=0.3.132" },
     { name = "opentelemetry-api", specifier = ">=1.34.1" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.34.1" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.34.1" },
@@ -1451,9 +1482,10 @@ wheels = [
 
 [[package]]
 name = "inspect-ai"
-version = "0.3.109"
+version = "0.3.132"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "aioboto3" },
     { name = "aiohttp" },
     { name = "anyio" },
     { name = "beautifulsoup4" },
@@ -1486,9 +1518,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "zipp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/e4/c7c7e88162403542d0f27328b8ba871841427b971b91c80c20fe487741a8/inspect_ai-0.3.109.tar.gz", hash = "sha256:e6b40fc570536cafca6c1bfecb21b4ba1209712cf05a05d37b190105d7406fb6", size = 11858181, upload-time = "2025-06-27T21:31:02.534Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/dd/81efb593b492b7423c4f770b1a56de124d72b9604c0abceca9ef4794b289/inspect_ai-0.3.132.tar.gz", hash = "sha256:de43ecafd18476257fb9aded9a0f20e0cbd1def82a63884ca7a62c229c6e3c49", size = 11997974, upload-time = "2025-09-12T13:41:51.593Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/98/d5d8072b29eeda95a871dace4edae89a87902fd4b5459b31771e379839b4/inspect_ai-0.3.109-py3-none-any.whl", hash = "sha256:1cb8dd650e5f7941105c03cf787a4f2a6631df1521e496169396b959a31ee0bd", size = 3340558, upload-time = "2025-06-27T21:30:57.122Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/a7/c3474151baff6df77978aee5ea0c34a615c18c9119bcef499f1cae17803a/inspect_ai-0.3.132-py3-none-any.whl", hash = "sha256:20af8ac6dfd5a60d652a31ca45604a029fbc9a6545411e15cbbdad27016935c9", size = 3376742, upload-time = "2025-09-12T13:41:47.795Z" },
 ]
 
 [[package]]
