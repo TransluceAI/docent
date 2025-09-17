@@ -30,7 +30,11 @@ import { TranscriptFilterControls } from './TranscriptFilterControls';
 import { SortControls } from './SortControls';
 
 import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
-import { setSorting, setSortField } from '../store/collectionSlice';
+import {
+  setSorting,
+  selectSortField,
+  selectSortDirection,
+} from '../store/collectionSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
@@ -59,18 +63,8 @@ export default function ExperimentViewer({
     (state) => state.experimentViewer.experimentViewerScrollPosition
   );
 
-  const sortField = useAppSelector((state) => state.collection.sortField);
-  const sortDirection = useAppSelector(
-    (state) => state.collection.sortDirection
-  );
-
-  // Reset sort field when collection changes
-  useEffect(() => {
-    if (collectionId) {
-      // Reset to no sorting when switching collections
-      dispatch(setSortField(null));
-    }
-  }, [collectionId, dispatch]);
+  const sortField = useAppSelector(selectSortField);
+  const sortDirection = useAppSelector(selectSortDirection);
 
   // Fetch agent run IDs using RTK skipToken
   const { data: agentRunIds } = useGetAgentRunIdsQuery(

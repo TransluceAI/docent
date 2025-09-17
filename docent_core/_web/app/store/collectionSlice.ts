@@ -25,6 +25,11 @@ export interface Job {
   job_json: { query_id: string };
 }
 
+export interface CollectionSortSettings {
+  sortField: string | null;
+  sortDirection: 'asc' | 'desc';
+}
+
 export interface CollectionState {
   // Jank state necessary to auto-scroll correctly:
   //   If there is an initial search query, then we wait until the search has loaded
@@ -34,14 +39,12 @@ export interface CollectionState {
   baseFilter?: ComplexFilter;
   // Global variables
   collectionId?: string;
-  // Collection-specific sorting
-  sortField: string | null;
-  sortDirection: 'asc' | 'desc';
+  // Per-collection sorting settings
+  collectionSortSettings: Record<string, CollectionSortSettings>;
 }
 
 const initialState: CollectionState = {
-  sortField: null,
-  sortDirection: 'asc',
+  collectionSortSettings: {},
 };
 
 export const postFilter = createAsyncThunk(
@@ -125,17 +128,39 @@ export const collectionSlice = createSlice({
       state.hasInitSearchQuery = action.payload;
     },
     setSortField: (state, action: PayloadAction<string | null>) => {
-      state.sortField = action.payload;
+      if (state.collectionId) {
+        if (!state.collectionSortSettings[state.collectionId]) {
+          state.collectionSortSettings[state.collectionId] = {
+            sortField: null,
+            sortDirection: 'asc',
+          };
+        }
+        state.collectionSortSettings[state.collectionId].sortField =
+          action.payload;
+      }
     },
     setSortDirection: (state, action: PayloadAction<'asc' | 'desc'>) => {
-      state.sortDirection = action.payload;
+      if (state.collectionId) {
+        if (!state.collectionSortSettings[state.collectionId]) {
+          state.collectionSortSettings[state.collectionId] = {
+            sortField: null,
+            sortDirection: 'asc',
+          };
+        }
+        state.collectionSortSettings[state.collectionId].sortDirection =
+          action.payload;
+      }
     },
     setSorting: (
       state,
       action: PayloadAction<{ field: string | null; direction: 'asc' | 'desc' }>
     ) => {
-      state.sortField = action.payload.field;
-      state.sortDirection = action.payload.direction;
+      if (state.collectionId) {
+        state.collectionSortSettings[state.collectionId] = {
+          sortField: action.payload.field,
+          sortDirection: action.payload.direction,
+        };
+      }
     },
     resetCollectionSlice: (state) => {
       return initialState;
@@ -165,5 +190,28 @@ export const {
   setSorting,
   resetCollectionSlice,
 } = collectionSlice.actions;
+
+// Selectors for getting current collection's sort settings
+export const selectCurrentCollectionSortSettings = (state: {
+  collection: CollectionState;
+}): CollectionSortSettings => {
+  const { collectionId, collectionSortSettings } = state.collection;
+  if (!collectionId || !collectionSortSettings[collectionId]) {
+    return { sortField: null, sortDirection: 'asc' };
+  }
+  return collectionSortSettings[collectionId];
+};
+
+export const selectSortField = (state: {
+  collection: CollectionState;
+}): string | null => {
+  return selectCurrentCollectionSortSettings(state).sortField;
+};
+
+export const selectSortDirection = (state: {
+  collection: CollectionState;
+}): 'asc' | 'desc' => {
+  return selectCurrentCollectionSortSettings(state).sortDirection;
+};
 
 export default collectionSlice.reducer;
