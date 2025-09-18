@@ -95,6 +95,10 @@ export interface ProposeCentroidsRequest {
   feedback?: string;
 }
 
+export interface CopyRubricRequest {
+  target_collection_id: string;
+}
+
 export const rubricApi = createApi({
   reducerPath: 'rubricApi',
   baseQuery: fetchBaseQuery({
@@ -427,6 +431,21 @@ export const rubricApi = createApi({
         { type: 'JudgeRunLabel', id: agentRunId },
       ],
     }),
+    copyRubric: build.mutation<
+      { rubric_id: string },
+      {
+        collectionId: string;
+        rubricId: string;
+        target_collection_id: string;
+      }
+    >({
+      query: ({ collectionId, rubricId, target_collection_id }) => ({
+        url: `/${collectionId}/rubric/${rubricId}/copy`,
+        method: 'POST',
+        body: { target_collection_id },
+      }),
+      invalidatesTags: ['Rubric'],
+    }),
   }),
 });
 
@@ -440,6 +459,7 @@ export const {
   useDeleteRubricMutation,
   useStartEvaluationMutation,
   useCancelEvaluationMutation,
+  useCopyRubricMutation,
   useCancelClusteringJobMutation,
   useGetRubricRunStateQuery,
   useStartClusteringJobMutation,

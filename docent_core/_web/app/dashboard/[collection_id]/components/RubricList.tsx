@@ -8,6 +8,7 @@ import {
   Pause,
   PickaxeIcon,
   Loader2,
+  ClipboardCopyIcon,
 } from 'lucide-react';
 import { useAppSelector } from '@/app/store/hooks';
 import { type Rubric } from '@/app/store/rubricSlice';
@@ -21,9 +22,24 @@ import {
   useStartEvaluationMutation,
   useGetRubricJobStatusQuery,
   useCancelEvaluationMutation,
+  useCopyRubricMutation,
 } from '@/app/api/rubricApi';
+import { useGetCollectionsQuery } from '@/app/api/collectionApi';
 import { toast } from '@/hooks/use-toast';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface RubricCardProps {
   rubric: Rubric;
@@ -51,6 +67,36 @@ function RubricCard({
   // Each card has its own cancellation mutation
   const [cancelEvaluation, { isLoading: isCancellingJob }] =
     useCancelEvaluationMutation();
+  const { data: collections } = useGetCollectionsQuery();
+  const [copyRubric, { isLoading: isCopyingRubric }] = useCopyRubricMutation();
+
+  const copyableCollections = collections || [];
+
+  const handleCopyRubric = async (targetCollectionId: string) => {
+    try {
+      await copyRubric({
+        collectionId,
+        rubricId: rubric.id,
+        target_collection_id: targetCollectionId,
+      }).unwrap();
+
+      const targetCollection = collections?.find(
+        (c) => c.id === targetCollectionId
+      );
+      toast({
+        title: 'Rubric Copied',
+        description: `Rubric copied to ${targetCollection?.name || targetCollectionId}`,
+      });
+    } catch (error) {
+      console.error('Failed to copy rubric:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to copy rubric',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleCancelJob = async (jobId: string) => {
     try {
       await cancelEvaluation({
@@ -145,57 +191,134 @@ function RubricCard({
       {/* Action buttons */}
       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
         {hasWritePermission && (
-          <button
-            className={`p-1.5 rounded transition-colors hover:bg-secondary text-muted-foreground hover:text-primary`}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClickRefine();
-            }}
-            title="Refine rubric"
-            disabled={isCreatingRefinementSession}
-          >
-            <PickaxeIcon className="h-3 w-3" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="p-1.5 rounded transition-colors hover:bg-secondary text-muted-foreground hover:text-primary"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClickRefine();
+                }}
+                aria-label="Refine this rubric"
+                disabled={isCreatingRefinementSession}
+              >
+                <PickaxeIcon className="h-3 w-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Refine this rubric</TooltipContent>
+          </Tooltip>
         )}
-        <button
-          className={`p-1.5 rounded transition-colors
-            ${
-              hasActiveJob
-                ? 'bg-orange-bg text-orange-text'
-                : 'hover:bg-green-bg/50 text-muted-foreground hover:text-green-text'
-            }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (hasActiveJob && jobDetails) {
-              handleCancelJob(jobDetails.id);
-            } else {
-              startEvaluation({
-                collectionId,
-                rubricId: rubric.id,
-              });
-            }
-          }}
-          title={hasActiveJob ? 'Cancel job' : 'Evaluate with this rubric'}
-          disabled={isCancellingJob}
-        >
-          {hasActiveJob ? (
-            <Pause className="h-3 w-3" />
-          ) : (
-            <Play className="h-3 w-3" />
-          )}
-        </button>
+
+        {hasWritePermission && copyableCollections.length > 0 && (
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="p-1.5 rounded transition-colors hover:bg-secondary text-muted-foreground hover:text-primary"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Copy this rubric to another collection"
+                    disabled={isCopyingRubric}
+                  >
+                    <ClipboardCopyIcon className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Copy this rubric to another collection
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent
+              align="end"
+              className="max-h-60 overflow-y-auto"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <DropdownMenuLabel className="text-xs">
+                Select a collection to copy into
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {copyableCollections.map((collection) => (
+                <DropdownMenuItem
+                  key={collection.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleCopyRubric(collection.id);
+                  }}
+                  className="text-xs cursor-pointer"
+                >
+                  <div className="flex flex-col">
+                    <span
+                      className="font-medium block max-w-[14rem] truncate"
+                      title={collection.name || 'Unnamed Collection'}
+                    >
+                      {collection.name || 'Unnamed Collection'}
+                    </span>
+                    <span className="text-muted-foreground font-mono text-xs">
+                      {collection.id.split('-')[0]}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className={`p-1.5 rounded transition-colors
+                ${
+                  hasActiveJob
+                    ? 'bg-orange-bg text-orange-text'
+                    : 'hover:bg-green-bg/50 text-muted-foreground hover:text-green-text'
+                }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasActiveJob && jobDetails) {
+                  handleCancelJob(jobDetails.id);
+                } else {
+                  startEvaluation({
+                    collectionId,
+                    rubricId: rubric.id,
+                  });
+                }
+              }}
+              aria-label={
+                hasActiveJob
+                  ? "Cancel this rubric's evaluation job"
+                  : 'Run an evaluation with this rubric'
+              }
+              disabled={isCancellingJob}
+            >
+              {hasActiveJob ? (
+                <Pause className="h-3 w-3" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {hasActiveJob
+              ? "Cancel this rubric's evaluation job"
+              : 'Run an evaluation with this rubric'}
+          </TooltipContent>
+        </Tooltip>
         {hasWritePermission && (
-          <button
-            className="p-1.5 rounded transition-colors hover:bg-red-bg/50 text-muted-foreground hover:text-red-text"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete(rubric.id);
-            }}
-            title="Delete rubric"
-            disabled={isDeletingRubric}
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="p-1.5 rounded transition-colors hover:bg-red-bg/50 text-muted-foreground hover:text-red-text"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(rubric.id);
+                }}
+                aria-label="Delete this rubric"
+                disabled={isDeletingRubric}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Delete this rubric</TooltipContent>
+          </Tooltip>
         )}
       </div>
     </div>

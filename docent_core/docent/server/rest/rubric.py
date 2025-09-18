@@ -24,6 +24,7 @@ from docent_core.docent.server.dependencies.analytics import (
 from docent_core.docent.server.dependencies.database import get_session
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
+    ResourceType,
     require_collection_permission,
 )
 from docent_core.docent.server.dependencies.services import (
@@ -418,6 +419,10 @@ class UpdateRunLabelRequest(BaseModel):
     label: dict[str, Any]
 
 
+class CopyRubricRequest(BaseModel):
+    target_collection_id: str
+
+
 @rubric_router.post("/{collection_id}/rubric/{rubric_id}/label")
 async def create_judge_run_label(
     collection_id: str,
@@ -494,3 +499,26 @@ async def delete_all_judge_run_labels(
     """Delete all labels for a rubric."""
     await rubric_svc.delete_all_judge_run_labels(rubric_id)
     return {"message": "All labels deleted successfully"}
+
+
+@rubric_router.post("/{collection_id}/rubric/{rubric_id}/copy")
+async def copy_rubric(
+    collection_id: str,
+    rubric_id: str,
+    request: CopyRubricRequest,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    user: User = Depends(get_user_anonymous_ok),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Copy a rubric to another collection."""
+    has_target_permission = await mono_svc.has_permission(
+        user, ResourceType.COLLECTION, request.target_collection_id, Permission.WRITE
+    )
+    if not has_target_permission:
+        raise HTTPException(status_code=403, detail="No write permission on target collection")
+
+    new_rubric_id = await rubric_svc.copy_rubric_to_collection(
+        rubric_id, request.target_collection_id
+    )
+    return {"rubric_id": new_rubric_id}

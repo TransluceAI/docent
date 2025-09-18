@@ -51,7 +51,7 @@ export default async function RootLayout({
           <CSPostHogProvider>
             <ReduxProvider>
               <UserProvider user={user}>
-                <TooltipProvider>
+                <TooltipProvider delayDuration={0}>
                   {children}
                   <Toaster />
                   <ReduxToastHandler />

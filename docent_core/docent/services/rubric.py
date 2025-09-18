@@ -807,3 +807,16 @@ class RubricService:
         label_to_delete = result.scalar_one_or_none()
         if label_to_delete:
             await self.session.delete(label_to_delete)
+
+    async def copy_rubric_to_collection(
+        self, source_rubric_id: str, target_collection_id: str
+    ) -> str:
+        """Copy a rubric to another collection with a new ID and version 1."""
+        source_sqla_rubric = await self.get_rubric(source_rubric_id, version=None)
+        if source_sqla_rubric is None:
+            raise ValueError(f"Source rubric {source_rubric_id} not found")
+
+        source_rubric = source_sqla_rubric.to_pydantic()
+        new_rubric = source_rubric.model_copy(update={"id": str(uuid4()), "version": 1})
+
+        return await self.create_rubric(target_collection_id, new_rubric)
