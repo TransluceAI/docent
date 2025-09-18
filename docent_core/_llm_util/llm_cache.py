@@ -107,7 +107,7 @@ class LLMCache:
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT completion FROM llm_cache WHERE key = ?", (key,))
             result = cursor.fetchone()
-            return LLMOutput.model_validate_json(result[0]) if result else None
+            return LLMOutput.from_dict(json.loads(result[0])) if result else None
 
     def set(
         self,
@@ -138,7 +138,7 @@ class LLMCache:
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO llm_cache (key, completion, model_name) VALUES (?, ?, ?)",
-                (key, llm_output.model_dump_json(), model_name),
+                (key, json.dumps(llm_output.to_dict()), model_name),
             )
             conn.commit()
 
@@ -175,7 +175,7 @@ class LLMCache:
             conn.executemany(
                 "INSERT OR REPLACE INTO llm_cache (key, completion, model_name) VALUES (?, ?, ?)",
                 [
-                    (key, llm_output.model_dump_json(), model_name)
+                    (key, json.dumps(llm_output.to_dict()), model_name)
                     for key, llm_output in zip(keys, llm_output_list)
                 ],
             )

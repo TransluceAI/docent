@@ -3,7 +3,7 @@ import { BASE_URL } from '@/app/constants';
 import {
   Rubric,
   JudgeResultWithCitations,
-  JudgeModel,
+  ModelOption,
   JudgeRunLabel,
 } from '@/app/store/rubricSlice';
 
@@ -19,7 +19,7 @@ export interface UpdateRubricRequest {
   rubric: {
     id: string;
     rubric_text: string;
-    judge_model: JudgeModel;
+    judge_model: ModelOption;
     output_schema: Record<string, any>;
   };
 }
@@ -190,7 +190,7 @@ export const rubricApi = createApi({
       }),
       invalidatesTags: ['Rubric'],
     }),
-    getJudgeModels: build.query<JudgeModel[], void>({
+    getJudgeModels: build.query<ModelOption[], void>({
       query: () => ({
         url: `/judge-models`,
         method: 'GET',

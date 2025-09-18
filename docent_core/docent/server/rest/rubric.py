@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._log_util.logger import get_logger
 from docent_core._llm_util.providers.preferences import (
     PROVIDER_PREFERENCES,
-    ModelOption,
+    merge_models_with_byok,
 )
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.ai_tools.rubric.rubric import (
@@ -237,7 +237,7 @@ async def start_eval_rubric_job(
 
     # Check if user has a custom API key (just for analytics purposes)
     if ctx.user:
-        overrides = await mono_svc.get_api_key_overrides(ctx.user.id)
+        overrides = await mono_svc.get_api_key_overrides(ctx.user)
         is_byok = sqla_rubric.judge_model.get("provider") in overrides
     else:
         is_byok = False
@@ -321,25 +321,11 @@ async def get_judge_models(
     mono_svc: monoservice.MonoService = Depends(get_mono_svc),
     user: User = Depends(get_user_anonymous_ok),
 ):
-    # Start with default judge models
-    models: list[ModelOption] = PROVIDER_PREFERENCES.default_judge_models.copy()
-
-    # Append user-available BYOK models
-    api_keys: dict[str, str] = {}
-    if not user.is_anonymous:
-        api_keys = await mono_svc.get_api_key_overrides(user.id)
-        models += [m for m in PROVIDER_PREFERENCES.byok_judge_models if m.provider in api_keys]
-
-    # Return annotated list with whether each model requires a user-provided API key
-    return [
-        {
-            "provider": m.provider,
-            "model_name": m.model_name,
-            "reasoning_effort": m.reasoning_effort,
-            "uses_byok": m.provider in api_keys,
-        }
-        for m in models
-    ]
+    return merge_models_with_byok(
+        defaults=PROVIDER_PREFERENCES.default_judge_models,
+        byok=PROVIDER_PREFERENCES.byok_judge_models,
+        api_keys=await mono_svc.get_api_key_overrides(user),
+    )
 
 
 ##############

@@ -1905,15 +1905,17 @@ class MonoService:
 
             return None
 
-    async def get_api_key_overrides(self, user_id: str | None) -> dict[str, str]:
+    async def get_api_key_overrides(self, user: User | None) -> dict[str, str]:
         """Return a dictionary of API key overrides for a user."""
-        if not user_id:
+        if user is None:
+            return {}
+        if user.is_anonymous:
             return {}
 
         async with self.db.session() as session:
             result = await session.execute(
                 select(SQLAModelApiKey.provider, SQLAModelApiKey.api_key).where(
-                    SQLAModelApiKey.user_id == user_id
+                    SQLAModelApiKey.user_id == user.id
                 )
             )
             return {row[0]: row[1] for row in result.all()}

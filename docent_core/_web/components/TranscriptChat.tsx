@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ChatArea,
@@ -8,10 +8,14 @@ import {
 } from '@/app/dashboard/[collection_id]/components/chat/ChatArea';
 import { ChatHeader } from '@/app/dashboard/[collection_id]/components/chat/ChatHeader';
 import { NavigateToCitation } from '@/components/CitationRenderer';
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
+import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
 import { useTranscriptChat } from '@/app/hooks/use-transcript-chat';
+import { useGetChatModelsQuery } from '@/app/api/chatApi';
 import { cn } from '@/lib/utils';
 import JudgeResultDetail from './JudgeResultDetail';
+import ModelPicker from './ModelPicker';
+
+const ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS = 8192;
 
 export interface TranscriptChatProps {
   runId: string;
@@ -88,9 +92,89 @@ export default function TranscriptChat({
     sessionId,
     messages,
     isLoading,
-    sendMessage: onSendMessage,
+    sendMessage: baseSendMessage,
     resetChat,
+    chatState,
+    errorMessage,
+    estimatedInputTokens,
   } = useTranscriptChat({ runId, collectionId, judgeResult });
+
+  // Chat models state
+  const { data: availableChatModels } = useGetChatModelsQuery();
+  const [selectedChatModel, setSelectedChatModel] =
+    useState<ModelOption | null>(null);
+
+  // Set model when chat state is loaded (use session's current model)
+  useEffect(() => {
+    if (chatState?.chat_model && !selectedChatModel) {
+      setSelectedChatModel(chatState.chat_model);
+    }
+  }, [chatState?.chat_model, selectedChatModel]);
+
+  let shownChatModel = selectedChatModel;
+  if (
+    availableChatModels &&
+    availableChatModels.length > 0 &&
+    !shownChatModel
+  ) {
+    shownChatModel = availableChatModels[0];
+  }
+
+  // Check if context window is exceeded (local estimation) or if there's an API error
+  const contextWindowErrorMessage: string | undefined = useMemo(() => {
+    // If we have an error message from the SSE stream (actual failure), prioritize that
+    if (errorMessage) {
+      return errorMessage;
+    }
+
+    // Otherwise, check local estimation for proactive warning
+    if (!estimatedInputTokens || !availableChatModels || !shownChatModel) {
+      return undefined;
+    }
+
+    // Find the selected model's context window
+    const selectedModelWithContext = availableChatModels.find(
+      (model) =>
+        model.model_name === shownChatModel.model_name &&
+        model.provider === shownChatModel.provider
+    );
+
+    if (!selectedModelWithContext) {
+      return undefined;
+    }
+
+    const isExceeded =
+      estimatedInputTokens &&
+      estimatedInputTokens + ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS >
+        selectedModelWithContext.context_window;
+
+    if (!isExceeded) {
+      return undefined;
+    }
+
+    const longerContextAvailable = availableChatModels.some(
+      (model) =>
+        model.context_window &&
+        estimatedInputTokens + ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS <=
+          model.context_window
+    );
+
+    return longerContextAvailable
+      ? 'Context window exceeded. Try a different model.'
+      : 'Context window exceeded.';
+  }, [errorMessage, estimatedInputTokens, availableChatModels, shownChatModel]);
+
+  // Wrap sendMessage to include the selected chat model
+  const onSendMessage = useCallback(
+    (message: string) => {
+      if (selectedChatModel) {
+        baseSendMessage(message, selectedChatModel);
+      } else {
+        baseSendMessage(message);
+      }
+    },
+    [baseSendMessage, selectedChatModel]
+  );
 
   // Handle citation navigation
   const handleNavigateToCitation: NavigateToCitation = useCallback(
@@ -121,6 +205,20 @@ export default function TranscriptChat({
     />
   );
 
+  const inputAreaFooter = selectedChatModel && availableChatModels && (
+    <div className="flex justify-end">
+      <div className="w-64">
+        <ModelPicker
+          selectedModel={selectedChatModel}
+          availableModels={availableChatModels}
+          onChange={setSelectedChatModel}
+          className="h-7 text-xs"
+          borderless
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div
       className={cn(
@@ -130,7 +228,7 @@ export default function TranscriptChat({
     >
       {sessionId ? (
         <ChatArea
-          isReadonly={false}
+          isReadonly={contextWindowErrorMessage !== undefined}
           messages={messages}
           onSendMessage={onSendMessage}
           isLoading={isLoading}
@@ -149,6 +247,8 @@ export default function TranscriptChat({
           suggestedMessages={finalSuggestedMessages}
           onNavigateToCitation={handleNavigateToCitation}
           byoFlexDiv={true}
+          inputAreaFooter={inputAreaFooter}
+          inputErrorMessage={contextWindowErrorMessage}
         />
       ) : (
         headerElement

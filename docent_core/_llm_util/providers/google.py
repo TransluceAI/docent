@@ -13,6 +13,8 @@ from docent.data_models.chat import ChatMessage, Content, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.exceptions import (
     CompletionTooLongException,
+    ContextWindowException,
+    NoResponseException,
     RateLimitException,
 )
 from docent_core._llm_util.data_models.llm_output import (
@@ -33,6 +35,14 @@ def get_google_client_async(api_key: str | None = None) -> AsyncGoogle:
 
 
 logger = get_logger(__name__)
+
+
+def _convert_google_error(e: errors.APIError):
+    if e.code in [429, 502, 503, 504]:
+        return RateLimitException(e)
+    elif e.code == 400 and "maximum number of tokens" in str(e).lower():
+        return ContextWindowException()
+    return None
 
 
 def _print_backoff_message(e: Details):
@@ -115,9 +125,10 @@ async def get_google_chat_completion_async(
 
             return output
     except errors.APIError as e:
-        if e.code in [429, 502, 503, 504]:
-            raise RateLimitException(e) from e
-        raise
+        if e2 := _convert_google_error(e):
+            raise e2 from e
+        else:
+            raise
 
 
 async def get_google_chat_completion_streaming_async(
@@ -193,7 +204,7 @@ def _parse_google_completion(message: types.GenerateContentResponse, model: str)
         return LLMOutput(
             model=model,
             completions=[],
-            errors=["no_response"],
+            errors=[NoResponseException()],
         )
 
     candidate = message.candidates[0]
@@ -217,6 +228,11 @@ def _parse_google_completion(message: types.GenerateContentResponse, model: str)
         else:
             raise ValueError(f"Unknown content part: {part}")
 
+    # Extract total tokens from usage metadata if available
+    total_tokens = None
+    if message.usage_metadata:
+        total_tokens = message.usage_metadata.total_token_count
+
     return LLMOutput(
         model=model,
         completions=[
@@ -225,4 +241,5 @@ def _parse_google_completion(message: types.GenerateContentResponse, model: str)
                 finish_reason=finish_reason,
             )
         ],
+        total_tokens=total_tokens,
     )

@@ -40,6 +40,8 @@ from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.exceptions import (
     CompletionTooLongException,
+    ContextWindowException,
+    NoResponseException,
     RateLimitException,
 )
 from docent_core._llm_util.data_models.llm_output import (
@@ -59,6 +61,20 @@ def _print_backoff_message(e: Details):
     logger.warning(
         f"Anthropic backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
     )
+
+
+def _is_retryable_error(e: BaseException) -> bool:
+    if (
+        isinstance(e, BadRequestError)
+        or isinstance(e, ContextWindowException)
+        or isinstance(e, AuthenticationError)
+        or isinstance(e, NotImplementedError)
+        or isinstance(e, PermissionDeniedError)
+        or isinstance(e, NotFoundError)
+        or isinstance(e, UnprocessableEntityError)
+    ):
+        return False
+    return True
 
 
 def _parse_message_content(content: str | list[Content]) -> str | list[TextBlockParam]:
@@ -153,15 +169,19 @@ def _parse_tool_choice(tool_choice: Literal["auto", "required"] | None) -> ToolC
         return ToolChoiceAnyParam(type="any")
 
 
+def _convert_anthropic_error(e: Exception):
+    if isinstance(e, BadRequestError):
+        if "context limit" in e.message.lower():
+            return ContextWindowException()
+    if isinstance(e, RateLimitError):
+        return RateLimitException(e)
+    return None
+
+
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception),
-    giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, AuthenticationError)
-    or isinstance(e, NotImplementedError)
-    or isinstance(e, PermissionDeniedError)
-    or isinstance(e, NotFoundError)
-    or isinstance(e, UnprocessableEntityError),
+    giveup=lambda e: not _is_retryable_error(e),
     max_tries=5,
     factor=3.0,
     on_backoff=_print_backoff_message,
@@ -227,10 +247,12 @@ async def get_anthropic_chat_completion_streaming_async(
                 return finalize_llm_output_partial(llm_output_partial)
             else:
                 # Streaming did not produce anything
-                return LLMOutput(model=model_name, completions=[], errors=["no_response"])
-    except RateLimitError as e:
-        # Raise a custom type that prod_llms can catch
-        raise RateLimitException(e) from e
+                return LLMOutput(model=model_name, completions=[], errors=[NoResponseException()])
+    except (RateLimitError, BadRequestError) as e:
+        if e2 := _convert_anthropic_error(e):
+            raise e2 from e
+        else:
+            raise
 
 
 FINISH_REASON_MAP: dict[str, FinishReasonType] = {
@@ -250,6 +272,8 @@ def update_llm_output(
     Note that Anthropic only allows one message to be streamed at a time.
     Thus there can only be one completion.
     """
+
+    total_tokens: int | None = llm_output_partial.total_tokens if llm_output_partial else None
 
     if llm_output_partial is not None:
         cur_text: str | None = llm_output_partial.completions[0].text
@@ -275,6 +299,13 @@ def update_llm_output(
     elif isinstance(chunk, RawMessageDeltaEvent):
         if stop_reason := chunk.delta.stop_reason:
             cur_finish_reason = FINISH_REASON_MAP.get(stop_reason)
+        # These token counts are cumulative
+        total_tokens = (
+            chunk.usage.output_tokens
+            + (chunk.usage.input_tokens or 0)
+            + (chunk.usage.cache_creation_input_tokens or 0)
+            + (chunk.usage.cache_read_input_tokens or 0)
+        )
 
     completions: list[LLMCompletionPartial] = []
     completions.append(
@@ -285,18 +316,13 @@ def update_llm_output(
     )
 
     assert cur_model is not None, "First chunk should always set the cur_model"
-    return LLMOutputPartial(completions=completions, model=cur_model)
+    return LLMOutputPartial(completions=completions, model=cur_model, total_tokens=total_tokens)  # type: ignore[arg-type]
 
 
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception),
-    giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, AuthenticationError)
-    or isinstance(e, NotImplementedError)
-    or isinstance(e, PermissionDeniedError)
-    or isinstance(e, NotFoundError)
-    or isinstance(e, UnprocessableEntityError),
+    giveup=lambda e: not _is_retryable_error(e),
     max_tries=5,
     factor=3.0,
     on_backoff=_print_backoff_message,
@@ -365,9 +391,11 @@ async def get_anthropic_chat_completion_async(
                 )
 
             return output
-    except RateLimitError as e:
-        # Raise a custom type that prod_llms can catch
-        raise RateLimitException(e) from e
+    except (RateLimitError, BadRequestError) as e:
+        if e2 := _convert_anthropic_error(e):
+            raise e2 from e
+        else:
+            raise
 
 
 def get_anthropic_client_async(api_key: str | None = None) -> AsyncAnthropic:
@@ -383,7 +411,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
         return LLMOutput(
             model=model,
             completions=[],
-            errors=["no_response"],
+            errors=[NoResponseException()],
         )
 
     if message.stop_reason == "end_turn":
@@ -423,6 +451,8 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
         else:
             raise ValueError(f"Unknown block type: {block.type}")
 
+    total_tokens = message.usage.input_tokens + message.usage.output_tokens
+
     return LLMOutput(
         model=model,
         completions=[
@@ -433,6 +463,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
                 finish_reason=finish_reason,  # type: ignore
             )
         ],
+        total_tokens=total_tokens,
     )
 
 

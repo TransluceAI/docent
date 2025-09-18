@@ -1,10 +1,10 @@
 'use client';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useScrollToBottom } from '@/app/hooks/use-scroll-to-bottom';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWindowSize, useLocalStorage } from 'usehooks-ts';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, ArrowUpIcon, Loader2 } from 'lucide-react';
+import { ArrowDown, ArrowUpIcon, Loader2, TriangleAlert } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -13,11 +13,15 @@ export default function InputArea({
   onSendMessage,
   disabled,
   isLoading,
+  footer,
+  errorMessage,
 }: {
   className?: string;
   onSendMessage: (message: string) => void;
   disabled: boolean;
   isLoading?: boolean;
+  footer?: React.ReactNode;
+  errorMessage?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -40,7 +44,6 @@ export default function InputArea({
   const resetHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = '98px';
     }
   };
 
@@ -111,47 +114,61 @@ export default function InputArea({
         )}
       </AnimatePresence>
 
-      <Textarea
-        data-testid="multimodal-input"
-        ref={textareaRef}
-        placeholder="Send a message..."
-        value={input}
-        onChange={handleInput}
-        className={cn(
-          'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl text-sm bg-muted pb-10 dark:border-zinc-700',
-          className
+      <div className="flex flex-col bg-yellow-50 dark:bg-yellow-900 rounded-2xl text-sm">
+        {errorMessage && (
+          <div className="px-2 py-2 flex items-center gap-1 text-yellow-800 dark:text-yellow-400">
+            <TriangleAlert className="h-4 w-4" />
+            <span className="text-xs">{errorMessage}</span>
+          </div>
         )}
-        rows={2}
-        autoFocus
-        onKeyDown={(event) => {
-          if (
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
-            event.preventDefault();
+        <div className="overflow-clip bg-muted dark:border-zinc-700 p-2 rounded-2xl border border-transparent focus-within:border-foreground">
+          <Textarea
+            data-testid="multimodal-input"
+            ref={textareaRef}
+            placeholder="Send a message..."
+            value={input}
+            onChange={handleInput}
+            className={cn(
+              'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden p-0 border-none focus-visible:ring-0 shadow-none resize-none',
+              className
+            )}
+            rows={1}
+            autoFocus
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
 
-            submitForm();
-          }
-        }}
-      />
-
-      <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        <Button
-          data-testid="send-button"
-          className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
-          onClick={(event) => {
-            event.preventDefault();
-            submitForm();
-          }}
-          disabled={input.length === 0 || disabled || isLoading}
-        >
-          {isLoading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <ArrowUpIcon size={14} />
-          )}
-        </Button>
+                if (!disabled) {
+                  submitForm();
+                }
+              }
+            }}
+          />
+          <div>
+            <div className="mt-2 px-1 flex flex-row justify-end">
+              {footer}
+              <Button
+                data-testid="send-button"
+                className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
+                onClick={(event) => {
+                  event.preventDefault();
+                  submitForm();
+                }}
+                disabled={input.length === 0 || disabled || isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <ArrowUpIcon size={14} />
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

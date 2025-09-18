@@ -147,18 +147,12 @@ class AgentRun(BaseModel):
         # Generate transcript strings using appropriate method
         transcript_strs: list[str] = []
         for i, t in enumerate(self.transcripts):
-            if use_blocks:
-                transcript_content = t.to_str_blocks_with_token_limit(
-                    token_limit=sys.maxsize,
-                    transcript_idx=i,
-                    agent_run_idx=None,
-                )[0]
-            else:
-                transcript_content = t.to_str_with_token_limit(
-                    token_limit=sys.maxsize,
-                    transcript_idx=i,
-                    agent_run_idx=None,
-                )[0]
+            transcript_content = t.to_str(
+                token_limit=sys.maxsize,
+                transcript_idx=i,
+                agent_run_idx=None,
+                use_action_units=not use_blocks,
+            )[0]
             transcript_strs.append(f"<transcript>\n{transcript_content}\n</transcript>")
 
         transcripts_str = "\n\n".join(transcript_strs)
@@ -207,23 +201,16 @@ class AgentRun(BaseModel):
                     ), "Ranges without metadata should be a single message"
                     t = self.transcripts[msg_range.start]
                     if msg_range.num_tokens < token_limit - 50:
-                        if use_blocks:
-                            transcript = f"<transcript>\n{t.to_str_blocks_with_token_limit(token_limit=sys.maxsize)[0]}\n</transcript>"
-                        else:
-                            transcript = f"<transcript>\n{t.to_str_with_token_limit(token_limit=sys.maxsize)[0]}\n</transcript>"
+                        transcript = f"<transcript>\n{t.to_str(token_limit=sys.maxsize, use_action_units=not use_blocks)[0]}\n</transcript>"
                         result = (
                             f"Here is a partial agent run for analysis purposes only:\n{transcript}"
                         )
                         results.append(result)
                     else:
-                        if use_blocks:
-                            transcript_fragments = t.to_str_blocks_with_token_limit(
-                                token_limit=token_limit - 50,
-                            )
-                        else:
-                            transcript_fragments = t.to_str_with_token_limit(
-                                token_limit=token_limit - 50,
-                            )
+                        transcript_fragments = t.to_str(
+                            token_limit=token_limit - 50,
+                            use_action_units=not use_blocks,
+                        )
                         for fragment in transcript_fragments:
                             result = f"<transcript>\n{fragment}\n</transcript>"
                             result = (

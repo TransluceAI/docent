@@ -301,20 +301,6 @@ class Transcript(BaseModel):
         self.messages = messages
         self._units_of_action = self._compute_units_of_action()
 
-    def to_str(
-        self,
-        transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-        highlight_action_unit: int | None = None,
-    ) -> str:
-        return self._to_str_with_token_limit_impl(
-            token_limit=sys.maxsize,
-            transcript_idx=transcript_idx,
-            agent_run_idx=agent_run_idx,
-            use_action_units=True,
-            highlight_action_unit=highlight_action_unit,
-        )[0]
-
     def _generate_formatted_blocks(
         self,
         transcript_idx: int = 0,
@@ -379,9 +365,9 @@ class Transcript(BaseModel):
 
         return blocks
 
-    def _to_str_with_token_limit_impl(
+    def to_str(
         self,
-        token_limit: int,
+        token_limit: int = sys.maxsize,
         transcript_idx: int = 0,
         agent_run_idx: int | None = None,
         use_action_units: bool = True,
@@ -438,56 +424,6 @@ class Transcript(BaseModel):
                     results.append(f"<blocks>\n{result}\n</blocks>\n")
 
             return results
-
-    def to_str_blocks(
-        self,
-        transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-    ) -> str:
-        """Represents the transcript as a string using individual message blocks.
-
-        Unlike to_str() which groups messages into action units, this method
-        formats each message as an individual block.
-
-        Returns:
-            str: A string representation with individual message blocks.
-        """
-        return self._to_str_with_token_limit_impl(
-            token_limit=sys.maxsize,
-            transcript_idx=transcript_idx,
-            agent_run_idx=agent_run_idx,
-            use_action_units=False,
-        )[0]
-
-    def to_str_with_token_limit(
-        self,
-        token_limit: int,
-        transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-        highlight_action_unit: int | None = None,
-    ) -> list[str]:
-        """Represents the transcript as a list of strings using action units with token limit handling."""
-        return self._to_str_with_token_limit_impl(
-            token_limit=token_limit,
-            transcript_idx=transcript_idx,
-            agent_run_idx=agent_run_idx,
-            use_action_units=True,
-            highlight_action_unit=highlight_action_unit,
-        )
-
-    def to_str_blocks_with_token_limit(
-        self,
-        token_limit: int,
-        transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-    ) -> list[str]:
-        """Represents the transcript as individual blocks with token limit handling."""
-        return self._to_str_with_token_limit_impl(
-            token_limit=token_limit,
-            transcript_idx=transcript_idx,
-            agent_run_idx=agent_run_idx,
-            use_action_units=False,
-        )
 
     ##############################
     # New text rendering methods #

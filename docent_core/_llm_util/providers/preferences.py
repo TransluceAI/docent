@@ -5,6 +5,23 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from docent._log_util import get_logger
+
+logger = get_logger(__name__)
+
+# Global mapping of model names to their context window sizes (in tokens)
+# More specific names should come first, because we take the first one that matches a prefix
+MODEL_CONTEXT_WINDOWS = {
+    # OpenAI
+    "gpt-5": 400_000,
+    # Anthropic
+    "claude-sonnet-4": 200_000,
+    # Google
+    "gemini-2.5-flash-lite": 1_000_000,
+    "gemini-2.5-flash": 1_000_000,
+    "gemini-2.5-pro": 1_000_000,
+}
+
 
 class ModelOption(BaseModel):
     """Configuration for a specific model from a provider.
@@ -20,6 +37,53 @@ class ModelOption(BaseModel):
     reasoning_effort: Literal["low", "medium", "high"] | None = None
 
 
+class ModelOptionWithContext(BaseModel):
+    """Enhanced model option that includes context window information for frontend use.
+
+    Attributes:
+        provider: The name of the LLM provider (e.g., "openai", "anthropic").
+        model_name: The specific model to use from the provider.
+        reasoning_effort: Optional indication of computational effort to use.
+        context_window: The context window size in tokens.
+        uses_byok: Whether this model would use the user's own API key.
+    """
+
+    provider: str
+    model_name: str
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    context_window: int
+    uses_byok: bool
+
+    @classmethod
+    def from_model_option(
+        cls, model_option: ModelOption, uses_byok: bool = False
+    ) -> "ModelOptionWithContext":
+        """Create a ModelOptionWithContext from a ModelOption.
+
+        Args:
+            model_option: The base model option
+            uses_byok: Whether this model requires bring-your-own-key
+
+        Returns:
+            ModelOptionWithContext with context window looked up from global mapping
+        """
+        for k, v in MODEL_CONTEXT_WINDOWS.items():
+            if model_option.model_name.startswith(k):
+                context_window = v
+                break
+        else:
+            logger.warning(f"No context window found for model {model_option.model_name}")
+            context_window = 100_000
+
+        return cls(
+            provider=model_option.provider,
+            model_name=model_option.model_name,
+            reasoning_effort=model_option.reasoning_effort,
+            context_window=context_window,
+            uses_byok=uses_byok,
+        )
+
+
 class ProviderPreferences(BaseModel):
     """Manages model preferences for different docent functions.
 
@@ -28,12 +92,8 @@ class ProviderPreferences(BaseModel):
     """
 
     @cached_property
-    def handle_ta_message(self) -> list[ModelOption]:
-        """Get model options for the handle_ta_message function.
-
-        Returns:
-            List of configured model options for this function.
-        """
+    def default_chat_models(self) -> list[ModelOption]:
+        """Models that can be used for chat if the user does not provide their own API key."""
         return [
             ModelOption(
                 provider="anthropic",
@@ -44,9 +104,16 @@ class ProviderPreferences(BaseModel):
                 model_name="gpt-5",
                 reasoning_effort="low",
             ),
+        ]
+
+    @cached_property
+    def byok_chat_models(self) -> list[ModelOption]:
+        """Models that can be used for chat if the user provides their own API key."""
+        return [
             ModelOption(
                 provider="google",
-                model_name="gemini-2.5-flash-preview-05-20",
+                model_name="gemini-2.5-flash-lite",
+                reasoning_effort="low",
             ),
         ]
 
@@ -347,3 +414,17 @@ class ProviderPreferences(BaseModel):
 
 # Initialize the singleton preferences object
 PROVIDER_PREFERENCES = ProviderPreferences()
+
+
+def merge_models_with_byok(
+    defaults: list[ModelOption],
+    byok: list[ModelOption],
+    api_keys: dict[str, str] | None,
+) -> list[ModelOptionWithContext]:
+    user_keys = api_keys or {}
+
+    merged: list[ModelOption] = list(defaults)
+    if user_keys:
+        merged.extend([m for m in byok if m.provider in user_keys])
+
+    return [ModelOptionWithContext.from_model_option(m, m.provider in user_keys) for m in merged]

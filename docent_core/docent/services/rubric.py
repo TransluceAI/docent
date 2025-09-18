@@ -255,10 +255,7 @@ class RubricService:
         Helper to evaluate a rubric with the appropriate API keys for a user.
         Raises an error if trying to call a non-default model without a custom API key.
         """
-        if user is None:
-            api_key_overrides = {}
-        else:
-            api_key_overrides = await self.service.get_api_key_overrides(user.id)
+        api_key_overrides = await self.service.get_api_key_overrides(user)
 
         is_default = rubric.judge_model in PROVIDER_PREFERENCES.default_judge_models
         if not is_default and not api_key_overrides.get(rubric.judge_model.provider):

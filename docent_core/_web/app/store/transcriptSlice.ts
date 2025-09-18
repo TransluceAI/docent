@@ -99,7 +99,7 @@ export const getActionsSummary = createAsyncThunk(
       dispatch(setActionsSummaryTaskId(taskId));
 
       // Create SSE connection using the service
-      const { eventSource, onCancel } = sseService.createEventSource(
+      const { onCancel } = sseService.createEventSource(
         `/rest/${collectionId}/actions_summary?agent_run_id=${agentRunId}`,
         (data) => {
           // Update actions summary with streamed data
@@ -169,7 +169,7 @@ export const getSolutionSummary = createAsyncThunk(
       dispatch(setSolutionSummaryTaskId(taskId));
 
       // Create SSE connection using the service
-      const { eventSource, onCancel } = sseService.createEventSource(
+      const { onCancel } = sseService.createEventSource(
         `/rest/${collectionId}/solution_summary?agent_run_id=${agentRunId}`,
         (data) => {
           // Update solution summary with streamed data

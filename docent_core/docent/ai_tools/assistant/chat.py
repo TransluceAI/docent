@@ -7,7 +7,6 @@ from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, Rubric
 from docent_core.docent.db.schemas.tables import sanitize_pg_text
 
-MAX_TOKENS = 200_000
 GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used
 
 
@@ -102,8 +101,7 @@ The suggestions should be concise, specific, and relevant to the analysis contex
 def make_system_prompt(
     agent_run: AgentRun, judge_result: JudgeResult | None, rubric: Rubric | None
 ) -> str:
-    truncated_transcript = truncate_to_token_limit(agent_run.to_text_new(indent=2), MAX_TOKENS)
-    truncated_transcript = sanitize_pg_text(truncated_transcript)
+    truncated_transcript = sanitize_pg_text(agent_run.to_text_new(indent=2))
     if judge_result is not None and rubric is not None:
         return JUDGE_RESULT_CHAT_SYSTEM_PROMPT_TEMPLATE.format(
             transcript=truncated_transcript,

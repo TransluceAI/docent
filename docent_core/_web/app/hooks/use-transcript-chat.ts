@@ -10,7 +10,7 @@ import {
 } from '@/app/api/chatApi';
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
+import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
 
 export interface UseTranscriptChatOptions {
   runId: string;
@@ -30,7 +30,7 @@ export function useTranscriptChat({
   const [jobId, setJobId] = useState<string | null>(null);
 
   // Get current chat state when session is available (for initial load)
-  const { data: currentState } = useGetChatStateQuery(
+  const { data: chatState } = useGetChatStateQuery(
     sessionId ? { collectionId, runId, sessionId } : skipToken
   );
 
@@ -39,30 +39,29 @@ export function useTranscriptChat({
     sessionId ? { collectionId, runId, sessionId } : skipToken
   );
   useEffect(() => {
-    if (activeJobData?.job_id) {
-      setJobId(activeJobData.job_id);
-    }
+    setJobId(activeJobData?.job_id || null);
   }, [activeJobData?.job_id]);
 
   const [getOrCreateChatSession] = useGetOrCreateChatSessionMutation();
 
+  const jobQueryParams =
+    jobId && collectionId ? { collectionId, runId, jobId } : skipToken;
   // Start listening to the job state via SSE when we have a jobId
-  const {
-    data: { isSSEConnected, messages: sseMessages } = {
-      isSSEConnected: false,
-      messages: [],
-    },
-  } = useListenToChatJobQuery(
-    jobId && collectionId ? { collectionId, runId, jobId } : skipToken
-  );
+  const jobQuery = useListenToChatJobQuery(jobQueryParams);
+  const sse = jobId ? jobQuery.currentData : undefined;
+  const isSSEConnected = sse?.isSSEConnected ?? false;
+  const sseMessages = sse?.messages ?? [];
+  const sseError = sse?.error_message;
+  const estimatedInputTokens =
+    sse?.estimated_input_tokens ?? chatState?.estimated_input_tokens;
 
   // Get messages from SSE if available, otherwise from initial state
   const messages = useMemo(() => {
     if (jobId && sseMessages && sseMessages.length > 0) {
       return sseMessages;
     }
-    return currentState?.messages || [];
-  }, [jobId, sseMessages, currentState?.messages]);
+    return chatState?.messages || [];
+  }, [jobId, sseMessages, chatState?.messages]);
 
   // Start the session
   useEffect(() => {
@@ -115,9 +114,9 @@ export function useTranscriptChat({
   // Handle sending messages
   const [postMessage] = usePostChatMessageMutation();
   const sendMessage = useCallback(
-    (message: string) => {
+    (message: string, chatModel?: ModelOption) => {
       if (!sessionId) return;
-      postMessage({ collectionId, runId, sessionId, message })
+      postMessage({ collectionId, runId, sessionId, message, chatModel })
         .unwrap()
         .then((res) => {
           if (res?.job_id) setJobId(res.job_id);
@@ -170,5 +169,8 @@ export function useTranscriptChat({
     isLoading: isSSEConnected,
     sendMessage,
     resetChat,
+    chatState,
+    errorMessage: sseError,
+    estimatedInputTokens,
   };
 }

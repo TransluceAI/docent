@@ -22,6 +22,8 @@ interface ChatAreaProps {
   onNavigateToCitation?: NavigateToCitation;
   byoFlexDiv: boolean;
   __showThinkingSpacerAfterFirstMessage?: boolean;
+  inputAreaFooter?: ReactNode;
+  inputErrorMessage?: string;
 }
 
 /**
@@ -38,6 +40,8 @@ export function ChatArea({
   onNavigateToCitation,
   byoFlexDiv = false,
   __showThinkingSpacerAfterFirstMessage = false,
+  inputAreaFooter,
+  inputErrorMessage,
 }: ChatAreaProps) {
   const {
     containerRef,
@@ -166,6 +170,8 @@ export function ChatArea({
           onSendMessage={onSendMessage}
           disabled={isLoading || isReadonly}
           isLoading={isLoading}
+          footer={inputAreaFooter}
+          errorMessage={inputErrorMessage}
         />
       </form>
     </>

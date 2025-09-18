@@ -27,7 +27,10 @@ from tqdm.auto import tqdm
 
 from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, ToolInfo, parse_chat_message
-from docent_core._llm_util.data_models.exceptions import RateLimitException
+from docent_core._llm_util.data_models.exceptions import (
+    LLMException,
+    RateLimitException,
+)
 from docent_core._llm_util.data_models.llm_output import (
     AsyncLLMOutputStreamingCallback,
     AsyncSingleLLMOutputStreamingCallback,
@@ -163,9 +166,17 @@ async def _parallelize_calls(
                 if completion_callback:
                     await completion_callback(i, result)
             except Exception as e:
+                if not isinstance(e, LLMException):
+                    logger.warning(f"LLM call raised an exception that is not an LLMException: {e}")
+                    llm_exception = LLMException(e)
+                    llm_exception.__cause__ = e
+                else:
+                    llm_exception = e
+
                 error_message = (
                     f"Call to {model_name} failed even with backoff: {e.__class__.__name__}."
                 )
+
                 if not isinstance(e, RateLimitException):
                     # If the error is not a rate limit (which we don't need details for), add the traceback
                     error_message += f" Failure traceback:\n{traceback.format_exc()}"
@@ -174,7 +185,7 @@ async def _parallelize_calls(
                 result = LLMOutput(
                     model=model_name,
                     completions=[],
-                    errors=["rate_limit" if isinstance(e, RateLimitException) else "other"],
+                    errors=[llm_exception],
                 )
 
             # Set the result in either case
@@ -270,8 +281,6 @@ class LLMManager:
         streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     ) -> list[LLMOutput]:
-        results: list[LLMOutput | None] = [None] * len(inputs)
-
         while True:
             # Parse the current model option
             cur_option = self.model_options[self.current_model_option_index]
@@ -288,7 +297,7 @@ class LLMManager:
             single_streaming_output_getter = PROVIDERS[provider]["single_streaming_output_getter"]
 
             # Get completions for uncached messages
-            outputs = await _parallelize_calls(
+            outputs: list[LLMOutput] = await _parallelize_calls(
                 (
                     single_output_getter
                     if streaming_callback is None
@@ -313,38 +322,27 @@ class LLMManager:
                 cache=self.cache,
             )
             assert len(outputs) == len(inputs), "Number of outputs must match number of messages"
-            for i, output in enumerate(outputs):
-                results[i] = output if not output.did_error else None
 
-            # If there are still some None results, rotate model options
-            num_error = sum(1 for result in results if result is None)
+            num_error = sum(1 for output in outputs if output.did_error)
             if num_error > 0:
                 logger.warning(f"{model_name}: {num_error} failed calls")
                 if not self._rotate_model_option():
-                    break  # Stop looping
-            # Otherwise, we're done and can break
+                    # Out of options
+                    break
             else:
+                # All calls succeeded
                 break
 
-        # If any results are None, set them to an error result
-        final_results: list[LLMOutput] = []
         unfinished_callbacks: list[Coroutine[Any, Any, None]] = []
-        for batch_index, result in enumerate(results):
-            if result is None:
-                placeholder = LLMOutput(
-                    model="all model options exhausted",
-                    completions=[],
-                    errors=["all_providers_exhausted"],
-                )
-                final_results.append(placeholder)
+        for batch_index, result in enumerate(outputs):
+            if result.did_error:
                 if completion_callback:
-                    unfinished_callbacks.append(completion_callback(batch_index, placeholder))
-            else:
-                final_results.append(result)
+                    unfinished_callbacks.append(completion_callback(batch_index, result))
 
         if unfinished_callbacks:
             await asyncio.gather(*unfinished_callbacks)
-        return final_results
+
+        return outputs
 
     def _rotate_model_option(self) -> ModelOption | None:
         self.current_model_option_index += 1

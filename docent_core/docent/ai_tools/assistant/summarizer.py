@@ -45,7 +45,7 @@ async def summarize_agent_actions(
 ) -> list[LowLevelAction]:
     prompt = f"""
 Transcript:
-{transcript.to_str()}
+{transcript.to_str(use_action_units=True)[0]}
 
 For each action unit in the transcript, provide a title and concise but specific summary of important details. Your summary should be understandable standalone; do not drop context.
 Tailor your response to a user with: {USER_BACKGROUND}. Also assume that they aren't familiar with the task, so include specific relevant context.
@@ -167,7 +167,7 @@ async def group_actions_into_high_level_steps(
 
     prompt = f"""
 Transcript:
-{transcript.to_str()}
+{transcript.to_str(use_action_units=True)[0]}
 
 Action Unit Summaries:
 {action_summaries_text}
@@ -306,7 +306,7 @@ async def interesting_agent_observations(
 ) -> list[ObservationType]:
     prompt = f"""
 Transcript:
-{transcript.to_str()}
+{transcript.to_str(use_action_units=True)[0]}
 
 Analyze the transcript and make notable observations about the agent's behavior. Look specifically for:
 1. Mistakes or missteps

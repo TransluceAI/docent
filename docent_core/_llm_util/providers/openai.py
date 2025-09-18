@@ -43,6 +43,8 @@ from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
 from docent_core._env_util import ENV
 from docent_core._llm_util.data_models.exceptions import (
     CompletionTooLongException,
+    ContextWindowException,
+    NoResponseException,
     RateLimitException,
 )
 from docent_core._llm_util.data_models.llm_output import (
@@ -66,6 +68,20 @@ def _print_backoff_message(e: Details):
     logger.warning(
         f"OpenAI backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
     )
+
+
+def _is_retryable_error(e: BaseException) -> bool:
+    if (
+        isinstance(e, BadRequestError)
+        or isinstance(e, ContextWindowException)
+        or isinstance(e, AuthenticationError)
+        or isinstance(e, PermissionDeniedError)
+        or isinstance(e, NotFoundError)
+        or isinstance(e, UnprocessableEntityError)
+        or isinstance(e, APIConnectionError)
+    ):
+        return False
+    return True
 
 
 def _parse_message_content(
@@ -163,11 +179,7 @@ def _parse_tools(tools: list[ToolInfo]) -> list[ChatCompletionToolParam]:
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception,),
-    giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, AuthenticationError)
-    or isinstance(e, PermissionDeniedError)
-    or isinstance(e, NotFoundError)
-    or isinstance(e, UnprocessableEntityError),
+    giveup=lambda e: not _is_retryable_error(e),
     max_tries=5,
     factor=3.0,
     on_backoff=_print_backoff_message,
@@ -201,6 +213,7 @@ async def get_openai_chat_completion_streaming_async(
                 reasoning_effort=reasoning_effort or NOT_GIVEN,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                stream_options={"include_usage": True},
                 stream=True,
             )
 
@@ -215,10 +228,20 @@ async def get_openai_chat_completion_streaming_async(
                 return finalize_llm_output_partial(llm_output_partial)
             else:
                 # Streaming did not produce anything
-                return LLMOutput(model=model_name, completions=[], errors=["no_response"])
-    except RateLimitError as e:
-        # Raise a custom type that prod_llms can catch
-        raise RateLimitException(e) from e
+                return LLMOutput(model=model_name, completions=[], errors=[NoResponseException()])
+    except (RateLimitError, BadRequestError) as e:
+        if e2 := _convert_openai_error(e):
+            raise e2 from e
+        else:
+            raise
+
+
+def _convert_openai_error(e: Exception):
+    if isinstance(e, RateLimitError):
+        return RateLimitException(e)
+    elif isinstance(e, BadRequestError) and e.code == "context_length_exceeded":
+        return ContextWindowException()
+    return None
 
 
 def update_llm_output(llm_output_partial: LLMOutputPartial | None, chunk: ChatCompletionChunk):
@@ -319,6 +342,10 @@ def update_llm_output(llm_output_partial: LLMOutputPartial | None, chunk: ChatCo
 
             _set_tool_call(i, tc_idx, tool_call_partial)
 
+    total_tokens: int | None = None
+    if chunk.usage is not None:
+        total_tokens = chunk.usage.total_tokens
+
     completions: list[LLMCompletionPartial] = []
     # TOOD assert all lengths are same
     for i in range(len(cur_texts)):
@@ -330,17 +357,13 @@ def update_llm_output(llm_output_partial: LLMOutputPartial | None, chunk: ChatCo
             )
         )
 
-    return LLMOutputPartial(completions=completions, model=chunk.model)
+    return LLMOutputPartial(completions=completions, model=chunk.model, total_tokens=total_tokens)  # type: ignore[arg-type]
 
 
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception,),
-    giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, AuthenticationError)
-    or isinstance(e, PermissionDeniedError)
-    or isinstance(e, NotFoundError)
-    or isinstance(e, UnprocessableEntityError),
+    giveup=lambda e: not _is_retryable_error(e),
     max_tries=5,
     factor=3.0,
     on_backoff=_print_backoff_message,
@@ -388,9 +411,11 @@ async def get_openai_chat_completion_async(
                     )
 
             return output
-    except RateLimitError as e:
-        # Raise a custom type that prod_llms can catch
-        raise RateLimitException(e) from e
+    except (RateLimitError, BadRequestError) as e:
+        if e2 := _convert_openai_error(e):
+            raise e2 from e
+        else:
+            raise
 
 
 def get_openai_client_async(api_key: str | None = None) -> AsyncOpenAI:
@@ -448,12 +473,7 @@ def chunk_and_tokenize(
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception,),
-    giveup=lambda e: isinstance(e, BadRequestError)
-    or isinstance(e, AuthenticationError)
-    or isinstance(e, PermissionDeniedError)
-    or isinstance(e, NotFoundError)
-    or isinstance(e, UnprocessableEntityError)
-    or isinstance(e, APIConnectionError),
+    giveup=lambda e: not _is_retryable_error(e),
     max_tries=5,
     factor=3.0,
     on_backoff=_print_backoff_message,
@@ -645,8 +665,12 @@ def parse_openai_completion(response: ChatCompletion | None, model: str) -> LLMO
         return LLMOutput(
             model=model,
             completions=[],
-            errors=["no_response"],
+            errors=[NoResponseException()],
         )
+
+    # Extract total tokens from usage if available
+    total_tokens = response.usage.total_tokens if response.usage else None
+
     return LLMOutput(
         model=response.model,
         completions=[
@@ -666,6 +690,7 @@ def parse_openai_completion(response: ChatCompletion | None, model: str) -> LLMO
             )
             for choice in response.choices
         ],
+        total_tokens=total_tokens,
     )
 
 

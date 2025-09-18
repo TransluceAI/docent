@@ -1,11 +1,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { SchemaDefinition } from '@/app/types/schema';
 
-export interface JudgeModel {
+export interface ModelOption {
   provider: string;
   model_name: string;
   reasoning_effort: 'low' | 'medium' | 'high' | null;
-  uses_byok?: boolean;
+  context_window: number;
+  uses_byok: boolean;
 }
 
 export interface JudgeRunLabel {
@@ -19,7 +20,7 @@ export interface Rubric {
   id: string;
   version: number;
   rubric_text: string;
-  judge_model: JudgeModel;
+  judge_model: ModelOption;
   output_schema: SchemaDefinition;
 }
 

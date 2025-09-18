@@ -850,7 +850,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.15a0"
+version = "0.1.16a0"
 source = { editable = "docent" }
 dependencies = [
     { name = "backoff" },

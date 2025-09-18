@@ -1,7 +1,14 @@
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from docent._log_util import get_logger
+from docent_core._llm_util.providers.preferences import (
+    PROVIDER_PREFERENCES,
+    ModelOption,
+    ModelOptionWithContext,
+    merge_models_with_byok,
+)
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server.util import generator_to_sse_stream
 from docent_core.docent.db.contexts import ViewContext
@@ -11,6 +18,7 @@ from docent_core.docent.server.dependencies.analytics import use_posthog_user_co
 from docent_core.docent.server.dependencies.database import AsyncSession, get_session
 from docent_core.docent.server.dependencies.services import (
     get_chat_service,
+    get_mono_svc,
 )
 from docent_core.docent.server.dependencies.user import (
     get_authenticated_user,
@@ -18,6 +26,7 @@ from docent_core.docent.server.dependencies.user import (
     get_user_anonymous_ok,
 )
 from docent_core.docent.services.chat import ChatService
+from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 
@@ -73,11 +82,16 @@ async def listen_to_chat_job(
     )
 
 
+class PostMessageRequest(BaseModel):
+    message: str
+    chat_model: ModelOption | None = None
+
+
 @chat_router.post("/{collection_id}/{run_id}/session/{session_id}/message")
 async def post_message_to_chat_session(
     run_id: str,
     session_id: str,
-    message: str = Body(..., embed=True),
+    request: PostMessageRequest,
     chat_svc: ChatService = Depends(get_chat_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     session: AsyncSession = Depends(get_session),
@@ -92,8 +106,12 @@ async def post_message_to_chat_session(
             detail=f"Cannot post message to session {session_id} because there's a job already running",
         )
 
+    # Update the chat model if provided
+    if request.chat_model is not None:
+        await chat_svc.update_session_chat_model(sq_rsession, request.chat_model)
+
     # Add the message to the session
-    await chat_svc.add_user_message(sq_rsession, message)
+    await chat_svc.add_user_message(sq_rsession, request.message)
     await session.commit()
 
     # Track analytics for message post
@@ -103,7 +121,8 @@ async def post_message_to_chat_session(
             "run_id": run_id,
             "session_id": session_id,
             "judge_result_id": sq_rsession.judge_result_id,
-            "message": message,
+            "message": request.message,
+            "chat_model": request.chat_model,
         },
     )
 
@@ -129,3 +148,15 @@ async def get_active_chat_job_for_session(
     """Return the active job id for this chat session if one exists, else null."""
     active_job = await chat_svc.get_active_job_for_session(session_id)
     return {"job_id": active_job.id if active_job is not None else None}
+
+
+@chat_router.get("/chat-models")
+async def get_chat_models(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    user: User = Depends(get_user_anonymous_ok),
+) -> list[ModelOptionWithContext]:
+    return merge_models_with_byok(
+        defaults=PROVIDER_PREFERENCES.default_chat_models,
+        byok=PROVIDER_PREFERENCES.byok_chat_models,
+        api_keys=await mono_svc.get_api_key_overrides(user),
+    )

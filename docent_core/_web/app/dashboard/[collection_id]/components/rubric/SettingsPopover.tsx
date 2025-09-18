@@ -1,33 +1,20 @@
 import { useState } from 'react';
-import { Settings2, KeyRound } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { JudgeModel } from '@/app/store/rubricSlice';
+import { ModelOption } from '@/app/store/rubricSlice';
 import OutputSchemaDialog from '../OutputSchemaDialog';
 import { SchemaDefinition } from '@/app/types/schema';
-
-function nameJudgeModel(jm: JudgeModel) {
-  if (jm.reasoning_effort) {
-    return `${jm.provider}/${jm.model_name} (${jm.reasoning_effort} reasoning effort)`;
-  }
-  return `${jm.provider}/${jm.model_name}`;
-}
+import ModelPicker from '@/components/ModelPicker';
 
 interface SettingsPopoverProps {
-  judgeModel: JudgeModel;
-  availableJudgeModels?: JudgeModel[];
-  onChange: (jm: JudgeModel) => void;
+  judgeModel: ModelOption;
+  availableJudgeModels?: ModelOption[];
+  onChange: (jm: ModelOption) => void;
   outputSchema?: SchemaDefinition | null;
   onSchemaChange?: (schema: SchemaDefinition) => void;
   editable?: boolean;
@@ -64,41 +51,18 @@ export default function SettingsPopover({
           <label className="block text-xs font-medium text-muted-foreground mb-1">
             Judge Model
           </label>
-          <Select
-            value={nameJudgeModel(judgeModel)}
-            onValueChange={(value) => {
-              const selected = availableJudgeModels?.find(
-                (jm) => nameJudgeModel(jm) === value
-              );
-              if (!selected) return;
-              onChange(selected);
-            }}
+          <ModelPicker
+            selectedModel={judgeModel}
+            availableModels={availableJudgeModels}
+            onChange={onChange}
             disabled={!editable}
-          >
-            <SelectTrigger className="w-full h-7 text-xs border bg-background px-2 font-normal">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {availableJudgeModels?.map((jm) => (
-                <SelectItem
-                  key={nameJudgeModel(jm)}
-                  value={nameJudgeModel(jm)}
-                  className="text-xs"
-                >
-                  <span className="flex flex-row items-center gap-1">
-                    <span className="flex-1">{nameJudgeModel(jm)}</span>
-                    {jm.uses_byok && <KeyRound className="h-3 w-3" />}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {judgeModel?.uses_byok && (
-            <div className="text-xs text-muted-foreground mt-1">
-              This model uses your own API key.
-            </div>
-          )}
+          />
         </div>
+        {judgeModel?.uses_byok && (
+          <div className="text-xs text-muted-foreground">
+            This model uses your own API key.
+          </div>
+        )}
         {outputSchema && onSchemaChange && (
           <div className="flex flex-col">
             <label className="block text-xs font-medium text-muted-foreground mb-1">

@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from openai.types.chat.chat_completion_token_logprob import TopLogprob
@@ -7,7 +7,11 @@ from pydantic import BaseModel
 
 from docent._log_util import get_logger
 from docent.data_models.chat import ToolCall
-from docent_core._llm_util.data_models.exceptions import CompletionTooLongException
+from docent_core._llm_util.data_models.exceptions import (
+    LLM_ERROR_TYPES,
+    CompletionTooLongException,
+    LLMException,
+)
 
 logger = get_logger(__name__)
 
@@ -32,6 +36,7 @@ class LLMCompletion(BaseModel):
         tool_calls: List of tool calls made during the completion.
         finish_reason: Reason why the completion finished.
         top_logprobs: Probability distribution for top token choices.
+        total_tokens: Total tokens consumed by the API call (input + output).
     """
 
     text: str | None = None
@@ -50,7 +55,8 @@ class LLMCompletion(BaseModel):
         return self.text is None or len(self.text) == 0
 
 
-class LLMOutput(BaseModel):
+@dataclass
+class LLMOutput:
     """Container for LLM output, potentially with multiple completions.
 
     Aggregates completions from an LLM along with metadata and error information.
@@ -63,9 +69,8 @@ class LLMOutput(BaseModel):
 
     model: str
     completions: list[LLMCompletion]
-    errors: (
-        list[Literal["rate_limit", "no_response", "other", "all_providers_exhausted"]] | None
-    ) = None
+    errors: list[LLMException] = field(default_factory=list)
+    total_tokens: int | None = None
 
     @property
     def non_empty(self) -> bool:
@@ -102,6 +107,29 @@ class LLMOutput(BaseModel):
             bool: True if there were errors, False otherwise.
         """
         return bool(self.errors)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "completions": [comp.model_dump() for comp in self.completions],
+            "errors": [e.error_type_id for e in self.errors],
+            "total_tokens": self.total_tokens,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LLMOutput":
+        error_type_map = {e.error_type_id: e for e in LLM_ERROR_TYPES}
+        errors = data.get("errors", [])
+        errors = [error_type_map.get(e, LLMException)() for e in errors]
+
+        completions = data.get("completions", [])
+        completions = [LLMCompletion(**comp) for comp in completions]
+
+        total_tokens = data.get("total_tokens", None)
+
+        return cls(
+            model=data["model"], completions=completions, errors=errors, total_tokens=total_tokens
+        )
 
 
 @dataclass
@@ -202,6 +230,7 @@ def finalize_llm_output_partial(partial: LLMOutputPartial) -> LLMOutput:
             )
             for c in partial.completions
         ],
+        total_tokens=partial.total_tokens,
     )
 
     # If the completion is empty and was truncated (likely due to too much reasoning), raise an exception
