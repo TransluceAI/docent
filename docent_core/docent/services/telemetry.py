@@ -775,8 +775,12 @@ class TelemetryService:
         stmt = (
             update(SQLATelemetryAgentRunStatus)
             .where(
-                SQLATelemetryAgentRunStatus.status
-                == TelemetryAgentRunStatus.NEEDS_PROCESSING.value,
+                or_(
+                    SQLATelemetryAgentRunStatus.status
+                    == TelemetryAgentRunStatus.NEEDS_PROCESSING.value,
+                    SQLATelemetryAgentRunStatus.current_version
+                    > SQLATelemetryAgentRunStatus.processed_version,
+                ),
                 SQLATelemetryAgentRunStatus.collection_id == collection_id,
             )
             .values(status=TelemetryAgentRunStatus.PROCESSING.value)
