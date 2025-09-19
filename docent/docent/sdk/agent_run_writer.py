@@ -19,11 +19,16 @@ logger = get_logger(__name__)
 
 
 def _giveup(exc: BaseException) -> bool:
-    """Give up on client errors."""
+    """Give up on timeouts and client errors (4xx except 429). Retry others."""
+
+    # Give up immediately on any timeout (connect/read/write/pool)
+    if isinstance(exc, httpx.TimeoutException):
+        return True
 
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         return status < 500 and status != 429
+
     return False
 
 
@@ -92,7 +97,6 @@ class AgentRunWriter:
         self._thread = threading.Thread(
             target=lambda: anyio.run(self._async_main),
             name="AgentRunWriterThread",
-            daemon=True,
         )
         self._thread.start()
         logger.info("AgentRunWriter thread started")
@@ -179,7 +183,7 @@ class AgentRunWriter:
 
     def get_post_batch_fcn(
         self, client: httpx.AsyncClient
-    ) -> Callable[[list[AgentRun], anyio.CapacityLimiter], Coroutine[Any, Any, None]]:
+    ) -> Callable[[list[AgentRun]], Coroutine[Any, Any, None]]:
         """Return a function that will post a batch of agent runs to the API."""
 
         @backoff.on_exception(
@@ -189,34 +193,34 @@ class AgentRunWriter:
             max_tries=self._max_retries,
             on_backoff=_print_backoff_message,
         )
-        async def _post_batch(batch: list[AgentRun], limiter: anyio.CapacityLimiter) -> None:
-            async with limiter:
-                payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch]}
-                resp = await client.post(
-                    self._endpoint, json=payload, timeout=self._request_timeout
-                )
-                resp.raise_for_status()
+        async def _post_batch(batch: list[AgentRun]) -> None:
+            payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch]}
+            resp = await client.post(self._endpoint, json=payload, timeout=self._request_timeout)
+            resp.raise_for_status()
 
         return _post_batch
 
     async def _async_main(self) -> None:
         """Main async function for the AgentRunWriter thread."""
 
-        limiter = anyio.CapacityLimiter(self._num_workers)
-
         async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers) as client:
+            _post_batch = self.get_post_batch_fcn(client)
             async with anyio.create_task_group() as tg:
-                _post_batch = self.get_post_batch_fcn(client)
 
-                async def batch_loop() -> None:
+                async def worker():
                     while not self._cancel_event.is_set():
                         batch = await self._gather_next_batch_from_queue()
                         if not batch:
                             continue
+                        try:
+                            await _post_batch(batch)
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to post batch of {len(batch)} agent runs: {e.__class__.__name__}: {e}"
+                            )
 
-                        tg.start_soon(_post_batch, batch, limiter)
-
-                tg.start_soon(batch_loop)
+                for _ in range(self._num_workers):
+                    tg.start_soon(worker)
 
     async def _gather_next_batch_from_queue(self) -> list[AgentRun]:
         """Gather a batch of agent runs from the queue.
@@ -241,6 +245,14 @@ def init(
     server_url: str = "https://api.docent.transluce.org",
     web_url: str = "https://docent.transluce.org",
     api_key: str | None = None,
+    # Writer arguments
+    num_workers: int = 2,
+    queue_maxsize: int = 20_000,
+    request_timeout: float = 30.0,
+    flush_interval: float = 1.0,
+    batch_size: int = 1_000,
+    max_retries: int = 5,
+    shutdown_timeout: int = 60,
 ):
     """Initialize the AgentRunWriter thread.
 
@@ -250,6 +262,16 @@ def init(
         server_url (str): URL of the Docent server.
         web_url (str): URL of the Docent web UI.
         api_key (str): API key for the Docent API.
+        num_workers (int): Max number of concurrent tasks to run,
+            managed by anyio.CapacityLimiter.
+        queue_maxsize (int): Maximum size of the queue.
+            If maxsize is <= 0, the queue size is infinite.
+        request_timeout (float): Timeout for the HTTP request.
+        flush_interval (float): Interval to flush the queue.
+        batch_size (int): Number of agent runs to batch together.
+        max_retries (int): Maximum number of retries for the HTTP request.
+        shutdown_timeout (int): Timeout to wait for the background thread to finish
+            after the main thread has requested shutdown.
     """
     api_key = api_key or os.getenv("DOCENT_API_KEY")
 
@@ -271,4 +293,12 @@ def init(
         api_key=api_key,
         collection_id=collection_id,
         server_url=server_url,
+        # Writer arguments
+        num_workers=num_workers,
+        queue_maxsize=queue_maxsize,
+        request_timeout=request_timeout,
+        flush_interval=flush_interval,
+        batch_size=batch_size,
+        max_retries=max_retries,
+        shutdown_timeout=shutdown_timeout,
     )
