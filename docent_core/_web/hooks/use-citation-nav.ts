@@ -6,7 +6,7 @@ import { Citation } from '@/app/types/experimentViewerTypes';
 import posthog from 'posthog-js';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 
-export const useCitationNav = (judgeResult: JudgeResultWithCitations) => {
+export const useCitationNav = (judgeResult?: JudgeResultWithCitations) => {
   const router = useRouter();
   const pathname = usePathname();
   const collectionId = useAppSelector((state) => state.collection.collectionId);
@@ -20,6 +20,7 @@ export const useCitationNav = (judgeResult: JudgeResultWithCitations) => {
     citation: Citation | null;
     newTab?: boolean;
   }) => {
+    if (!judgeResult) return;
     const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`;
 
     // Check if we're already on the target result page

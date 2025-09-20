@@ -208,7 +208,6 @@ class RubricRunStateResponse(BaseModel):
 
 class StartFilteredEvalJobRequest(BaseModel):
     max_results: int | None = None
-    only_run_on_labeled_runs: bool = False
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/evaluate")
@@ -230,11 +229,9 @@ async def start_eval_rubric_job(
         raise HTTPException(status_code=404, detail=f"Rubric {rubric_id} not found")
 
     logger.info(
-        f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results} and labeled {request.only_run_on_labeled_runs}"
+        f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results}"
     )
-    job_id = await rubric_svc.start_or_get_eval_rubric_job(
-        ctx, rubric_id, request.max_results, request.only_run_on_labeled_runs
-    )
+    job_id = await rubric_svc.start_or_get_eval_rubric_job(ctx, rubric_id, request.max_results)
 
     # Check if user has a custom API key (just for analytics purposes)
     if ctx.user:

@@ -28,8 +28,6 @@ import {
   TranscriptGroup,
 } from '@/app/types/transcriptTypes';
 import { TranscriptNavigator, TreeNode } from './TranscriptNavigator';
-// Tooltip moved into TranscriptNavigator header
-
 import UuidPill from '@/components/UuidPill';
 import { useDebounce } from '@/hooks/use-debounce';
 
@@ -46,7 +44,6 @@ import { MessageBox, hasJsonContent } from './MessageBox';
 import { Button } from '@/components/ui/button';
 import { useGetAgentRunWithCanonicalTreeQuery } from '@/app/api/collectionApi';
 import { skipToken } from '@reduxjs/toolkit/query';
-// Checkbox moved into TranscriptNavigator header
 
 // Export interface for use in other components
 export interface AgentRunViewerHandle {
@@ -62,7 +59,6 @@ export interface AgentRunViewerHandle {
 // Add props interface
 interface AgentRunViewerProps {
   agentRunId: string;
-  // initialTranscriptIdx?: number;
 }
 
 // Add this helper function near the top of the file
@@ -721,11 +717,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
 
     return (
-      // <Card
-      //   className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
-      //   style={{ flexGrow: '2' }}
-      // >
-
       <>
         {/* Header area Content */}
         {agentRun && (
@@ -938,13 +929,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           setPrettyPrintJsonMessages={
                             setPrettyPrintJsonMessages
                           }
+                          transcriptIdx={transcriptIdx}
                         />
                       );
                     })}
                   </div>
 
                   {/* Navigation buttons inside the ScrollArea (relative to parent container) */}
-                  <div className="absolute bottom-3 right-6 flex flex-col gap-1">
+                  <div className="absolute bottom-3 right-3 flex flex-col gap-1">
                     <div className="bg-muted border border-border rounded-md shadow-sm flex flex-col">
                       <button
                         onClick={goToPrevBlock}

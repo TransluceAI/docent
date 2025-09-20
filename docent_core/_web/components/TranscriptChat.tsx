@@ -14,6 +14,9 @@ import { useGetChatModelsQuery } from '@/app/api/chatApi';
 import { cn } from '@/lib/utils';
 import JudgeResultDetail from './JudgeResultDetail';
 import ModelPicker from './ModelPicker';
+import SelectionBadges from './SelectionBadges';
+import { Citation } from '@/app/types/experimentViewerTypes';
+import { useTextSelection } from '@/providers/use-text-selection';
 
 const ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS = 8192;
 
@@ -87,6 +90,10 @@ export default function TranscriptChat({
 
   // Use provided collectionId or extract from params
   const collectionId = propCollectionId || (params.collection_id as string);
+
+  const { selections, removeSelection, clearSelections } = useTextSelection({});
+  const selectedTexts = selections.map((s) => s.text);
+  const handleRemoveSelectedText = (index: number) => removeSelection(index);
 
   const {
     sessionId,
@@ -176,13 +183,33 @@ export default function TranscriptChat({
     [baseSendMessage, selectedChatModel]
   );
 
+  const onSendMessageWithSelectedText = (text: string) => {
+    if (selectedTexts.length === 0) {
+      // Send message normally if no text is selected
+      onSendMessage(text);
+      return;
+    }
+
+    // Format selected texts with proper indentation
+    const formatSelection = selectedTexts
+      .map((selectedText) => `<selection>\n${selectedText}\n</selection>`)
+      .join('\n');
+
+    const message = `${formatSelection}\n<docent_user_message>\n${text}\n</docent_user_message>`;
+    clearSelections();
+    onSendMessage(message);
+  };
+
   // Handle citation navigation
   const handleNavigateToCitation: NavigateToCitation = useCallback(
     ({ citation, newTab }) => {
       if (onNavigateToCitation) {
         onNavigateToCitation({ citation, newTab });
-      } else if (resultContext) {
-        // Default navigation for result context
+        return;
+      }
+
+      // Fallback: navigate to result route if provided
+      if (resultContext) {
         router.push(
           `/dashboard/${collectionId}/rubric/${resultContext.rubricId}/result/${resultContext.resultId}`,
           { scroll: false } as any
@@ -200,6 +227,7 @@ export default function TranscriptChat({
   const headerElement = (
     <ChatHeader
       title={title}
+      description="Ask questions about the transcript (⌘K)"
       onReset={resetChat}
       canReset={sessionId !== null && messages.length > 0}
     />
@@ -230,8 +258,8 @@ export default function TranscriptChat({
         <ChatArea
           isReadonly={contextWindowErrorMessage !== undefined}
           messages={messages}
-          onSendMessage={onSendMessage}
-          isLoading={isLoading}
+          onSendMessage={onSendMessageWithSelectedText}
+          isSendingMessage={isLoading}
           headerElement={
             <>
               {headerElement}
@@ -243,7 +271,27 @@ export default function TranscriptChat({
               )}
             </>
           }
-          hideAssistantAvatar={true}
+          inputHeaderElement={
+            selections.length > 0 ? (
+              <SelectionBadges
+                selections={selections}
+                onRemove={handleRemoveSelectedText}
+                onNavigate={(item) => {
+                  if (!onNavigateToCitation) return;
+                  const { transcriptIdx, blockIdx } = item;
+                  if (transcriptIdx == null || blockIdx == null) return;
+                  const citation: Citation = {
+                    transcript_idx: transcriptIdx,
+                    block_idx: blockIdx,
+                    start_idx: 0,
+                    end_idx: 0,
+                    start_pattern: null,
+                  };
+                  onNavigateToCitation({ citation });
+                }}
+              />
+            ) : null
+          }
           suggestedMessages={finalSuggestedMessages}
           onNavigateToCitation={handleNavigateToCitation}
           byoFlexDiv={true}

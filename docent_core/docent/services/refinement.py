@@ -1,11 +1,10 @@
 import json
 import traceback
 from datetime import UTC, datetime
-from typing import AsyncContextManager, AsyncIterator, Callable, Protocol, cast
+from typing import AsyncContextManager, AsyncIterator, Callable, Literal, Protocol, cast
 from uuid import uuid4
 
 import anyio
-from anyio.abc import TaskGroup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -29,19 +28,21 @@ from docent_core._server._broker.redis_client import (
 )
 from docent_core._worker.constants import WorkerFunction
 from docent_core.docent.ai_tools.rubric.refine import (
+    DIRECT_SEARCH_SYS_PROMPT,
+    DIRECT_SEARCH_WELCOME_MESSAGE,
     FIRST_USER_MESSAGE_TEMPLATE,
-    REFINE_AGENT_SYS_PROMPT,
-    WELCOME_MESSAGE,
-    create_set_rubric_tool,
-    create_set_status_tool,
+    GUIDED_SEARCH_SYS_PROMPT,
+    GUIDED_SEARCH_WELCOME_MESSAGE,
+    RUN_SUMMARY_TEMPLATE,
+    SummaryStreamingCallback,
+    create_set_rubric_and_schema_tool,
     execute_set_rubric,
-    execute_set_status,
+    summarize_agent_runs,
+    update_user_message_with_labels,
 )
-from docent_core.docent.ai_tools.rubric.rubric import JudgeResult
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.refinement import (
     RefinementAgentSession,
-    RefinementStatus,
     SQLARefinementAgentSession,
 )
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
@@ -118,14 +119,6 @@ class RefineAgentEventCallback(Protocol):
         pass
 
 
-def trim_messages_from_state(state: RefinementAgentSession):
-    return state.model_copy(
-        update={
-            "messages": state.messages[1:2] + state.messages[3:],
-        }
-    )
-
-
 class RefinementService:
     def __init__(
         self,
@@ -155,7 +148,9 @@ class RefinementService:
         )
         return result.scalar_one_or_none()
 
-    async def get_or_create_session(self, sq_rubric: SQLARubric):
+    async def get_or_create_session(
+        self, sq_rubric: SQLARubric, session_type: Literal["guided", "direct"] = "guided"
+    ):
         """Get or create a refinement session for a rubric.
         Uses an advisory lock to avoid races where multiple sessions are created per rubric.
         """
@@ -165,14 +160,20 @@ class RefinementService:
         ):
             sq_rsession = await self.get_session_by_rubric(sq_rubric)
             if sq_rsession is None:
+
+                system_prompt = (
+                    DIRECT_SEARCH_SYS_PROMPT
+                    if session_type == "direct"
+                    else GUIDED_SEARCH_SYS_PROMPT
+                )
+
                 # Ensure required fields are initialized so the instance is usable pre-flush
                 rsession = RefinementAgentSession(
                     id=str(uuid4()),
                     rubric_id=sq_rubric.id,
                     rubric_version=sq_rubric.version,
-                    messages=[SystemMessage(content=REFINE_AGENT_SYS_PROMPT)],
-                    status=RefinementStatus.DEFAULT_STATUS,
-                    judge_results=[],
+                    messages=[SystemMessage(content=system_prompt)],
+                    n_summaries=0,
                 )
                 sq_rsession = SQLARefinementAgentSession.from_pydantic(rsession)
                 self.session.add(sq_rsession)
@@ -185,17 +186,10 @@ class RefinementService:
         sq_rsession.updated_at = datetime.now(UTC).replace(tzinfo=None)
         flag_modified(sq_rsession, "content")  # Required to trigger a DB update
 
-    async def _update_session_judge_results(
-        self, sq_rsession: SQLARefinementAgentSession, judge_results: list[JudgeResult]
+    async def _update_session_summaries(
+        self, sq_rsession: SQLARefinementAgentSession, n_summaries: int | None
     ):
-        sq_rsession.content["judge_results"] = [j.model_dump() for j in judge_results]
-        sq_rsession.updated_at = datetime.now(UTC).replace(tzinfo=None)
-        flag_modified(sq_rsession, "content")  # Required to trigger a DB update
-
-    async def _update_session_status(
-        self, sq_rsession: SQLARefinementAgentSession, status: RefinementStatus
-    ):
-        sq_rsession.content["status"] = status.value
+        sq_rsession.content["n_summaries"] = n_summaries
         sq_rsession.updated_at = datetime.now(UTC).replace(tzinfo=None)
         flag_modified(sq_rsession, "content")  # Required to trigger a DB update
 
@@ -209,6 +203,34 @@ class RefinementService:
     ) -> RefinementAgentSession:
         """Return the current state of the refinement session as a pydantic model."""
         return sq_rsession.to_pydantic()
+
+    async def _get_agent_run_summaries(
+        self, sq_rubric: SQLARubric, ctx: ViewContext, completion_callback: SummaryStreamingCallback
+    ) -> str:
+        """Summarize max 10 agent runs as initial context for the refinement agent."""
+
+        # Get 10 random agent runs
+        agent_runs = await self.mono_svc.get_agent_runs(ctx)
+
+        N_SAMPLE_AGENT_RUNS = 10
+        if len(agent_runs) > N_SAMPLE_AGENT_RUNS:
+            import random
+
+            random.seed(0)
+            agent_runs = random.sample(agent_runs, N_SAMPLE_AGENT_RUNS)
+
+        # Get summaries for max 10 agent runs
+        outputs = await summarize_agent_runs(
+            sq_rubric.rubric_text,
+            agent_runs,
+            completion_callback,
+        )
+
+        summary_body = ""
+        for ar, output in zip(agent_runs, outputs):
+            summary = output.first_text or ""
+            summary_body += RUN_SUMMARY_TEMPLATE.format(agent_run_id=ar.id, summary=summary) + "\n"
+        return "<summaries>\n" + summary_body + "\n</summaries>"
 
     @staticmethod
     async def _get_active_refinement_job(session: AsyncSession, session_id: str) -> SQLAJob | None:
@@ -225,7 +247,10 @@ class RefinementService:
         return await self._get_active_refinement_job(self.session, session_id)
 
     async def start_or_get_agent_job(
-        self, ctx: ViewContext, sq_rsession: SQLARefinementAgentSession
+        self,
+        ctx: ViewContext,
+        sq_rsession: SQLARefinementAgentSession,
+        show_labels_in_context: bool = False,
     ):
         """This job is responsible for running the refine agent for one turn.
         Uses an advisory lock to avoid races where multiple jobs are started for the same session.
@@ -247,7 +272,10 @@ class RefinementService:
                 SQLAJob(
                     id=job_id,
                     type=WorkerFunction.REFINEMENT_AGENT_JOB.value,
-                    job_json={"rsession_id": sq_rsession.id},
+                    job_json={
+                        "rsession_id": sq_rsession.id,
+                        "show_labels_in_context": show_labels_in_context,
+                    },
                 )
             )
 
@@ -330,7 +358,8 @@ class RefinementService:
         self,
         ctx: ViewContext,
         sq_rsession: SQLARefinementAgentSession,
-        callback: RefineAgentEventCallback | None = None,
+        show_labels_in_context: bool,
+        sse_callback: RefineAgentEventCallback | None = None,
     ):
         """Run one turn of the refinement agent.
         MAX_ITERS_PER_TURN is a safety limit to avoid infinite loops.
@@ -346,34 +375,35 @@ class RefinementService:
         rsession = sq_rsession.to_pydantic()
         lock = anyio.Lock()
 
-        def _make_cancellable_judge_results_callback(tg: TaskGroup, cancel_at_num_results: int):
-            async def _judge_results_callback(
-                batch_index: int, judge_results: list[JudgeResult] | None
-            ):
-                """This *does* store judge results in the session state."""
-                if callback and judge_results:
-                    async with lock:
-                        # FIXME(mengk): this is only a temporary hack to ensure that we only store match results
-                        #   fix soon!
-                        rsession.judge_results.extend(
-                            [
-                                result
-                                for result in judge_results
-                                if result.output.get("label") == "match"
-                            ]
-                        )
-                        await callback(trim_messages_from_state(rsession))
+        # Add labels to the user message if toggled on the FE
+        last_message = rsession.messages[-1]
+        if (
+            show_labels_in_context
+            and last_message.role == "user"
+            # Don't add labels if they already exist on the user message
+            and "labeled_results" not in last_message.content
+        ):
+            labels_and_results = await self.rubric_svc.get_judge_run_labels_and_results(
+                sq_rsession.rubric_id
+            )
+            update_user_message_with_labels(rsession.messages, labels_and_results)
+            # Update the user message immediately so labels persist on retry
+            await self._update_session_messages(sq_rsession, rsession.messages)
 
-                        if len(rsession.judge_results) >= cancel_at_num_results:
-                            tg.cancel_scope.cancel()
-
-            return _judge_results_callback
+        async def _summary_callback(batch_index: int, summary: str):
+            """This stores summaries in the session state."""
+            if sse_callback and summary:
+                async with lock:
+                    if rsession.n_summaries is None:
+                        rsession.n_summaries = 0
+                    rsession.n_summaries += 1
+                    await sse_callback(rsession.prepare_for_client())
 
         async def _llm_callback(batch_index: int, llm_output: LLMOutput):
             """This *does NOT* store messages in the session state.
             The message is added at the end to avoid polluting the history with a bunch of partials.
             """
-            if callback and (completion := llm_output.first):
+            if sse_callback and (completion := llm_output.first):
                 for tool_call in completion.tool_calls or []:
                     # Try to optimistically close the arguments for streaming
                     raw_args = tool_call.arguments.get("__parse_error_raw_args")
@@ -382,20 +412,18 @@ class RefinementService:
                             tool_call.arguments = json.loads(parsed_args)
 
                 async with lock:
-                    await callback(
-                        trim_messages_from_state(
-                            rsession.model_copy(
-                                update={
-                                    "messages": rsession.messages
-                                    + [
-                                        AssistantMessage(
-                                            content=completion.text or "",
-                                            tool_calls=completion.tool_calls,
-                                        )
-                                    ]
-                                }
-                            )
-                        )
+                    await sse_callback(
+                        rsession.model_copy(
+                            update={
+                                "messages": rsession.messages
+                                + [
+                                    AssistantMessage(
+                                        content=completion.text or "",
+                                        tool_calls=completion.tool_calls,
+                                    )
+                                ]
+                            }
+                        ).prepare_for_client()
                     )
 
         logger.info(f"Running one turn of refinement session: {sq_rsession}")
@@ -419,58 +447,48 @@ class RefinementService:
 
             # If system: generate the first user message with sample data
             if last_message.role == "system":
-                # Add a welcome message
-                rsession.messages.append(AssistantMessage(content=WELCOME_MESSAGE))
-                if callback:
-                    await callback(trim_messages_from_state(rsession))
+                is_guided = GUIDED_SEARCH_SYS_PROMPT == last_message.content
 
-                # Compute the max recall examples
-                agent_runs = await self.mono_svc.get_agent_runs(ctx)
+                # Add a welcome message and notify sse_callback
+                welcome_message = (
+                    GUIDED_SEARCH_WELCOME_MESSAGE if is_guided else DIRECT_SEARCH_WELCOME_MESSAGE
+                )
+                rsession.messages.append(AssistantMessage(content=welcome_message))
+                if sse_callback:
+                    await sse_callback(rsession.prepare_for_client())
 
-                N_SAMPLE_AGENT_RUNS, N_TARGET_RESULTS = 100, 100
-                if len(agent_runs) > N_SAMPLE_AGENT_RUNS:
-                    import random
-
-                    random.seed(0)
-                    agent_runs = random.sample(agent_runs, N_SAMPLE_AGENT_RUNS)
-
-                # Get judge results
-                async with anyio.create_task_group() as tg:
-                    await self.rubric_svc.evaluate_rubric_for_user(
-                        agent_runs,
-                        sq_rubric.to_pydantic(),
-                        user=ctx.user,
-                        callback=_make_cancellable_judge_results_callback(tg, N_TARGET_RESULTS),
-                        max_recall=True,
+                # Build the initial user message template
+                message_content = FIRST_USER_MESSAGE_TEMPLATE.format(
+                    rubric=sq_rubric.rubric_text,
+                    output_schema=json.dumps(sq_rubric.output_schema, indent=2),
+                )
+                if is_guided:
+                    # Get summaries for agent runs
+                    message_content += await self._get_agent_run_summaries(
+                        sq_rubric, ctx, _summary_callback
                     )
 
                 # Append as a new user message
-                rsession.messages.append(
-                    UserMessage(
-                        content=FIRST_USER_MESSAGE_TEMPLATE.format(
-                            rubric=sq_rubric.rubric_text,
-                            examples="\n".join(
-                                [
-                                    result.value
-                                    for result in rsession.judge_results
-                                    if result.value is not None
-                                ]
-                            ),
-                        )
-                    )
-                )
+                rsession.messages.append(UserMessage(content=message_content))
 
-                # Set status to initial feedback and notify callback
-                rsession.status = RefinementStatus.INITIAL_FEEDBACK
-                if callback:
-                    await callback(trim_messages_from_state(rsession))
+                # Notify sse_callback
+                if sse_callback:
+                    await sse_callback(rsession.prepare_for_client())
 
             # If user or tool: generate asst continuation
             if last_message.role == "user" or last_message.role == "tool":
+
+                messages = rsession.messages
+                if last_message.role == "user":
+                    user_message = UserMessage(content=last_message.content)
+                    messages = messages[:-1] + [user_message]
+
                 outputs = await get_llm_completions_async(
-                    [rsession.messages],
+                    [messages],
                     PROVIDER_PREFERENCES.refine_agent,
-                    tools=[create_set_rubric_tool(), create_set_status_tool()],
+                    tools=[
+                        create_set_rubric_and_schema_tool(),
+                    ],
                     tool_choice="auto",
                     max_new_tokens=8192,
                     timeout=180.0,
@@ -478,8 +496,16 @@ class RefinementService:
                     streaming_callback=_llm_callback,
                 )
 
+                result = outputs[0]
+
+                if result.did_error:
+                    error_state = rsession.prepare_for_client(result.errors[0].user_message)
+                    if sse_callback:
+                        await sse_callback(error_state)
+                    return error_state
+
                 # Parse completion and append to messages
-                if (completion := outputs[0].first) is None:
+                if (completion := result.first) is None:
                     continue
                 assistant_msg = AssistantMessage(
                     content=completion.text or "", tool_calls=completion.tool_calls
@@ -490,7 +516,7 @@ class RefinementService:
             elif last_message.role == "assistant" and (tool_calls := last_message.tool_calls):
                 for tc in tool_calls:
                     try:
-                        if tc.function == "set_rubric":
+                        if tc.function == "set_rubric_and_schema":
                             # Load current rubric
                             current_sq_rubric = await self.rubric_svc.get_rubric(
                                 sq_rsession.rubric_id, version=None
@@ -505,33 +531,46 @@ class RefinementService:
                             tool_result_msg = execute_set_rubric(updated_rubric, tc)
                             rsession.messages.append(tool_result_msg)
 
-                            # Persist new rubric as a new version
-                            await self.rubric_svc.add_rubric_version(
-                                updated_rubric.id, updated_rubric
-                            )
-                            # Point session's rubric_version pointer to the new version
-                            sq_rsession.rubric_version = updated_rubric.version
-                        elif tc.function == "set_status":
-                            tool_result_msg = execute_set_status(rsession, tc)
-                            rsession.messages.append(tool_result_msg)
+                            # If the output schema is invalid, don't persist the new version
+                            if not isinstance(tool_result_msg.error, dict):
+                                # Cancel existing eval rubric job
+                                await self.rubric_svc.cancel_active_rubric_eval_job(
+                                    current_sq_rubric.id
+                                )
+
+                                # Persist new rubric as a new version
+                                await self.rubric_svc.add_rubric_version(
+                                    updated_rubric.id, updated_rubric
+                                )
+                                # Point session's rubric_version pointer to the new version
+                                rsession.rubric_version = updated_rubric.version
+
+                                logger.error(f"Adding new rubric version: {updated_rubric.version}")
+
+                                await self.rubric_svc.start_or_get_eval_rubric_job(
+                                    ctx,
+                                    updated_rubric.id,
+                                )
                         else:
                             raise ValueError(f"Unsupported tool call: {tc.function}")
                     except Exception as e:
                         rsession.messages.append(
                             ToolMessage(
                                 content=f"Error executing tool call: {e}",
+                                error={"detail": str(e)},
+                                function=tc.function,
                                 tool_call_id=tc.id,
                             )
                         )
 
             # Update session
             await self._update_session_messages(sq_rsession, rsession.messages)
-            await self._update_session_judge_results(sq_rsession, rsession.judge_results)
-            await self._update_session_status(sq_rsession, rsession.status)
+            await self._update_session_summaries(sq_rsession, rsession.n_summaries)
 
-            if callback:
-                await callback(trim_messages_from_state(sq_rsession.to_pydantic()))
-
+            # Commit before the callback so the FE will fetch the correct state
             await self.session.commit()
 
-        return trim_messages_from_state(sq_rsession.to_pydantic())
+            if sse_callback:
+                await sse_callback(sq_rsession.to_pydantic().prepare_for_client())
+
+        return sq_rsession.to_pydantic().prepare_for_client()

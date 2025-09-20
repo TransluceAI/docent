@@ -56,7 +56,7 @@ async def chat_job(ctx: ViewContext, job: SQLAJob):
         await _event_callback(initial_state)
 
         # Run the chat turn
-        _ = await chat_svc.one_turn(ctx, sqla_chat_session, callback=_event_callback)
+        _ = await chat_svc.one_turn(ctx, sqla_chat_session, sse_callback=_event_callback)
 
         # Job is finished (final state already published by one_turn)
         await REDIS.xadd(stream_key, {"event": "finished"}, maxlen=200)  # type: ignore

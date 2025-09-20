@@ -1,5 +1,4 @@
 import traceback
-from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any, AsyncContextManager, AsyncIterator, Callable, Protocol, cast
 from uuid import uuid4
@@ -14,6 +13,7 @@ from docent.data_models.chat.message import (
     AssistantMessage,
     ChatMessage,
     SystemMessage,
+    ToolMessage,
     UserMessage,
 )
 from docent.data_models.citation import (
@@ -30,7 +30,12 @@ from docent_core._server._broker.redis_client import (
     get_redis_client,
 )
 from docent_core._worker.constants import WorkerFunction
-from docent_core.docent.ai_tools.assistant.chat import make_system_prompt
+from docent_core.docent.ai_tools.assistant.chat import (
+    create_add_label_tool,
+    execute_add_label,
+    make_system_prompt,
+)
+from docent_core.docent.ai_tools.rubric.rubric import JudgeRunLabel, Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
@@ -213,7 +218,7 @@ class ChatService:
         session = sqla_session.to_pydantic()
         encoding = tiktoken.get_encoding(encoding_name)
 
-        context_messages, _ = await self._get_chat_context(ctx, sqla_session, session.messages)
+        context_messages, _, _ = await self._get_chat_context(ctx, sqla_session, session.messages)
 
         # Convert to text format and count tokens
         total_tokens = 0
@@ -283,49 +288,6 @@ class ChatService:
 
     async def get_active_job_for_session(self, session_id: str) -> SQLAJob | None:
         return await self._get_active_chat_job(self.session, session_id)
-
-    async def _get_chat_context(
-        self,
-        ctx: ViewContext,
-        sqla_session: SQLAChatSession,
-        messages: list[ChatMessage],
-    ) -> tuple[list[ChatMessage], AgentRun]:
-        """Get chat context including system prompt, context messages, and related objects."""
-        if sqla_session.agent_run_id is None:
-            raise ValueError(f"Session {sqla_session.id} has no agent run")
-
-        # Get agent run for system prompt and citation parsing
-        agent_run = await self.mono_svc.get_agent_run(
-            ctx, sqla_session.agent_run_id, apply_base_where_clause=False
-        )
-        if agent_run is None:
-            raise ValueError(f"Agent run {sqla_session.agent_run_id} not found")
-
-        # Get judge result if available
-        judge_result = None
-        if sqla_session.judge_result_id:
-            judge_result = await self.rubric_svc.get_rubric_result_by_id(
-                sqla_session.judge_result_id
-            )
-
-        # Get rubric from judge result if available
-        rubric = None
-        if judge_result:
-            sqla_rubric = await self.rubric_svc.get_rubric(
-                judge_result.rubric_id, judge_result.rubric_version
-            )
-            if sqla_rubric:
-                rubric = sqla_rubric.to_pydantic()
-
-        # Create system prompt
-        system_prompt = make_system_prompt(
-            agent_run=agent_run, judge_result=judge_result, rubric=rubric
-        )
-
-        # Create context messages
-        context_messages = [SystemMessage(content=system_prompt)] + messages
-
-        return context_messages, agent_run
 
     async def start_or_get_chat_job(self, ctx: ViewContext, sqla_session: SQLAChatSession):
         """This job is responsible for running the chat for one turn.
@@ -427,29 +389,73 @@ class ChatService:
                 )
                 continue
 
+    async def _get_chat_context(
+        self,
+        ctx: ViewContext,
+        sqla_session: SQLAChatSession,
+        messages: list[ChatMessage],
+    ) -> tuple[list[ChatMessage], AgentRun, Rubric | None]:
+        """Get chat context including system prompt, context messages, and related objects."""
+        if sqla_session.agent_run_id is None:
+            raise ValueError(f"Session {sqla_session.id} has no agent run")
+
+        # Get agent run for system prompt and citation parsing
+        agent_run = await self.mono_svc.get_agent_run(
+            ctx, sqla_session.agent_run_id, apply_base_where_clause=False
+        )
+        if agent_run is None:
+            raise ValueError(f"Agent run {sqla_session.agent_run_id} not found")
+
+        # Get judge result if available
+        judge_result = None
+        if sqla_session.judge_result_id:
+            judge_result = await self.rubric_svc.get_rubric_result_by_id(
+                sqla_session.judge_result_id
+            )
+
+        # Get rubric from judge result if available
+        rubric = None
+        if judge_result:
+            sqla_rubric = await self.rubric_svc.get_rubric(
+                judge_result.rubric_id, judge_result.rubric_version
+            )
+            if sqla_rubric:
+                rubric = sqla_rubric.to_pydantic()
+
+        # Create system prompt
+        system_prompt = make_system_prompt(
+            agent_run=agent_run, judge_result=judge_result, rubric=rubric
+        )
+
+        # Create context messages
+        context_messages = [SystemMessage(content=system_prompt)] + messages
+
+        return context_messages, agent_run, rubric
+
     async def one_turn(
         self,
         ctx: ViewContext,
         sqla_session: SQLAChatSession,
-        callback: ChatEventCallback | None = None,
+        sse_callback: ChatEventCallback | None = None,
     ):
         """Run one turn of the chat assistant. Called by worker process, not API server.
-        Note: self.session is committed once at the end of this turn.
+        Executes tool calls (e.g., add_label) and streams intermediate state.
         """
 
         raw_chat_session = sqla_session.to_pydantic()
-
-        # Parse citations in existing messages so they don't revert to raw syntax during streaming
+        # Parse citations in existing messages so streaming doesn't revert the frontend to raw messages
         parsed_chat_session = await self._parse_citations_in_session(ctx, raw_chat_session)
 
-        context_messages, agent_run = await self._get_chat_context(
-            ctx, sqla_session, raw_chat_session.messages
+        context_messages, agent_run, rubric = await self._get_chat_context(
+            ctx, sqla_session, parsed_chat_session.messages
         )
-        chat_session_messages = deepcopy(raw_chat_session.messages)
 
-        async def _streaming_callback(batch_index: int, llm_output: LLMOutput):
-            if callback and (completion := llm_output.first):
-                # Create assistant message and parse citations
+        # Local working copy of messages
+        # Shallow copy is fine because we don't modify any messages in place
+        messages = parsed_chat_session.messages.copy()
+
+        async def _llm_streaming_callback(batch_index: int, llm_output: LLMOutput):
+            if sse_callback and (completion := llm_output.first):
                 if not completion.text:
                     return
                 cleaned_text = remove_invalid_citation_ranges(completion.text, agent_run)
@@ -458,15 +464,12 @@ class ChatService:
                     tool_calls=completion.tool_calls,
                 )
 
-                # Parse citations before sending to callback
                 parsed_messages = _parse_citations_in_messages(
                     [assistant_msg], run=agent_run, streaming=True
                 )
 
-                await callback(
-                    parsed_chat_session.model_copy(
-                        update={"messages": parsed_chat_session.messages + parsed_messages}
-                    )
+                await sse_callback(
+                    parsed_chat_session.model_copy(update={"messages": messages + parsed_messages})
                 )
 
         logger.info(f"Running one turn of chat session: {sqla_session}")
@@ -477,66 +480,126 @@ class ChatService:
         else:
             session_model = PROVIDER_PREFERENCES.default_chat_models[0]
 
-        # If user or tool: generate asst continuation
-        outputs = await get_llm_completions_async(
-            [context_messages],
-            [session_model],
-            max_new_tokens=8192,
-            timeout=120.0,
-            use_cache=True,
-            streaming_callback=_streaming_callback,
-            api_key_overrides=await self.mono_svc.get_api_key_overrides(ctx.user),
-        )
+        MAX_ITERS_PER_TURN = 5
+        for _ in range(MAX_ITERS_PER_TURN):
+            if len(messages) == 0:
+                break
 
-        # Handle provider errors first by surfacing an error state via callback
-        result = outputs[0]
-        if result.did_error:
-            error_state = parsed_chat_session.model_copy(
-                update={"error_message": result.errors[0].user_message}
-            )
-            if callback:
-                await callback(error_state)
-            return error_state
+            last_message = messages[-1]
 
-        # Parse completion and append to messages
-        completion = result.first
-        if completion is None or completion.text is None:
-            # Defensive fallback: treat as no-response error
-            error_state = parsed_chat_session.model_copy(
-                update={"error_message": "The model returned no response. Please try again."}
-            )
-            if callback:
-                await callback(error_state)
-            return error_state
+            # If the last message is an assistant message with no tool calls, break
+            if last_message.role == "assistant" and not getattr(last_message, "tool_calls", None):
+                break
 
-        cleaned_text = remove_invalid_citation_ranges(completion.text, agent_run)
-        assistant_msg = AssistantMessage(content=cleaned_text, tool_calls=completion.tool_calls)
-        new_chat_session_messages = chat_session_messages + [assistant_msg]
+            # If user or tool: generate assistant continuation
+            if last_message.role in ("user", "tool"):
+                tools = None if rubric is None else [create_add_label_tool(rubric.output_schema)]
+                tool_choice = "auto" if rubric is not None else None
 
-        # Update session with new messages
-        await self._update_session(
-            sqla_session, [m.model_dump() for m in new_chat_session_messages]
-        )
+                outputs = await get_llm_completions_async(
+                    [context_messages],
+                    [session_model],
+                    max_new_tokens=8192,
+                    timeout=120.0,
+                    use_cache=True,
+                    streaming_callback=_llm_streaming_callback,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    api_key_overrides=await self.mono_svc.get_api_key_overrides(ctx.user),
+                )
+                result = outputs[0]
 
-        # Store real token count from API response if available
-        if result.total_tokens is not None:
-            sqla_session.estimated_input_tokens = result.total_tokens
+                # Handle provider errors first by surfacing an error state via sse_callback
+                if result.did_error:
+                    error_state = parsed_chat_session.model_copy(
+                        update={"error_message": result.errors[0].user_message}
+                    )
+                    if sse_callback:
+                        await sse_callback(error_state)
+                    return error_state
 
-        await self.session.commit()
+                # Parse completion and append to messages
+                completion = result.first
+                if completion is None or completion.text is None:
+                    # Defensive fallback: treat as no-response error
+                    error_state = parsed_chat_session.model_copy(
+                        update={
+                            "error_message": "The model returned no response. Please try again."
+                        }
+                    )
+                    if sse_callback:
+                        await sse_callback(error_state)
+                    return error_state
 
-        final_state = sqla_session.to_pydantic()
-        final_parsed_messages = _parse_citations_in_messages(
-            final_state.messages, run=agent_run, streaming=False
-        )
-        final_state_with_citations = final_state.model_copy(
-            update={"messages": final_parsed_messages}
-        )
+                cleaned_text = remove_invalid_citation_ranges(completion.text or "", agent_run)
+                assistant_msg = AssistantMessage(
+                    content=cleaned_text, tool_calls=completion.tool_calls
+                )
+                messages.append(assistant_msg)
 
-        # Send final state via callback if provided (needed for SSE streaming)
-        if callback:
-            await callback(final_state_with_citations)
+                # Store real token count from API response if available
+                if result.total_tokens is not None:
+                    sqla_session.estimated_input_tokens = result.total_tokens
 
-        return final_state_with_citations
+            # If assistant with tool calls: execute tool calls
+            elif last_message.role == "assistant" and (tool_calls := last_message.tool_calls):
+                for tc in tool_calls:
+                    try:
+                        if tc.function == "add_label" and rubric is not None:
+                            tool_result_msg = execute_add_label(rubric, tc)
+
+                            if tool_result_msg.content == "No label provided.":
+                                messages.append(tool_result_msg)
+                                continue
+
+                            # TODO(cadentj): Maybe check there's only one key
+                            label_dict = tc.arguments.get("label", {})
+
+                            agent_run_id = agent_run.id
+                            existing = await self.rubric_svc.get_judge_run_label(agent_run_id)
+
+                            # Create a new label if it doesn't exist, else update the existing one
+                            if existing is None:
+                                await self.rubric_svc.create_judge_run_label(
+                                    JudgeRunLabel(
+                                        agent_run_id=agent_run_id,
+                                        rubric_id=rubric.id,
+                                        label=label_dict,
+                                    )
+                                )
+                            else:
+                                merged = dict(existing.label)
+                                merged.update(label_dict)
+                                await self.rubric_svc.update_judge_run_label(agent_run_id, merged)
+
+                            messages.append(tool_result_msg)
+                        else:
+                            raise ValueError(f"Unsupported tool call: {tc.function}")
+                    except Exception as e:
+                        messages.append(
+                            ToolMessage(
+                                content=f"Error executing tool call: {e}",
+                                error={"detail": str(e)},
+                                tool_call_id=tc.id,
+                                function=tc.function,
+                            )
+                        )
+
+            # Update session and notify
+            await self._update_session(sqla_session, [m.model_dump() for m in messages])
+            await self.session.commit()
+
+            # Push current state with parsed citations
+            if sse_callback:
+                parsed_messages = _parse_citations_in_messages(
+                    messages, run=agent_run, streaming=False
+                )
+                await sse_callback(
+                    raw_chat_session.model_copy(update={"messages": parsed_messages})
+                )
+
+        # Final state
+        return raw_chat_session.model_copy(update={"messages": messages})
 
     async def cleanup_old_chat_sessions(self, days_old: int = 7) -> int:
         """

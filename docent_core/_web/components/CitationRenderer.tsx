@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Quote } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Citation } from '../app/types/experimentViewerTypes';
@@ -7,6 +7,7 @@ import {
   selectIsCitationHighlighted,
   useCitationHighlight,
 } from '../lib/citationUtils';
+import { useTextSelection } from '../providers/use-text-selection';
 
 /**
  * Basic markdown patterns for inline formatting
@@ -323,6 +324,7 @@ interface TextWithCitationsProps {
   text: string;
   citations: Citation[];
   onNavigate?: NavigateToCitation;
+  setSelectedText?: (text: string) => void;
 }
 
 export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
@@ -330,9 +332,8 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
   citations,
   onNavigate,
 }) => {
-  if (!citations.length) {
-    return <>{text}</>;
-  }
+  const containerRef = useRef<HTMLSpanElement | null>(null);
+  useTextSelection({ containerRef });
 
   const sortedCitations = [...citations].sort(
     (a, b) => a.start_idx - b.start_idx
@@ -389,7 +390,15 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
     );
   }
 
-  return <>{parts}</>;
+  return (
+    <span
+      ref={containerRef}
+      className="relative whitespace-pre-wrap"
+      tabIndex={0}
+    >
+      {parts}
+    </span>
+  );
 };
 
 /**

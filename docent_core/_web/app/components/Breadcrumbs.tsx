@@ -10,7 +10,6 @@ import {
 import Link from 'next/link';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useSelector } from 'react-redux';
-import { useAppDispatch } from '../store/hooks';
 
 import { BASE_DOCENT_PATH } from '@/app/constants';
 import { Button } from '@/components/ui/button';
@@ -21,6 +20,7 @@ import {
 } from '@/components/ui/tooltip';
 
 import { RootState } from '../store/store';
+import { useAppDispatch } from '../store/hooks';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
 import { useGetCollectionNameQuery } from '@/app/api/collectionApi';

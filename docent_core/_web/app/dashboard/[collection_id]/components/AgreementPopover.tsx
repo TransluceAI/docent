@@ -201,8 +201,11 @@ export const AgreementPopover = ({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="text-xs min-h-7 text-muted-foreground hover:text-primary disabled:text-muted-foreground transition-colors">
-          <span className="font-mono">{visibleProperty}</span> agreement:{' '}
+        <button className="text-xs min-h-7 w-40 text-end text-muted-foreground hover:text-primary disabled:text-muted-foreground transition-colors">
+          <span className="hidden 2xl:inline">
+            <span className="font-mono">{visibleProperty} </span>
+          </span>
+          agreement:{' '}
           {visibleProperty ? (
             <span>
               {propertyStats[visibleProperty]
@@ -226,7 +229,11 @@ export const AgreementPopover = ({
               onClick={() => setIsEditMode(!isEditMode)}
               className="p-1 hover:bg-secondary disabled:hover:bg-transparent disabled:cursor-not-allowed rounded transition-colors"
               aria-label="Edit visible property"
-              disabled={filteredJudgeResults.length === 0}
+              disabled={
+                filteredJudgeResults.length === 0 ||
+                countableProperties.length === 0 ||
+                judgeRunLabels.length === 0
+              }
             >
               <Pencil className="h-3 w-3 text-muted-foreground" />
             </button>
@@ -234,7 +241,7 @@ export const AgreementPopover = ({
           {content()}
           {isEditMode && (
             <div className="text-xs text-muted-foreground">
-              Select a property to display on the trigger
+              Select a property to display on the button
             </div>
           )}
         </div>

@@ -1,6 +1,5 @@
 'use client';
 
-import { SparklesIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Markdown from './Markdown';
 import {
@@ -12,25 +11,38 @@ import {
   NavigateToCitation,
 } from '@/components/CitationRenderer';
 import posthog from 'posthog-js';
+import ToolCallMessage from './ToolCallMessage';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   isLoadingPlaceholder: boolean;
   requiresScrollPadding: boolean;
-  hideAssistantAvatar?: boolean;
   onNavigateToCitation?: NavigateToCitation;
+  isStreaming?: boolean;
+}
+
+function parseDocentUserMessage(text: string): string {
+  const match = text.match(
+    /<docent_user_message>([\s\S]*?)<\/docent_user_message>/
+  );
+  return match ? match[1].trim() : text;
 }
 
 export function ChatMessage({
   message,
   isLoadingPlaceholder,
   requiresScrollPadding,
-  hideAssistantAvatar = false,
   onNavigateToCitation,
+  isStreaming = false,
 }: ChatMessageProps) {
+  const isStreamingThisMessage = !!isStreaming;
+
+  // No per-tool expansion state here; handled inside ToolCallMessage
   // Render tool messages in the same style as tool calls
+
   const renderToolMessage = () => {
-    if (message.role !== 'tool') return null;
+    // NOTE(cadentj): maybe a little hacky atm, sometimes a dupe of the assistant call, but render if it shows an error message bc of execution
+    if (message.role !== 'tool' || !message.error) return null;
     const contentList = Array.isArray(message.content)
       ? message.content
       : ([{ type: 'text', text: message.content }] as ChatContent[]);
@@ -79,28 +91,11 @@ export function ChatMessage({
       message.tool_calls
     ) {
       return message.tool_calls.map((tool, i) => (
-        <div
+        <ToolCallMessage
           key={i}
-          className="mt-1 p-1.5 bg-secondary/85 rounded text-xs break-all whitespace-pre-wrap"
-        >
-          <div className="text-[10px] text-muted-foreground mb-0.5">
-            Tool Call ID: {tool.id}
-          </div>
-          {tool.view ? (
-            <span className="font-mono">{tool.view.content}</span>
-          ) : (
-            <div className="font-mono">
-              <span className="font-semibold">{tool.function}</span>
-              <span className="text-muted-foreground">
-                (
-                {Object.entries(tool.arguments || {})
-                  .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-                  .join(', ')}
-                )
-              </span>
-            </div>
-          )}
-        </div>
+          tool={tool}
+          isStreaming={isStreamingThisMessage}
+        />
       ));
     }
     return null;
@@ -130,15 +125,6 @@ export function ChatMessage({
           'flex gap-4 w-full group-data-[role=user]/message:ml-auto group-data-[role=user]/message:max-w-2xl group-data-[role=user]/message:w-fit'
         )}
       >
-        {(message.role === 'assistant' || message.role === 'tool') &&
-          !hideAssistantAvatar && (
-            <div className="size-8 flex items-center rounded-full justify-center ring-1 shrink-0 ring-border bg-background">
-              <div className="translate-y-px">
-                <SparklesIcon size={14} />
-              </div>
-            </div>
-          )}
-
         <div
           className={cn('flex flex-col gap-4 w-full', {
             'min-h-64': message.role === 'assistant' && requiresScrollPadding,
@@ -173,6 +159,12 @@ export function ChatMessage({
                     <div className="animate-pulse text-muted-foreground">
                       {text}
                     </div>
+                  );
+                }
+                if (message.role === 'user') {
+                  return renderBubble(
+                    key,
+                    <Markdown>{parseDocentUserMessage(text)}</Markdown>
                   );
                 }
                 // For assistant messages, render with both markdown and citations support

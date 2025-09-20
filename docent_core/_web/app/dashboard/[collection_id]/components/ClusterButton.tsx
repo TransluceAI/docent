@@ -97,7 +97,7 @@ const ClusterButton = ({
         variant="outline"
         onClick={() => handleStartClustering(undefined, false)}
       >
-        {isStartingClustering ? 'Starting clustering...' : 'Cluster results'}
+        {isStartingClustering ? 'Starting clustering...' : 'Cluster'}
       </Button>
     );
   };

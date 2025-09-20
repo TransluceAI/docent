@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import jsonStringFormatter from 'json-string-formatter';
 import { useAppSelector } from '@/app/store/hooks';
 import { ChatMessage, Content, ToolCall } from '@/app/types/transcriptTypes';
@@ -11,6 +11,7 @@ import {
   TextSpanWithCitations,
   transformCitationIntervalsForPrettyPrintJson,
 } from '@/lib/citationMatch';
+import { useTextSelection } from '@/providers/use-text-selection';
 import { MetadataDialog } from './MetadataDialog';
 
 function stringify(x: any): string {
@@ -231,6 +232,17 @@ export function getMessageContentForCitations(
   return [textContent, { main, reasoning, toolCalls }];
 }
 
+interface MessageBoxProps {
+  message: ChatMessage;
+  index: number;
+  blockId?: string;
+  isHighlighted: boolean;
+  citedRanges: Citation[];
+  prettyPrintJsonMessages: Set<number>;
+  setPrettyPrintJsonMessages: React.Dispatch<React.SetStateAction<Set<number>>>;
+  transcriptIdx?: number;
+}
+
 export function MessageBox({
   message,
   index,
@@ -239,15 +251,18 @@ export function MessageBox({
   citedRanges,
   prettyPrintJsonMessages,
   setPrettyPrintJsonMessages,
-}: {
-  message: ChatMessage;
-  index: number;
-  blockId?: string;
-  isHighlighted: boolean;
-  citedRanges: Citation[];
-  prettyPrintJsonMessages: Set<number>;
-  setPrettyPrintJsonMessages: React.Dispatch<React.SetStateAction<Set<number>>>;
-}) {
+  transcriptIdx,
+}: MessageBoxProps) {
+  const containerRef = useRef<HTMLSpanElement | null>(null);
+  useTextSelection({
+    containerRef:
+      containerRef as unknown as React.RefObject<HTMLElement | null>,
+    selectionItem: {
+      transcriptIdx,
+      blockIdx: index,
+      text: '',
+    },
+  });
   const highlightedCitationId = useAppSelector(
     (state) => state.transcript.highlightedCitationId
   );
@@ -469,12 +484,14 @@ export function MessageBox({
           </div>
         </div>
 
-        {typeof message.content !== 'string' && renderReasoningBlock()}
-        <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono custom-scrollbar">
-          {renderMainMessageContent()}
-        </div>
-        {renderToolInfo()}
-        {renderToolCalls()}
+        <span ref={containerRef} className="relative block" tabIndex={0}>
+          {typeof message.content !== 'string' && renderReasoningBlock()}
+          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full text-xs overflow-x-auto font-mono custom-scrollbar">
+            {renderMainMessageContent()}
+          </div>
+          {renderToolInfo()}
+          {renderToolCalls()}
+        </span>
       </div>
     </div>
   );

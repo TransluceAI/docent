@@ -13,24 +13,27 @@ import {
 } from '@/app/api/rubricApi';
 import { useCitationNav } from '@/hooks/use-citation-nav';
 import { Citation } from '@/app/types/experimentViewerTypes';
+import { useRefinementTab } from '@/providers/use-refinement-tab';
 
 interface JudgeResultCardProps {
   judgeResult: JudgeResultWithCitations;
   judgeRunLabel?: JudgeRunLabel;
   navToTranscriptOnClick?: boolean;
+  active?: boolean;
 }
 
 export const JudgeResultCard = ({
   judgeResult,
   judgeRunLabel,
   navToTranscriptOnClick = true,
+  active = false,
 }: JudgeResultCardProps) => {
   const router = useRouter();
   const { collection_id: collectionId } = useParams<{
     collection_id: string;
   }>();
   const agentRunId = judgeResult.agent_run_id;
-
+  const { setActiveTab } = useRefinementTab();
   const { handleNavigateToCitation } = useCitationNav(judgeResult);
   const [updateJudgeRunLabel] = useUpdateJudgeRunLabelMutation();
   const [deleteJudgeRunLabel] = useDeleteJudgeRunLabelMutation();
@@ -65,7 +68,10 @@ export const JudgeResultCard = ({
       <div
         className={cn(
           'self-stretch w-[2.5px] rounded-full flex-shrink-0 my-0.5',
-          'bg-border group-hover:bg-indigo-border transition-colors duration-200'
+          active
+            ? 'bg-indigo-border'
+            : 'bg-border group-hover:bg-indigo-border',
+          'transition-colors duration-200'
         )}
       />
       <div
@@ -96,6 +102,8 @@ export const JudgeResultCard = ({
               `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`
             );
           }
+
+          setActiveTab('analyze');
         }}
       >
         <div className="space-y-1.5">
@@ -135,19 +143,24 @@ const FieldWithLabel = ({
 }: FieldWithLabelProps) => {
   const labelIsDifferent = labeledValue && labeledValue !== judgeResultValue;
 
-  const hasCitation = judgeResultValue.citations !== undefined;
-  const resolvedJudgeResultValue = hasCitation
+  const judgeResultHasCitation = judgeResultValue.citations !== undefined;
+  // Check if its an object (citation object) and not null (empty object)
+  const labeledValueHasCitation =
+    typeof labeledValue === 'object' && labeledValue !== null;
+  const resolvedJudgeResultValue = judgeResultHasCitation
     ? judgeResultValue.text
     : String(judgeResultValue);
 
   const resolvedLabeledValue =
-    labeledValue && hasCitation ? labeledValue.text : String(labeledValue);
+    labeledValue && labeledValueHasCitation
+      ? labeledValue.text
+      : String(labeledValue);
 
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex-1 items-start">
         <span className="font-semibold shrink-0">{fieldName}: </span>
-        {hasCitation ? (
+        {judgeResultHasCitation ? (
           <TextWithCitations
             text={resolvedJudgeResultValue}
             citations={judgeResultValue.citations || []}

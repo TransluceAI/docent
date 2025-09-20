@@ -1,6 +1,5 @@
 import asyncio
 import json
-import random
 from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
@@ -187,7 +186,6 @@ class RubricService:
         ctx: ViewContext,
         rubric_id: str,
         max_results: int | None = None,
-        only_run_on_labeled_runs: bool = False,
     ):
         """Start a job to evaluate the rubric."""
 
@@ -205,7 +203,6 @@ class RubricService:
                 job_json={
                     "rubric_id": rubric_id,
                     "max_results": max_results,
-                    "only_run_on_labeled_runs": only_run_on_labeled_runs,
                 },
             )
         )
@@ -301,25 +298,19 @@ class RubricService:
                 return
             max_results -= num_existing_results
 
-        only_run_on_labeled_runs = bool(job.job_json.get("only_run_on_labeled_runs", False))
-
-        if only_run_on_labeled_runs:
-            # When only_run_on_labeled_runs=true, only select agent runs that have existing labels for this specific rubric
-            query = (
-                select(SQLAAgentRun.id)
-                .distinct()
-                .where(SQLAAgentRun.collection_id == ctx.collection_id)
-                .join(
-                    SQLAJudgeRunLabel,
-                    and_(
-                        SQLAJudgeRunLabel.agent_run_id == SQLAAgentRun.id,
-                        SQLAJudgeRunLabel.rubric_id == rubric_id,
-                    ),
-                )
+        # Get runs sorting by those with labels first
+        query = (
+            select(SQLAAgentRun.id)
+            # Join to labels
+            .outerjoin(
+                SQLAJudgeRunLabel,
+                and_(
+                    SQLAJudgeRunLabel.agent_run_id == SQLAAgentRun.id,
+                    SQLAJudgeRunLabel.rubric_id == rubric_id,
+                ),
             )
-        else:
-            # Default behavior: select agent runs without existing results
-            query = select(SQLAAgentRun.id).where(
+            # Runs without existing results
+            .where(
                 SQLAAgentRun.collection_id == ctx.collection_id,
                 ~exists().where(
                     SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
@@ -328,7 +319,10 @@ class RubricService:
                     SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
                 ),
             )
-        # Intersect with the base filter
+            .group_by(SQLAAgentRun.id)
+            .order_by(func.count(SQLAJudgeRunLabel.id).desc())
+        )
+
         query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
 
         result = await self.session.execute(query)
@@ -339,13 +333,16 @@ class RubricService:
             job.id, job.job_json | {"total_agent_runs": len(agent_run_ids)}
         )
 
-        random.shuffle(agent_run_ids)
+        # Preserve ordering: labeled runs first
         if len(agent_run_ids) == 0:
             logger.info("Skipping rubric evaluation because no agent runs are missing results")
             return
 
         logger.info(f"Evaluating rubrics for {len(agent_run_ids)} agent runs missing results")
         agent_runs = await self.service.get_agent_runs(ctx, agent_run_ids=agent_run_ids)
+        # Preserve the label-first ordering from agent_run_ids
+        order_index = {rid: i for i, rid in enumerate(agent_run_ids)}
+        agent_runs.sort(key=lambda ar: order_index.get(ar.id, len(order_index)))
 
         num_results = 0
 
@@ -781,6 +778,13 @@ class RubricService:
         rows = result.scalars().all()
         return [row.to_pydantic() for row in rows]
 
+    async def has_judge_run_labels(self, rubric_id: str) -> bool:
+        """Check if a rubric has any run labels."""
+        result = await self.session.execute(
+            select(exists().where(SQLAJudgeRunLabel.rubric_id == rubric_id))
+        )
+        return result.scalar_one()
+
     async def delete_all_judge_run_labels(self, rubric_id: str):
         """Delete all run labels for a rubric."""
         await self.session.execute(
@@ -797,6 +801,28 @@ class RubricService:
         if result_label is None:
             return None
         return result_label.to_pydantic()
+
+    async def get_judge_run_labels_and_results(
+        self, rubric_id: str
+    ) -> list[tuple[JudgeRunLabel, JudgeResult]]:
+        """Get all run labels and results for a rubric."""
+        # Use the latest rubric version to avoid mixing versions in context
+        latest_version = await self.get_latest_rubric_version(rubric_id)
+        if latest_version is None:
+            return []
+
+        result = await self.session.execute(
+            select(SQLAJudgeRunLabel, SQLAJudgeResult)
+            .join(SQLAJudgeResult, SQLAJudgeRunLabel.agent_run_id == SQLAJudgeResult.agent_run_id)
+            .where(
+                SQLAJudgeRunLabel.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == latest_version,
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
+            )
+        )
+        rows = result.all()
+        return [(row[0].to_pydantic(), row[1].to_pydantic()) for row in rows]
 
     async def delete_judge_run_label(self, agent_run_id: str):
         """Delete a judge run label from a judge result."""

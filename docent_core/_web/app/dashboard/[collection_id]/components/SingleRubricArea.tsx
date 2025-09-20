@@ -1,20 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Pickaxe, Tags, Loader2 } from 'lucide-react';
+import { Tags, Loader2 } from 'lucide-react';
 import RubricEditor from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
 import {
-  useUpdateRubricMutation,
   useDeleteAllJudgeRunLabelsMutation,
   useGetJudgeRunLabelsQuery,
 } from '../../../api/rubricApi';
-import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import { Button } from '@/components/ui/button';
 import {
   ResultFilterControlsTrigger,
@@ -29,18 +27,28 @@ import { cn } from '@/lib/utils';
 import { useResultFilterControls } from '@/providers/use-result-filters';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import ShareRubricButton from './ShareRubricButton';
+import { useRefinementTab } from '@/providers/use-refinement-tab';
+import { usePostRubricUpdateToRefinementSessionMutation } from '@/app/api/refinementApi';
+import { toast } from '@/hooks/use-toast';
 
 interface SingleRubricAreaProps {
   rubricId: string;
+  sessionId?: string;
 }
 
-export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
-  const router = useRouter();
-  const { collection_id: collectionId } = useParams<{
+export default function SingleRubricArea({
+  rubricId,
+  sessionId,
+}: SingleRubricAreaProps) {
+  const { collection_id: collectionId, result_id: resultId } = useParams<{
     collection_id: string;
+    result_id?: string;
   }>();
 
-  const [updateRubric] = useUpdateRubricMutation();
+  const [
+    postRubricUpdateToRefinementSession,
+    { error: postRubricUpdateError },
+  ] = usePostRubricUpdateToRefinementSessionMutation();
   const [deleteAllJudgeRunLabels] = useDeleteAllJudgeRunLabelsMutation();
   const hasWritePermission = useHasCollectionWritePermission();
 
@@ -48,6 +56,7 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const { version, setVersion } = useRubricVersion();
   const { labeled, setLabeled } = useResultFilterControls();
+  const { setRefinementJobId } = useRefinementTab();
 
   const {
     // Rubric job status
@@ -84,33 +93,35 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
     rubric: Rubric,
     clearLabels: boolean = false
   ) => {
-    setVersion(rubric.version);
-
     if (hasLabels && clearLabels) {
       deleteAllJudgeRunLabels({
         collectionId,
         rubricId: rubric.id,
       });
     }
-    updateRubric({
-      collectionId,
-      rubricId: rubric.id,
-      rubric,
-    });
+
+    if (sessionId) {
+      const res = await postRubricUpdateToRefinementSession({
+        collectionId,
+        sessionId,
+        rubric,
+      }).unwrap();
+
+      if (postRubricUpdateError) {
+        toast({
+          title: 'Error',
+          description: 'Failed to update refinement session',
+          variant: 'destructive',
+        });
+      } else {
+        setVersion(rubric.version);
+        if (res?.job_id) setRefinementJobId(res.job_id);
+      }
+    }
   };
 
-  // Create refinement session button
-  const [
-    createOrGetRefinementSession,
-    { isLoading: isCreatingRefinementSession },
-  ] = useCreateOrGetRefinementSessionMutation();
-  const handleStartRefinement = async () => {
-    const result = await createOrGetRefinementSession({
-      collectionId,
-      rubricId,
-    }).unwrap();
-    router.push(`/dashboard/${collectionId}/refine/${result.id}`);
-  };
+  const [showDiff, setShowDiff] = useState(false);
+  const noJudgeResults = judgeResults.length == 0;
 
   return (
     <div className="space-y-2 flex flex-col flex-1 min-w-0">
@@ -119,7 +130,10 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
         rubricId={rubricId}
         rubricVersion={version}
         setRubricVersion={setVersion}
+        showDiff={showDiff}
+        setShowDiff={setShowDiff}
         onSave={handleRubricSave}
+        forceOpenSchema={noJudgeResults}
         onCloseWithoutSave={() => {}}
         shouldConfirmOnSave={hasLabels}
         onHasUnsavedChangesUpdated={setHasUnsavedChanges}
@@ -153,18 +167,14 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground"
-            onClick={handleStartRefinement}
-            disabled={isCreatingRefinementSession}
-          >
-            <Pickaxe className="h-3 w-3" />
-          </Button>
-          <ShareRubricButton rubricId={rubricId} collectionId={collectionId} />
+          <div className="hidden lg:flex items-center gap-2">
+            <ShareRubricButton
+              rubricId={rubricId}
+              collectionId={collectionId}
+            />
+          </div>
           {/* Clustering controls */}
-          {!rubricJobId && hasWritePermission && (
+          {!rubricJobId && hasWritePermission && !noJudgeResults && (
             <ClusterButton
               collectionId={collectionId}
               rubricId={rubricId}
@@ -180,7 +190,6 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
               collectionId={collectionId}
               rubricId={rubricId}
               rubricJobId={rubricJobId}
-              setShowOnlyLabeled={setLabeled}
               hasUnsavedChanges={hasUnsavedChanges}
             />
           )}
@@ -226,6 +235,7 @@ export default function SingleRubricArea({ rubricId }: SingleRubricAreaProps) {
           assignments={assignments}
           judgeResults={judgeResults}
           isClusteringActive={clusteringJobId !== null}
+          activeResultId={resultId}
         />
       )}
     </div>

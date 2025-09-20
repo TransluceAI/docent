@@ -11,12 +11,11 @@ from docent_core._server._broker.redis_client import (
     get_redis_client,
 )
 from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.schemas.refinement import RefinementAgentSession
 from docent_core.docent.db.schemas.tables import SQLAJob
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.refinement import (
-    RefinementAgentSession,
     RefinementService,
-    trim_messages_from_state,
 )
 from docent_core.docent.services.rubric import RubricService
 
@@ -53,11 +52,15 @@ async def refinement_agent_job(ctx: ViewContext, job: SQLAJob):
                 )
 
         # Publish the initial state
-        await _event_callback(trim_messages_from_state(sq_rsession.to_pydantic()))
+        await _event_callback(sq_rsession.to_pydantic().prepare_for_client())
 
         # Run the refinement agent
+        show_labels_in_context = job.job_json.get("show_labels_in_context", False)
         final_state = await refinement_svc.refine_agent_one_turn(
-            ctx, sq_rsession, callback=_event_callback
+            ctx,
+            sq_rsession,
+            sse_callback=_event_callback,
+            show_labels_in_context=show_labels_in_context,
         )
 
         # Publish the final state and indicate that the job is finished

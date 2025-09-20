@@ -1,4 +1,4 @@
-import React, { useReducer } from 'react';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +11,7 @@ import { JudgeRunLabel } from '@/app/store/rubricSlice';
 import { SchemaDefinition } from '@/app/types/schema';
 import { toast } from '@/hooks/use-toast';
 import posthog from 'posthog-js';
+import { Check } from 'lucide-react';
 
 // Reducer types
 type FormState = Record<string, any>;
@@ -159,6 +160,10 @@ const LabelForm = ({
 }: AreaProps) => {
   // Plop the initial state into the reducer as the initial reducer state
   const [formState, dispatch] = useReducer(formReducer, initialState);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const successTimerRef = useRef<number | undefined>(undefined);
+  const resetTimerRef = useRef<number | undefined>(undefined);
 
   const [createJudgeRunLabel] = useCreateJudgeRunLabelMutation();
   const [updateJudgeRunLabel] = useUpdateJudgeRunLabelMutation();
@@ -175,16 +180,12 @@ const LabelForm = ({
 
       if (!judgeRunLabel) {
         await createJudgeRunLabel(payload).unwrap();
-        toast({
-          title: 'Label created',
-          description: 'Label created successfully',
-        });
+        // Show transient success indicator on the Save button
+        showSaveSuccess();
       } else {
         await updateJudgeRunLabel(payload).unwrap();
-        toast({
-          title: 'Label updated',
-          description: 'Label updated successfully',
-        });
+        // Show transient success indicator on the Save button
+        showSaveSuccess();
       }
 
       posthog.capture('label_form_submitted', {
@@ -200,6 +201,26 @@ const LabelForm = ({
     }
   };
 
+  const showSaveSuccess = () => {
+    setSaveSuccess(true);
+    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+    successTimerRef.current = window.setTimeout(
+      () => setSaveSuccess(false),
+      1500
+    );
+  };
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        window.clearTimeout(successTimerRef.current);
+      }
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
   const reset = async () => {
     dispatch({ type: 'RESET', initialState: judgeOutput });
 
@@ -211,10 +232,12 @@ const LabelForm = ({
           agentRunId: agentRunId,
         }).unwrap();
 
-        toast({
-          title: 'Label deleted',
-          description: 'Label deleted successfully',
-        });
+        setResetSuccess(true);
+        if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = window.setTimeout(
+          () => setResetSuccess(false),
+          1500
+        );
       } catch (error) {
         toast({
           title: 'Error',
@@ -312,17 +335,31 @@ const LabelForm = ({
       {/* Fixed buttons at bottom */}
       <div className="sticky bottom-0 bg-background pt-3 border-t">
         <div className="flex flex-row gap-2 w-full">
-          <Button size="sm" onClick={submit} className="w-full">
-            Save
+          <Button size="sm" onClick={submit} className="w-full relative">
+            <span className="pointer-events-none">Save</span>
+            <Check
+              aria-hidden
+              className={cn(
+                'absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-green-600 transition-opacity duration-200',
+                saveSuccess ? 'opacity-100' : 'opacity-0'
+              )}
+            />
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={reset}
             disabled={!hasChanged}
-            className="w-full"
+            className="w-full relative"
           >
-            Reset
+            <span className="pointer-events-none">Reset</span>
+            <Check
+              aria-hidden
+              className={cn(
+                'absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-green-600 transition-opacity duration-200',
+                resetSuccess ? 'opacity-100' : 'opacity-0'
+              )}
+            />
           </Button>
         </div>
       </div>

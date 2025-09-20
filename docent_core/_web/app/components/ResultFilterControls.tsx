@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useReducer, useEffect, useRef } from 'react';
 import { Button } from '../../components/ui/button';
 import {
   Select,
@@ -18,35 +18,98 @@ import { FunnelPlus, X } from 'lucide-react';
 import { useResultFilterControls } from '@/providers/use-result-filters';
 import { Operator } from '@/providers/use-result-filters';
 import posthog from 'posthog-js';
+import { toast } from '@/hooks/use-toast';
 
-function FilterControls() {
+interface FilterControlsProps {
+  setIsPopoverOpen: (open: boolean) => void;
+}
+
+type Step = 'field' | 'operator' | 'value' | null;
+
+interface FilterState {
+  path?: string;
+  op?: Operator;
+  value: string;
+  step: Step;
+}
+
+type Action =
+  | { type: 'selectField'; path: string }
+  | { type: 'selectOperator'; op: Operator }
+  | { type: 'setValue'; value: string }
+  | { type: 'openStep'; step: Step }
+  | { type: 'reset' };
+
+function reducer(state: FilterState, action: Action): FilterState {
+  switch (action.type) {
+    case 'selectField':
+      return { path: action.path, op: undefined, value: '', step: 'operator' };
+    case 'selectOperator':
+      return { ...state, op: action.op, step: 'value' };
+    case 'setValue':
+      return { ...state, value: action.value };
+    case 'openStep':
+      return { ...state, step: action.step };
+    case 'reset':
+      return { path: undefined, op: undefined, value: '', step: null };
+    default:
+      return state;
+  }
+}
+
+function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
   const { options, filters, setFilters, getValidOps, schema } =
     useResultFilterControls();
 
-  const [path, setPath] = useState<string>();
-  const [op, setOp] = useState<Operator>('==');
-  const [value, setValue] = useState<string>('');
+  const [state, dispatch] = useReducer(reducer, {
+    path: undefined,
+    op: undefined,
+    value: '',
+    step: null as Step,
+  });
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const enumOptions = useMemo<string[]>(() => {
-    if (!path || !schema) return [];
-    if (
-      schema.properties[path].type === 'string' &&
-      'enum' in schema.properties[path]
-    ) {
-      return schema.properties[path].enum;
+    if (!state.path || !schema) return [];
+    const property = schema.properties[state.path];
+    if (property.type === 'string' && 'enum' in property) {
+      return property.enum;
     }
     return [];
-  }, [path, schema]);
+  }, [state.path, schema]);
+
+  const isEnum = enumOptions.length > 0;
+
+  useEffect(() => {
+    if (state.step === 'value' && !isEnum) {
+      inputRef.current?.focus();
+    }
+  }, [state.step, isEnum]);
 
   const addFilter = () => {
-    if (!path) return;
-    setFilters([...filters, { path, op, value }]);
+    const { path, op, value } = state;
+    if (!path || !op) return;
 
-    posthog.capture('filter_added', {
-      path,
-      op,
-      value,
-    });
+    const existingFilter = filters.find(
+      (f) => f.path === path && f.op === op && f.value === value
+    );
+    if (existingFilter) {
+      toast({
+        title: 'Filter already exists',
+        description: 'Please enter a different filter',
+      });
+    } else {
+      setFilters([...filters, { path, op, value }]);
+
+      posthog.capture('filter_added', {
+        path,
+        op,
+        value,
+      });
+    }
+
+    setIsPopoverOpen(false);
+    dispatch({ type: 'reset' });
   };
 
   return (
@@ -55,7 +118,16 @@ function FilterControls() {
         <div className="text-xs text-muted-foreground font-mono ml-1 mb-1">
           Field
         </div>
-        <Select value={path} onValueChange={setPath}>
+        <Select
+          value={state.path}
+          open={state.step === 'field'}
+          onOpenChange={(o) =>
+            dispatch({ type: 'openStep', step: o ? 'field' : null })
+          }
+          onValueChange={(v) => {
+            dispatch({ type: 'selectField', path: v });
+          }}
+        >
           <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground">
             <SelectValue placeholder="Select field" />
           </SelectTrigger>
@@ -72,12 +144,21 @@ function FilterControls() {
         <div className="text-xs text-muted-foreground font-mono mr-1 mb-1">
           Operator
         </div>
-        <Select value={op} onValueChange={(v) => setOp(v as Operator)}>
+        <Select
+          value={state.op}
+          open={state.step === 'operator'}
+          onOpenChange={(o) =>
+            dispatch({ type: 'openStep', step: o ? 'operator' : null })
+          }
+          onValueChange={(v) => {
+            dispatch({ type: 'selectOperator', op: v as Operator });
+          }}
+        >
           <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-20">
-            <SelectValue placeholder="==" />
+            <SelectValue placeholder="Select operator" />
           </SelectTrigger>
           <SelectContent>
-            {getValidOps(path || '').map((o) => (
+            {getValidOps(state.path || '').map((o) => (
               <SelectItem key={o} value={o} className="font-mono text-xs">
                 {o}
               </SelectItem>
@@ -90,7 +171,16 @@ function FilterControls() {
           Value
         </div>
         {enumOptions.length > 0 ? (
-          <Select value={value} onValueChange={setValue}>
+          <Select
+            value={state.value}
+            open={state.step === 'value'}
+            onOpenChange={(o) =>
+              dispatch({ type: 'openStep', step: o ? 'value' : null })
+            }
+            onValueChange={(v) => {
+              dispatch({ type: 'setValue', value: v });
+            }}
+          >
             <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground">
               <SelectValue placeholder="Select value" />
             </SelectTrigger>
@@ -104,10 +194,13 @@ function FilterControls() {
           </Select>
         ) : (
           <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+            value={state.value}
+            onChange={(e) =>
+              dispatch({ type: 'setValue', value: e.target.value })
+            }
             placeholder="Enter value"
             className="h-7 text-xs bg-background font-mono text-muted-foreground w-full rounded border border-border px-2"
+            ref={inputRef}
             onKeyDown={(e) => {
               if (e.key === 'Enter') addFilter();
             }}
@@ -120,7 +213,7 @@ function FilterControls() {
           size="sm"
           className="h-7 text-xs px-2"
           onClick={addFilter}
-          disabled={!path}
+          disabled={!state.path || !state.op}
         >
           Add Filter
         </Button>
@@ -145,18 +238,18 @@ export function ResultFilterControlsTrigger() {
           <FunnelPlus className="h-3 w-3" />
           {filters.length > 0 ? (
             <>
-              Filters
+              <span className="hidden xl:inline">Filters</span>
               <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                 {filters.length}
               </Badge>
             </>
           ) : (
-            'Add filter'
+            <span className="hidden xl:inline">Add filter</span>
           )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[520px] p-3" align="start">
-        <FilterControls />
+        <FilterControls setIsPopoverOpen={setIsPopoverOpen} />
       </PopoverContent>
     </Popover>
   );

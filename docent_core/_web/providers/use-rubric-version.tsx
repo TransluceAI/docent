@@ -1,11 +1,18 @@
 'use client';
-import { createContext, useContext, useState, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
 import { useGetLatestRubricVersionQuery } from '@/app/api/rubricApi';
 
 interface RubricVersionContextValue {
   version: number | null;
   setVersion: (version: number | null) => void;
   latestVersion: number | null;
+  refetchLatestVersion: () => void;
 }
 
 const RubricVersionContext = createContext<RubricVersionContextValue | null>(
@@ -32,10 +39,15 @@ export function RubricVersionProvider({
   collectionId,
   children,
 }: RubricVersionProviderProps) {
-  const { data: latestVersion } = useGetLatestRubricVersionQuery({
+  const { data: latestVersion, refetch } = useGetLatestRubricVersionQuery({
     rubricId,
     collectionId,
   });
+
+  const refetchLatestVersion = useCallback(() => {
+    refetch();
+    setVersion(latestVersion ?? null);
+  }, [refetch, latestVersion]);
 
   const [version, setVersion] = useState<number | null>(null);
 
@@ -49,6 +61,7 @@ export function RubricVersionProvider({
     version,
     setVersion,
     latestVersion: latestVersion ?? null,
+    refetchLatestVersion,
   };
 
   return (

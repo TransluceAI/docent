@@ -26,7 +26,6 @@ export interface UpdateRubricRequest {
 
 export interface StartRubricJobResponse {
   job_id: string;
-  only_run_on_labeled_runs?: boolean;
 }
 
 export interface RubricJobDetails {
@@ -206,20 +205,13 @@ export const rubricApi = createApi({
         collectionId: string;
         rubricId: string;
         max_results?: number | null;
-        only_run_on_labeled_runs?: boolean;
       }
     >({
-      query: ({
-        collectionId,
-        rubricId,
-        max_results,
-        only_run_on_labeled_runs,
-      }) => ({
+      query: ({ collectionId, rubricId, max_results }) => ({
         url: `/${collectionId}/${rubricId}/evaluate`,
         method: 'POST',
         body: {
           max_results: max_results ?? null,
-          only_run_on_labeled_runs: only_run_on_labeled_runs ?? false,
         },
       }),
       invalidatesTags: (result, error, { rubricId }) => [

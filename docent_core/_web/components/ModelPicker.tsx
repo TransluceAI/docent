@@ -15,7 +15,11 @@ import {
 import { ModelOption } from '@/app/store/rubricSlice';
 import { cn } from '@/lib/utils';
 
-function nameModel(model: ModelOption) {
+function nameModel(model: ModelOption, shortenName = false) {
+  if (shortenName) {
+    return `${model.model_name}`;
+  }
+
   if (model.reasoning_effort) {
     return `${model.provider}/${model.model_name} (${model.reasoning_effort} reasoning effort)`;
   }
@@ -29,6 +33,7 @@ interface ModelPickerProps {
   disabled?: boolean;
   className?: string;
   borderless?: boolean;
+  shortenName?: boolean;
 }
 
 export default function ModelPicker({
@@ -38,6 +43,7 @@ export default function ModelPicker({
   disabled = false,
   className = 'w-full h-7 text-xs border bg-background px-2 font-normal',
   borderless = false,
+  shortenName = false,
 }: ModelPickerProps) {
   return (
     <TooltipProvider>
@@ -60,7 +66,9 @@ export default function ModelPicker({
           )}
         >
           <div className="flex flex-row items-center gap-1 w-full">
-            <span className="flex-1 truncate">{nameModel(selectedModel)}</span>
+            <span className="flex-1 truncate">
+              {nameModel(selectedModel, shortenName)}
+            </span>
             {selectedModel?.uses_byok && (
               <Tooltip>
                 <TooltipTrigger asChild>

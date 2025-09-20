@@ -34,7 +34,7 @@ export function ChatHeader({
             size="sm"
             onClick={onReset}
             disabled={!canReset}
-            className="h-7 px-2 text-xs"
+            className="h-7 w-7 p-1.5 text-xs"
             title="Clear chat history"
           >
             <RotateCcw className="h-4 w-4" />

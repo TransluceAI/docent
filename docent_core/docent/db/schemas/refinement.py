@@ -8,16 +8,17 @@ Steps of refinement:
 from copy import deepcopy
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docent.data_models.chat.message import ChatMessage, parse_chat_message
 from docent_core._db_service.schemas.base import SQLABase
+from docent_core.docent.ai_tools.rubric.refine import clear_messages
 from docent_core.docent.ai_tools.rubric.rubric import JudgeResult
 from docent_core.docent.db.schemas.rubric import TABLE_RUBRIC
 
@@ -42,8 +43,37 @@ class RefinementAgentSession(BaseModel):
     rubric_id: str
     rubric_version: int
     messages: list[ChatMessage]
-    status: RefinementStatus
-    judge_results: list[JudgeResult]
+    n_summaries: Optional[int] = Field(
+        default=None, description="Number of summaries generated at the start of the conversation."
+    )
+    # Deprecated
+    status: Optional[RefinementStatus] = Field(default=None, description="Deprecated")
+    # NOTE(cadentj): This will *NOT* be backward compatible with old schema if i remove the judge_results field
+    judge_results: Optional[list[JudgeResult]] = Field(
+        default=[], description="Deprecated, sessions now store summaries"
+    )
+    error_message: Optional[str] = Field(
+        default=None, description="Error message from the refinement agent"
+    )
+
+    def prepare_for_client(self, error: str | None = None) -> "RefinementAgentSession":
+        """This function trims the session for the SSE callback.
+        the FE doesn't need all session state
+
+        Trim the messages at positions 0 and 2
+        0 --> the system message
+        2 --> the user message with the rubric, schema, and examples
+        """
+
+        messages = self.model_copy().messages
+        cleaned_messages = clear_messages(messages[1:2] + messages[3:])
+
+        return self.model_copy(
+            update={
+                "messages": cleaned_messages,
+                "error_message": error,
+            }
+        )
 
 
 class SQLARefinementAgentSession(SQLABase):

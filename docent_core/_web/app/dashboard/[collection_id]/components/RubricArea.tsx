@@ -1,8 +1,6 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { v4 as uuidv4 } from 'uuid';
-
 import { Card } from '@/components/ui/card';
 
 import RubricList from './RubricList';
@@ -16,83 +14,93 @@ import QuickSearchBox from './QuickSearchBox';
 
 const RubricArea = () => {
   const router = useRouter();
-  const params = useParams();
-  const collectionId = params.collection_id as string;
+  const { collection_id: collectionId } = useParams<{
+    collection_id: string;
+  }>();
 
-  // Handle starting evaluations
-  const [startEvaluation] = useStartEvaluationMutation();
-  const handleEvaluate = async (rubricId: string) => {
-    // First start the job
-    await startEvaluation({
-      collectionId,
-      rubricId,
-    });
-  };
-
-  /**
-   * Quick search box
-   */
-
+  // Mutations
+  const [startEvaluation, { isLoading: isStartingEvaluation }] =
+    useStartEvaluationMutation();
   const [createRubric, { isLoading: isCreatingRubric }] =
     useCreateRubricMutation();
   const [createOrGetSession, { isLoading: isCreatingOrGettingSession }] =
     useCreateOrGetRefinementSessionMutation();
+
   const handleAddNewRubric = async (rubricText: string) => {
     if (!collectionId) return undefined;
 
-    try {
-      // Create a new rubric using the API
-      const rubricId = uuidv4();
-      const newRubric = {
+    return await createRubric({
+      collectionId,
+      rubric: {
         rubric_text: rubricText,
-        id: rubricId,
-      };
-
-      await createRubric({
-        collectionId,
-        rubric: newRubric,
-      }).unwrap();
-
-      return rubricId;
-    } catch (error) {
-      console.error('Failed to create rubric:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create rubric',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleQuickSearchSubmit = async (
-    highLevelDescription: string,
-    mode: 'explore' | 'full'
-  ) => {
-    if (mode === 'explore') {
-      const rubricId = await handleAddNewRubric(highLevelDescription);
-      if (!rubricId || !collectionId) return;
-      try {
-        const res = await createOrGetSession({
-          collectionId,
-          rubricId,
-        }).unwrap();
-        router.push(`/dashboard/${collectionId}/refine/${res.id}`);
-      } catch (error) {
-        console.error('Failed to start refinement session:', error);
+      },
+    })
+      .unwrap()
+      .catch((error) => {
+        console.error('Failed to create rubric', error);
         toast({
           title: 'Error',
-          description: 'Failed to start refinement session',
+          description: 'Failed to create rubric',
           variant: 'destructive',
         });
-      }
-    } else {
-      const rubricId = await handleAddNewRubric(highLevelDescription);
-      if (rubricId) {
-        handleEvaluate(rubricId);
-        // Then redirect to the rubric page
+      });
+  };
+
+  const handleGuidedSubmit = async (highLevelDescription: string) => {
+    const rubricId = await handleAddNewRubric(highLevelDescription);
+    if (!rubricId) return;
+
+    await createOrGetSession({
+      collectionId,
+      rubricId,
+      sessionType: 'guided',
+    })
+      .unwrap()
+      .then(() => {
         router.push(`/dashboard/${collectionId}/rubric/${rubricId}`);
-      }
-    }
+      })
+      .catch((error) => {
+        console.error('Failed to create or get session:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to create or get session',
+          variant: 'destructive',
+        });
+      });
+  };
+
+  const handleDirectSubmit = async (highLevelDescription: string) => {
+    const rubricId = await handleAddNewRubric(highLevelDescription);
+    if (!rubricId) return;
+
+    await startEvaluation({
+      collectionId,
+      rubricId,
+    }).catch((error) => {
+      console.error('Failed to start full search:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to start full search',
+        variant: 'destructive',
+      });
+    });
+
+    await createOrGetSession({
+      collectionId,
+      rubricId,
+      sessionType: 'direct',
+    })
+      .then(() => {
+        router.push(`/dashboard/${collectionId}/rubric/${rubricId}`);
+      })
+      .catch((error) => {
+        console.error('Failed to create or get session:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to create or get session',
+          variant: 'destructive',
+        });
+      });
   };
 
   return (
@@ -100,8 +108,13 @@ const RubricArea = () => {
       {/* Rubric Display */}
       <div className="space-y-2">
         <QuickSearchBox
-          onSubmit={handleQuickSearchSubmit}
-          isLoading={isCreatingRubric || isCreatingOrGettingSession}
+          onGuided={handleGuidedSubmit}
+          onDirect={handleDirectSubmit}
+          isLoading={
+            isCreatingRubric ||
+            isCreatingOrGettingSession ||
+            isStartingEvaluation
+          }
         />
         <RubricList />
       </div>

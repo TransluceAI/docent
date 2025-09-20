@@ -46,7 +46,6 @@ const createEventSource = (
 
     try {
       const data = JSON.parse(event.data);
-      console.log('(sse)', data);
       onMessage(data);
     } catch (error) {
       console.error('Error parsing SSE data:', error);

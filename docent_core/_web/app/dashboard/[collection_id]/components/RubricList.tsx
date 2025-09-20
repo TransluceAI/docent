@@ -6,7 +6,6 @@ import {
   FileText,
   Trash2,
   Pause,
-  PickaxeIcon,
   Loader2,
   ClipboardCopyIcon,
 } from 'lucide-react';
@@ -53,10 +52,8 @@ function RubricCard({
   hasWritePermission,
 }: RubricCardProps) {
   const router = useRouter();
-  const [
-    createOrGetRefinementSession,
-    { isLoading: isCreatingRefinementSession },
-  ] = useCreateOrGetRefinementSessionMutation();
+  const [createOrGetRefinementSession] =
+    useCreateOrGetRefinementSessionMutation();
 
   // Get job status for this rubric
   const { data: jobDetails } = useGetRubricJobStatusQuery({
@@ -139,13 +136,20 @@ function RubricCard({
 
   const handleClickRefine = async () => {
     if (!collectionId) return;
+
+    if (!hasWritePermission) {
+      router.push(`/dashboard/${collectionId}/rubric/${rubric.id}`);
+      return;
+    }
+
     try {
       const res = await createOrGetRefinementSession({
         collectionId,
         rubricId: rubric.id,
+        sessionType: 'direct',
       }).unwrap();
       console.log('res', res);
-      router.push(`/dashboard/${collectionId}/refine/${res.id}`);
+      router.push(`/dashboard/${collectionId}/rubric/${rubric.id}`);
     } catch (error) {
       console.error('Failed to start refinement session:', error);
       toast({
@@ -156,17 +160,13 @@ function RubricCard({
     }
   };
 
-  const handleClick = () => {
-    router.push(`/dashboard/${collectionId}/rubric/${rubric.id}`);
-  };
-
   const [startEvaluation] = useStartEvaluationMutation();
 
   return (
     <div
       key={rubric.id}
       className="group relative border rounded-md transition-all duration-200 cursor-pointer border-border bg-secondary/50 hover:bg-secondary hover:shadow-sm"
-      onClick={handleClick}
+      onClick={handleClickRefine}
     >
       <div className={`p-2.5 ${hasWritePermission ? 'pr-28' : 'pr-12'}`}>
         {/* Icon and Description */}
@@ -190,25 +190,6 @@ function RubricCard({
 
       {/* Action buttons */}
       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-        {hasWritePermission && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="p-1.5 rounded transition-colors hover:bg-secondary text-muted-foreground hover:text-primary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleClickRefine();
-                }}
-                aria-label="Refine this rubric"
-                disabled={isCreatingRefinementSession}
-              >
-                <PickaxeIcon className="h-3 w-3" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Refine this rubric</TooltipContent>
-          </Tooltip>
-        )}
-
         {hasWritePermission && copyableCollections.length > 0 && (
           <DropdownMenu>
             <Tooltip>

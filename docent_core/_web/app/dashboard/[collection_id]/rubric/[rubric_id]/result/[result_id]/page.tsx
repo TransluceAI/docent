@@ -1,34 +1,19 @@
 'use client';
 
-import React, {
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
-
+import React, { Suspense, useCallback, useEffect, useRef } from 'react';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import TranscriptChat from '@/components/TranscriptChat';
+import { useParams, useRouter } from 'next/navigation';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 
-import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
+import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { useCitationNavigation } from '../../NavigateToCitationContext';
 import { Loader2 } from 'lucide-react';
-import LabelArea from './components/LabelArea';
 import { useRubricVersion } from '@/providers/use-rubric-version';
+import { useRefinementTab } from '@/providers/use-refinement-tab';
 
 export default function JudgeResultPage() {
   const {
@@ -45,16 +30,7 @@ export default function JudgeResultPage() {
   const router = useRouter();
   const citationNav = useCitationNavigation();
 
-  const rightSidebarOpen = useAppSelector(
-    (state) => state.transcript.rightSidebarOpen
-  );
-
-  const searchParams = useSearchParams();
   const { version } = useRubricVersion();
-  const activeTabFromUrl = searchParams.get('tab');
-
-  // Local state for active tab, initialized from URL or default to 'chat'
-  const [activeTab, setActiveTab] = useState(activeTabFromUrl || 'chat');
 
   const {
     data: rubricRunState,
@@ -116,6 +92,8 @@ export default function JudgeResultPage() {
       );
     }
   }, [result, agentRunId, dispatch]);
+
+  const { setActiveTab } = useRefinementTab();
 
   // Reset the gate whenever the selected result changes so the next result can
   // perform its own one-time initial scroll.
@@ -182,18 +160,6 @@ export default function JudgeResultPage() {
     };
   }, [citationNav, handleNavigateToCitation, agentRunId]);
 
-  // Update local state when URL parameter changes
-  useEffect(() => {
-    if (activeTabFromUrl) {
-      setActiveTab(activeTabFromUrl);
-    }
-  }, [activeTabFromUrl]);
-
-  // Handle tab changes by updating local state
-  const handleTabChange = useCallback((value: string) => {
-    setActiveTab(value);
-  }, []);
-
   if (isLoadingRubricRunState) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-0">
@@ -210,62 +176,20 @@ export default function JudgeResultPage() {
     );
   }
 
-  const agentRunViewerContent = agentRunId ? (
-    <ResizablePanelGroup
-      direction="horizontal"
-      className="h-full min-h-0 min-w-0 flex flex-row border rounded-xl"
-      style={{ flexGrow: '2' }}
-    >
-      <ResizablePanel
-        defaultSize={70}
-        className="min-w-0 p-3  min-h-0 flex flex-col overflow-hidden"
-      >
-        <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
-      </ResizablePanel>
-
-      {rightSidebarOpen && <ResizableHandle withHandle={true} />}
-      {rightSidebarOpen && (
-        <ResizablePanel
-          defaultSize={30}
-          className="p-3 min-w-0 min-h-0 h-full flex flex-col"
-        >
-          <Tabs
-            className="flex flex-col h-full min-h-0"
-            value={activeTab}
-            onValueChange={handleTabChange}
-          >
-            <TabsList className="grid w-full grid-cols-2 mb-2">
-              <TabsTrigger value="chat">Chat</TabsTrigger>
-              <TabsTrigger value="label">Label</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="chat" className="flex-1 h-full min-h-0">
-              {/* Transcript chat */}
-              <TranscriptChat
-                runId={agentRunId}
-                collectionId={collectionId}
-                judgeResult={result}
-                resultContext={{
-                  rubricId,
-                  resultId: result?.id || '',
-                }}
-                onNavigateToCitation={handleNavigateToCitation}
-                className="flex flex-col min-w-0 h-full"
-              />
-            </TabsContent>
-
-            <TabsContent value="label" className="flex-1 min-h-0">
-              <LabelArea
-                result={result!}
-                collectionId={collectionId}
-                rubricId={rubricId}
-              />
-            </TabsContent>
-          </Tabs>
-        </ResizablePanel>
-      )}
-    </ResizablePanelGroup>
-  ) : null;
+  let agentRunViewerContent = null;
+  if (agentRunId) {
+    if (isLoadingRubricRunState) {
+      agentRunViewerContent = <div>Loading agent run...</div>;
+    } else if (isErrorRubricRunState) {
+      agentRunViewerContent = <div>Failed to load agent run.</div>;
+    } else if (rubricRunState) {
+      agentRunViewerContent = (
+        <div className="h-full border rounded-xl p-3 overflow-hidden flex flex-col">
+          <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
+        </div>
+      );
+    }
+  }
 
   return <Suspense>{agentRunViewerContent}</Suspense>;
 }

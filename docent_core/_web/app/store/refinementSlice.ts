@@ -1,20 +1,14 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { ChatMessage } from '@/app/types/transcriptTypes';
-import { JudgeResultWithCitations } from './rubricSlice';
-
-export type RefinementStatus =
-  | 'reading_data'
-  | 'initial_feedback'
-  | 'asking_questions'
-  | 'done';
 
 export interface RefinementAgentSession {
   id: string;
   rubric_id: string;
   rubric_version: number;
   messages: ChatMessage[];
-  status: RefinementStatus;
-  judge_results: JudgeResultWithCitations[];
+  n_summaries: number;
+  // Optional error from backend refinement agent
+  error_message?: string;
 }
 
 interface RefinementState {}

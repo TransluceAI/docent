@@ -12,13 +12,25 @@ export const refinementApi = createApi({
   }),
   tagTypes: ['RefinementSession'],
   endpoints: (build) => ({
+    getRefinementSessionState: build.query<
+      RefinementAgentSession,
+      { collectionId: string; sessionId: string }
+    >({
+      query: ({ collectionId, sessionId }) => ({
+        url: `/${collectionId}/refinement-session/${sessionId}/state`,
+        method: 'GET',
+      }),
+      providesTags: (result) =>
+        result ? [{ type: 'RefinementSession' as const, id: result.id }] : [],
+    }),
     createOrGetRefinementSession: build.mutation<
       { id: string },
-      { collectionId: string; rubricId: string }
+      { collectionId: string; rubricId: string; sessionType: string }
     >({
-      query: ({ collectionId, rubricId }) => ({
+      query: ({ collectionId, rubricId, sessionType }) => ({
         url: `/${collectionId}/refinement-session/create/${rubricId}`,
         method: 'POST',
+        body: { session_type: sessionType },
       }),
       invalidatesTags: (result) =>
         result ? [{ type: 'RefinementSession' as const, id: result.id }] : [],
@@ -38,14 +50,35 @@ export const refinementApi = createApi({
           : [],
     }),
 
+    getRefinementSessionJob: build.mutation<
+      { session_id: string; job_id: string | null; rubric_id: string },
+      { collectionId: string; sessionId: string }
+    >({
+      query: ({ collectionId, sessionId }) => ({
+        url: `/${collectionId}/refinement-session/${sessionId}/job`,
+        method: 'GET',
+      }),
+      invalidatesTags: (result) =>
+        result
+          ? [{ type: 'RefinementSession' as const, id: result.session_id }]
+          : [],
+    }),
+
     listenToRefinementJob: build.query<
-      { isSSEConnected: boolean; rsession: RefinementAgentSession | null },
+      {
+        isSSEConnected: boolean;
+        rSession: RefinementAgentSession | null;
+        eval_rubric_job_id: string | null;
+        error_message?: string;
+      },
       { collectionId: string; jobId: string }
     >({
       queryFn: () => ({
         data: {
           isSSEConnected: true,
-          rsession: null,
+          rSession: null,
+          eval_rubric_job_id: null,
+          error_message: undefined,
         },
       }),
       keepUnusedDataFor: 0,
@@ -59,7 +92,8 @@ export const refinementApi = createApi({
           url,
           (data: RefinementAgentSession) => {
             updateCachedData((draft) => {
-              draft.rsession = data;
+              draft.rSession = data;
+              draft.error_message = data.error_message;
             });
           },
           () => {
@@ -77,13 +111,21 @@ export const refinementApi = createApi({
     }),
 
     postMessageToRefinementSession: build.mutation<
-      { job_id: string; rsession: RefinementAgentSession },
-      { collectionId: string; sessionId: string; message: string }
+      { job_id: string; rSession: RefinementAgentSession },
+      {
+        collectionId: string;
+        sessionId: string;
+        message: string;
+        showLabelsInContext: boolean;
+      }
     >({
-      query: ({ collectionId, sessionId, message }) => ({
+      query: ({ collectionId, sessionId, message, showLabelsInContext }) => ({
         url: `/${collectionId}/refinement-session/${sessionId}/message`,
         method: 'POST',
-        body: { message },
+        body: {
+          message,
+          show_labels_in_context: showLabelsInContext,
+        },
       }),
       invalidatesTags: (result, error, arg) => [
         { type: 'RefinementSession' as const, id: arg.sessionId },
@@ -91,7 +133,7 @@ export const refinementApi = createApi({
     }),
 
     postRubricUpdateToRefinementSession: build.mutation<
-      { job_id: string; rsession: RefinementAgentSession },
+      { job_id: string; rSession: RefinementAgentSession },
       { collectionId: string; sessionId: string; rubric: Rubric }
     >({
       query: ({ collectionId, sessionId, rubric }) => ({
@@ -103,14 +145,46 @@ export const refinementApi = createApi({
         { type: 'RefinementSession' as const, id: arg.sessionId },
       ],
     }),
+
+    retryLastMessage: build.mutation<
+      { job_id: string; rSession: RefinementAgentSession },
+      { collectionId: string; sessionId: string }
+    >({
+      query: ({ collectionId, sessionId }) => ({
+        url: `/${collectionId}/refinement-session/${sessionId}/retry-last-message`,
+        method: 'POST',
+        body: undefined,
+      }),
+      invalidatesTags: (result, error, arg) => [
+        { type: 'RefinementSession' as const, id: arg.sessionId },
+      ],
+    }),
+
+    cancelRefinementJob: build.mutation<
+      { message: string },
+      { collectionId: string; sessionId: string }
+    >({
+      query: ({ collectionId, sessionId }) => ({
+        url: `/${collectionId}/refinement-session/${sessionId}/cancel`,
+        method: 'POST',
+        body: undefined,
+      }),
+      invalidatesTags: (result, error, arg) => [
+        { type: 'RefinementSession' as const, id: arg.sessionId },
+      ],
+    }),
   }),
 });
 
 export const {
+  useGetRefinementSessionStateQuery,
   useCreateOrGetRefinementSessionMutation,
   useStartRefinementSessionMutation,
+  useGetRefinementSessionJobMutation,
   usePostMessageToRefinementSessionMutation,
   usePostRubricUpdateToRefinementSessionMutation,
+  useCancelRefinementJobMutation,
+  useRetryLastMessageMutation,
   useListenToRefinementJobQuery,
   useLazyListenToRefinementJobQuery,
 } = refinementApi;

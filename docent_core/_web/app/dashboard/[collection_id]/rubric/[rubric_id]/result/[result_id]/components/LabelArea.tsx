@@ -59,6 +59,7 @@ function LabelArea({ result, collectionId, rubricId }: LabelAreaProps) {
 
         {isRunLabelSuccess && !isOutdated && (
           <LabelForm
+            key={result.id}
             schema={rubric.output_schema}
             initialState={initialState}
             judgeOutput={result.output}

@@ -1,8 +1,17 @@
 import json
+from typing import Any
 
+import jsonschema
 import tiktoken
 
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat.message import ToolMessage
+from docent.data_models.chat.tool import (
+    ToolCall,
+    ToolInfo,
+    ToolParam,
+    ToolParams,
+)
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, Rubric
 from docent_core.docent.db.schemas.tables import sanitize_pg_text
@@ -82,7 +91,7 @@ Note: the ANALYST is skeptical. When you propose an argument, it is your job to 
 
 If the ANALYST asks you to argue for a particular conclusion, you should present the strongest argument for that conclusion if there is one, but you must NEVER make misleading or inaccurate arguments, even when "playing devil's advocate". After you have finished making an argument, always step back and evaluate it from a critical and neutral perspective.
 
-Formatting guidelines: You may use inline syntax **bold**, *italic*, and `code`. Use ## Headers sparingly. You may not use code blocks.
+Formatting guidelines: You may use inline syntax **bold**, *italic*, and `code`. You may not use code blocks or headers.
 
 At the end of each response, provide 1-3 suggested followup questions that would help the analyst better understand the relationship between the transcript, rubric, and judge result. Format these suggestions using the following syntax:
 
@@ -95,6 +104,19 @@ At the end of each response, provide 1-3 suggested followup questions that would
 </SUGGESTIONS>
 
 The suggestions should be concise, specific, and relevant to the analysis context. When writing suggestions, remember your primary job as an assistant is to provide detailed objective information from this individual transcript, as well as background knowledge, so that the ANALYST can draw their own conclusions. The ANALYST is familiar with the RUBRIC but not the TRANSCRIPT. Focus suggestions on the TRANSCRIPT. Do not suggest messages about judgement calls or interpretation. Do not suggest questions you can't answer with the information you currently have.
+
+**Using the add_label tool**
+
+Add a label when:
+- The user implies an opinion, starts to agree/disagree, or engages deeply with your analysis.
+- The user explicitly requests a label or reaches a conclusion with you.
+Do not add labels in your first response unless the user explicitly asks, that is too early.
+
+Do not include transcript citations inside label payloads.
+
+Writing a label overrides the existing one for that field, or creates it if missing.
+
+Label text should defend the USER and ANALYST's positions in the context of the original result.
 """.strip()
 
 
@@ -111,3 +133,51 @@ def make_system_prompt(
         )
     else:
         return AGENT_RUN_CHAT_SYSTEM_PROMPT_TEMPLATE.format(transcript=truncated_transcript)
+
+
+def create_add_label_tool(judge_output_schema: dict[str, Any]) -> ToolInfo:
+    return ToolInfo(
+        name="add_label",
+        description="Add labels to a judge result.",
+        parameters=ToolParams(
+            type="object",
+            properties={
+                "label": ToolParam(
+                    name="label",
+                    description=(
+                        "A JSON object with the same fields as the judge result schema. Only include fields that are relevant to the label."
+                    ),
+                    input_schema=judge_output_schema,
+                ),
+            },
+            required=["label"],
+        ),
+    )
+
+
+def execute_add_label(rubric: Rubric, tool_call: ToolCall) -> ToolMessage:
+    label = tool_call.arguments.get("label", None)
+
+    if label is None:
+        return ToolMessage(
+            content="No label provided.",
+            error={"message": "No label provided."},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+
+    try:
+        jsonschema.validate(label, rubric.output_schema)
+    except jsonschema.ValidationError as e:
+        return ToolMessage(
+            content=f"Invalid label: {e}",
+            error={"message": f"Invalid label: {e}"},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+
+    return ToolMessage(
+        content=json.dumps(label, indent=2),
+        tool_call_id=tool_call.id,
+        function=tool_call.function,
+    )

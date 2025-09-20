@@ -23,7 +23,21 @@ import {
   rubricApi,
 } from '@/app/api/rubricApi';
 import { useAppDispatch } from '@/app/store/hooks';
-import SettingsPopover from './rubric/SettingsPopover';
+import { cn } from '@/lib/utils';
+import { EditorView } from '@uiw/react-codemirror';
+import { json as jsonLanguage } from '@codemirror/lang-json';
+import { useTheme } from 'next-themes';
+import CodeMirror from '@uiw/react-codemirror';
+import ModelPicker from '@/components/ModelPicker';
+import { Separator } from '@/components/ui/separator';
+
+// Hardcoded fix for types that should be formatted differently, e.g. enum strings for maybe date strings
+const fixTypePreview = (property: Record<string, any>) => {
+  if (property.type === 'string' && property.enum) {
+    return 'enum';
+  }
+  return property.type;
+};
 
 function DescriptionInlineDiff({
   previous,
@@ -38,9 +52,7 @@ function DescriptionInlineDiff({
         <div className="text-[11px] uppercase text-muted-foreground mb-1">
           No changes from previous version
         </div>
-        <div className="text-xs whitespace-pre-wrap break-words font-mono">
-          {current}
-        </div>
+        <div className="text-sm whitespace-pre-wrap break-words">{current}</div>
       </div>
     );
   }
@@ -105,9 +117,7 @@ function DescriptionInlineDiff({
       {/* <div className="text-[11px] uppercase text-muted-foreground mb-1">
         Description changes
       </div> */}
-      <div className="text-xs whitespace-pre-wrap break-words font-mono">
-        {nodes}
-      </div>
+      <div className="text-sm whitespace-pre-wrap break-words">{nodes}</div>
     </div>
   );
 }
@@ -121,6 +131,7 @@ interface RubricEditorProps {
   setRubricVersion?: (version: number) => void;
   showDiff?: boolean;
   setShowDiff?: (show: boolean) => void;
+  forceOpenSchema: boolean;
   onSave: (rubric: Rubric, clearLabels: boolean) => void;
   onCloseWithoutSave?: () => void;
   editable: boolean;
@@ -135,6 +146,7 @@ export default function RubricEditor({
   setRubricVersion,
   showDiff,
   setShowDiff,
+  forceOpenSchema,
   onSave,
   onCloseWithoutSave,
   editable,
@@ -154,11 +166,43 @@ export default function RubricEditor({
 
   // Local rubric is for editing
   const [localRubric, setLocalRubric] = useState<Rubric | null>(null);
-  useEffect(() => {
-    if (remoteRubric && editable) {
-      setLocalRubric(remoteRubric);
+
+  const [schemaText, setSchemaText] = useState<string>('');
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [schemaOpen, setSchemaOpen] = useState<boolean>(false);
+
+  const { resolvedTheme } = useTheme();
+
+  const extensions = useMemo(
+    () => [jsonLanguage(), EditorView.lineWrapping],
+    []
+  );
+
+  const preview = useMemo(() => {
+    try {
+      const parsed = JSON.parse(schemaText || '{}');
+      const properties = parsed?.properties || {};
+      if (!properties || typeof properties !== 'object') return '';
+      const parts: string[] = [];
+      for (const key of Object.keys(properties)) {
+        const typeStr = fixTypePreview(properties[key]);
+        parts.push(`${key}: ${typeStr}`);
+      }
+      return parts.join('; ');
+    } catch {
+      return '';
     }
-  }, [remoteRubric, editable]);
+  }, [schemaText]);
+
+  useEffect(() => {
+    if (remoteRubric) {
+      if (editable) {
+        setLocalRubric(remoteRubric);
+      }
+      setSchemaText(JSON.stringify(remoteRubric.output_schema ?? {}, null, 2));
+      setSchemaError(null);
+    }
+  }, [remoteRubric, editable, setSchemaText, setSchemaError]);
 
   // Get the latest version number
   const minVersion = 1;
@@ -189,8 +233,6 @@ export default function RubricEditor({
         }
       : skipToken
   );
-
-  // Inline editing state
 
   // Helper function to create a new rubric with updates
   const updateRubric = (updates: Partial<Rubric>) => {
@@ -244,11 +286,26 @@ export default function RubricEditor({
     }
   };
 
+  // Schema preview
+
+  const schemaPreview = useMemo(() => {
+    return preview.split('; ').map((pair, i) => {
+      const [k, rest] = pair.split(': ');
+      return (
+        <span key={i} className="whitespace-nowrap">
+          <span className="text-blue-text">{k}</span>
+          {`: ${rest}`}
+          {i < preview.split('; ').length - 1 ? '; ' : ''}
+        </span>
+      );
+    });
+  }, [preview]);
+
   // Save with confirmation flow
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleSaveClick = async () => {
-    if (!shouldConfirmOnSave || !schemaChanged) {
+    if (!shouldConfirmOnSave || !schemaHasChanges) {
       // Dont clear if schema has not changed
       handleSave(false);
       return;
@@ -257,30 +314,28 @@ export default function RubricEditor({
     setConfirmOpen(true);
   };
 
+  const normalizedRemoteSchema = useMemo(() => {
+    return JSON.stringify(remoteRubric?.output_schema ?? {}, null, 2);
+  }, [remoteRubric?.output_schema]);
+
+  const schemaHasChanges = useMemo(() => {
+    return schemaText !== normalizedRemoteSchema;
+  }, [schemaText, normalizedRemoteSchema]);
+
   const hasChanges = useMemo(() => {
-    if (!editable) return false;
+    if (!editable || !rubric || !remoteRubric) return false;
     return (
-      rubric?.rubric_text !== remoteRubric?.rubric_text ||
-      JSON.stringify(rubric?.judge_model) !==
-        JSON.stringify(remoteRubric?.judge_model) ||
-      JSON.stringify(rubric?.output_schema) !==
-        JSON.stringify(remoteRubric?.output_schema)
+      rubric.rubric_text !== remoteRubric.rubric_text ||
+      JSON.stringify(rubric.judge_model) !==
+        JSON.stringify(remoteRubric.judge_model) ||
+      schemaHasChanges
     );
-  }, [rubric, remoteRubric, editable]);
+  }, [rubric, remoteRubric, editable, schemaHasChanges]);
   useEffect(() => {
     if (onHasUnsavedChangesUpdated) {
       onHasUnsavedChangesUpdated(hasChanges);
     }
   }, [hasChanges, onHasUnsavedChangesUpdated]);
-
-  // Only warn if the schema changed (labels are schema-dependent)
-  const schemaChanged = useMemo(() => {
-    if (!editable) return false;
-    return (
-      JSON.stringify(rubric?.output_schema) !==
-      JSON.stringify(remoteRubric?.output_schema)
-    );
-  }, [editable, rubric?.output_schema, remoteRubric?.output_schema]);
 
   return (
     <div className="space-y-2">
@@ -289,30 +344,45 @@ export default function RubricEditor({
           <div className="text-sm font-semibold">
             {editable ? 'Rubric Editor' : 'Rubric Evaluation'}
           </div>
-          <div className="text-xs text-muted-foreground">
-            {editable
-              ? 'Modify the specification of a rubric.'
-              : 'Explore the results of running the rubric against data.'}
+          <div className="text-xs text-muted-foreground hidden 2xl:flex">
+            {editable ? 'Specify a rubric.' : 'Explore rubric results.'}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {rubric && (
-            <SettingsPopover
-              judgeModel={rubric.judge_model}
-              availableJudgeModels={availableJudgeModels}
+            <ModelPicker
+              selectedModel={rubric.judge_model}
+              availableModels={availableJudgeModels}
               onChange={(jm) => {
                 if (!editable) return;
                 updateRubric({ judge_model: jm });
               }}
-              outputSchema={rubric.output_schema}
-              onSchemaChange={(schema) => {
-                if (!editable) return;
-                updateRubric({ output_schema: schema });
-              }}
-              editable={editable}
+              borderless
+              className="pr-0"
+              shortenName
             />
           )}
+          <Separator orientation="vertical" className="h-5" />
+
+          {showDiff !== undefined && setShowDiff !== undefined && (
+            <div className="flex items-center gap-1.5">
+              <Checkbox
+                id="load-prev-rubric"
+                checked={showDiff}
+                className="h-3 flex items-center justify-center w-3"
+                onCheckedChange={(v) => setShowDiff(!!v)}
+                disabled={!rubric || rubric.version < 2}
+              />
+              <Label
+                htmlFor="load-prev-rubric"
+                className="text-xs text-muted-foreground whitespace-nowrap"
+              >
+                Show diff
+              </Label>
+            </div>
+          )}
+          <Separator orientation="vertical" className="h-5" />
 
           <div className="text-xs text-muted-foreground">Version:</div>
           <div className="flex items-center gap-0.5 bg-secondary rounded border px-1 py-0.5">
@@ -346,22 +416,6 @@ export default function RubricEditor({
               <ChevronRight className="h-2.5 w-2.5" />
             </Button>
           </div>
-          {showDiff !== undefined && setShowDiff !== undefined && (
-            <div className="flex items-center gap-1 pl-2 border-l">
-              <Checkbox
-                id="load-prev-rubric"
-                checked={showDiff}
-                onCheckedChange={(v) => setShowDiff(!!v)}
-                disabled={!rubric || rubric.version < 2}
-              />
-              <Label
-                htmlFor="load-prev-rubric"
-                className="text-xs text-muted-foreground whitespace-nowrap"
-              >
-                Show diff
-              </Label>
-            </div>
-          )}
         </div>
       </div>
       <div className="space-y-2 relative">
@@ -375,7 +429,9 @@ export default function RubricEditor({
               />
             ) : (
               <Textarea
-                className="h-[30vh] max-h-[50vh] resize-y border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
+                className={cn(
+                  'h-[30vh] max-h-[50vh] resize-y border-0 p-2 shadow-none focus-visible:ring-0 text-sm custom-scrollbar'
+                )}
                 placeholder="Enter a high-level description of what this rubric evaluates..."
                 value={rubric?.rubric_text || ''}
                 onChange={handleDescriptionChange}
@@ -397,6 +453,14 @@ export default function RubricEditor({
                       // Reset local changes to the latest remote rubric
                       if (remoteRubric) {
                         setLocalRubric(remoteRubric);
+                        setSchemaText(
+                          JSON.stringify(
+                            remoteRubric.output_schema ?? {},
+                            null,
+                            2
+                          )
+                        );
+                        setSchemaError(null);
                       }
                       // Clear any inline edit state
                       onCloseWithoutSave();
@@ -405,7 +469,7 @@ export default function RubricEditor({
                     Cancel
                   </Button>
                 )}
-                {shouldConfirmOnSave && schemaChanged ? (
+                {shouldConfirmOnSave && schemaHasChanges ? (
                   <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
                     <PopoverTrigger asChild>
                       <Button
@@ -460,6 +524,91 @@ export default function RubricEditor({
               </div>
             )}
           </div>
+        </div>
+      </div>
+      {/* Output Schema Dropdown */}
+      <div className="space-y-1">
+        <div
+          className={cn(
+            'rounded-md border bg-background',
+            !editable || forceOpenSchema || schemaHasChanges
+              ? ''
+              : 'hover:bg-accent transition-colors duration-200'
+          )}
+        >
+          {/** Effective open state respects collapse: when collapsed, force closed */}
+          {/** Use a computed boolean so arrow, aria-expanded and panel share the same logic */}
+          {(() => {
+            return (
+              <>
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md disabled:opacity-80"
+                  onClick={() => setSchemaOpen(!schemaOpen)}
+                  disabled={forceOpenSchema || schemaHasChanges}
+                  aria-expanded={
+                    schemaOpen || forceOpenSchema || schemaHasChanges
+                      ? true
+                      : false
+                  }
+                  aria-controls="schema-content"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="text-xs font-medium border-r pr-2 text-muted-foreground whitespace-nowrap">
+                      Output Schema
+                    </div>
+                    {preview && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {/* Color keys differently */}
+                        {schemaPreview}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronLeft
+                    className={
+                      'h-3 w-3 transition-transform ' +
+                      (schemaOpen || forceOpenSchema || schemaHasChanges
+                        ? '-rotate-90'
+                        : '')
+                    }
+                  />
+                </button>
+                {/* Animated schema content: always mounted for smooth close animation */}
+                <div
+                  id="schema-content"
+                  className={cn(
+                    'px-2 pb-2 space-y-2 overflow-hidden transition-all duration-200',
+                    schemaOpen || forceOpenSchema || schemaHasChanges
+                      ? 'max-h-[40vh] opacity-100'
+                      : '!max-h-0 pb-0 opacity-0 pointer-events-none'
+                  )}
+                >
+                  <div className="border rounded-sm">
+                    <CodeMirror
+                      value={schemaText}
+                      height="auto"
+                      maxHeight="30vh"
+                      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+                      extensions={extensions}
+                      onChange={(value) => {
+                        setSchemaText(value);
+                        if (schemaError) setSchemaError(null);
+                      }}
+                      basicSetup={{
+                        lineNumbers: false,
+                        highlightActiveLine: true,
+                        foldGutter: false,
+                      }}
+                      readOnly={!editable}
+                    />
+                  </div>
+                  {schemaError && (
+                    <div className="text-xs text-red-text">{schemaError}</div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

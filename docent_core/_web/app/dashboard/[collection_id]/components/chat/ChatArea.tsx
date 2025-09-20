@@ -3,7 +3,8 @@
 import { useScrollToBottom } from '@/app/hooks/use-scroll-to-bottom';
 import { motion } from 'framer-motion';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import { ChatMessage } from '@/app/types/transcriptTypes';
 import { NavigateToCitation } from '@/components/CitationRenderer';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
@@ -15,15 +16,19 @@ interface ChatAreaProps {
   isReadonly: boolean;
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
-  isLoading?: boolean;
+  onCancelMessage?: () => void;
+  onRetry?: () => void;
+  isSendingMessage?: boolean;
   headerElement?: ReactNode;
-  hideAssistantAvatar?: boolean;
   suggestedMessages?: SuggestedMessage[];
   onNavigateToCitation?: NavigateToCitation;
   byoFlexDiv: boolean;
   __showThinkingSpacerAfterFirstMessage?: boolean;
   inputAreaFooter?: ReactNode;
+  inputHeaderElement?: ReactNode;
   inputErrorMessage?: string;
+  scrollContainerClassName?: string;
+  inputAreaClassName?: string;
 }
 
 /**
@@ -33,15 +38,19 @@ export function ChatArea({
   isReadonly,
   messages,
   onSendMessage,
-  isLoading = false,
+  onCancelMessage,
+  onRetry,
+  isSendingMessage = false,
   headerElement,
-  hideAssistantAvatar = false,
   suggestedMessages,
   onNavigateToCitation,
   byoFlexDiv = false,
   __showThinkingSpacerAfterFirstMessage = false,
   inputAreaFooter,
   inputErrorMessage,
+  inputHeaderElement,
+  scrollContainerClassName,
+  inputAreaClassName,
 }: ChatAreaProps) {
   const {
     containerRef,
@@ -51,29 +60,82 @@ export function ChatArea({
     scrollToBottom,
   } = useScrollToBottom();
 
+  // Scroll to bottom after messages load
+  const didInitialScrollRef = useRef(false);
+  useEffect(() => {
+    if (!didInitialScrollRef.current && messages && messages.length > 0) {
+      didInitialScrollRef.current = true;
+      scrollToBottom('auto');
+    }
+  }, [messages, scrollToBottom]);
+
   const lastMessage = messages[messages.length - 1];
   const showThinkingSpacer =
-    (isLoading &&
+    (isSendingMessage &&
       lastMessage?.role !== 'assistant' &&
       lastMessage?.role !== 'tool') ||
     (messages.length === 1 && __showThinkingSpacerAfterFirstMessage);
 
-  useEffect(() => {
-    console.log('showThinkingSpacer', showThinkingSpacer);
-  }, [showThinkingSpacer]);
+  // Index of the currently streaming message (if any)
+  const streamingMessageIdx =
+    isSendingMessage && messages.length > 0 ? messages.length - 1 : undefined;
 
-  // Scroll once when the thinking spacer first appears (after send)
-  const prevShowThinking = useRef(showThinkingSpacer);
+  // Define messages to display
+  const displayedMessages = useMemo(() => {
+    const ans = messages.map((message, index) => (
+      <ChatMessageComponent
+        key={index}
+        message={message}
+        isLoadingPlaceholder={false}
+        isStreaming={index === streamingMessageIdx}
+        requiresScrollPadding={
+          isSendingMessage &&
+          !showThinkingSpacer &&
+          index === messages.length - 1 &&
+          message.role === 'assistant'
+        }
+        onNavigateToCitation={onNavigateToCitation}
+      />
+    ));
+    if (showThinkingSpacer) {
+      ans.push(
+        <ChatMessageComponent
+          message={{
+            role: 'assistant',
+            content: 'Thinking...',
+          }}
+          isLoadingPlaceholder={true}
+          isStreaming={true}
+          requiresScrollPadding={true}
+          onNavigateToCitation={onNavigateToCitation}
+        />
+      );
+    }
+    return ans;
+  }, [
+    messages,
+    showThinkingSpacer,
+    onNavigateToCitation,
+    isSendingMessage,
+    streamingMessageIdx,
+  ]);
+
+  // Scroll once when the thinking spacer first appears in the message history (i.e., upon send)
+  const prevShowThinking = useRef(false);
   useEffect(() => {
-    if (!prevShowThinking.current && showThinkingSpacer) {
+    if (displayedMessages.length === 0) return;
+    const curShowThinking =
+      displayedMessages[displayedMessages.length - 1].props
+        .isLoadingPlaceholder === true;
+    if (!prevShowThinking.current && curShowThinking) {
       scrollToBottom('smooth');
     }
-    prevShowThinking.current = showThinkingSpacer;
-  }, [showThinkingSpacer, scrollToBottom]);
+    prevShowThinking.current = curShowThinking;
+  }, [displayedMessages, scrollToBottom]);
 
   // Extract suggested messages from the last assistant message
   const finalSuggestedMessages = (() => {
-    if (isLoading) {
+    if (isSendingMessage) {
       return [];
     }
     // Use hardcoded suggestions at start of chat
@@ -97,37 +159,14 @@ export function ChatArea({
   const coreComponent = (
     <>
       <div
-        className="flex-1 flex flex-col min-w-0 gap-3 overflow-y-scroll relative custom-scrollbar"
+        className={cn(
+          'flex-1 flex flex-col min-w-0 gap-3 overflow-y-scroll relative custom-scrollbar',
+          scrollContainerClassName
+        )}
         ref={containerRef}
       >
         {headerElement}
-        {messages.map((message, index) => (
-          <ChatMessageComponent
-            key={index}
-            message={message}
-            isLoadingPlaceholder={false}
-            requiresScrollPadding={
-              isLoading &&
-              !showThinkingSpacer &&
-              index === messages.length - 1 &&
-              message.role === 'assistant'
-            }
-            hideAssistantAvatar={hideAssistantAvatar}
-            onNavigateToCitation={onNavigateToCitation}
-          />
-        ))}
-        {showThinkingSpacer && (
-          <ChatMessageComponent
-            message={{
-              role: 'assistant',
-              content: 'Thinking...',
-            }}
-            isLoadingPlaceholder={true}
-            requiresScrollPadding={true}
-            hideAssistantAvatar={hideAssistantAvatar}
-            onNavigateToCitation={onNavigateToCitation}
-          />
-        )}
+        {displayedMessages}
         {/* Suggestions row at the end of the chat */}
         {finalSuggestedMessages &&
           !isReadonly &&
@@ -142,7 +181,7 @@ export function ChatArea({
                     <button
                       key={`sugg-${i}`}
                       type="button"
-                      className="text-xs px-3 py-2 text-left rounded-xl border border-border text-primary bg-secondary hover:bg-primary/10 transition-colors"
+                      className="text-xs px-3 py-2 text-left rounded-lg w-full border border-border text-primary bg-secondary hover:bg-primary/10 transition-colors"
                       onClick={(e) => {
                         e.preventDefault();
                         onSendMessage(messageToSend);
@@ -165,13 +204,21 @@ export function ChatArea({
         />
       </div>
 
-      <form className="flex mx-auto bg-background mx-2 gap-2 w-full md:max-w-3xl">
+      <form
+        className={cn(
+          'flex mx-auto bg-background gap-2 w-full',
+          inputAreaClassName
+        )}
+      >
         <InputArea
           onSendMessage={onSendMessage}
-          disabled={isLoading || isReadonly}
-          isLoading={isLoading}
+          disabled={isReadonly}
+          isSendingMessage={isSendingMessage}
+          onCancelMessage={onCancelMessage}
+          onRetry={onRetry}
           footer={inputAreaFooter}
           errorMessage={inputErrorMessage}
+          inputHeaderElement={inputHeaderElement}
         />
       </form>
     </>

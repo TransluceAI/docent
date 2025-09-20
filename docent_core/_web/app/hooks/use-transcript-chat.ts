@@ -11,6 +11,7 @@ import {
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
 import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
+import { rubricApi } from '@/app/api/rubricApi';
 
 export interface UseTranscriptChatOptions {
   runId: string;
@@ -41,6 +42,13 @@ export function useTranscriptChat({
   useEffect(() => {
     setJobId(activeJobData?.job_id || null);
   }, [activeJobData?.job_id]);
+
+  // When the chat session changes (e.g., switching judge results),
+  // clear any prior jobId so we don't keep streaming old SSE messages.
+  useEffect(() => {
+    // Reset job tracking on session change to avoid stale sseMessages
+    setJobId(null);
+  }, [sessionId]);
 
   const [getOrCreateChatSession] = useGetOrCreateChatSessionMutation();
 
@@ -83,6 +91,24 @@ export function useTranscriptChat({
         );
       });
   }, [collectionId, runId, judgeResult?.id, getOrCreateChatSession]);
+
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (
+      lastMessage &&
+      lastMessage.role === 'tool' &&
+      lastMessage.function === 'add_label' &&
+      !lastMessage.error &&
+      judgeResult
+    ) {
+      dispatch(
+        rubricApi.util.invalidateTags([
+          { type: 'JudgeRunLabel', id: judgeResult.agent_run_id || '' },
+          { type: 'JudgeRunLabel', id: `LIST-${judgeResult.rubric_id}` },
+        ])
+      );
+    }
+  }, [messages, judgeResult, dispatch]);
 
   // Auto-populate citations from chat messages to enable transcript highlighting
   useEffect(() => {

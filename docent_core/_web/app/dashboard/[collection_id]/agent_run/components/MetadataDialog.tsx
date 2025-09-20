@@ -77,11 +77,11 @@ function MetadataBlock({ metadata }: { metadata: BaseMetadata }) {
     <div className="bg-secondary rounded-lg border border-border overflow-hidden">
       <div className="divide-y divide-border">
         {Object.entries(metadata).map(([key, value]) => (
-          <div key={key} className="flex p-2 hover:bg-muted transition-colors">
-            <div className="w-1/3 font-medium text-sm text-primary break-words pr-4">
+          <div key={key} className="flex p-2">
+            <div className="w-1/3 font-medium text-xs text-primary flex items-center break-words pr-4">
               {key}
             </div>
-            <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-start justify-between">
+            <div className="w-2/3 text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-center justify-between">
               <span className="flex-1">{formatMetadataValue(value)}</span>
               <CopyButton value={value} />
             </div>

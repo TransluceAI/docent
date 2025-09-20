@@ -2,13 +2,15 @@ import { TextWithCitations, NavigateToCitation } from './CitationRenderer';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { MetadataBlock } from '@/app/dashboard/[collection_id]/agent_run/components/MetadataDialog';
 
+interface JudgeResultDetailProps {
+  judgeResult: JudgeResultWithCitations;
+  handleNavigateToCitation: NavigateToCitation;
+}
+
 export default function JudgeResultDetail({
   judgeResult,
   handleNavigateToCitation,
-}: {
-  judgeResult: JudgeResultWithCitations;
-  handleNavigateToCitation: NavigateToCitation;
-}) {
+}: JudgeResultDetailProps) {
   const { explanation, ...rest } = judgeResult.output;
   const explanationText =
     explanation instanceof Object ? explanation.text : explanation;

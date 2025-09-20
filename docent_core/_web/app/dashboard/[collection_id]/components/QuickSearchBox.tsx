@@ -3,19 +3,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 
 import {
-  Search,
   AlertTriangle,
   Earth,
   HelpCircle,
-  FileSearch,
+  Search,
+  ConciergeBell,
 } from 'lucide-react';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipTrigger,
@@ -50,12 +44,14 @@ const PRESET_QUERIES = [
 ];
 
 interface QuickSearchBoxProps {
-  onSubmit: (highLevelDescription: string, mode: 'explore' | 'full') => void;
+  onGuided: (highLevelDescription: string) => void;
+  onDirect: (highLevelDescription: string) => void;
   isLoading: boolean;
 }
 
 export default function QuickSearchBox({
-  onSubmit,
+  onGuided,
+  onDirect,
   isLoading,
 }: QuickSearchBoxProps) {
   /**
@@ -80,88 +76,64 @@ export default function QuickSearchBox({
     setPlaceholderText(DEFAULT_PLACEHOLDER_TEXT);
   };
 
-  /**
-   * Search mode
-   */
-  const [searchMode, setSearchMode] = useState<'explore' | 'full'>('explore');
-
   const hasWritePermission = useHasCollectionWritePermission();
 
-  const searchFieldset = (
-    <fieldset className="relative">
-      <Textarea
-        className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
-        placeholder={placeholderText}
-        value={isPresetHovered ? '' : searchQueryTextboxValue}
-        disabled={!hasWritePermission}
-        onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
-      />
+  const submitGuided = () => {
+    if (!hasWritePermission || emptyInput || isLoading) return;
+    onGuided(searchQueryTextboxValue);
+  };
 
-      <div className="absolute right-2 bottom-2 flex items-center">
-        <Button
-          type="button"
-          size="sm"
-          className="gap-2 h-7 text-xs rounded-r-none border-r-0"
-          onClick={() => onSubmit(searchQueryTextboxValue, searchMode)}
-          disabled={!hasWritePermission || emptyInput || isLoading}
-        >
-          {searchMode === 'explore' ? (
-            <FileSearch className="size-3 -ml-0.5" />
-          ) : (
+  const submitDirect = () => {
+    if (!hasWritePermission || emptyInput || isLoading) return;
+    onDirect(searchQueryTextboxValue);
+  };
+
+  const searchForm = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitGuided();
+      }}
+    >
+      <fieldset className="relative">
+        <Textarea
+          className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
+          placeholder={placeholderText}
+          value={isPresetHovered ? '' : searchQueryTextboxValue}
+          disabled={!hasWritePermission}
+          onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submitGuided();
+            }
+          }}
+        />
+
+        <div className="absolute right-2 bottom-2 flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2 h-7 text-xs"
+            onClick={submitDirect}
+            variant="outline"
+            disabled={!hasWritePermission || emptyInput || isLoading}
+          >
             <Search className="size-3 -ml-0.5" />
-          )}
-          {searchMode === 'explore' ? 'Explore' : 'Search'}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 w-7 px-1 rounded-l-none"
-              disabled={!hasWritePermission || emptyInput || isLoading}
-            >
-              <span className="sr-only">Toggle search mode</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="size-3"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem
-              onClick={() => setSearchMode('full')}
-              className="text-xs"
-            >
-              <div className="flex flex-col">
-                <span>Direct Search</span>
-                <span className="text-muted-foreground text-[11px]">
-                  Run a quick search across all data
-                </span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setSearchMode('explore')}
-              className="text-xs"
-            >
-              <div className="flex flex-col">
-                <span>Create a rubric (Preview)</span>
-                <span className="text-muted-foreground text-[11px]">
-                  Refine a rubric with our agent
-                </span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </fieldset>
+            Direct search
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            className="gap-2 h-7 text-xs"
+            disabled={!hasWritePermission || emptyInput || isLoading}
+          >
+            <ConciergeBell className="size-3.5 -ml-0.5" />
+            Guided search
+          </Button>
+        </div>
+      </fieldset>
+    </form>
   );
 
   return (
@@ -199,7 +171,7 @@ export default function QuickSearchBox({
       <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
         {!hasWritePermission ? (
           <Tooltip>
-            <TooltipTrigger asChild>{searchFieldset}</TooltipTrigger>
+            <TooltipTrigger asChild>{searchForm}</TooltipTrigger>
             <TooltipContent>
               <p>
                 This search box is disabled because you&apos;re in read-only
@@ -208,7 +180,7 @@ export default function QuickSearchBox({
             </TooltipContent>
           </Tooltip>
         ) : (
-          searchFieldset
+          searchForm
         )}
       </div>
     </div>

@@ -26,8 +26,8 @@ from openai.types.chat import (
     ChatCompletionChunk,
     ChatCompletionContentPartTextParam,
     ChatCompletionMessageParam,
-    ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCallParam,
+    ChatCompletionMessageToolCallUnion,
     ChatCompletionSystemMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionToolParam,
@@ -640,7 +640,17 @@ def get_openai_embeddings_sync(
     return embeddings
 
 
-def _parse_openai_tool_call(tc: ChatCompletionMessageToolCall) -> ToolCall:
+def _parse_openai_tool_call(tc: ChatCompletionMessageToolCallUnion) -> ToolCall:
+    # Only handle function tool calls, skip custom tool calls
+    if tc.type != "function":
+        return ToolCall(
+            id=tc.id,
+            function="unknown",
+            arguments={},
+            parse_error=f"Unsupported tool call type: {tc.type}",
+            type=None,
+        )
+
     # Attempt to parse the tool call arguments as JSON
     arguments: dict[str, Any] = {}
     try:
