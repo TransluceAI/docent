@@ -10,9 +10,9 @@ elasticache_node_type = "cache.m6g.large"
 
 app_runner_cpu = 4096
 app_runner_memory = 8192
-app_runner_max_concurrency = 50
+app_runner_max_concurrency = 10
 app_runner_min_size = 1
-app_runner_max_size = 10
+app_runner_max_size = 20
 app_runner_num_workers = 4
 
 ecs_cpu = 4096
