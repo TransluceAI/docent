@@ -21,7 +21,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPExporter
 from opentelemetry.instrumentation.threading import ThreadingInstrumentor
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
@@ -29,18 +29,11 @@ from opentelemetry.sdk.trace.export import (
 )
 from opentelemetry.trace import Span
 
-# Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
 
 # Default configuration
 DEFAULT_ENDPOINT = "https://api.docent.transluce.org/rest/telemetry"
 DEFAULT_COLLECTION_NAME = "default-collection-name"
-
-
-def _is_tracing_disabled() -> bool:
-    """Check if tracing is disabled via environment variable."""
-    return os.environ.get("DOCENT_DISABLE_TRACING", "").lower() == "true"
 
 
 class Instruments(Enum):
@@ -52,16 +45,10 @@ class Instruments(Enum):
     LANGCHAIN = "langchain"
 
 
-def _is_notebook() -> bool:
-    """Check if we're running in a Jupyter notebook."""
-    try:
-        return "ipykernel" in sys.modules
-    except Exception:
-        return False
-
-
 class DocentTracer:
-    """Manages Docent tracing setup and provides tracing utilities."""
+    """
+    Manages Docent tracing setup and provides tracing utilities.
+    """
 
     def __init__(
         self,
@@ -77,22 +64,6 @@ class DocentTracer:
         instruments: Optional[Set[Instruments]] = None,
         block_instruments: Optional[Set[Instruments]] = None,
     ):
-        """
-        Initialize Docent tracing manager.
-
-        Args:
-            collection_name: Name of the collection for resource attributes
-            collection_id: Optional collection ID (auto-generated if not provided)
-            agent_run_id: Optional agent_run_id to use for code outside of an agent run context (auto-generated if not provided)
-            endpoint: OTLP endpoint URL(s) - can be a single string or list of strings for multiple endpoints
-            headers: Optional headers for authentication
-            api_key: Optional API key for bearer token authentication (takes precedence over env var)
-            enable_console_export: Whether to export to console
-            enable_otlp_export: Whether to export to OTLP endpoint
-            disable_batch: Whether to disable batch processing (use SimpleSpanProcessor)
-            instruments: Set of instruments to enable (None = all instruments)
-            block_instruments: Set of instruments to explicitly disable
-        """
         self._initialized: bool = False
         # Check if tracing is disabled via environment variable
         if _is_tracing_disabled():
@@ -163,8 +134,12 @@ class DocentTracer:
         """
         Get the current agent run ID from context.
 
+        Retrieves the agent run ID that was set in the current execution context.
+        If no agent run context is active, returns the default agent run ID.
+
         Returns:
-            The current agent run ID if available, None otherwise
+            The current agent run ID if available, or the default agent run ID
+            if no context is active.
         """
         try:
             return self._agent_run_id_var.get()
@@ -249,12 +224,23 @@ class DocentTracer:
             return
 
         try:
-            # Create our own isolated tracer provider
-            self._tracer_provider = TracerProvider(
-                resource=Resource.create({"service.name": self.collection_name})
+
+            # Check for OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT environment variable
+            default_attribute_limit = 1024
+            env_value = os.environ.get("OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "0")
+            env_limit = int(env_value) if env_value.isdigit() else 0
+            attribute_limit = max(env_limit, default_attribute_limit)
+
+            span_limits = SpanLimits(
+                max_attributes=attribute_limit,
             )
 
-            # Add custom span processor for agent_run_id and transcript_id
+            # Create our own isolated tracer provider
+            self._tracer_provider = TracerProvider(
+                resource=Resource.create({"service.name": self.collection_name}),
+                span_limits=span_limits,
+            )
+
             class ContextSpanProcessor(SpanProcessor):
                 def __init__(self, manager: "DocentTracer"):
                     self.manager: "DocentTracer" = manager
@@ -312,11 +298,7 @@ class DocentTracer:
                     )
 
                 def on_end(self, span: ReadableSpan) -> None:
-                    # Debug logging for span completion
-                    span_attrs = span.attributes or {}
-                    logger.debug(
-                        f"Completed span: name='{span.name}', collection_id={span_attrs.get('collection_id')}, agent_run_id={span_attrs.get('agent_run_id')}, transcript_id={span_attrs.get('transcript_id')}, duration_ns={span.end_time - span.start_time if span.end_time and span.start_time else 'unknown'}"
-                    )
+                    pass
 
                 def shutdown(self) -> None:
                     pass
@@ -422,7 +404,17 @@ class DocentTracer:
             raise
 
     def cleanup(self):
-        """Clean up Docent tracing resources and signal trace completion to backend."""
+        """
+        Clean up Docent tracing resources.
+
+        Flushes all pending spans to exporters and shuts down the tracer provider.
+        This method is automatically called during application shutdown via atexit
+        handlers, but can also be called manually for explicit cleanup.
+
+        The cleanup process:
+        1. Flushes all span processors to ensure data is exported
+        2. Shuts down the tracer provider and releases resources
+        """
         if self._disabled:
             return
 
@@ -473,7 +465,7 @@ class DocentTracer:
         if disabled and self._initialized:
             self.cleanup()
 
-    def verify_initialized(self) -> bool:
+    def is_initialized(self) -> bool:
         """Verify if the manager is properly initialized."""
         return self._initialized
 
@@ -1063,8 +1055,9 @@ def initialize_tracing(
         collection_id: Optional collection ID (auto-generated if not provided)
         endpoint: OTLP endpoint URL(s) for span export - can be a single string or list of strings for multiple endpoints
         headers: Optional headers for authentication
-        api_key: Optional API key for bearer token authentication (takes precedence over env var)
-        enable_console_export: Whether to export spans to console
+        api_key: Optional API key for bearer token authentication (takes precedence
+                over DOCENT_API_KEY environment variable)
+        enable_console_export: Whether to export spans to console for debugging
         enable_otlp_export: Whether to export spans to OTLP endpoint
         disable_batch: Whether to disable batch processing (use SimpleSpanProcessor)
         instruments: Set of instruments to enable (None = all instruments).
@@ -1074,7 +1067,6 @@ def initialize_tracing(
         The initialized Docent tracer
 
     Example:
-        # Basic setup
         initialize_tracing("my-collection")
     """
 
@@ -1137,17 +1129,17 @@ def close_tracing() -> None:
 def flush_tracing() -> None:
     """Force flush all spans to exporters."""
     if _global_tracer:
-        logger.debug("Flushing global tracer")
+        logger.debug("Flushing Docent tracer")
         _global_tracer.flush()
     else:
         logger.debug("No global tracer available to flush")
 
 
-def verify_initialized() -> bool:
+def is_initialized() -> bool:
     """Verify if the global Docent tracer is properly initialized."""
     if _global_tracer is None:
         return False
-    return _global_tracer.verify_initialized()
+    return _global_tracer.is_initialized()
 
 
 def is_disabled() -> bool:
@@ -1764,3 +1756,16 @@ def transcript_group_context(
     return TranscriptGroupContext(
         name, transcript_group_id, description, metadata, parent_transcript_group_id
     )
+
+
+def _is_tracing_disabled() -> bool:
+    """Check if tracing is disabled via environment variable."""
+    return os.environ.get("DOCENT_DISABLE_TRACING", "").lower() == "true"
+
+
+def _is_notebook() -> bool:
+    """Check if we're running in a Jupyter notebook."""
+    try:
+        return "ipykernel" in sys.modules
+    except Exception:
+        return False
