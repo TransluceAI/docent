@@ -1,7 +1,7 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import React, { Suspense, useRef } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import React, { Suspense, useCallback, useEffect, useRef } from 'react';
 
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
@@ -14,7 +14,7 @@ import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../components/AgentRunViewer';
 import TranscriptChat from '@/components/TranscriptChat';
-import { Citation } from '@/app/types/experimentViewerTypes';
+import { useCitationNavigation } from '../../rubric/[rubric_id]/NavigateToCitationContext';
 
 export default function AgentRunPage() {
   const dispatch = useAppDispatch();
@@ -34,61 +34,41 @@ export default function AgentRunPage() {
     ? params.agent_run_id[0]
     : params.agent_run_id;
 
-  const agentRunViewerRef = useRef<AgentRunViewerHandle>(null);
+  const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
 
-  /**
-   * TODO(mengk): fix, this is known to be broken.
-   */
+  const alreadyScrolledRef = useRef(false);
+  const searchParams = useSearchParams();
+  const blockIdxParam = searchParams.get('block_idx');
+  const blockIdx = blockIdxParam ? parseInt(blockIdxParam, 10) : undefined;
+  const transcriptIdxParam = searchParams.get('transcript_idx');
+  const transcriptIdx = transcriptIdxParam
+    ? parseInt(transcriptIdxParam, 10)
+    : undefined;
+  const setViewerRef = useCallback(
+    (node: AgentRunViewerHandle | null) => {
+      agentRunViewerRef.current = node;
+      if (node && blockIdx !== undefined && !alreadyScrolledRef.current) {
+        alreadyScrolledRef.current = true;
+        node.scrollToBlock({
+          blockIdx,
+          transcriptIdx: transcriptIdx || 0,
+          agentRunIdx: 0,
+          highlightDuration: 500,
+          citation: undefined,
+        });
+      }
+    },
+    [blockIdx, transcriptIdx]
+  );
 
-  // const alreadyScrolledRef = useRef(false);
-  //  const searchParams = useSearchParams();
-  // const blockIdxParam = searchParams.get('block_idx');
-  // const blockIdx = blockIdxParam ? parseInt(blockIdxParam, 10) : undefined;
-  // const transcriptIdxParam = searchParams.get('transcript_idx');
-  // const transcriptIdx = transcriptIdxParam
-  //   ? parseInt(transcriptIdxParam, 10)
-  //   : undefined;
-  // useEffect(() => {
-  //   if (
-  //     blockIdx !== undefined &&
-  //     agentRunViewerRef.current &&
-  //     !alreadyScrolledRef.current
-  //   ) {
-  //     alreadyScrolledRef.current = true;
-  //     console.log('scrolling to block', blockIdx);
-  //     agentRunViewerRef.current?.scrollToBlock(
-  //       blockIdx,
-  //       transcriptIdx || 0,
-  //       0,
-  //       undefined
-  //     );
-  //   }
-  // }, [blockIdx]);
-
-  const onShowAgentRun = (
-    agentRunId: string,
-    blockIdx?: number,
-    transcriptIdx?: number,
-    highlightDuration?: number,
-    citation?: Citation
-  ) => {
-    if (agentRunId !== curAgentRunId) {
-      console.error(
-        'this should never happen; why is the chat agent requesting a different agent run?'
-      );
-      return;
+  const citationNav = useCitationNavigation();
+  useEffect(() => {
+    if (citationNav) {
+      citationNav.registerHandler(({ citation }) => {
+        agentRunViewerRef.current?.focusCitation(citation);
+      });
     }
-
-    if (blockIdx !== undefined) {
-      agentRunViewerRef.current?.scrollToBlock(
-        blockIdx,
-        transcriptIdx || 0,
-        0,
-        highlightDuration,
-        citation
-      );
-    }
-  };
+  }, [citationNav]);
 
   return (
     <Suspense>
@@ -97,7 +77,7 @@ export default function AgentRunPage() {
         className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
         style={{ flexGrow: '2' }}
       >
-        <AgentRunViewer agentRunId={curAgentRunId} ref={agentRunViewerRef} />
+        <AgentRunViewer agentRunId={curAgentRunId} ref={setViewerRef} />
       </Card>
 
       {/* Assistant summary / transcript chat */}
@@ -119,7 +99,7 @@ export default function AgentRunPage() {
 
             <TabsContent value="agent" className="flex-1 mt-0 min-h-0">
               <ScrollArea className="h-full pt-2">
-                <AgentSummary onCitationClick={onShowAgentRun} />
+                <AgentSummary agentRunId={curAgentRunId} />
               </ScrollArea>
             </TabsContent>
 
@@ -130,17 +110,6 @@ export default function AgentRunPage() {
                   collectionId={collectionId}
                   title="Transcript Chat"
                   className="flex-1 flex flex-col min-w-0 min-h-0"
-                  onNavigateToCitation={({ citation }) => {
-                    if (onShowAgentRun && citation.block_idx !== undefined) {
-                      onShowAgentRun(
-                        curAgentRunId,
-                        citation.block_idx,
-                        citation.transcript_idx || 0,
-                        500,
-                        citation
-                      );
-                    }
-                  }}
                 />
               </div>
             </TabsContent>

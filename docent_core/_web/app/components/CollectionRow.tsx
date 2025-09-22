@@ -47,10 +47,22 @@ export default function CollectionRow({
   const [description, setDescription] = useState(collection.description ?? '');
 
   /* ----------------------------- Event handlers ---------------------------- */
-  const openCollection = () => {
-    // Prevent navigation while editing to avoid accidental navigation away
+  const openCollection = (e?: React.MouseEvent) => {
     if (isEditing) return;
-    router.push(`${BASE_DOCENT_PATH}/${collection.id}`);
+    const href = `${BASE_DOCENT_PATH}/${collection.id}`;
+    if (e && (e.metaKey || e.ctrlKey)) {
+      window.open(href, '_blank');
+      return;
+    }
+    router.push(href);
+  };
+
+  const handleAuxClick = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    if (e.button === 1) {
+      const href = `${BASE_DOCENT_PATH}/${collection.id}`;
+      window.open(href, '_blank');
+    }
   };
 
   const copyId = async (e: React.MouseEvent) => {
@@ -127,6 +139,7 @@ export default function CollectionRow({
     <TableRow
       key={collection.id}
       onClick={openCollection}
+      onAuxClick={handleAuxClick}
       className={cn(
         'group transition-colors cursor-pointer hover:bg-secondary/50',
         isEditing && 'bg-blue-50 cursor-default'

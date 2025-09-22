@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from docent._log_util import get_logger
 from docent_core._llm_util.providers.preferences import (
@@ -58,15 +59,29 @@ async def create_session(
     run_id: str,
     result_id: str | None = None,
     user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
     chat_svc: ChatService = Depends(get_chat_service),
     force_create: bool = False,
 ) -> dict[str, str]:
     """Create a new chat session."""
 
+    # Quick input validation to avoid DB errors for clearly invalid IDs
+    if len(run_id) != 36:
+        raise HTTPException(status_code=404, detail=f"Invalid agent run ID {run_id}")
+
     # Create session without rubric or judge result context
     sqla_session = await chat_svc.get_or_create_session(
         user.id, agent_run_id=run_id, judge_result_id=result_id, force_create=force_create
     )
+
+    # Flush now to surface FK violations as 404s instead of later 500s
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        # Foreign key violation (Postgres SQLSTATE 23503)
+        if getattr(e.orig, "pgcode", None) == "23503":
+            raise HTTPException(status_code=404, detail=f"Agent run or judge result not found")
+        raise
     return {"session_id": sqla_session.id}
 
 

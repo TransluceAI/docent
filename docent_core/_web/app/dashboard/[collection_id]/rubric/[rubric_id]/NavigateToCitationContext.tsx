@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { useCitationHighlight } from '@/lib/citationUtils';
+import posthog from 'posthog-js';
 import { NavigateToCitation } from '@/components/CitationRenderer';
 
 interface CitationNavigationContextValue {
@@ -9,7 +11,7 @@ interface CitationNavigationContextValue {
   prepareForNavigation: () => void;
 }
 
-const CitationNavigationContext =
+export const CitationNavigationContext =
   React.createContext<CitationNavigationContextValue | null>(null);
 
 export function useCitationNavigation(): CitationNavigationContextValue | null {
@@ -24,6 +26,7 @@ export const CitationNavigationProvider: React.FC<{
   const pendingRef = React.useRef<{
     args: Parameters<NavigateToCitation>[0];
   } | null>(null);
+  const { highlightCitation } = useCitationHighlight();
 
   const registerHandler = React.useCallback(
     (handler: NavigateToCitation | null) => {
@@ -43,16 +46,25 @@ export const CitationNavigationProvider: React.FC<{
   }, []);
 
   const navigateToCitation = React.useCallback<NavigateToCitation>(
-    ({ citation, newTab }) => {
+    ({ citation, source }) => {
+      if (citation) {
+        highlightCitation(citation);
+        posthog.capture('citation_clicked', {
+          source: source || 'generic',
+          transcript_idx: citation.transcript_idx,
+          block_idx: citation.block_idx,
+          start_pattern: citation.start_pattern,
+        });
+      }
       const handler = handlerRef.current;
       if (handler) {
-        handler({ citation, newTab });
+        handler({ citation, source });
         return;
       }
       // Store pending until a handler registers (e.g., after route change)
-      pendingRef.current = { args: { citation, newTab } };
+      pendingRef.current = { args: { citation, source } };
     },
-    []
+    [highlightCitation]
   );
 
   const value = React.useMemo(

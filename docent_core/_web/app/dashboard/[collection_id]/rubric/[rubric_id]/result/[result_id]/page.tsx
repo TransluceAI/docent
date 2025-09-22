@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
@@ -9,7 +9,6 @@ import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
-import { Citation } from '@/app/types/experimentViewerTypes';
 import { useCitationNavigation } from '../../NavigateToCitationContext';
 import { Loader2 } from 'lucide-react';
 import { useRubricVersion } from '@/providers/use-rubric-version';
@@ -112,38 +111,9 @@ export default function JudgeResultPage() {
     const citation = citations && citations.length > 0 ? citations[0] : null;
     if (!citation) return;
 
-    const blockIdx = citation.block_idx ?? 0;
-    const transcriptIdx = citation.transcript_idx ?? 0;
-
+    agentRunViewerRef.current?.focusCitation(citation);
     alreadyScrolledRef.current = true;
-    agentRunViewerRef.current?.scrollToBlock(
-      blockIdx,
-      transcriptIdx,
-      0,
-      500,
-      citation
-    );
   }, [agentRunId, result]);
-
-  // Create citation navigation handler
-  const handleNavigateToCitation = useCallback(
-    ({
-      citation,
-      newTab: _newTab,
-    }: {
-      citation: Citation;
-      newTab?: boolean;
-    }) => {
-      agentRunViewerRef.current?.scrollToBlock(
-        citation.block_idx,
-        citation.transcript_idx ?? 0,
-        0,
-        500,
-        citation
-      );
-    },
-    []
-  );
 
   // Register the handler with the route-scoped provider so other components can invoke it
   // Only register when agentRun is loaded so AgentRunViewer is ready
@@ -151,14 +121,16 @@ export default function JudgeResultPage() {
     if (!agentRunId) return;
 
     if (citationNav?.registerHandler) {
-      citationNav.registerHandler(handleNavigateToCitation);
+      citationNav.registerHandler(({ citation }) => {
+        agentRunViewerRef.current?.focusCitation(citation);
+      });
     }
     return () => {
       if (citationNav?.registerHandler) {
         citationNav.registerHandler(null);
       }
     };
-  }, [citationNav, handleNavigateToCitation, agentRunId]);
+  }, [citationNav, agentRunId]);
 
   if (isLoadingRubricRunState) {
     return (

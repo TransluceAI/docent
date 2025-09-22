@@ -1,3 +1,4 @@
+import json
 import re
 
 from docent.data_models.agent_run import AgentRun
@@ -52,7 +53,7 @@ def find_citation_matches_in_text(text: str, start_pattern: str) -> list[tuple[i
 
 def get_transcript_text_for_citation(agent_run: AgentRun, citation: Citation) -> str | None:
     """
-    Get the text content of a specific transcript block from an AgentRun,
+    Get the text content of a specific transcript block (or transcript/run metadata) from an AgentRun,
     using the same formatting as shown to LLMs via format_chat_message.
 
     Args:
@@ -62,18 +63,27 @@ def get_transcript_text_for_citation(agent_run: AgentRun, citation: Citation) ->
     Returns:
         Text content of the specified block (including tool calls), or None if not found
     """
-    if citation.transcript_idx is None:
-        return None
-
     try:
-        if citation.transcript_idx >= len(agent_run.get_transcript_ids_ordered()):
+        if citation.transcript_idx is None:
+            # At the run level, can only cite metadata
+            if citation.metadata_key is not None:
+                return json.dumps(agent_run.metadata.get(citation.metadata_key))
             return None
+
         transcript_id = agent_run.get_transcript_ids_ordered()[citation.transcript_idx]
         transcript = agent_run.transcript_dict[transcript_id]
 
-        if citation.block_idx >= len(transcript.messages):
+        if citation.block_idx is None:
+            # At the transcript level, can only cite metadata
+            if citation.metadata_key is not None:
+                return json.dumps(transcript.metadata.get(citation.metadata_key))
             return None
+
         message = transcript.messages[citation.block_idx]
+
+        # At the message level, can cite metadata or content
+        if citation.metadata_key is not None:
+            return json.dumps(message.metadata.get(citation.metadata_key))
 
         # Use the same formatting function that generates content for LLMs
         # This ensures consistent formatting between citation validation and LLM serialization
@@ -98,6 +108,9 @@ def validate_citation_text_range(agent_run: AgentRun, citation: Citation) -> boo
     """
     if not citation.start_pattern:
         # Nothing to validate
+        return True
+    if citation.metadata_key is not None:
+        # We don't need to remove invalid metadata citation ranges
         return True
 
     text = get_transcript_text_for_citation(agent_run, citation)
@@ -130,16 +143,16 @@ def remove_invalid_citation_ranges(text: str, agent_run: AgentRun) -> str:
         # Parse this bracket content to get citation info
         parsed = parse_single_citation(bracket_content)
         if parsed:
-            transcript_idx, block_idx, start_pattern = parsed
             # The citation spans from start to end in the original text
             citation = Citation(
                 start_idx=start,
                 end_idx=end,
                 agent_run_idx=None,
-                transcript_idx=transcript_idx,
-                block_idx=block_idx,
+                transcript_idx=parsed.transcript_idx,
+                block_idx=parsed.block_idx,
                 action_unit_idx=None,
-                start_pattern=start_pattern,
+                metadata_key=parsed.metadata_key,
+                start_pattern=parsed.start_pattern,
             )
             citations.append(citation)
 

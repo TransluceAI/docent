@@ -7,7 +7,6 @@ import {
   SuggestedMessage,
 } from '@/app/dashboard/[collection_id]/components/chat/ChatArea';
 import { ChatHeader } from '@/app/dashboard/[collection_id]/components/chat/ChatHeader';
-import { NavigateToCitation } from '@/components/CitationRenderer';
 import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
 import { useTranscriptChat } from '@/app/hooks/use-transcript-chat';
 import { useGetChatModelsQuery } from '@/app/api/chatApi';
@@ -17,6 +16,7 @@ import ModelPicker from './ModelPicker';
 import SelectionBadges from './SelectionBadges';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { useTextSelection } from '@/providers/use-text-selection';
+import { useCitationNavigation } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
 
 const ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS = 8192;
 
@@ -30,9 +30,6 @@ export interface TranscriptChatProps {
     rubricId: string;
     resultId: string;
   };
-
-  // Navigation and citation handling
-  onNavigateToCitation?: NavigateToCitation;
 
   // UI customization
   suggestedMessages?: SuggestedMessage[];
@@ -81,7 +78,6 @@ export default function TranscriptChat({
   collectionId: propCollectionId,
   judgeResult,
   resultContext,
-  onNavigateToCitation,
   title = 'Transcript Chat',
   className = 'flex flex-col h-full space-y-2',
 }: TranscriptChatProps) {
@@ -94,6 +90,8 @@ export default function TranscriptChat({
   const { selections, removeSelection, clearSelections } = useTextSelection({});
   const selectedTexts = selections.map((s) => s.text);
   const handleRemoveSelectedText = (index: number) => removeSelection(index);
+
+  const citationNav = useCitationNavigation();
 
   const {
     sessionId,
@@ -200,25 +198,6 @@ export default function TranscriptChat({
     onSendMessage(message);
   };
 
-  // Handle citation navigation
-  const handleNavigateToCitation: NavigateToCitation = useCallback(
-    ({ citation, newTab }) => {
-      if (onNavigateToCitation) {
-        onNavigateToCitation({ citation, newTab });
-        return;
-      }
-
-      // Fallback: navigate to result route if provided
-      if (resultContext) {
-        router.push(
-          `/dashboard/${collectionId}/rubric/${resultContext.rubricId}/result/${resultContext.resultId}`,
-          { scroll: false } as any
-        );
-      }
-    },
-    [onNavigateToCitation, resultContext, router, collectionId]
-  );
-
   // Determine which suggested messages to use
   const finalSuggestedMessages = judgeResult
     ? resultSpecificSuggestedMessages
@@ -263,12 +242,7 @@ export default function TranscriptChat({
           headerElement={
             <>
               {headerElement}
-              {judgeResult && (
-                <JudgeResultDetail
-                  judgeResult={judgeResult}
-                  handleNavigateToCitation={handleNavigateToCitation}
-                />
-              )}
+              {judgeResult && <JudgeResultDetail judgeResult={judgeResult} />}
             </>
           }
           inputHeaderElement={
@@ -277,7 +251,6 @@ export default function TranscriptChat({
                 selections={selections}
                 onRemove={handleRemoveSelectedText}
                 onNavigate={(item) => {
-                  if (!onNavigateToCitation) return;
                   const { transcriptIdx, blockIdx } = item;
                   if (transcriptIdx == null || blockIdx == null) return;
                   const citation: Citation = {
@@ -285,15 +258,15 @@ export default function TranscriptChat({
                     block_idx: blockIdx,
                     start_idx: 0,
                     end_idx: 0,
-                    start_pattern: null,
+                    metadata_key: undefined,
+                    start_pattern: undefined,
                   };
-                  onNavigateToCitation({ citation });
+                  citationNav?.navigateToCitation?.({ citation });
                 }}
               />
             ) : null
           }
           suggestedMessages={finalSuggestedMessages}
-          onNavigateToCitation={handleNavigateToCitation}
           byoFlexDiv={true}
           inputAreaFooter={inputAreaFooter}
           inputErrorMessage={contextWindowErrorMessage}

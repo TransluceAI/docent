@@ -360,7 +360,7 @@ wheels = [
 
 [[package]]
 name = "docent-python"
-version = "0.1.15a0"
+version = "0.1.18a0"
 source = { editable = "." }
 dependencies = [
     { name = "backoff" },

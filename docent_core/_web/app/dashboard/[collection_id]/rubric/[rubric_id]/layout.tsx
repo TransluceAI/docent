@@ -19,7 +19,6 @@ import {
   RefinementTabProvider,
   useRefinementTab,
 } from '@/providers/use-refinement-tab';
-import { useCitationNav } from '@/hooks/use-citation-nav';
 import { TextSelectionProvider } from '@/providers/use-text-selection';
 import { useAppSelector } from '@/app/store/hooks';
 
@@ -116,7 +115,6 @@ function RubricLayoutBody({
     return () => window.removeEventListener('keydown', handler);
   }, [setActiveTab, isOnResultRoute]);
 
-  const citationNav = useCitationNav(currentResult || undefined);
   const leftSidebarOpen = useAppSelector(
     (state) => state.transcript.judgeLeftSidebarOpen
   );
@@ -185,7 +183,6 @@ function RubricLayoutBody({
                     runId={currentResult.agent_run_id}
                     collectionId={collectionId}
                     judgeResult={currentResult}
-                    onNavigateToCitation={citationNav?.handleNavigateToCitation}
                     resultContext={{ rubricId, resultId: currentResult.id }}
                     className="flex flex-col min-w-0 h-full"
                   />

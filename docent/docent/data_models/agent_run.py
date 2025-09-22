@@ -17,8 +17,8 @@ from pydantic_core import to_jsonable_python
 
 from docent._log_util import get_logger
 from docent.data_models._tiktoken_util import get_token_count, group_messages_into_ranges
+from docent.data_models.metadata_util import dump_metadata
 from docent.data_models.transcript import Transcript, TranscriptGroup
-from docent.data_models.yaml_util import yaml_dump_metadata
 
 logger = get_logger(__name__)
 
@@ -446,10 +446,10 @@ class AgentRun(BaseModel):
         text = _recurse("__global_root")
 
         # Append agent run metadata below the full content
-        yaml_text = yaml_dump_metadata(self.metadata)
-        if yaml_text is not None:
+        metadata_text = dump_metadata(self.metadata)
+        if metadata_text is not None:
             if indent > 0:
-                yaml_text = textwrap.indent(yaml_text, " " * indent)
-            text += f"\n<|agent run metadata|>\n{yaml_text}\n</|agent run metadata|>"
+                metadata_text = textwrap.indent(metadata_text, " " * indent)
+            text += f"\n<|agent run metadata|>\n{metadata_text}\n</|agent run metadata|>"
 
         return text

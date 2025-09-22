@@ -637,7 +637,7 @@ async def get_agent_run_with_canonical_tree(
 ):
     agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause)
     if not agent_run:
-        return None
+        raise HTTPException(status_code=404, detail=f"Agent run {agent_run_id} not found")
     else:
         return agent_run, {
             "tree": agent_run.get_canonical_tree(full_tree=full_tree),
@@ -1301,10 +1301,10 @@ async def get_actions_summary(
 ):
     agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
     if not agent_run:
-        raise ValueError(f"AgentRun {agent_run_id} not found")
+        raise HTTPException(status_code=404, detail=f"AgentRun {agent_run_id} not found")
     # Get first transcript TODO(mengk): generalize to multi-agent setting
     if len(agent_run.transcripts) == 0:
-        raise ValueError(f"AgentRun {agent_run_id} has no transcripts")
+        raise HTTPException(status_code=404, detail=f"AgentRun {agent_run_id} has no transcripts")
     transcript = agent_run.transcripts[0]
 
     # Result variables; hashes prevent updating with identical content multiple times

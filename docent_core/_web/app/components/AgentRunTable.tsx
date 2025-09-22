@@ -303,11 +303,13 @@ export const AgentRunTable = memo(function AgentRunTable({
     handleResize();
 
     let resizeObserver: ResizeObserver | null = null;
-    if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
-      resizeObserver = new ResizeObserver(handleResize);
-      resizeObserver.observe(node);
-    } else {
-      window.addEventListener('resize', handleResize);
+    if (typeof window !== 'undefined') {
+      if ('ResizeObserver' in window) {
+        resizeObserver = new ResizeObserver(handleResize);
+        resizeObserver.observe(node);
+      } else {
+        (window as Window).addEventListener('resize', handleResize);
+      }
     }
 
     return () => {

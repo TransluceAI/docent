@@ -6,13 +6,14 @@ import { cn } from '@/lib/utils';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import {
   computeCitationIntervals,
-  computeSegmentsFromIntervals,
   sliceIntervals,
   TextSpanWithCitations,
   transformCitationIntervalsForPrettyPrintJson,
 } from '@/lib/citationMatch';
+import { SegmentedText } from '@/lib/SegmentedText';
+import { MetadataPopover } from '@/components/metadata/MetadataPopover';
+import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { useTextSelection } from '@/providers/use-text-selection';
-import { MetadataDialog } from './MetadataDialog';
 
 function stringify(x: any): string {
   if (typeof x === 'string') return x;
@@ -73,22 +74,6 @@ export const hasJsonContent = (text: string): boolean => {
   return false;
 };
 
-const getCitationColors = (role: string, isHighlighted: boolean) => {
-  switch (role) {
-    case 'user':
-      return isHighlighted
-        ? 'bg-muted-foreground text-background'
-        : 'bg-muted-foreground/20';
-    case 'assistant':
-      return isHighlighted ? 'bg-blue-600 text-white' : 'bg-blue-500/20';
-    case 'system':
-      return isHighlighted ? 'bg-orange-600 text-white' : 'bg-orange-500/20';
-    case 'tool':
-      return isHighlighted ? 'bg-green-600 text-white' : 'bg-green-500/20';
-    default:
-      return isHighlighted ? 'bg-slate-600 text-white' : 'bg-slate-500/20';
-  }
-};
 const getRoleStyle = (role: string, isHighlighted: boolean) => {
   const transitionClasses = 'transition-colors duration-500 ease-out';
 
@@ -120,36 +105,6 @@ const getRoleStyle = (role: string, isHighlighted: boolean) => {
 
   const colorClasses = getColorClasses(role, isHighlighted);
   return `${colorClasses} ${transitionClasses}`;
-};
-
-// ===== Presentation component (rendering) =====
-const SegmentedText: React.FC<{
-  text: string;
-  intervals: TextSpanWithCitations[];
-  role: string;
-  highlightedCitationId: string | null;
-}> = ({ text, intervals, role, highlightedCitationId }) => {
-  const segments = computeSegmentsFromIntervals(text, intervals);
-  return (
-    <>
-      {segments.map((seg, i) => {
-        if (!seg.citationIds.length)
-          return <React.Fragment key={`seg-${i}`}>{seg.text}</React.Fragment>;
-        const isHighlighted = highlightedCitationId
-          ? seg.citationIds.includes(highlightedCitationId)
-          : false;
-        return (
-          <span
-            key={`seg-${i}`}
-            className={getCitationColors(role, isHighlighted)}
-            data-citation-ids={seg.citationIds.join(',')}
-          >
-            {seg.text}
-          </span>
-        );
-      })}
-    </>
-  );
 };
 
 type MessageComponentRange = {
@@ -241,6 +196,12 @@ interface MessageBoxProps {
   prettyPrintJsonMessages: Set<number>;
   setPrettyPrintJsonMessages: React.Dispatch<React.SetStateAction<Set<number>>>;
   transcriptIdx?: number;
+  metadataDialogControl?: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    citedKey?: string;
+    citedTextRange?: string;
+  };
 }
 
 export function MessageBox({
@@ -252,6 +213,7 @@ export function MessageBox({
   prettyPrintJsonMessages,
   setPrettyPrintJsonMessages,
   transcriptIdx,
+  metadataDialogControl,
 }: MessageBoxProps) {
   const containerRef = useRef<HTMLSpanElement | null>(null);
   useTextSelection({
@@ -464,12 +426,6 @@ export function MessageBox({
             {message.role.charAt(0).toUpperCase() + message.role.slice(1)}
           </span>
           <div className="flex items-center gap-2">
-            {message.metadata && Object.keys(message.metadata).length > 0 && (
-              <MetadataDialog
-                metadata={message.metadata}
-                title={`Message Metadata - Block ${index}`}
-              />
-            )}
             {hasJsonContent(componentRanges.main.content) && (
               <label className="flex items-center space-x-1 text-xs text-muted-foreground">
                 <input
@@ -480,6 +436,27 @@ export function MessageBox({
                 />
                 <span>Pretty JSON</span>
               </label>
+            )}
+            {message.metadata && Object.keys(message.metadata).length > 0 && (
+              <MetadataPopover.Root
+                open={metadataDialogControl?.open}
+                onOpenChange={metadataDialogControl?.onOpenChange || (() => {})}
+              >
+                <MetadataPopover.DefaultTrigger />
+                <MetadataPopover.Content
+                  title={`Message Metadata - Block ${index}`}
+                >
+                  <MetadataPopover.Body metadata={message.metadata}>
+                    {(md) => (
+                      <MetadataBlock
+                        metadata={md}
+                        citedKey={metadataDialogControl?.citedKey}
+                        citedTextRange={metadataDialogControl?.citedTextRange}
+                      />
+                    )}
+                  </MetadataPopover.Body>
+                </MetadataPopover.Content>
+              </MetadataPopover.Root>
             )}
           </div>
         </div>

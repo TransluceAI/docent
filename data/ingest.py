@@ -103,6 +103,7 @@ async def ingest_file(filename: str, importer_override: str | None = None) -> No
 
     Args:
         filename: Name of the file to ingest (will be downloaded from S3 if needed)
+        importer_override: Override importer to use
     """
     # Ensure API key is available
     api_key = await ensure_api_key()
@@ -140,7 +141,7 @@ async def ingest_file(filename: str, importer_override: str | None = None) -> No
         raise
 
     # Process the file to get agent runs
-    with simple_progress("Processing file...") as (progress, task):
+    with simple_progress("Processing file..."):
         try:
             agent_runs, file_info = await importer_func(local_path)
 
@@ -157,7 +158,7 @@ async def ingest_file(filename: str, importer_override: str | None = None) -> No
     log_info(f"Using Docent server at: {server_url}")
 
     # Create or get collection
-    with simple_progress("Creating collection...") as (progress, task):
+    with simple_progress("Creating collection..."):
         try:
             client = docent.Docent(
                 server_url=server_url,

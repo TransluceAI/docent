@@ -6,6 +6,7 @@ import {
   ChevronRight,
   PanelRightClose,
   PanelRightOpen,
+  AlertCircle,
 } from 'lucide-react';
 import React, {
   forwardRef,
@@ -23,6 +24,7 @@ import {
   toggleRightSidebar,
 } from '@/app/store/transcriptSlice';
 import {
+  AgentRun,
   Content,
   Transcript,
   TranscriptGroup,
@@ -31,7 +33,8 @@ import { TranscriptNavigator, TreeNode } from './TranscriptNavigator';
 import UuidPill from '@/components/UuidPill';
 import { useDebounce } from '@/hooks/use-debounce';
 
-import { MetadataDialog } from './MetadataDialog';
+import { MetadataPopover } from '@/components/metadata/MetadataPopover';
+import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { cn } from '@/lib/utils';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import { generateCitationId } from '@/lib/citationUtils';
@@ -46,20 +49,39 @@ import { useGetAgentRunWithCanonicalTreeQuery } from '@/app/api/collectionApi';
 import { skipToken } from '@reduxjs/toolkit/query';
 
 // Export interface for use in other components
+interface ScrollToBlockParams {
+  blockIdx: number;
+  transcriptIdx: number;
+  agentRunIdx: number;
+  highlightDuration?: number;
+  citation?: Citation;
+}
 export interface AgentRunViewerHandle {
-  scrollToBlock: (
-    blockIdx: number,
-    transcriptIdx: number,
-    agentRunIdx: number,
-    highlightDuration?: number,
-    citation?: Citation
-  ) => void;
+  scrollToBlock: (params: ScrollToBlockParams) => void;
+  focusCitation: (citation: Citation) => void;
 }
 
 // Add props interface
 interface AgentRunViewerProps {
   agentRunId: string;
 }
+
+// Controlled metadata intent (run/transcript/message) for opening dialogs
+type MetadataIntent =
+  | { type: 'run'; citedKey?: string; citedTextRange?: string }
+  | {
+      type: 'transcript';
+      transcriptIdx: number;
+      citedKey?: string;
+      citedTextRange?: string;
+    }
+  | {
+      type: 'message';
+      transcriptIdx: number;
+      blockIdx: number;
+      citedKey?: string;
+      citedTextRange?: string;
+    };
 
 // Add this helper function near the top of the file
 const formatMetadataValue = (value: any): string => {
@@ -202,10 +224,20 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const [fullTree, setFullTree] = useState(false);
 
     // Fetch canonical tree (respect fullTree)
-    const { data: [agentRun, canonicalTree] = [] } =
-      useGetAgentRunWithCanonicalTreeQuery(
-        collectionId ? { collectionId, agentRunId, fullTree } : skipToken
-      );
+    const queryResult = useGetAgentRunWithCanonicalTreeQuery(
+      collectionId ? { collectionId, agentRunId, fullTree } : skipToken
+    );
+    const { error, isError } = queryResult;
+    const dataArray = Array.isArray(queryResult.data)
+      ? (queryResult.data as [any, any])
+      : undefined;
+    const agentRun: AgentRun = dataArray?.[0];
+    const canonicalTree = dataArray?.[1];
+
+    const isNotFound = useMemo(() => {
+      const e = error as any;
+      return e && typeof e === 'object' && 'status' in e && e.status === 404;
+    }, [error]);
     const transcriptsById = useMemo(() => {
       const m: Record<string, Transcript> = {};
       if (agentRun?.transcripts)
@@ -225,7 +257,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const transcriptIdToIdx = useMemo(() => {
       const map: Record<string, number> = {};
       const ordered = canonicalTree?.transcript_ids_ordered || [];
-      ordered.forEach((id, idx) => {
+      ordered.forEach((id: string, idx: number) => {
         map[id] = idx;
       });
       return map;
@@ -478,13 +510,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     );
 
     // Pending scroll target to resolve when DOM/content is ready
-    const [pendingScrollTarget, setPendingScrollTarget] = useState<{
-      toBlockIdx: number;
-      toTranscriptIdx: number;
-      toAgentRunIdx: number;
-      highlightDuration: number;
-      citation?: Citation;
-    } | null>(null);
+    const [pendingScrollTarget, setPendingScrollTarget] =
+      useState<ScrollToBlockParams | null>(null);
 
     const scrollContainerRef = useCallback((node: HTMLDivElement | null) => {
       // Always reflect the latest node (including null on unmount)
@@ -575,17 +602,17 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       if (!pendingScrollTarget || !scrollNode) return;
 
       const {
-        toBlockIdx,
-        toTranscriptIdx,
-        toAgentRunIdx,
+        blockIdx,
+        transcriptIdx,
+        agentRunIdx,
         highlightDuration,
         citation,
       } = pendingScrollTarget;
-      let blockId = `r-${toAgentRunIdx}_t-${toTranscriptIdx}_b-${toBlockIdx}`;
+      let blockId = `r-${agentRunIdx}_t-${transcriptIdx}_b-${blockIdx}`;
 
       const tryScrollNow = (): boolean => {
         // First, change the selected transcript if needed
-        const targetTranscriptId = transcriptIdxToId[toTranscriptIdx];
+        const targetTranscriptId = transcriptIdxToId[transcriptIdx];
         if (!targetTranscriptId) return false;
         if (targetTranscriptId !== selectedTranscriptId) {
           console.log('scroll: changing transcript to', targetTranscriptId);
@@ -595,7 +622,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         let blockElement = document.getElementById(blockId);
         if (!blockElement) {
           // It's possible this is an invalid blockIdx; check if 0 exists
-          const testBlockId = `r-${toAgentRunIdx}_t-${toTranscriptIdx}_b-0`;
+          const testBlockId = `r-${agentRunIdx}_t-${transcriptIdx}_b-0`;
           const testBlockElement = document.getElementById(testBlockId);
           if (testBlockElement) {
             console.error(
@@ -609,7 +636,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             blockId = testBlockId;
           } else {
             console.log(
-              `scroll: no block element found for transcript ${toTranscriptIdx}`
+              `scroll: no block element found for transcript ${transcriptIdx}`
             );
             return false;
           }
@@ -639,7 +666,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         }
 
         scrollNode.scrollTo({ top, behavior: 'auto' });
-        setCurrentBlockIndex(toBlockIdx);
+        setCurrentBlockIndex(blockIdx);
         setHighlightedBlock(blockId);
         setTimeout(() => setHighlightedBlock(null), highlightDuration);
         setPendingScrollTarget(null);
@@ -668,22 +695,64 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     }, [pendingScrollTarget, scrollNode]);
 
     // Scroll to block function
-    const scrollToBlock = (
-      toBlockIdx: number,
-      toTranscriptIdx: number = 0,
-      toAgentRunIdx: number = 0,
-      highlightDuration: number = 0,
-      citation?: Citation
-    ) => {
-      // Always defer to the pending scroll mechanism
-      setPendingScrollTarget({
-        toBlockIdx,
-        toTranscriptIdx,
-        toAgentRunIdx,
-        highlightDuration,
-        citation,
-      });
-    };
+    const scrollToBlock = setPendingScrollTarget;
+
+    const [metadataIntent, setMetadataIntent] = useState<MetadataIntent | null>(
+      null
+    );
+
+    const focusCitation = useCallback(
+      (citation: Citation) => {
+        const citedKey = citation.metadata_key;
+        const citedTextRange = citation.start_pattern;
+
+        // Run-level metadata
+        if (citation.transcript_idx == undefined && citedKey != undefined) {
+          setMetadataIntent({ type: 'run', citedKey, citedTextRange });
+          return;
+        }
+
+        const tIdx = citation.transcript_idx ?? 0;
+
+        // Transcript-level metadata
+        if (citation.block_idx == undefined && citedKey != undefined) {
+          const targetTranscriptId = transcriptIdxToId[tIdx];
+          if (
+            targetTranscriptId &&
+            targetTranscriptId !== selectedTranscriptId
+          ) {
+            setSelectedTranscriptId(targetTranscriptId);
+          }
+          setMetadataIntent({
+            type: 'transcript',
+            transcriptIdx: tIdx,
+            citedKey,
+            citedTextRange,
+          });
+          return;
+        }
+
+        // Message-level citation (possibly metadata)
+        const blockIdx = citation.block_idx ?? 0;
+        scrollToBlock({
+          blockIdx,
+          transcriptIdx: tIdx,
+          agentRunIdx: 0,
+          highlightDuration: 500,
+          citation,
+        });
+        if (citedKey != undefined) {
+          setMetadataIntent({
+            type: 'message',
+            transcriptIdx: tIdx,
+            blockIdx,
+            citedKey,
+            citedTextRange,
+          });
+        }
+      },
+      [scrollToBlock, transcriptIdxToId, selectedTranscriptId]
+    );
 
     /**
      * Block navigation
@@ -693,8 +762,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       ref,
       () => ({
         scrollToBlock,
+        focusCitation,
       }),
-      [scrollToBlock]
+      [scrollToBlock, focusCitation]
     );
 
     const goToNextBlock = useCallback(() => {
@@ -705,7 +775,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
           ? Math.min(currentBlockIndex + 1, transcript.messages.length - 1)
           : 0;
 
-      scrollToBlock(nextIndex, transcriptIdx, 0);
+      scrollToBlock({ blockIdx: nextIndex, transcriptIdx, agentRunIdx: 0 });
     }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
     const goToPrevBlock = useCallback(() => {
       if (!transcript || transcriptIdx === undefined) return;
@@ -713,7 +783,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       const prevIndex =
         currentBlockIndex !== null ? Math.max(currentBlockIndex - 1, 0) : 0;
 
-      scrollToBlock(prevIndex, transcriptIdx, 0);
+      scrollToBlock({ blockIdx: prevIndex, transcriptIdx, agentRunIdx: 0 });
     }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
 
     return (
@@ -729,11 +799,33 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   </div>
                   <UuidPill uuid={agentRun?.id} />
                   {agentRun && (
-                    <MetadataDialog
-                      metadata={agentRun.metadata}
-                      title="Agent Run Metadata"
-                      id={agentRun.id}
-                    />
+                    <MetadataPopover.Root
+                      open={metadataIntent?.type === 'run'}
+                      onOpenChange={(open) =>
+                        setMetadataIntent(open ? { type: 'run' } : null)
+                      }
+                    >
+                      <MetadataPopover.DefaultTrigger />
+                      <MetadataPopover.Content title="Agent Run Metadata">
+                        <MetadataPopover.Body metadata={agentRun.metadata}>
+                          {(md) => (
+                            <MetadataBlock
+                              metadata={md}
+                              citedKey={
+                                metadataIntent?.type === 'run'
+                                  ? metadataIntent.citedKey
+                                  : undefined
+                              }
+                              citedTextRange={
+                                metadataIntent?.type === 'run'
+                                  ? metadataIntent.citedTextRange
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </MetadataPopover.Body>
+                      </MetadataPopover.Content>
+                    </MetadataPopover.Root>
                   )}
                 </div>
                 <Button
@@ -879,16 +971,54 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                             Transcript
                           </div>
                           <UuidPill uuid={selectedTranscriptId} />
-                          <MetadataDialog
-                            metadata={
-                              (selectedTranscriptId
-                                ? transcriptsById[selectedTranscriptId]
-                                : undefined
-                              )?.metadata || {}
-                            }
-                            title={`Transcript Metadata - ${selectedTranscriptId}`}
-                            id={selectedTranscriptId}
-                          />
+                          {(() => {
+                            const isTranscriptIntent =
+                              metadataIntent?.type === 'transcript' &&
+                              metadataIntent.transcriptIdx === transcriptIdx;
+                            const citedKey = isTranscriptIntent
+                              ? metadataIntent?.citedKey
+                              : undefined;
+                            const citedTextRange = isTranscriptIntent
+                              ? metadataIntent?.citedTextRange
+                              : undefined;
+                            return (
+                              <MetadataPopover.Root
+                                open={Boolean(isTranscriptIntent)}
+                                onOpenChange={(open) =>
+                                  setMetadataIntent(
+                                    open
+                                      ? {
+                                          type: 'transcript',
+                                          transcriptIdx: transcriptIdx ?? 0,
+                                        }
+                                      : null
+                                  )
+                                }
+                              >
+                                <MetadataPopover.DefaultTrigger />
+                                <MetadataPopover.Content
+                                  title={`Transcript Metadata`}
+                                >
+                                  <MetadataPopover.Body
+                                    metadata={
+                                      (selectedTranscriptId
+                                        ? transcriptsById[selectedTranscriptId]
+                                        : undefined
+                                      )?.metadata || {}
+                                    }
+                                  >
+                                    {(md) => (
+                                      <MetadataBlock
+                                        metadata={md}
+                                        citedKey={citedKey}
+                                        citedTextRange={citedTextRange}
+                                      />
+                                    )}
+                                  </MetadataPopover.Body>
+                                </MetadataPopover.Content>
+                              </MetadataPopover.Root>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -913,6 +1043,16 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   >
                     {transcript.messages.map((message, index) => {
                       const blockId = `r-0_t-${transcriptIdx}_b-${index}`;
+                      const isMsgIntent =
+                        metadataIntent?.type === 'message' &&
+                        metadataIntent.transcriptIdx === (transcriptIdx ?? 0) &&
+                        metadataIntent.blockIdx === index;
+                      const msgCitedKey = isMsgIntent
+                        ? metadataIntent?.citedKey
+                        : undefined;
+                      const msgCitedRange = isMsgIntent
+                        ? metadataIntent?.citedTextRange
+                        : undefined;
                       return (
                         <MessageBox
                           key={index}
@@ -929,6 +1069,21 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           setPrettyPrintJsonMessages={
                             setPrettyPrintJsonMessages
                           }
+                          metadataDialogControl={{
+                            open: Boolean(isMsgIntent),
+                            onOpenChange: (open) =>
+                              setMetadataIntent(
+                                open
+                                  ? {
+                                      type: 'message',
+                                      transcriptIdx: transcriptIdx ?? 0,
+                                      blockIdx: index,
+                                    }
+                                  : null
+                              ),
+                            citedKey: msgCitedKey,
+                            citedTextRange: msgCitedRange,
+                          }}
                           transcriptIdx={transcriptIdx}
                         />
                       );
@@ -960,7 +1115,26 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             </ResizablePanelGroup>
           </>
         )}
-        {!agentRun && (
+        {isError && (
+          <div className="flex items-center justify-center h-full">
+            <div className="p-3 space-y-2 text-center">
+              <div className="flex items-center justify-center gap-2 text-red-text">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {isNotFound
+                    ? 'Agent run not found'
+                    : 'Failed to load agent run'}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {isNotFound
+                  ? 'The requested agent run does not exist or you do not have access.'
+                  : 'Please try again.'}
+              </div>
+            </div>
+          </div>
+        )}
+        {!agentRun && !isError && (
           <div className="flex items-center justify-center h-full">
             <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>

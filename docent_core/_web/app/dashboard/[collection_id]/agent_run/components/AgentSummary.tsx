@@ -14,7 +14,6 @@ import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { getActionsSummary } from '@/app/store/transcriptSlice';
 import { Citation } from '@/app/types/experimentViewerTypes';
 import {
-  AgentRun,
   LowLevelAction,
   HighLevelAction,
   ActionsSummary,
@@ -29,14 +28,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useCitationNavigation } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
 
 interface AgentSummaryProps {
-  onCitationClick?: (
-    agentRunId: string,
-    blockId?: number,
-    transcriptIdx?: number,
-    highlightDuration?: number
-  ) => void;
+  agentRunId: string;
   initialActionIndex?: number;
 }
 
@@ -169,8 +164,7 @@ const ActionItem = ({
   isHighLevel = false,
   lowLevelActions = [],
   observations = [],
-  onCitationClick,
-  agentRun,
+  agentRunId,
   expandedActions,
   setExpandedActions,
   setActionRef,
@@ -179,17 +173,12 @@ const ActionItem = ({
   isHighLevel?: boolean;
   lowLevelActions?: LowLevelAction[];
   observations?: ObservationType[];
-  onCitationClick?: (
-    agentRunId: string,
-    blockId?: number,
-    transcriptIdx?: number,
-    highlightDuration?: number
-  ) => void;
-  agentRun?: AgentRun | null;
+  agentRunId?: string;
   expandedActions?: Set<number>;
   setExpandedActions?: (callback: (prev: Set<number>) => Set<number>) => void;
   setActionRef?: (id: string, element: HTMLDivElement) => void;
 }) => {
+  const citationNav = useCitationNavigation();
   // Replace local expanded state with shared state from parent
   const highLevelAction = isHighLevel ? (action as HighLevelAction) : null;
   const actionId =
@@ -221,31 +210,30 @@ const ActionItem = ({
     // Navigate to citation if available
     if (isHighLevel) {
       const highLevelAction = action as HighLevelAction;
-      if (
-        highLevelAction.first_block_idx !== null &&
-        onCitationClick &&
-        agentRun?.id
-      ) {
-        onCitationClick(
-          agentRun.id,
-          highLevelAction.first_block_idx,
-          undefined,
-          500
-        );
+      if (highLevelAction.first_block_idx !== null && agentRunId) {
+        // Navigate to the first block of this high-level action
+        citationNav?.navigateToCitation({
+          citation: {
+            start_idx: 0,
+            end_idx: 0,
+            transcript_idx: undefined,
+            block_idx: highLevelAction.first_block_idx,
+            metadata_key: undefined,
+            start_pattern: undefined,
+          },
+          source: 'agent_summary',
+        });
       }
     } else if (
       citations &&
       citations.length > 0 &&
-      onCitationClick &&
-      agentRun?.id &&
+      agentRunId &&
       citations[0].block_idx !== undefined
     ) {
-      onCitationClick(
-        agentRun.id,
-        citations[0].block_idx,
-        citations[0].transcript_idx ?? undefined,
-        500
-      );
+      citationNav?.navigateToCitation({
+        citation: citations[0],
+        source: 'agent_summary',
+      });
     }
   };
 
@@ -284,17 +272,11 @@ const ActionItem = ({
           className="text-primary cursor-pointer hover:underline hover:bg-blue-muted font-medium transition-colors"
           onClick={(e) => {
             e.stopPropagation(); // Prevent the card click from triggering
-            if (
-              onCitationClick &&
-              agentRun?.id &&
-              citation.block_idx !== undefined
-            ) {
-              onCitationClick(
-                agentRun.id,
-                citation.block_idx,
-                citation.transcript_idx ?? undefined,
-                500
-              );
+            if (agentRunId && citation.block_idx !== undefined) {
+              citationNav?.navigateToCitation({
+                citation,
+                source: 'agent_summary',
+              });
             }
           }}
         >
@@ -465,8 +447,7 @@ const ActionItem = ({
               key={lowLevelAction.action_unit_idx}
               action={lowLevelAction}
               isHighLevel={false}
-              onCitationClick={onCitationClick}
-              agentRun={agentRun}
+              agentRunId={agentRunId}
               observations={observations}
               expandedActions={expandedActions}
               setExpandedActions={setExpandedActions}
@@ -488,12 +469,11 @@ interface AgentSummaryComponent extends React.FC<AgentSummaryProps> {
 }
 
 const AgentSummary: React.FC<AgentSummaryProps> = ({
-  onCitationClick,
   initialActionIndex,
+  agentRunId,
 }) => {
   const dispatch = useAppDispatch();
 
-  const agentRun = useAppSelector((state) => state.transcript?.curAgentRun);
   const actionsSummary = useAppSelector(
     (state) => state.transcript?.actionsSummary
   );
@@ -559,19 +539,19 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
 
   // Request summary
   useEffect(() => {
-    if (!agentRun) {
+    if (!agentRunId) {
       return;
     }
 
     // Request summary if we don't already have it loaded, and we're not loading it yet
     if (
-      loadingActionsSummaryForTranscriptId !== agentRun.id &&
-      actionsSummary?.agent_run_id != agentRun.id
+      loadingActionsSummaryForTranscriptId !== agentRunId &&
+      actionsSummary?.agent_run_id != agentRunId
     ) {
-      dispatch(getActionsSummary(agentRun.id));
+      dispatch(getActionsSummary(agentRunId));
     }
   }, [
-    agentRun,
+    agentRunId,
     loadingActionsSummaryForTranscriptId,
     actionsSummary?.agent_run_id,
     dispatch,
@@ -594,7 +574,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
   );
 
   // If we have no agentRun at all, don't show anything
-  if (!agentRun) {
+  if (!agentRunId) {
     return null;
   }
 
@@ -631,7 +611,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
           <div className="flex flex-col">
             <h4 className="text-sm flex items-center font-semibold">
               Actions Taken by the Agent
-              {loadingActionsSummaryForTranscriptId === agentRun?.id && (
+              {loadingActionsSummaryForTranscriptId === agentRunId && (
                 <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" />
               )}
             </h4>
@@ -660,8 +640,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                     action={highLevelAction}
                     isHighLevel={true}
                     lowLevelActions={actionsSummary.low_level}
-                    onCitationClick={onCitationClick}
-                    agentRun={agentRun}
+                    agentRunId={agentRunId}
                     observations={actionsSummary.observations}
                     expandedActions={expandedActions}
                     setExpandedActions={setExpandedActions}
@@ -685,8 +664,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                       key={lowLevelAction.action_unit_idx}
                       action={lowLevelAction}
                       isHighLevel={false}
-                      onCitationClick={onCitationClick}
-                      agentRun={agentRun}
+                      agentRunId={agentRunId}
                       observations={actionsSummary.observations}
                       expandedActions={expandedActions}
                       setExpandedActions={setExpandedActions}
@@ -706,8 +684,7 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
                         key={lowLevelAction.action_unit_idx}
                         action={lowLevelAction}
                         isHighLevel={false}
-                        onCitationClick={onCitationClick}
-                        agentRun={agentRun}
+                        agentRunId={agentRunId}
                         observations={actionsSummary.observations}
                         expandedActions={expandedActions}
                         setExpandedActions={setExpandedActions}

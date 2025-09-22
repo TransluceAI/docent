@@ -2,7 +2,7 @@ import { Citation } from '@/app/types/experimentViewerTypes';
 import { generateCitationId } from './citationUtils';
 import { logErrorWithToast } from './errorUtils';
 
-export interface Interval {
+export interface TextSpanWithCitations {
   start: number;
   end: number;
   citationId: string;
@@ -10,7 +10,7 @@ export interface Interval {
 
 // Simple capped cache (LRU-ish) keyed by text + citations signature
 const MAX_CACHE_ENTRIES = 100;
-const cache = new Map<string, Interval[]>();
+const cache = new Map<string, TextSpanWithCitations[]>();
 
 const escapeForRegex = (input: string): string => {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -29,6 +29,77 @@ const buildWhitespaceFlexibleRegex = (pattern: string): RegExp => {
     out += escapeForRegex(ch);
     i++;
   }
+  return new RegExp(out, 'g');
+};
+
+// Build a regex for JSON snippets that:
+// - Collapses any explicit whitespace in the pattern to \s+
+// - When encountering brackets/braces outside of strings, allows optional whitespace
+//   before and after them (\s* [ or ] or { or } \s*) regardless of the original spacing
+export const buildWhitespaceFlexibleJsonRegex = (pattern: string): RegExp => {
+  let out = '';
+  let i = 0;
+  let inString = false;
+  let escaping = false;
+
+  while (i < pattern.length) {
+    const ch = pattern[i];
+
+    if (inString) {
+      if (escaping) {
+        // Previous char was a backslash inside a string; escape this char literally
+        out += escapeForRegex(ch);
+        escaping = false;
+        i++;
+        continue;
+      }
+      if (ch === '\\') {
+        out += '\\\\';
+        escaping = true;
+        i++;
+        continue;
+      }
+      if (/\s/.test(ch)) {
+        while (i < pattern.length && /\s/.test(pattern[i])) i++;
+        out += '\\s+';
+        continue;
+      }
+      if (ch === '"') {
+        out += '\\"';
+        inString = false;
+        i++;
+        continue;
+      }
+      out += escapeForRegex(ch);
+      i++;
+      continue;
+    }
+
+    // Not inside a string
+    if (/\s/.test(ch)) {
+      while (i < pattern.length && /\s/.test(pattern[i])) i++;
+      out += '\\s+';
+      continue;
+    }
+
+    if (ch === '"') {
+      out += '\\"';
+      inString = true;
+      escaping = false;
+      i++;
+      continue;
+    }
+
+    if (ch === '[' || ch === ']' || ch === '{' || ch === '}') {
+      out += '\\s*' + escapeForRegex(ch) + '\\s*';
+      i++;
+      continue;
+    }
+
+    out += escapeForRegex(ch);
+    i++;
+  }
+
   return new RegExp(out, 'g');
 };
 
@@ -55,9 +126,9 @@ const CAP_MATCHES_PER_CITATION = 200;
 const findMatchesForCitation = (
   text: string,
   citation: Citation
-): Interval[] => {
+): TextSpanWithCitations[] => {
   const id = generateCitationId(citation);
-  const result: Interval[] = [];
+  const result: TextSpanWithCitations[] = [];
   const { start_pattern } = citation;
   if (!start_pattern) return result;
 
@@ -74,16 +145,41 @@ const findMatchesForCitation = (
   return result;
 };
 
+// Compute intervals for an arbitrary pattern without requiring a full Citation
+// Useful for UI cases like metadata dialogs where we only need to highlight a pattern
+export const computeIntervalsForJsonPattern = (
+  text: string,
+  pattern: string
+): TextSpanWithCitations[] => {
+  if (!pattern) return [];
+  const intervals: TextSpanWithCitations[] = [];
+  const re = buildWhitespaceFlexibleJsonRegex(pattern);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m[0].length === 0) {
+      re.lastIndex++;
+      continue;
+    }
+    intervals.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      citationId: '', // No need to track multiple citations
+    });
+    if (intervals.length >= CAP_MATCHES_PER_CITATION) break;
+  }
+  return intervals;
+};
+
 export const computeCitationIntervals = (
   text: string,
   citations: Citation[]
-): Interval[] => {
+): TextSpanWithCitations[] => {
   if (!citations || citations.length === 0) return [];
   const key = buildKey(text, citations);
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const intervals: Interval[] = [];
+  const intervals: TextSpanWithCitations[] = [];
   for (const c of citations) {
     const matches = findMatchesForCitation(text, c);
     if (matches.length) intervals.push(...matches);
@@ -100,11 +196,6 @@ export const computeCitationIntervals = (
   return intervals;
 };
 
-export type TextSpanWithCitations = {
-  start: number;
-  end: number;
-  citationId: string;
-};
 export type TextSegment = { text: string; citationIds: string[] };
 
 export const computeSegmentsFromIntervals = (
@@ -229,7 +320,7 @@ function createPrettyPrintJsonPositionMapping(
 
 // Helper function to transform citation intervals from original to pretty-printed positions
 export function transformCitationIntervalsForPrettyPrintJson(
-  intervals: { start: number; end: number; citationId: string }[],
+  intervals: TextSpanWithCitations[],
   originalText: string,
   prettyText: string
 ) {

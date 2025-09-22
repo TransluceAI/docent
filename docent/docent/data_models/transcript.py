@@ -15,7 +15,7 @@ from docent.data_models._tiktoken_util import (
 )
 from docent.data_models.chat import AssistantMessage, ChatMessage, ContentReasoning
 from docent.data_models.citation import RANGE_BEGIN, RANGE_END
-from docent.data_models.yaml_util import yaml_dump_metadata
+from docent.data_models.metadata_util import dump_metadata
 
 # Template for formatting individual transcript blocks
 TRANSCRIPT_BLOCK_TEMPLATE = """
@@ -28,6 +28,12 @@ TRANSCRIPT_BLOCK_TEMPLATE = """
 TEXT_RANGE_CITE_INSTRUCTION = f"""Anytime you quote the transcript, or refer to something that happened in the transcript, or make any claim about the transcript, add an inline citation. Each transcript and each block has a unique index. Cite the relevant indices in brackets. For example, to cite the entirety of transcript 0, block 1, write [T0B1].
 
 A citation may include a specific range of text within a block. Use {RANGE_BEGIN} and {RANGE_END} to mark the specific range of text. Add it after the block ID separated by a colon. For example, to cite the part of transcript 0, block 1, where the agent says "I understand the task", write [T0B1:{RANGE_BEGIN}I understand the task{RANGE_END}]. Citations must follow this exact format. The markers {RANGE_BEGIN} and {RANGE_END} must be used ONLY inside the brackets of a citation.
+
+- You may cite a top-level key in the agent run metadata like this: [M.task_description].
+- You may cite a top-level key in transcript metadata. For example, for transcript 0: [T0M.start_time].
+- You may cite a top-level key in message metadata for a block. For example, for transcript 0, block 1: [T0B1M.status].
+- You may not cite nested keys. For example, [T0B1M.status.code] is invalid.
+- Within a top-level metadata key you may cite a range of text that appears in the value. For example, [T0B1M.status:{RANGE_BEGIN}"running":false{RANGE_END}].
 
 Important notes:
 - You must include the full content of the text range {RANGE_BEGIN} and {RANGE_END}, EXACTLY as it appears in the transcript, word-for-word, including any markers or punctuation that appear in the middle of the text.
@@ -73,9 +79,9 @@ def format_chat_message(
                 cur_content += f"\n<tool call>\n{tool_call.function}({args})\n</tool call>"
 
     if message.metadata:
-        metadata_yaml = yaml_dump_metadata(message.metadata)
-        if metadata_yaml is not None:
-            cur_content += f"\n<|message metadata|>\n{metadata_yaml}\n</|message metadata|>"
+        metadata_text = dump_metadata(message.metadata)
+        if metadata_text is not None:
+            cur_content += f"\n<|message metadata|>\n{metadata_text}\n</|message metadata|>"
 
     return TRANSCRIPT_BLOCK_TEMPLATE.format(
         index_label=index_label, role=message.role, content=cur_content
@@ -127,13 +133,11 @@ class TranscriptGroup(BaseModel):
             str: XML-like wrapped text including the group's metadata.
         """
         # Prepare YAML metadata
-        yaml_text = yaml_dump_metadata(self.metadata)
-        if yaml_text is not None:
+        metadata_text = dump_metadata(self.metadata)
+        if metadata_text is not None:
             if indent > 0:
-                yaml_text = textwrap.indent(yaml_text, " " * indent)
-            inner = (
-                f"{children_text}\n<|{self.name} metadata|>\n{yaml_text}\n</|{self.name} metadata|>"
-            )
+                metadata_text = textwrap.indent(metadata_text, " " * indent)
+            inner = f"{children_text}\n<|{self.name} metadata|>\n{metadata_text}\n</|{self.name} metadata|>"
         else:
             inner = children_text
 
@@ -447,13 +451,11 @@ class Transcript(BaseModel):
         content_str = f"<|T{transcript_idx} blocks|>\n{blocks_str}\n</|T{transcript_idx} blocks|>"
 
         # Gather metadata and add to content
-        yaml_text = yaml_dump_metadata(self.metadata)
-        if yaml_text is not None:
+        metadata_text = dump_metadata(self.metadata)
+        if metadata_text is not None:
             if indent > 0:
-                yaml_text = textwrap.indent(yaml_text, " " * indent)
-            content_str += (
-                f"\n<|T{transcript_idx} metadata|>\n{yaml_text}\n</|T{transcript_idx} metadata|>"
-            )
+                metadata_text = textwrap.indent(metadata_text, " " * indent)
+            content_str += f"\n<|T{transcript_idx} metadata|>\n{metadata_text}\n</|T{transcript_idx} metadata|>"
 
         # Format content and return
         if indent > 0:

@@ -22,6 +22,7 @@ from . import cache
 from .constants import DB_RESTORE_EXTENSION
 from .db_utils import get_current_alembic_revision
 from .dump import dump_collection, select_collection_from_menu
+from .generate import generate_and_ingest_agent_runs, print_agent_run_summary
 from .ingest import ingest_file
 from .restore import restore_file
 from .utils import create_aligned_file_display, log_error, log_info, log_success, log_warning
@@ -54,6 +55,22 @@ def dump(
 ):
     """Create a dump file for a collection."""
     asyncio.run(_dump_async(collection_id, name))
+
+
+@app.command()
+def generate(
+    count: int = typer.Option(3, "--count", "-c", help="Number of agent runs to generate"),
+    collection_name: str = typer.Option(
+        "Generated Test Data", "--collection", help="Collection name"
+    ),
+    api_key: str = typer.Option(None, "--api-key", help="Docent API key"),
+    server_url: str = typer.Option(None, "--server-url", help="Custom Docent server URL"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Generate and show summary without ingesting"
+    ),
+):
+    """Generate short transcripts with metadata and multiple transcript groups."""
+    asyncio.run(_generate_async(count, collection_name, api_key, server_url, dry_run))
 
 
 async def _ingest_async(filename: str | None, importer: str | None):
@@ -163,6 +180,32 @@ async def _dump_async(collection_id: str | None, name: str | None):
 
         if Confirm.ask("Upload to S3 bucket?"):
             await cache.upload_to_s3(dump_filename)
+    except Exception:
+        sys.exit(1)
+
+
+async def _generate_async(
+    count: int, collection_name: str, api_key: str | None, server_url: str | None, dry_run: bool
+):
+    """Async implementation of generate command."""
+    from .generate import create_agent_run_with_multiple_groups
+
+    if dry_run:
+        log_info(f"Dry run: Generating {count} agent runs...")
+
+        # Generate agent runs without ingesting
+        agent_runs = []
+        for i in range(1, count + 1):
+            # Use dummy collection_id for dry run
+            agent_run = create_agent_run_with_multiple_groups(i, "dummy-collection-id")
+            agent_runs.append(agent_run)
+
+        print_agent_run_summary(agent_runs)
+        log_info("Dry run complete - no agent runs were ingested.")
+        return
+
+    try:
+        await generate_and_ingest_agent_runs(count, collection_name, api_key, server_url)
     except Exception:
         sys.exit(1)
 

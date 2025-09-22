@@ -14,9 +14,10 @@ export interface TranscriptMetadataField {
 export interface Citation {
   start_idx: number;
   end_idx: number;
-  transcript_idx: number | null;
-  block_idx: number;
-  start_pattern: string | null;
+  transcript_idx: number | undefined;
+  block_idx: number | undefined;
+  metadata_key: string | undefined;
+  start_pattern: string | undefined;
 }
 
 export interface StreamedSearchResult {

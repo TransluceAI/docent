@@ -1,12 +1,10 @@
-import React, { useRef } from 'react';
-import { Quote } from 'lucide-react';
+import { FileTextIcon, Quote } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Citation } from '../app/types/experimentViewerTypes';
 import { useAppSelector } from '../app/store/hooks';
-import {
-  selectIsCitationHighlighted,
-  useCitationHighlight,
-} from '../lib/citationUtils';
+import { selectIsCitationHighlighted } from '../lib/citationUtils';
+import { useCitationNavigation } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
+import React, { useRef } from 'react';
 import { useTextSelection } from '../providers/use-text-selection';
 
 /**
@@ -275,17 +273,12 @@ export const CitationButton: React.FC<{
   text: string;
   onClick: (citation: Citation) => void;
 }> = ({ citation, text, onClick }) => {
-  const { highlightCitation } = useCitationHighlight();
   const isHighlighted = useAppSelector((state) =>
     selectIsCitationHighlighted(state, citation)
   );
   // Server-side validation ensures that any citation with start_pattern is valid
+  const isMetadataCitation = citation.metadata_key != null;
   const hasMatches = Boolean(citation.start_pattern);
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    highlightCitation(citation);
-    onClick(citation);
-  };
 
   return (
     <button
@@ -295,11 +288,23 @@ export const CitationButton: React.FC<{
           ? 'bg-indigo-500 text-white'
           : 'bg-indigo-muted text-primary hover:bg-indigo-muted/50'
       )}
-      onClick={handleClick}
+      onClick={(e) => {
+        // Prevent the card click from triggering
+        e.stopPropagation();
+        onClick(citation);
+      }}
     >
       <span className="inline-flex items-center">
         {text}
-        {hasMatches && (
+        {isMetadataCitation && (
+          <FileTextIcon
+            className={cn(
+              'w-3 h-3 ml-0.5 inline',
+              isHighlighted ? 'text-white' : 'text-indigo-400'
+            )}
+          />
+        )}
+        {hasMatches && !isMetadataCitation && (
           <Quote
             className={cn(
               'w-3 h-3 ml-0.5 inline',
@@ -317,21 +322,21 @@ export const CitationButton: React.FC<{
  */
 export type NavigateToCitation = (args: {
   citation: Citation;
-  newTab?: boolean;
+  source?: string;
 }) => void;
 
 interface TextWithCitationsProps {
   text: string;
   citations: Citation[];
-  onNavigate?: NavigateToCitation;
   setSelectedText?: (text: string) => void;
 }
 
 export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
   text,
   citations,
-  onNavigate,
 }) => {
+  const citationNav = useCitationNavigation();
+
   const containerRef = useRef<HTMLSpanElement | null>(null);
   useTextSelection({ containerRef });
 
@@ -343,8 +348,8 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
   let lastWasCitation = false;
 
   const handleCitationClick = (citation: Citation) => {
-    if (onNavigate) {
-      onNavigate({ citation });
+    if (citationNav?.navigateToCitation) {
+      citationNav.navigateToCitation({ citation });
     }
   };
 
@@ -408,17 +413,17 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
 interface MarkdownWithCitationsProps {
   text: string;
   citations: Citation[];
-  onNavigate?: NavigateToCitation;
 }
 
 export const MarkdownWithCitations: React.FC<MarkdownWithCitationsProps> = ({
   text,
   citations,
-  onNavigate,
 }) => {
+  const citationNav = useCitationNavigation();
+
   const handleCitationClick = (citation: Citation) => {
-    if (onNavigate) {
-      onNavigate({ citation });
+    if (citationNav?.navigateToCitation) {
+      citationNav.navigateToCitation({ citation });
     }
   };
 

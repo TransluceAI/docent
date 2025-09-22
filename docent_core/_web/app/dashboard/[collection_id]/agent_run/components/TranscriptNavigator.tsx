@@ -17,7 +17,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { MetadataDialog } from './MetadataDialog';
+import { MetadataPopover } from '@/components/metadata/MetadataPopover';
+import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { Checkbox } from '@/components/ui/checkbox';
 
 // Unified tree node type: a node can be a group or a transcript
@@ -96,11 +97,8 @@ const TreeNodeView: React.FC<{
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex h-full items-center">
-                <MetadataDialog
-                  metadata={group?.metadata || {}}
-                  title={`Transcript Group Metadata - ${group?.name || node.id}`}
-                  id={node.id}
-                  trigger={
+                <MetadataPopover.Root>
+                  <MetadataPopover.Trigger>
                     <button
                       className={cn(
                         'p-0.5 mr-1 rounded transition-colors',
@@ -111,8 +109,15 @@ const TreeNodeView: React.FC<{
                     >
                       <FileText className="h-3 w-3" />
                     </button>
-                  }
-                />
+                  </MetadataPopover.Trigger>
+                  <MetadataPopover.Content
+                    title={`Transcript Group Metadata - ${group?.name || node.id}`}
+                  >
+                    <MetadataPopover.Body metadata={group?.metadata || {}}>
+                      {(md) => <MetadataBlock metadata={md} />}
+                    </MetadataPopover.Body>
+                  </MetadataPopover.Content>
+                </MetadataPopover.Root>
               </div>
             </TooltipTrigger>
             <TooltipContent side="left" align="center">
@@ -180,11 +185,8 @@ const TranscriptListItem: React.FC<{
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex h-full items-center">
-          <MetadataDialog
-            metadata={transcriptsById[transcriptId]?.metadata || {}}
-            title={`Transcript Metadata`}
-            id={transcriptId}
-            trigger={
+          <MetadataPopover.Root>
+            <MetadataPopover.Trigger>
               <button
                 className={cn(
                   'p-0.5 mr-1 rounded transition-colors',
@@ -195,8 +197,15 @@ const TranscriptListItem: React.FC<{
               >
                 <FileText className="h-3 w-3" />
               </button>
-            }
-          />
+            </MetadataPopover.Trigger>
+            <MetadataPopover.Content title={`Transcript Metadata`}>
+              <MetadataPopover.Body
+                metadata={transcriptsById[transcriptId]?.metadata || {}}
+              >
+                {(md) => <MetadataBlock metadata={md} />}
+              </MetadataPopover.Body>
+            </MetadataPopover.Content>
+          </MetadataPopover.Root>
         </div>
       </TooltipTrigger>
       <TooltipContent side="left" align="center">

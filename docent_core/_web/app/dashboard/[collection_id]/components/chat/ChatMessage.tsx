@@ -6,18 +6,13 @@ import {
   ChatMessage as ChatMessageType,
   Content as ChatContent,
 } from '@/app/types/transcriptTypes';
-import {
-  MarkdownWithCitations,
-  NavigateToCitation,
-} from '@/components/CitationRenderer';
-import posthog from 'posthog-js';
+import { MarkdownWithCitations } from '@/components/CitationRenderer';
 import ToolCallMessage from './ToolCallMessage';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   isLoadingPlaceholder: boolean;
   requiresScrollPadding: boolean;
-  onNavigateToCitation?: NavigateToCitation;
   isStreaming?: boolean;
 }
 
@@ -32,7 +27,6 @@ export function ChatMessage({
   message,
   isLoadingPlaceholder,
   requiresScrollPadding,
-  onNavigateToCitation,
   isStreaming = false,
 }: ChatMessageProps) {
   const isStreamingThisMessage = !!isStreaming;
@@ -180,19 +174,6 @@ export function ChatMessage({
                       <MarkdownWithCitations
                         text={text}
                         citations={citations}
-                        onNavigate={({ citation, newTab }) => {
-                          if (citation) {
-                            posthog.capture('citation_clicked', {
-                              source: 'chat',
-                              transcript_idx: citation.transcript_idx,
-                              block_idx: citation.block_idx,
-                              start_pattern: citation.start_pattern,
-                            });
-                          }
-                          if (onNavigateToCitation) {
-                            onNavigateToCitation({ citation, newTab });
-                          }
-                        }}
                       />
                     </div>
                   );

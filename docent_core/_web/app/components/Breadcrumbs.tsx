@@ -87,12 +87,14 @@ const Breadcrumbs: React.FC = () => {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              asChild
               size="sm"
               variant="outline"
               className="h-7 text-xs whitespace-nowrap px-2 py-0 flex items-center gap-x-1"
-              onClick={() => router.push('/dashboard')}
             >
-              <Layers size={14} />
+              <Link href="/dashboard">
+                <Layers size={14} />
+              </Link>
             </Button>
           </TooltipTrigger>
           <TooltipContent>

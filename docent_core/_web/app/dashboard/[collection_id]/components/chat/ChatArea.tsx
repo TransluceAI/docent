@@ -6,7 +6,6 @@ import { motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { ChatMessage } from '@/app/types/transcriptTypes';
-import { NavigateToCitation } from '@/components/CitationRenderer';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import InputArea from './InputArea';
 
@@ -21,7 +20,6 @@ interface ChatAreaProps {
   isSendingMessage?: boolean;
   headerElement?: ReactNode;
   suggestedMessages?: SuggestedMessage[];
-  onNavigateToCitation?: NavigateToCitation;
   byoFlexDiv: boolean;
   __showThinkingSpacerAfterFirstMessage?: boolean;
   inputAreaFooter?: ReactNode;
@@ -43,7 +41,6 @@ export function ChatArea({
   isSendingMessage = false,
   headerElement,
   suggestedMessages,
-  onNavigateToCitation,
   byoFlexDiv = false,
   __showThinkingSpacerAfterFirstMessage = false,
   inputAreaFooter,
@@ -94,7 +91,6 @@ export function ChatArea({
           index === messages.length - 1 &&
           message.role === 'assistant'
         }
-        onNavigateToCitation={onNavigateToCitation}
       />
     ));
     if (showThinkingSpacer) {
@@ -107,18 +103,11 @@ export function ChatArea({
           isLoadingPlaceholder={true}
           isStreaming={true}
           requiresScrollPadding={true}
-          onNavigateToCitation={onNavigateToCitation}
         />
       );
     }
     return ans;
-  }, [
-    messages,
-    showThinkingSpacer,
-    onNavigateToCitation,
-    isSendingMessage,
-    streamingMessageIdx,
-  ]);
+  }, [messages, showThinkingSpacer, isSendingMessage, streamingMessageIdx]);
 
   // Scroll once when the thinking spacer first appears in the message history (i.e., upon send)
   const prevShowThinking = useRef(false);
