@@ -118,11 +118,13 @@ export default function ExperimentViewer({
   const [discoveredColumns, setDiscoveredColumns] = useState<Set<string>>(
     new Set()
   );
+  const hasAutoSelectedColumnsRef = useRef(false);
 
   // Load persisted column selection on mount and when collectionId changes
   useEffect(() => {
     // Clear discovered columns when collection changes
     setDiscoveredColumns(new Set());
+    hasAutoSelectedColumnsRef.current = false;
 
     const key = getColumnsStorageKey(collectionId);
     if (key) {
@@ -132,6 +134,7 @@ export default function ExperimentViewer({
           const parsedColumns = JSON.parse(persisted);
           if (Array.isArray(parsedColumns)) {
             setSelectedColumns(parsedColumns);
+            hasAutoSelectedColumnsRef.current = true;
             setHasLoadedFromStorage(true);
             return;
           }
@@ -260,16 +263,25 @@ export default function ExperimentViewer({
     });
   }, [derivedColumns, sortableFieldsData, discoveredColumns]);
 
-  // Set default columns when availableColumns changes and we haven't loaded from storage
+  // Apply default columns exactly once per collection when no user preference exists.
   useEffect(() => {
     if (
-      availableColumns.length > 0 &&
-      hasLoadedFromStorage &&
-      selectedColumns.length === 0
+      !hasLoadedFromStorage ||
+      hasAutoSelectedColumnsRef.current ||
+      availableColumns.length === 0 ||
+      selectedColumns.length > 0
     ) {
-      setSelectedColumns(availableColumns);
+      return;
     }
-  }, [availableColumns, hasLoadedFromStorage, selectedColumns.length]);
+
+    hasAutoSelectedColumnsRef.current = true;
+    setSelectedColumns(availableColumns);
+  }, [
+    availableColumns,
+    hasLoadedFromStorage,
+    selectedColumns.length,
+    setSelectedColumns,
+  ]);
 
   const sortableColumns = useMemo(
     () =>

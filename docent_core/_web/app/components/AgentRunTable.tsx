@@ -70,7 +70,7 @@ const ROW_HEIGHT_PX = 44;
 const OVERSCAN_COUNT = 50;
 const METADATA_REQUEST_DEBOUNCE_MS = 150;
 
-// Custom hook to debounce metadata requests
+// Debounces metadata fetches to limit repeated requests while scrolling.
 function useDebouncedMetadataRequest(
   agentRunIds: string[] | undefined,
   metadataData: Record<string, Record<string, unknown>>,
