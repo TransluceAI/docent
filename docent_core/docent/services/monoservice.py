@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import (
     Any,
     AsyncIterator,
@@ -16,14 +17,18 @@ from uuid import uuid4
 from passlib.context import CryptContext
 from sqlalchemy import (
     ColumnElement,
+    bindparam,
     delete,
     exists,
     func,
+    literal,
     select,
-    text,
+    true,
     update,
 )
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import lateral, text
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
@@ -1996,19 +2001,90 @@ class MonoService:
         Returns:
             List of all filterable fields
         """
-        # Get up to 20 agent runs to get the union of metadata fields
-        agent_runs = await self.get_agent_runs(ctx, _limit=20)
+        where_clause = ctx.get_base_where_clause(SQLAAgentRun)
 
-        # Collect all unique filterable fields from all runs
+        metadata_prefix = array([literal("metadata")])
+
+        base_lateral = lateral(
+            func.jsonb_each(SQLAAgentRun.metadata_json).table_valued("key", "value")
+        ).alias("metadata_pairs")
+
+        json_paths = (
+            select(
+                func.array_append(metadata_prefix, base_lateral.c.key).label("path_arr"),
+                base_lateral.c.value.label("value"),
+                SQLAAgentRun.id.label("agent_run_id"),
+                literal(1).label("depth"),
+            )
+            .select_from(SQLAAgentRun)
+            .join(base_lateral, true())
+            .where(where_clause)
+            .where(func.jsonb_typeof(SQLAAgentRun.metadata_json) == "object")
+        ).cte("json_paths", recursive=True)
+
+        nested_lateral = lateral(
+            func.jsonb_each(json_paths.c.value).table_valued("key", "value")
+        ).alias("nested_pairs")
+
+        json_paths = json_paths.union_all(
+            select(
+                func.array_append(json_paths.c.path_arr, nested_lateral.c.key).label("path_arr"),
+                nested_lateral.c.value.label("value"),
+                json_paths.c.agent_run_id,
+                (json_paths.c.depth + 1).label("depth"),
+            )
+            .join(nested_lateral, true())
+            .where(func.jsonb_typeof(json_paths.c.value) == "object")
+            .where(json_paths.c.depth < bindparam("max_depth"))
+        )
+
+        scalar_json_types = ("string", "number", "boolean")
+
+        scalar_leaves = (
+            select(
+                json_paths.c.path_arr.label("path_arr"),
+                json_paths.c.value.label("value"),
+                json_paths.c.agent_run_id.label("agent_run_id"),
+            ).where(func.jsonb_typeof(json_paths.c.value).in_(scalar_json_types))
+        ).subquery()
+
+        metadata_query = (
+            select(
+                func.array_to_string(scalar_leaves.c.path_arr, ".").label("path"),
+                scalar_leaves.c.value,
+            )
+            .distinct(scalar_leaves.c.path_arr)
+            .order_by(scalar_leaves.c.path_arr, scalar_leaves.c.agent_run_id)
+        )
+
+        def _infer_filter_type(value: Any) -> Literal["str", "bool", "int", "float"] | None:
+            if isinstance(value, bool):
+                return "bool"
+            if isinstance(value, int):
+                return "int"
+            if isinstance(value, float):
+                return "float"
+            if isinstance(value, Decimal):
+                if value == value.to_integral_value():
+                    return "int"
+                return "float"
+            if isinstance(value, str):
+                return "str"
+            return None
+
         all_fields: dict[str, FilterableField] = {}
-        for run in agent_runs:
-            for field in run.get_filterable_fields():
-                # Use field name as key to ensure uniqueness
-                all_fields[field["name"]] = field
 
-        # Convert to sorted list
-        fields = sorted(all_fields.values(), key=lambda f: f["name"])
-        return fields
+        async with self.db.session() as session:
+            result = await session.execute(metadata_query, {"max_depth": 2})
+            for row in result:
+                field_type = _infer_filter_type(row.value)
+                if field_type is None:
+                    continue
+                all_fields[row.path] = {"name": row.path, "type": field_type}
+
+        all_fields["text"] = {"name": "text", "type": "str"}
+
+        return sorted(all_fields.values(), key=lambda f: f["name"])
 
 
 def sort_transcript_groups_by_parent_order(
