@@ -96,6 +96,7 @@ export function ChatArea({
     if (showThinkingSpacer) {
       ans.push(
         <ChatMessageComponent
+          key="thinking-spacer"
           message={{
             role: 'assistant',
             content: 'Thinking...',
