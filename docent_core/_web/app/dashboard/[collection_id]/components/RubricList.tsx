@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  Plus,
   Play,
   FileText,
   Trash2,
@@ -11,12 +10,10 @@ import {
 } from 'lucide-react';
 import { useAppSelector } from '@/app/store/hooks';
 import { type Rubric } from '@/app/store/rubricSlice';
-import { Button } from '@/components/ui/button';
 import { useParams, useRouter } from 'next/navigation';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import {
   useGetRubricsQuery,
-  useCreateRubricMutation,
   useDeleteRubricMutation,
   useStartEvaluationMutation,
   useGetRubricJobStatusQuery,
@@ -311,7 +308,6 @@ export default function RubricList() {
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const effectiveCollectionId =
     collectionId || (params?.collection_id as string | undefined);
-  const router = useRouter();
 
   // Check write permissions
   const hasWritePermission = useHasCollectionWritePermission();
@@ -324,34 +320,6 @@ export default function RubricList() {
     { skip: !effectiveCollectionId }
   );
 
-  const [createRubric, { isLoading: isCreatingRubric }] =
-    useCreateRubricMutation();
-  const [startEvaluation] = useStartEvaluationMutation();
-
-  const handleAddNew = async () => {
-    if (!collectionId) return;
-
-    try {
-      // Create a new rubric using the API
-      const newRubric = { rubric_text: '' };
-
-      const createdRubricId = await createRubric({
-        collectionId,
-        rubric: newRubric,
-      }).unwrap();
-
-      // Navigate to the created rubric for editing
-      router.push(`/dashboard/${collectionId}?rubricId=${createdRubricId}`);
-    } catch (error) {
-      console.error('Failed to create rubric:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create rubric',
-        variant: 'destructive',
-      });
-    }
-  };
-
   return (
     <div className="space-y-2">
       {/* Header */}
@@ -362,18 +330,6 @@ export default function RubricList() {
             Run and modify previously-created rubrics
           </div>
         </div>
-        <Button
-          onClick={handleAddNew}
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1 text-xs"
-          disabled={
-            !hasWritePermission || isCreatingRubric || !effectiveCollectionId
-          }
-        >
-          <Plus className="h-3 w-3 -ml-1" />
-          {isCreatingRubric ? 'Creating...' : 'Rubric'}
-        </Button>
       </div>
 
       {/* Rubrics List */}

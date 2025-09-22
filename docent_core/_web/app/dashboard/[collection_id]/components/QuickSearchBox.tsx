@@ -141,7 +141,7 @@ export default function QuickSearchBox({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
-          <div className="text-sm font-semibold">Quick search</div>
+          <div className="text-sm font-semibold">Create a rubric</div>
           <div className="text-xs text-muted-foreground">
             Find and explore occurrences of an agent behavior
           </div>
