@@ -78,8 +78,8 @@ export function MetadataBlock({
         {Object.entries(metadata).map(([key, value]) => {
           const isHighlightedRow = shouldHighlightRow(key);
           const rowClass = isHighlightedRow
-            ? 'flex p-2 bg-yellow-100 dark:bg-yellow-900/30 transition-colors'
-            : 'flex p-2 hover:bg-muted transition-colors';
+            ? 'flex items-center p-2 bg-yellow-100 dark:bg-yellow-900/30 transition-colors'
+            : 'flex items-center p-2 hover:bg-muted transition-colors';
           return (
             <div
               key={key}
@@ -89,7 +89,7 @@ export function MetadataBlock({
               <div className="w-1/3 font-medium text-sm text-primary break-words pr-4">
                 {key}
               </div>
-              <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-start justify-between">
+              <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-center justify-between">
                 <span className="flex-1">
                   {getHighlightedValue(value, isHighlightedRow)}
                 </span>
