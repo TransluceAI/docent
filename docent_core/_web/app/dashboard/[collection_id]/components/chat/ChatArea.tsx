@@ -111,19 +111,6 @@ export function ChatArea({
     return ans;
   }, [messages, showThinkingSpacer, isSendingMessage, streamingMessageIdx]);
 
-  // // Scroll once when the thinking spacer first appears in the message history (i.e., upon send)
-  // const prevShowThinking = useRef(false);
-  // useEffect(() => {
-  //   if (displayedMessages.length === 0) return;
-  //   const curShowThinking =
-  //     displayedMessages[displayedMessages.length - 1].props
-  //       .isLoadingPlaceholder === true;
-  //   if (!prevShowThinking.current && curShowThinking) {
-  //     scrollToBottom('smooth');
-  //   }
-  //   prevShowThinking.current = curShowThinking;
-  // }, [displayedMessages, scrollToBottom]);
-
   // Auto-scroll when the thinking spacer first appears in the message history (i.e., upon send)
   const lastMessageIsThinkingSpacer = useMemo(() => {
     return (
