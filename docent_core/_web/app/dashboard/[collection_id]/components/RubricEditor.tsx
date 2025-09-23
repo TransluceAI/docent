@@ -343,7 +343,7 @@ export default function RubricEditor({
   return (
     <div className="space-y-2">
       <div className="flex justify-between">
-        <div>
+        <div className="items-center flex">
           <div className="text-sm font-semibold">
             {editable ? 'Rubric Editor' : 'Rubric Evaluation'}
           </div>

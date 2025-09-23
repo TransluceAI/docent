@@ -21,6 +21,7 @@ import {
 } from '@/providers/use-result-filters';
 import posthog from 'posthog-js';
 import { toast } from '@/hooks/use-toast';
+import { SchemaProperty } from '../types/schema';
 
 interface FilterControlsProps {
   setIsPopoverOpen: (open: boolean) => void;
@@ -71,22 +72,17 @@ function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
   });
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const enumOptions = useMemo<string[]>(() => {
-    if (!state.path || !schema) return [];
-    const property = schema.properties[state.path];
-    if (property.type === 'string' && 'enum' in property) {
-      return property.enum;
-    }
-    return [];
+  const property = useMemo<SchemaProperty | undefined>(() => {
+    if (!state.path || !schema) return;
+    return schema.properties[state.path];
   }, [state.path, schema]);
 
-  const isEnum = enumOptions.length > 0;
-
   useEffect(() => {
+    const isEnum = property?.type === 'string' && 'enum' in property;
     if (state.step === 'value' && !isEnum) {
       inputRef.current?.focus();
     }
-  }, [state.step, isEnum]);
+  }, [state.step, property]);
 
   const addFilter = () => {
     const { path, op, value } = state;
@@ -112,6 +108,32 @@ function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
 
     setIsPopoverOpen(false);
     dispatch({ type: 'reset' });
+  };
+
+  const Selector = (options: string[]) => {
+    return (
+      <Select
+        value={state.value}
+        open={state.step === 'value'}
+        onOpenChange={(o) =>
+          dispatch({ type: 'openStep', step: o ? 'value' : null })
+        }
+        onValueChange={(v) => {
+          dispatch({ type: 'setValue', value: v });
+        }}
+      >
+        <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground">
+          <SelectValue placeholder="Select value" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt} value={opt} className="font-mono text-xs">
+              {opt}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
   };
 
   return (
@@ -172,42 +194,25 @@ function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
         <div className="text-xs text-muted-foreground font-mono ml-1 mb-1">
           Value
         </div>
-        {enumOptions.length > 0 ? (
-          <Select
-            value={state.value}
-            open={state.step === 'value'}
-            onOpenChange={(o) =>
-              dispatch({ type: 'openStep', step: o ? 'value' : null })
-            }
-            onValueChange={(v) => {
-              dispatch({ type: 'setValue', value: v });
-            }}
-          >
-            <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground">
-              <SelectValue placeholder="Select value" />
-            </SelectTrigger>
-            <SelectContent>
-              {enumOptions.map((opt) => (
-                <SelectItem key={opt} value={opt} className="font-mono text-xs">
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <input
-            value={state.value}
-            onChange={(e) =>
-              dispatch({ type: 'setValue', value: e.target.value })
-            }
-            placeholder="Enter value"
-            className="h-7 text-xs bg-background font-mono text-muted-foreground w-full rounded border border-border px-2"
-            ref={inputRef}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') addFilter();
-            }}
-          />
-        )}
+        {(() => {
+          if (property?.type === 'string' && 'enum' in property)
+            return Selector(property.enum);
+          if (property?.type === 'boolean') return Selector(['true', 'false']);
+          return (
+            <input
+              value={state.value}
+              onChange={(e) =>
+                dispatch({ type: 'setValue', value: e.target.value })
+              }
+              placeholder="Enter value"
+              className="h-7 text-xs bg-background font-mono text-muted-foreground w-full rounded border border-border px-2"
+              ref={inputRef}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addFilter();
+              }}
+            />
+          );
+        })()}
       </div>
       <div>
         <div className="text-xs text-muted-foreground mb-1">&nbsp;</div>

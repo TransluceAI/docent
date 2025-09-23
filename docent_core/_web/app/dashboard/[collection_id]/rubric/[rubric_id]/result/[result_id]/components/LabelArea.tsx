@@ -15,10 +15,16 @@ interface LabelAreaProps {
 function LabelArea({ result, collectionId, rubricId }: LabelAreaProps) {
   // Get the remote rubric
   const { latestVersion } = useRubricVersion();
-  const { data: rubric } = useGetRubricQuery({
+  const { data: currentViewedRubric } = useGetRubricQuery({
     collectionId: collectionId,
     rubricId: rubricId,
     version: latestVersion,
+  });
+
+  const { data: resultRubric } = useGetRubricQuery({
+    collectionId: collectionId,
+    rubricId: rubricId,
+    version: result.rubric_version,
   });
 
   const { data: judgeRunLabel, isSuccess: isRunLabelSuccess } =
@@ -33,9 +39,11 @@ function LabelArea({ result, collectionId, rubricId }: LabelAreaProps) {
     judgeRunLabel && isRunLabelSuccess ? judgeRunLabel.label : result.output;
 
   // Make sure that the label area is displaying the latest schema form
-  const isOutdated = result.rubric_version !== latestVersion;
+  const isOutdated =
+    JSON.stringify(resultRubric?.output_schema) !==
+    JSON.stringify(currentViewedRubric?.output_schema);
 
-  if (!rubric?.output_schema) {
+  if (!currentViewedRubric?.output_schema) {
     return <span>Could not load rubric output schema.</span>;
   }
 
@@ -52,15 +60,16 @@ function LabelArea({ result, collectionId, rubricId }: LabelAreaProps) {
 
         {isOutdated && (
           <div className="text-xs text-muted-foreground h-[70%] flex text-center items-center p-3 justify-center">
-            This label uses the v{result.rubric_version} rubric schema. Please
-            select a result with an updated schema.
+            This label uses the v{result.rubric_version} rubric schema which is
+            different from the latest v{currentViewedRubric.version} rubric
+            schema. Please select a result with an updated schema.
           </div>
         )}
 
         {isRunLabelSuccess && !isOutdated && (
           <LabelForm
             key={result.id}
-            schema={rubric.output_schema}
+            schema={currentViewedRubric.output_schema}
             initialState={initialState}
             judgeOutput={result.output}
             collectionId={collectionId}

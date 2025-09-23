@@ -44,8 +44,8 @@ export function RubricVersionProvider({
     collectionId,
   });
 
-  const refetchLatestVersion = useCallback(() => {
-    refetch();
+  const refetchLatestVersion = useCallback(async () => {
+    await refetch();
     setVersion(latestVersion ?? null);
   }, [refetch, latestVersion]);
 

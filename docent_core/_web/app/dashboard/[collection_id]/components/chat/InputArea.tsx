@@ -185,7 +185,8 @@ export default function InputArea({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className="absolute inset-x-0 bottom-24 z-50 mx-auto w-fit"
+            className="absolute inset-x-0 z-50 mx-auto w-fit"
+            style={{ bottom: 'calc(100% + 16px)' }}
           >
             <Button
               type="button"

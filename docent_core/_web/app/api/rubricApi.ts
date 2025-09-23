@@ -131,7 +131,7 @@ export const rubricApi = createApi({
         params: version ? { version } : undefined,
       }),
       providesTags: (result, error, { rubricId }) => [
-        { type: 'Rubric', id: rubricId },
+        { type: 'Rubric', id: rubricId, version: result?.version },
       ],
     }),
     getLatestRubricVersion: build.query<
@@ -143,7 +143,7 @@ export const rubricApi = createApi({
         method: 'GET',
       }),
       providesTags: (result, error, { rubricId }) => [
-        { type: 'Rubric', id: rubricId },
+        { type: 'Rubric', id: rubricId, version: result },
       ],
     }),
     createRubric: build.mutation<

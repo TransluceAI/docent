@@ -147,6 +147,10 @@ export function ResultFilterControlsProvider({
       return ['==', '!=', 'contains'];
     }
 
+    if (property.type === 'boolean') {
+      return ['==', '!='];
+    }
+
     return [];
   };
 
