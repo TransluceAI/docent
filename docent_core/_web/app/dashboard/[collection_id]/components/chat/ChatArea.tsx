@@ -50,6 +50,7 @@ export function ChatArea({
   inputAreaClassName,
 }: ChatAreaProps) {
   const {
+    isAtBottom,
     containerRef,
     endRef,
     onViewportEnter,
@@ -110,18 +111,32 @@ export function ChatArea({
     return ans;
   }, [messages, showThinkingSpacer, isSendingMessage, streamingMessageIdx]);
 
-  // Scroll once when the thinking spacer first appears in the message history (i.e., upon send)
-  const prevShowThinking = useRef(false);
+  // // Scroll once when the thinking spacer first appears in the message history (i.e., upon send)
+  // const prevShowThinking = useRef(false);
+  // useEffect(() => {
+  //   if (displayedMessages.length === 0) return;
+  //   const curShowThinking =
+  //     displayedMessages[displayedMessages.length - 1].props
+  //       .isLoadingPlaceholder === true;
+  //   if (!prevShowThinking.current && curShowThinking) {
+  //     scrollToBottom('smooth');
+  //   }
+  //   prevShowThinking.current = curShowThinking;
+  // }, [displayedMessages, scrollToBottom]);
+
+  // Auto-scroll when the thinking spacer first appears in the message history (i.e., upon send)
+  const lastMessageIsThinkingSpacer = useMemo(() => {
+    return (
+      displayedMessages.length > 0 &&
+      displayedMessages[displayedMessages.length - 1].props.isLoadingPlaceholder
+    );
+  }, [displayedMessages]);
   useEffect(() => {
-    if (displayedMessages.length === 0) return;
-    const curShowThinking =
-      displayedMessages[displayedMessages.length - 1].props
-        .isLoadingPlaceholder === true;
-    if (!prevShowThinking.current && curShowThinking) {
-      scrollToBottom('smooth');
+    if (!isAtBottom && lastMessageIsThinkingSpacer) {
+      // Small delay to ensure the thinking spacer is visible
+      setTimeout(() => scrollToBottom('smooth'), 100);
     }
-    prevShowThinking.current = curShowThinking;
-  }, [displayedMessages, scrollToBottom]);
+  }, [isAtBottom, lastMessageIsThinkingSpacer, scrollToBottom]);
 
   // Extract suggested messages from the last assistant message
   const finalSuggestedMessages = (() => {
