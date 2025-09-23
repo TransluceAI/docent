@@ -168,6 +168,14 @@ async def get_google_chat_completion_async(
             raise
 
 
+@backoff.on_exception(
+    backoff.expo,
+    exception=(Exception),
+    giveup=lambda e: not _is_retryable_error(e),
+    max_tries=3,
+    factor=2.0,
+    on_backoff=_print_backoff_message,
+)
 async def get_google_chat_completion_streaming_async(
     client: AsyncGoogle,
     streaming_callback: AsyncSingleLLMOutputStreamingCallback | None,
@@ -182,23 +190,116 @@ async def get_google_chat_completion_streaming_async(
     top_logprobs: int | None = None,
     timeout: float = 5.0,
 ) -> LLMOutput:
-    # TODO: implement this with actual streaming.
-    output = await get_google_chat_completion_async(
-        client=client,
-        messages=messages,
-        model_name=model_name,
-        tools=tools,
-        tool_choice=tool_choice,
-        max_new_tokens=max_new_tokens,
-        temperature=temperature,
-        reasoning_effort=reasoning_effort,
-        logprobs=logprobs,
-        top_logprobs=top_logprobs,
-        timeout=timeout,
-    )
-    if streaming_callback is not None:
-        await streaming_callback(output)
-    return output
+    if logprobs or top_logprobs is not None:
+        raise NotImplementedError(
+            "We have not implemented logprobs or top_logprobs for Google yet."
+        )
+
+    system, input_messages = _parse_chat_messages(messages, tools_provided=bool(tools))
+
+    try:
+        async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+            thinking_cfg = None
+            if reasoning_effort and not tools:
+                thinking_cfg = types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_budget=int(
+                        max_new_tokens
+                        * (
+                            0.75
+                            if reasoning_effort == "high"
+                            else (0.5 if reasoning_effort == "medium" else 0.25)
+                        )
+                    ),
+                )
+
+            stream = await client.models.generate_content_stream(
+                model=model_name,
+                contents=input_messages,  # type: ignore
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    thinking_config=thinking_cfg,
+                    max_output_tokens=max_new_tokens,
+                    system_instruction=system,
+                    tools=_parse_tools(tools) if tools else None,
+                    tool_config=(
+                        types.ToolConfig(function_calling_config=_parse_tool_choice(tool_choice))
+                        if tool_choice is not None
+                        else None
+                    ),
+                ),
+            )
+
+            accumulated_text = ""
+            accumulated_tool_calls: list[ToolCall] = []
+            finish_reason: str | None = None
+            total_tokens: int | None = None
+
+            async for chunk in stream:
+                if chunk.usage_metadata and chunk.usage_metadata.total_token_count is not None:
+                    total_tokens = chunk.usage_metadata.total_token_count
+
+                candidate = chunk.candidates[0] if chunk.candidates else None
+                if candidate and candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if getattr(part, "text", None) is not None and not getattr(
+                            part, "thought", False
+                        ):
+                            accumulated_text += part.text or ""
+                        elif getattr(part, "function_call", None) is not None:
+                            fc = part.function_call
+                            args = getattr(fc, "args", {})
+                            if isinstance(args, str):
+                                try:
+                                    import json as _json
+
+                                    args = _json.loads(args)
+                                except Exception:
+                                    args = {"__parse_error_raw_args": args}
+                            accumulated_tool_calls.append(
+                                ToolCall(
+                                    id=getattr(fc, "id", None)
+                                    or f"{getattr(fc, 'name', 'tool')}_call",
+                                    function=getattr(fc, "name", "unknown"),
+                                    arguments=(
+                                        cast(dict[str, Any], args) if isinstance(args, dict) else {}
+                                    ),
+                                    type="function",
+                                )
+                            )
+
+                if candidate and candidate.finish_reason is not None:
+                    if candidate.finish_reason == types.FinishReason.STOP:
+                        finish_reason = "stop"
+                    elif candidate.finish_reason == types.FinishReason.MAX_TOKENS:
+                        finish_reason = "length"
+                    else:
+                        finish_reason = "error"
+
+                if streaming_callback is not None:
+                    await streaming_callback(
+                        LLMOutput(
+                            model=model_name,
+                            completions=[LLMCompletion(text=accumulated_text)],
+                        )
+                    )
+
+            return LLMOutput(
+                model=model_name,
+                completions=[
+                    LLMCompletion(
+                        text=accumulated_text,
+                        tool_calls=(accumulated_tool_calls or None),
+                        finish_reason=finish_reason,
+                    )
+                ],
+                total_tokens=total_tokens,
+            )
+    except errors.APIError as e:
+        if e2 := _convert_google_error(e):
+            raise e2 from e
+        else:
+            raise
 
 
 def _parse_chat_messages(
