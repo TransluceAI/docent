@@ -443,16 +443,14 @@ class ChatService:
         """
 
         raw_chat_session = sqla_session.to_pydantic()
-        # Parse citations in existing messages so streaming doesn't revert the frontend to raw messages
-        parsed_chat_session = await self._parse_citations_in_session(ctx, raw_chat_session)
 
         context_messages, agent_run, rubric = await self._get_chat_context(
-            ctx, sqla_session, parsed_chat_session.messages
+            ctx, sqla_session, raw_chat_session.messages
         )
 
-        # Local working copy of messages
-        # Shallow copy is fine because we don't modify any messages in place
-        messages = parsed_chat_session.messages.copy()
+        # Local working copy of raw messages (persisted form)
+        # TODO(ryanbloom): maybe we should have separate types for raw + parsed messages
+        raw_messages = raw_chat_session.messages.copy()
 
         async def _llm_streaming_callback(batch_index: int, llm_output: LLMOutput):
             if sse_callback and (completion := llm_output.first):
@@ -464,12 +462,13 @@ class ChatService:
                     tool_calls=completion.tool_calls,
                 )
 
-                parsed_messages = _parse_citations_in_messages(
-                    [assistant_msg], run=agent_run, streaming=True
+                # Derive parsed view for streaming without mutating/persisting parsed data
+                parsed_for_stream = _parse_citations_in_messages(
+                    raw_messages + [assistant_msg], run=agent_run, streaming=True
                 )
 
                 await sse_callback(
-                    parsed_chat_session.model_copy(update={"messages": messages + parsed_messages})
+                    raw_chat_session.model_copy(update={"messages": parsed_for_stream})
                 )
 
         logger.info(f"Running one turn of chat session: {sqla_session}")
@@ -482,10 +481,10 @@ class ChatService:
 
         MAX_ITERS_PER_TURN = 5
         for _ in range(MAX_ITERS_PER_TURN):
-            if len(messages) == 0:
+            if len(raw_messages) == 0:
                 break
 
-            last_message = messages[-1]
+            last_message = raw_messages[-1]
 
             # If the last message is an assistant message with no tool calls, break
             if last_message.role == "assistant" and not getattr(last_message, "tool_calls", None):
@@ -511,7 +510,7 @@ class ChatService:
 
                 # Handle provider errors first by surfacing an error state via sse_callback
                 if result.did_error:
-                    error_state = parsed_chat_session.model_copy(
+                    error_state = raw_chat_session.model_copy(
                         update={"error_message": result.errors[0].user_message}
                     )
                     if sse_callback:
@@ -522,7 +521,7 @@ class ChatService:
                 completion = result.first
                 if completion is None or completion.text is None:
                     # Defensive fallback: treat as no-response error
-                    error_state = parsed_chat_session.model_copy(
+                    error_state = raw_chat_session.model_copy(
                         update={
                             "error_message": "The model returned no response. Please try again."
                         }
@@ -535,7 +534,7 @@ class ChatService:
                 assistant_msg = AssistantMessage(
                     content=cleaned_text, tool_calls=completion.tool_calls
                 )
-                messages.append(assistant_msg)
+                raw_messages.append(assistant_msg)
 
                 # Store real token count from API response if available
                 if result.total_tokens is not None:
@@ -549,7 +548,7 @@ class ChatService:
                             tool_result_msg = execute_add_label(rubric, tc)
 
                             if tool_result_msg.content == "No label provided.":
-                                messages.append(tool_result_msg)
+                                raw_messages.append(tool_result_msg)
                                 continue
 
                             # TODO(cadentj): Maybe check there's only one key
@@ -572,11 +571,11 @@ class ChatService:
                                 merged.update(label_dict)
                                 await self.rubric_svc.update_judge_run_label(agent_run_id, merged)
 
-                            messages.append(tool_result_msg)
+                            raw_messages.append(tool_result_msg)
                         else:
                             raise ValueError(f"Unsupported tool call: {tc.function}")
                     except Exception as e:
-                        messages.append(
+                        raw_messages.append(
                             ToolMessage(
                                 content=f"Error executing tool call: {e}",
                                 error={"detail": str(e)},
@@ -586,20 +585,21 @@ class ChatService:
                         )
 
             # Update session and notify
-            await self._update_session(sqla_session, [m.model_dump() for m in messages])
+            await self._update_session(sqla_session, [m.model_dump() for m in raw_messages])
             await self.session.commit()
 
             # Push current state with parsed citations
             if sse_callback:
                 parsed_messages = _parse_citations_in_messages(
-                    messages, run=agent_run, streaming=False
+                    raw_messages, run=agent_run, streaming=False
                 )
                 await sse_callback(
                     raw_chat_session.model_copy(update={"messages": parsed_messages})
                 )
 
-        # Final state
-        return raw_chat_session.model_copy(update={"messages": messages})
+        # Final state (parsed for presentation)
+        final_parsed = _parse_citations_in_messages(raw_messages, run=agent_run, streaming=False)
+        return raw_chat_session.model_copy(update={"messages": final_parsed})
 
     async def cleanup_old_chat_sessions(self, days_old: int = 7) -> int:
         """
