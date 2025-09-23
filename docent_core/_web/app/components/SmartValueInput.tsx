@@ -386,7 +386,7 @@ export const SmartValueInput = React.forwardRef<
           placeholder={placeholder}
           type={type}
           className={cn(
-            'h-7 text-xs bg-background font-mono text-muted-foreground',
+            'h-7 text-xs bg-background font-mono text-muted-foreground hover:bg-secondary hover:text-primary',
             className
           )}
           onKeyDown={(e) => {

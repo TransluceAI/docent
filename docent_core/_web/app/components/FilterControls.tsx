@@ -429,7 +429,7 @@ export const FilterControls = ({
               Operator
             </div>
             <Select value={metadataOp} onValueChange={handleOperatorChange}>
-              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16">
+              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16 hover:bg-secondary hover:text-primary">
                 <SelectValue placeholder="==" />
               </SelectTrigger>
               <SelectContent>
@@ -460,7 +460,7 @@ export const FilterControls = ({
               Operator
             </div>
             <Select value={metadataOp} onValueChange={handleOperatorChange}>
-              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16">
+              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground w-16 hover:bg-secondary hover:text-primary">
                 <SelectValue placeholder="==" />
               </SelectTrigger>
               <SelectContent>
@@ -488,7 +488,7 @@ export const FilterControls = ({
               value={metadataValue}
               onValueChange={onUpdateMetadataFilter}
             >
-              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground">
+              <SelectTrigger className="h-7 text-xs bg-background font-mono text-muted-foreground hover:bg-secondary hover:text-primary">
                 <SelectValue placeholder="Select value" />
               </SelectTrigger>
               <SelectContent>
@@ -517,7 +517,7 @@ export const FilterControls = ({
               onChange={(e) => setMetadataValue(e.target.value)}
               placeholder={metadataType === 'int' ? 'e.g. 42' : 'e.g. value'}
               type={metadataType === 'int' ? 'number' : 'text'}
-              className="h-7 text-xs bg-background font-mono text-muted-foreground"
+              className="h-7 text-xs bg-background font-mono text-muted-foreground hover:bg-secondary hover:text-primary"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
