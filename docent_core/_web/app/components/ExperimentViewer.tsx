@@ -593,11 +593,12 @@ export default function ExperimentViewer({
           disabled={!hasWritePermission}
         />
       </div>
-      <div className="p-3 space-y-3 border-b">
-        <TranscriptFilterControls metadataData={metadataData} />
-      </div>
 
-      <div className="flex-1 min-w-0 min-h-0 px-3 pb-3 flex">
+      {/* Filtering controls */}
+      <TranscriptFilterControls metadataData={metadataData} />
+
+      {/* Agent run table */}
+      <div className="flex-1 min-w-0 min-h-0 flex">
         <AgentRunTable
           agentRunIds={agentRunIds}
           metadataData={metadataData}

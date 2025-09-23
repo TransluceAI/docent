@@ -22,13 +22,17 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Check,
-  ChevronsUpDown,
   Columns3,
   Upload,
+  Check,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Command,
   CommandEmpty,
@@ -37,16 +41,6 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import {
   Table,
   TableBody,
@@ -57,12 +51,13 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
+import { Combobox } from './Combobox';
 
 export type AgentRunTableRow = {
   agentRunId: string;
 };
 
-const ROW_HEIGHT_PX = 44;
+const ROW_HEIGHT_PX = 32;
 const OVERSCAN_COUNT = 50;
 const METADATA_REQUEST_DEBOUNCE_MS = 150;
 
@@ -237,7 +232,7 @@ function SortToggle({
               <ArrowDown className="h-3 w-3" />
             )
           ) : (
-            <ArrowUp className="h-3 w-3 opacity-40" />
+            <ArrowUpDown className="h-3 w-3 opacity-40" />
           )}
         </span>
       )}
@@ -269,7 +264,6 @@ export const AgentRunTable = memo(function AgentRunTable({
   const internalScrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
-  const [sortPopoverOpen, setSortPopoverOpen] = useState(false);
 
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
     null
@@ -539,7 +533,6 @@ export const AgentRunTable = memo(function AgentRunTable({
       } else {
         onSortChange(field, sortDirection);
       }
-      setSortPopoverOpen(false);
     },
     [onSortChange, sortDirection]
   );
@@ -551,67 +544,41 @@ export const AgentRunTable = memo(function AgentRunTable({
   }, [onSortChange, sortField, sortDirection]);
 
   // Prepare sortable fields for the select
-  const sortableFields = Array.from(sortableColumns).map((field) => ({
-    name: field,
-    displayName: field,
-  }));
-
-  const allSortOptions = [
-    { name: 'none', displayName: 'No sorting' },
-    ...sortableFields,
-  ];
+  const sortOptions = useMemo(
+    () => [
+      { value: 'none', label: 'No sorting' },
+      ...Array.from(sortableColumns).map((field) => ({
+        value: field,
+        label: field,
+      })),
+    ],
+    [sortableColumns]
+  );
 
   return (
-    <div className="relative flex flex-col h-full min-h-0 w-full">
-      <div className="flex justify-end items-center gap-2 pb-2">
+    <div className="relative flex flex-col h-full min-h-0 w-full space-y-3">
+      <div className="flex justify-end items-center gap-2">
         {/* Sorting controls */}
         <div className="flex items-center gap-1.5">
           <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-          <Popover open={sortPopoverOpen} onOpenChange={setSortPopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={sortPopoverOpen}
-                className="h-7 text-xs bg-background font-mono text-muted-foreground w-64 justify-between"
-              >
-                <span className="truncate flex-1 min-w-0 text-left">
-                  {sortField
-                    ? allSortOptions.find((option) => option.name === sortField)
-                        ?.displayName || sortField
-                    : 'Select field'}
-                </span>
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-0" align="start">
-              <Command>
-                <CommandInput placeholder="Search fields..." className="h-9" />
-                <CommandList>
-                  <CommandEmpty>No field found.</CommandEmpty>
-                  <CommandGroup>
-                    {allSortOptions.map((option) => (
-                      <CommandItem
-                        key={option.name}
-                        value={option.name}
-                        onSelect={() => handleFieldChange(option.name)}
-                        className="font-mono text-muted-foreground text-xs"
-                      >
-                        {option.displayName || option.name}
-                        <Check
-                          className={`ml-auto h-4 w-4 ${
-                            (sortField || 'none') === option.name
-                              ? 'opacity-100'
-                              : 'opacity-0'
-                          }`}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <Combobox
+            value={sortField ?? 'none'}
+            onChange={handleFieldChange}
+            options={sortOptions}
+            placeholder="Select field"
+            searchPlaceholder="Search fields..."
+            emptyMessage="No field found."
+            triggerClassName="bg-background font-mono text-muted-foreground max-w-lg justify-between"
+            valueClassName="truncate flex-1 min-w-0 text-left"
+            commandInputClassName="h-8 text-xs"
+            commandListClassName="custom-scrollbar"
+            optionClassName="font-mono text-muted-foreground text-xs"
+            popoverClassName="w-64"
+            popoverAlign="start"
+            renderValue={(selected) =>
+              sortField ? (selected?.label ?? sortField) : 'Select field'
+            }
+          />
 
           {sortField && (
             <Button
@@ -706,6 +673,7 @@ export const AgentRunTable = memo(function AgentRunTable({
                       key={header.id}
                       className={`text-xs truncate ${index === 0 ? 'sticky left-0 z-10 bg-secondary' : ''}`}
                       style={{
+                        height: ROW_HEIGHT_PX,
                         width: header.column.columnDef.size,
                         maxWidth:
                           header.column.columnDef.maxSize ||
