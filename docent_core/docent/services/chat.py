@@ -495,6 +495,11 @@ class ChatService:
                 tools = None if rubric is None else [create_add_label_tool(rubric.output_schema)]
                 tool_choice = "auto" if rubric is not None else None
 
+                # Recompute context with the latest messages to avoid repeating tool calls
+                context_messages, _, _ = await self._get_chat_context(
+                    ctx, sqla_session, raw_messages
+                )
+
                 outputs = await get_llm_completions_async(
                     [context_messages],
                     [session_model],
