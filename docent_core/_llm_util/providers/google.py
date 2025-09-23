@@ -92,76 +92,38 @@ async def get_google_chat_completion_async(
 
     system, input_messages = _parse_chat_messages(messages, tools_provided=bool(tools))
 
-    try:
-        async with async_timeout_ctx(timeout):
-            thinking_cfg = None
-            if reasoning_effort:
-                thinking_cfg = types.ThinkingConfig(
-                    include_thoughts=True,
-                    thinking_budget=reasoning_budget(max_new_tokens, reasoning_effort),
-                )
-
-            raw_output = await client.models.generate_content(
-                model=model_name,
-                contents=input_messages,  # type: ignore
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    thinking_config=thinking_cfg,
-                    max_output_tokens=max_new_tokens,
-                    system_instruction=system,
-                    tools=_parse_tools(tools) if tools else None,
-                    tool_config=(
-                        types.ToolConfig(function_calling_config=_parse_tool_choice(tool_choice))
-                        if tool_choice is not None
-                        else None
-                    ),
-                ),
+    async with async_timeout_ctx(timeout):
+        thinking_cfg = None
+        if reasoning_effort:
+            thinking_cfg = types.ThinkingConfig(
+                include_thoughts=True,
+                thinking_budget=reasoning_budget(max_new_tokens, reasoning_effort),
             )
 
-            output = _parse_google_completion(raw_output, model_name)
-            if output.first and output.first.finish_reason == "length" and output.first.no_text:
-                raise CompletionTooLongException(
-                    f"Completion empty due to truncation. Consider increasing max_new_tokens (currently {max_new_tokens})."
-                )
+        raw_output = await client.models.generate_content(
+            model=model_name,
+            contents=input_messages,  # type: ignore
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                thinking_config=thinking_cfg,
+                max_output_tokens=max_new_tokens,
+                system_instruction=system,
+                tools=_parse_tools(tools) if tools else None,
+                tool_config=(
+                    types.ToolConfig(function_calling_config=_parse_tool_choice(tool_choice))
+                    if tool_choice is not None
+                    else None
+                ),
+            ),
+        )
 
-            return output
-    except errors.APIError as e:
-        # Fallback: some models intermittently 500 when including function_response parts.
-        # If last message was a tool result, retry once by sending the tool output as plain text.
-        try:
-            last_role = messages[-1].role if messages else None
-        except Exception:
-            last_role = None
+        output = _parse_google_completion(raw_output, model_name)
+        if output.first and output.first.finish_reason == "length" and output.first.no_text:
+            raise CompletionTooLongException(
+                f"Completion empty due to truncation. Consider increasing max_new_tokens (currently {max_new_tokens})."
+            )
 
-        if e.code == 500 and last_role == "tool":
-            try:
-                system2, input_messages2 = _parse_chat_messages(messages, tools_provided=False)
-                raw_output2 = await client.models.generate_content(
-                    model=model_name,
-                    contents=input_messages2,  # type: ignore
-                    config=types.GenerateContentConfig(
-                        temperature=temperature,
-                        thinking_config=None,
-                        max_output_tokens=max_new_tokens,
-                        system_instruction=system2,
-                        tools=_parse_tools(tools) if tools else None,
-                        tool_config=(
-                            types.ToolConfig(
-                                function_calling_config=_parse_tool_choice(tool_choice)
-                            )
-                            if tool_choice is not None
-                            else None
-                        ),
-                    ),
-                )
-                return _parse_google_completion(raw_output2, model_name)
-            except Exception:
-                pass
-
-        if e2 := _convert_google_error(e):
-            raise e2 from e
-        else:
-            raise
+        return output
 
 
 @backoff.on_exception(
