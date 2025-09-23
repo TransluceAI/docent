@@ -290,7 +290,7 @@ def update_llm_output(
     elif isinstance(chunk, RawContentBlockStartEvent):
         # If a tool_use block starts, initialize a ToolCallPartial slot using the block index
         content_block = chunk.content_block
-        if getattr(content_block, "type", None) == "tool_use":
+        if content_block.type == "tool_use":
             # Ensure the tool_calls array exists and is long enough
             index = chunk.index
             cur_tool_calls = cur_tool_calls or []
@@ -299,8 +299,8 @@ def update_llm_output(
 
             # Initialize the partial with id/name; arguments will stream via InputJSONDelta
             cur_tool_calls[index] = ToolCallPartial(
-                id=getattr(content_block, "id", None),
-                function=getattr(content_block, "name", None),
+                id=content_block.id,
+                function=content_block.name,
                 arguments_raw="",
                 type="function",
             )

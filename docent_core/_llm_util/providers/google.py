@@ -193,11 +193,9 @@ async def get_google_chat_completion_streaming_async(
                 candidate = chunk.candidates[0] if chunk.candidates else None
                 if candidate and candidate.content and candidate.content.parts:
                     for part in candidate.content.parts:
-                        if getattr(part, "text", None) is not None and not getattr(
-                            part, "thought", False
-                        ):
+                        if part.text is not None and not part.thought:
                             accumulated_text += part.text or ""
-                        elif getattr(part, "function_call", None) is not None:
+                        elif part.function_call is not None:
                             fc = part.function_call
                             args = coerce_tool_args(getattr(fc, "args", {}))
                             accumulated_tool_calls.append(
