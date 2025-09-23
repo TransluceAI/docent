@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ModelOption } from '@/app/store/rubricSlice';
 import { cn } from '@/lib/utils';
+import { useMemo } from 'react';
 
 function nameModel(model: ModelOption, shortenName = false) {
   if (shortenName) {
@@ -49,6 +50,18 @@ export default function ModelPicker({
   borderless = false,
   shortenName = false,
 }: ModelPickerProps) {
+  // availableModels may have info (e.g. uses_byok) that is not stored in the database.
+  // So when selectedModel comes from the database we need to get that info from availableModels
+  const selectedModelWithInfo = useMemo(() => {
+    const availableSelectedModel = availableModels?.find(
+      (m) =>
+        m.model_name === selectedModel.model_name &&
+        m.provider === selectedModel.provider &&
+        m.reasoning_effort === selectedModel.reasoning_effort
+    );
+    return availableSelectedModel ?? selectedModel;
+  }, [selectedModel, availableModels]);
+
   return (
     <TooltipProvider>
       <Select
@@ -73,7 +86,7 @@ export default function ModelPicker({
             <span className="flex-1 truncate">
               {nameModel(selectedModel, shortenName)}
             </span>
-            {selectedModel?.uses_byok && (
+            {selectedModelWithInfo?.uses_byok && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <KeyRound className="h-3 w-3 flex-shrink-0" />
