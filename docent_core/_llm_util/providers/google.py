@@ -54,7 +54,7 @@ def _print_backoff_message(e: Details):
 def _is_retryable_error(exception: BaseException) -> bool:
     """Checks if the exception is a retryable error based on the criteria."""
     if isinstance(exception, errors.APIError):
-        return exception.code in [429, 502, 503, 504]
+        return exception.code in [429, 500, 502, 503, 504]
     if isinstance(exception, requests.exceptions.ConnectionError):
         return True
     return False
@@ -90,26 +90,27 @@ async def get_google_chat_completion_async(
 
     try:
         async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+            # Thinking config can conflict with tool-calling on some models; enable only when requested and not using tools
+            thinking_cfg = None
+            if reasoning_effort and not tools:
+                thinking_cfg = types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_budget=int(
+                        max_new_tokens
+                        * (
+                            0.75
+                            if reasoning_effort == "high"
+                            else (0.5 if reasoning_effort == "medium" else 0.25)
+                        )
+                    ),
+                )
+
             raw_output = await client.models.generate_content(
                 model=model_name,
                 contents=input_messages,  # type: ignore
                 config=types.GenerateContentConfig(
                     temperature=temperature,
-                    thinking_config=types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_budget=(
-                            int(
-                                max_new_tokens
-                                * (
-                                    0.75
-                                    if reasoning_effort == "high"
-                                    else (0.5 if reasoning_effort == "medium" else 0.25)
-                                )
-                            )
-                            if reasoning_effort
-                            else None
-                        ),  # Just heuristics
-                    ),
+                    thinking_config=thinking_cfg,
                     max_output_tokens=max_new_tokens,
                     system_instruction=system,
                     tools=_parse_tools(tools) if tools else None,
@@ -129,6 +130,38 @@ async def get_google_chat_completion_async(
 
             return output
     except errors.APIError as e:
+        # Fallback: some models intermittently 500 when including function_response parts.
+        # If last message was a tool result, retry once by sending the tool output as plain text.
+        try:
+            last_role = messages[-1].role if messages else None
+        except Exception:
+            last_role = None
+
+        if e.code == 500 and last_role == "tool":
+            try:
+                system2, input_messages2 = _parse_chat_messages(messages, tools_provided=False)
+                raw_output2 = await client.models.generate_content(
+                    model=model_name,
+                    contents=input_messages2,  # type: ignore
+                    config=types.GenerateContentConfig(
+                        temperature=temperature,
+                        thinking_config=None,
+                        max_output_tokens=max_new_tokens,
+                        system_instruction=system2,
+                        tools=_parse_tools(tools) if tools else None,
+                        tool_config=(
+                            types.ToolConfig(
+                                function_calling_config=_parse_tool_choice(tool_choice)
+                            )
+                            if tool_choice is not None
+                            else None
+                        ),
+                    ),
+                )
+                return _parse_google_completion(raw_output2, model_name)
+            except Exception:
+                pass
+
         if e2 := _convert_google_error(e):
             raise e2 from e
         else:
@@ -178,12 +211,14 @@ def _parse_chat_messages(
 
     for message in messages:
         if message.role == "user":
-            result.append(
-                types.Content(
-                    role="user",
-                    parts=_parse_message_content(message.content),
+            parts = _parse_message_content(message.content)
+            if parts:  # Avoid sending empty text parts
+                result.append(
+                    types.Content(
+                        role="user",
+                        parts=parts,
+                    )
                 )
-            )
         elif message.role == "assistant":
             parts: list[types.Part] = _parse_message_content(message.content)
             # If assistant previously made tool calls, include them so the model has full context
@@ -204,30 +239,37 @@ def _parse_chat_messages(
                             args=tool_call.arguments,  # type: ignore[arg-type]
                         )
                     )
-            result.append(types.Content(role="model", parts=parts))
+            if parts:  # If only tool calls with no text, we still include function_call parts
+                result.append(types.Content(role="model", parts=parts))
+            elif getattr(message, "tool_calls", []):
+                # Include just the tool calls if present
+                result.append(types.Content(role="model", parts=parts))
         elif message.role == "tool":
             # Represent tool result as a function_response part (Gemini tool execution result)
             if not tools_provided:
                 # If no tools configured, pass through as plain text
-                result.append(
-                    types.Content(
-                        role="user",
-                        parts=_parse_message_content(message.content),
-                    )
-                )
+                parts = _parse_message_content(message.content)
+                if parts:
+                    result.append(types.Content(role="user", parts=parts))
             else:
-                tool_name = getattr(message, "function", None)
+                tool_name = getattr(message, "function", None) or "unknown_tool"
                 tool_id = getattr(message, "tool_call_id", None)
-                tool_text = message.text
-                response_payload: dict[str, object] = {"result": tool_text}
-                tool_parts: list[types.Part] = [
-                    _make_function_response_part(
-                        name=tool_name or "unknown_tool",
-                        response=response_payload,
-                        id=tool_id,  # type: ignore[arg-type]
-                    )
-                ]
-                result.append(types.Content(role="user", parts=tool_parts))
+                # Try to parse tool content as JSON if it looks like JSON; otherwise wrap as text
+                tool_text = message.text or ""
+                response_obj: dict[str, Any]
+                try:
+                    import json as _json
+
+                    parsed = _json.loads(tool_text)
+                    if isinstance(parsed, dict):  # type: ignore[redundant-cast]
+                        response_obj = cast(dict[str, Any], parsed)
+                    else:
+                        response_obj = {"result": parsed}
+                except Exception:
+                    response_obj = {"result": tool_text}
+
+                part = _make_function_response_part(name=tool_name, response=response_obj, id=tool_id)  # type: ignore[arg-type]
+                result.append(types.Content(role="user", parts=[part]))
         elif message.role == "system":
             system_prompt = message.text
         else:
@@ -238,12 +280,15 @@ def _parse_chat_messages(
 
 def _parse_message_content(content: str | list[Content]) -> list[types.Part]:
     if isinstance(content, str):
-        return [types.Part.from_text(text=content)]
+        text = content.strip()
+        return [types.Part.from_text(text=text)] if text else []
     else:
         result: list[types.Part] = []
         for sub_content in content:
             if sub_content.type == "text":
-                result.append(types.Part.from_text(text=sub_content.text))
+                txt = (sub_content.text or "").strip()
+                if txt:
+                    result.append(types.Part.from_text(text=txt))
             else:
                 raise ValueError(f"Unsupported content type: {sub_content.type}")
         return result
