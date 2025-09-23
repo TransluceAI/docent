@@ -12,6 +12,7 @@ import {
   type ReactNode,
   type UIEvent as ReactUIEvent,
 } from 'react';
+import posthog from 'posthog-js';
 import {
   type ColumnDef,
   flexRender,
@@ -52,6 +53,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import { Combobox } from './Combobox';
+import { useParams } from 'next/navigation';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -504,8 +506,17 @@ export const AgentRunTable = memo(function AgentRunTable({
   const columnCount = columns.length || 1;
   const hasRows = totalRows > 0;
 
+  const params = useParams();
+  const collectionId = params?.collectionId;
+
   const handleToggleColumn = useCallback(
     (column: string, checked: boolean) => {
+      posthog.capture('agent_run_table_column_toggled', {
+        collectionId,
+        column: column,
+        action: checked ? 'add' : 'remove',
+      });
+
       if (checked) {
         const next = Array.from(new Set([...selectedColumns, column]));
         onSelectedColumnsChange(next);
@@ -518,16 +529,28 @@ export const AgentRunTable = memo(function AgentRunTable({
   );
 
   const handleSelectAll = useCallback(() => {
+    posthog.capture('agent_run_table_columns_select_all', {
+      collectionId,
+    });
+
     onSelectedColumnsChange(availableColumns);
   }, [availableColumns, onSelectedColumnsChange]);
 
   const handleClearAll = useCallback(() => {
-    onSelectedColumnsChange([]);
+    posthog.capture('agent_run_table_columns_clear_all', {
+      collectionId,
+    });
   }, [onSelectedColumnsChange]);
 
   // Sort controls handlers
   const handleFieldChange = useCallback(
     (field: string) => {
+      posthog.capture('agent_run_table_sort_changed', {
+        collectionId,
+        field: field === 'none' ? null : field,
+        direction: sortDirection,
+      });
+
       if (field === 'none') {
         onSortChange(null, 'asc');
       } else {
@@ -539,7 +562,14 @@ export const AgentRunTable = memo(function AgentRunTable({
 
   const handleDirectionChange = useCallback(() => {
     if (sortField) {
-      onSortChange(sortField, sortDirection === 'asc' ? 'desc' : 'asc');
+      const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      posthog.capture('agent_run_table_sort_changed', {
+        collectionId,
+        field: sortField,
+        direction: newDirection,
+      });
+
+      onSortChange(sortField, newDirection);
     }
   }, [onSortChange, sortField, sortDirection]);
 
