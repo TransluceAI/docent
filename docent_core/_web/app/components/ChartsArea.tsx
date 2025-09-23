@@ -80,11 +80,19 @@ export function ChartsArea() {
   }, [charts, collectionId, activeTabId]);
 
   // Helper function to update active tab and persist to localStorage
-  const updateActiveTabId = (tabId: string) => {
-    setActiveTabId(tabId);
-    if (collectionId) {
-      const storageKey = `docent-active-chart-${collectionId}`;
+  const updateActiveTabId = (tabId: string | null) => {
+    const nextTabId = tabId ?? '';
+    setActiveTabId(nextTabId);
+
+    if (!collectionId) {
+      return;
+    }
+
+    const storageKey = `docent-active-chart-${collectionId}`;
+    if (tabId) {
       localStorage.setItem(storageKey, tabId);
+    } else {
+      localStorage.removeItem(storageKey);
     }
   };
 
@@ -109,17 +117,18 @@ export function ChartsArea() {
   };
 
   const removeTab = async (tabId: string) => {
-    if (charts.length <= 1 || !collectionId) return; // Don't allow removing the last tab
+    if (!collectionId) return;
+
+    const remainingTabIds = charts
+      .filter((chart) => chart.id !== tabId)
+      .map((chart) => chart.id);
+    const nextTabId = remainingTabIds[0] ?? null;
 
     try {
       await deleteChart({ collectionId, chartId: tabId }).unwrap();
 
-      // If we're removing the active tab, switch to the first remaining tab
       if (activeTabId === tabId) {
-        const otherTabIds = charts
-          .filter((chart) => chart.id !== tabId)
-          .map((chart) => chart.id);
-        updateActiveTabId(otherTabIds[0]);
+        updateActiveTabId(nextTabId);
       }
     } catch (error) {
       console.error('Failed to delete chart:', error);
@@ -244,21 +253,17 @@ export function ChartsArea() {
             ) : (
               <span className="font-mono">{chart.name}</span>
             )}
-            {charts.length > 1 && (
-              <button
-                className={`ml-1 -mr-1 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity ${
-                  activeTabId === chart.id
-                    ? 'hover:bg-muted'
-                    : 'hover:bg-accent'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeTab(chart.id);
-                }}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
+            <button
+              className={`ml-1 -mr-1 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity ${
+                activeTabId === chart.id ? 'hover:bg-muted' : 'hover:bg-accent'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeTab(chart.id);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
           </div>
         ))}
 
