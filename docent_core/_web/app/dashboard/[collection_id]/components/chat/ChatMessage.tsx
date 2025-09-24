@@ -111,7 +111,7 @@ export function ChatMessage({
 
   return (
     <div
-      className={cn('group/message text-sm w-full mx-auto max-w-4xl')}
+      className={cn('group/message text-sm w-full mx-auto')}
       data-role={message.role}
     >
       <div

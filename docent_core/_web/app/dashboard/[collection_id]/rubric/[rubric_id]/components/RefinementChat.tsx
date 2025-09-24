@@ -146,7 +146,7 @@ export default function RefinementChat({
         inputErrorMessage={inputErrorMessage}
         inputAreaFooter={undefined}
         headerElement={
-          <div className="space-y-1 flex flex-col">
+          <div className="flex flex-col">
             <div className="text-sm font-semibold">Refinement Chat</div>
             <div className="text-xs text-muted-foreground">
               Chat with an agent to refine the rubric (⌘J)

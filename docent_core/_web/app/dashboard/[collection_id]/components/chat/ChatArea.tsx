@@ -29,9 +29,6 @@ interface ChatAreaProps {
   inputAreaClassName?: string;
 }
 
-/**
- * TODO(mengk): fix the thinking spacer logic, very hacky right now
- */
 export function ChatArea({
   isReadonly,
   messages,
@@ -164,7 +161,7 @@ export function ChatArea({
           !isReadonly &&
           finalSuggestedMessages.length > 0 &&
           onSendMessage && (
-            <div className="w-full mx-auto max-w-4xl">
+            <div className="w-full mx-auto">
               <div className="flex flex-col items-start flex-wrap gap-2">
                 {finalSuggestedMessages.map((s, i) => {
                   const label = typeof s === 'string' ? s : s.label;
