@@ -6,13 +6,12 @@ import traceback
 from typing import Any
 
 import anyio
-import sentry_sdk
 from anyio.abc import TaskGroup
 from arq.connections import RedisSettings
 from arq.worker import run_worker
 
 from docent._log_util import get_logger
-from docent_core._env_util import ENV, get_deployment_id
+from docent_core._env_util import ENV, get_deployment_id, init_sentry_or_raise
 from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import JOB_TIMEOUT_SECONDS, WORKER_QUEUE_NAME
 from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
@@ -120,13 +119,8 @@ def run():
     deployment_id = get_deployment_id()
     if deployment_id:
         dsn = ENV.get("SENTRY_DSN")
-        if not dsn:
-            raise ValueError(
-                "SENTRY_DSN is required for production/staging deployment, but it isn't set"
-            )
-        else:
-            sentry_sdk.init(dsn=dsn, environment=deployment_id, send_default_pii=True)  # type: ignore
-            logger.info(f"Initialized Sentry for worker in {deployment_id}")
+        init_sentry_or_raise(deployment_id, dsn)
+        logger.info(f"Initialized Sentry for worker in {deployment_id}")
 
     REDIS_HOST = ENV.get("DOCENT_REDIS_HOST")
     REDIS_PORT = ENV.get("DOCENT_REDIS_PORT")

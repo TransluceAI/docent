@@ -3,14 +3,13 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
 import anyio
-import sentry_sdk
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
-from docent_core._env_util import ENV, get_deployment_id
+from docent_core._env_util import ENV, get_deployment_id, init_sentry_or_raise
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._auth.session_middleware import SessionAuthMiddleware
 from docent_core._server._rest._all_routers import REST_ROUTERS
@@ -188,14 +187,9 @@ for router in REST_ROUTERS:
 deployment_id = get_deployment_id()
 if deployment_id:
     dsn = ENV.get("SENTRY_DSN")
-    if not dsn:
-        raise ValueError(
-            "SENTRY_DSN is required for production/staging deployment, but it isn't set"
-        )
-    else:
-        sentry_sdk.init(dsn=dsn, environment=deployment_id, send_default_pii=True)  # type: ignore
-        asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
-        logger.info(f"Initialized Sentry for {deployment_id}")
+    init_sentry_or_raise(deployment_id, dsn)
+    asgi_app.add_middleware(SentryAsgiMiddleware)  # type: ignore
+    logger.info(f"Initialized Sentry for {deployment_id}")
 
 
 @asgi_app.get("/")
