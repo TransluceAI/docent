@@ -6,7 +6,8 @@ def init_sentry_or_raise(deployment_id: str | None, dsn: str | None) -> None:
         return
     if not dsn:
         raise ValueError(
-            "SENTRY_DSN is required for production/staging deployment, but it isn't set"
+            "SENTRY_DSN is required for any non-local deployment (i.e., deployment_id is not None), "
+            f"but it isn't currently set for deployment_id={deployment_id}"
         )
 
     try:
