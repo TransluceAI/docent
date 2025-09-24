@@ -46,8 +46,7 @@ fi
 ################################
 
 # Confirmation prompt - this is a destructive operation
-echo "⚠️  WARNING: This will completely overwrite branch '$TARGET_BRANCH' with the contents of '$SOURCE_BRANCH'!"
-read -p "Type 'FORCE PUSH' to confirm this destructive operation: " confirmation
+read -p "⚠️ Type 'FORCE PUSH' to confirm that you want to overwrite '$TARGET_BRANCH' with the contents of '$SOURCE_BRANCH': " confirmation
 
 if [ "$confirmation" != "FORCE PUSH" ]; then
   echo "Operation cancelled. Confirmation text did not match."

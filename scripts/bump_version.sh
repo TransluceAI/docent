@@ -94,41 +94,52 @@ create_tag() {
     fi
 }
 
-# Get bump type from user if not already set
-BUMP_TYPE=""
-echo "What type of version bump do you want to make? [major/minor/patch]"
-read -r BUMP_TYPE
-BUMP_TYPE=$(printf '%s' "$BUMP_TYPE" | tr '[:upper:]' '[:lower:]')
+run_version_bump() {
+    # Get bump type from user if not already set
+    BUMP_TYPE=""
+    echo "What type of version bump do you want to make? [major/minor/patch/rollback]"
+    read -r BUMP_TYPE
+    BUMP_TYPE=$(printf '%s' "$BUMP_TYPE" | tr '[:upper:]' '[:lower:]')
 
-if [[ $BUMP_TYPE != "major" && $BUMP_TYPE != "minor" && $BUMP_TYPE != "patch" ]]; then
-    error "Bump type must be one of: major, minor, patch"
-    exit 1
-fi
+    if [[ $BUMP_TYPE == "rollback" ]]; then
+        echo "Rollback selected; no version bump performed."
+        return 0
+    fi
+
+    if [[ $BUMP_TYPE != "major" && $BUMP_TYPE != "minor" && $BUMP_TYPE != "patch" ]]; then
+        error "Bump type must be one of: major, minor, patch, rollback"
+        return 1
+    fi
 
 
-# Get the latest tag info
-if ! TAG_INFO=$(get_latest_tag_info); then
-  exit 1
-fi
-LAST_VERSION="${TAG_INFO%%$'\n'*}"
-COMMITS_AHEAD="${TAG_INFO#*$'\n'}"
+    # Get the latest tag info
+    if ! TAG_INFO=$(get_latest_tag_info); then
+        return 1
+    fi
+    LAST_VERSION="${TAG_INFO%%$'\n'*}"
+    COMMITS_AHEAD="${TAG_INFO#*$'\n'}"
 
-# Compute the bumped version
-if ! BUMPED_VERSION=$(bump_version "$LAST_VERSION" "$BUMP_TYPE"); then
-  exit 1
-fi
+    # Compute the bumped version
+    if ! BUMPED_VERSION=$(bump_version "$LAST_VERSION" "$BUMP_TYPE"); then
+        return 1
+    fi
 
-# Confirmation prompt
-echo "Confirm to tag HEAD with $BUMPED_VERSION ($COMMITS_AHEAD commits ahead of $LAST_VERSION) [y/n]"
-read -r confirm
-confirm=$(printf '%s' "$confirm" | tr '[:upper:]' '[:lower:]')
-if [[ $confirm != "y" ]]; then
-    echo "Tag creation aborted."
-    exit 1
-fi
+    # Confirmation prompt
+    echo "Confirm to tag HEAD with $BUMPED_VERSION ($COMMITS_AHEAD commits ahead of $LAST_VERSION) [y/n]"
+    read -r confirm
+    confirm=$(printf '%s' "$confirm" | tr '[:upper:]' '[:lower:]')
+    if [[ $confirm != "y" ]]; then
+        echo "Tag creation aborted."
+        return 1
+    fi
 
-# Create the tag
-if ! create_tag "$BUMPED_VERSION" "origin"; then
-    echo "Tag creation failed."
+    # Create the tag
+    if ! create_tag "$BUMPED_VERSION" "origin"; then
+        echo "Tag creation failed."
+        return 1
+    fi
+}
+
+if ! run_version_bump; then
     exit 1
 fi
