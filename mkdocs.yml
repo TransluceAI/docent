@@ -48,7 +48,7 @@ nav:
           - self_hosting/llm_providers_and_calls.md
 
 repo_name: Docent
-repo_url: https://github.com/TransluceAI/docent-platform
+repo_url: https://github.com/TransluceAI/docent
 plugins:
   - search
   - autorefs
