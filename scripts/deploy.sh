@@ -35,10 +35,10 @@ fi
 # Tag HEAD if pushing to prod #
 ###############################
 
-if [ "$TARGET_BRANCH" == "prod" ]; then
-  echo "Since you're pushing to prod, let's tag HEAD with a version bump."
+if [ "$TARGET_BRANCH" != "staging" ]; then
+  echo "Since you're pushing to a non-staging branch, let's tag HEAD with a version bump."
   . $ROOT_DIR/scripts/bump_version.sh
-  # The script will not continue if tag creation fails or is aborted
+  # The script will not continue if tag creation fails
 fi
 
 ################################
