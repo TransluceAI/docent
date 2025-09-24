@@ -19,7 +19,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from docent.data_models.chat.message import ChatMessage, parse_chat_message
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.ai_tools.rubric.refine import clear_messages
-from docent_core.docent.ai_tools.rubric.rubric import JudgeResult
 from docent_core.docent.db.schemas.rubric import TABLE_RUBRIC
 
 if TYPE_CHECKING:
@@ -48,10 +47,11 @@ class RefinementAgentSession(BaseModel):
     )
     # Deprecated
     status: Optional[RefinementStatus] = Field(default=None, description="Deprecated")
-    # NOTE(cadentj): This will *NOT* be backward compatible with old schema if i remove the judge_results field
-    judge_results: Optional[list[JudgeResult]] = Field(
-        default=[], description="Deprecated, sessions now store summaries"
-    )
+    # note(cadentj): This will *NOT* be backward compatible with old schema if i remove the judge_results field
+    # update(mengk): since Pydantic allows for extra fields in the constructor, we can just remove the field
+    # judge_results: Optional[list[JudgeResult]] = Field(
+    #     default=[], description="Deprecated, sessions now store summaries"
+    # )
     error_message: Optional[str] = Field(
         default=None, description="Error message from the refinement agent"
     )
