@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from docent._log_util import get_logger
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server.util import generator_to_sse_stream
+from docent_core.docent.ai_tools.rubric.refine import RUBRIC_UPDATE_TEMPLATE
 from docent_core.docent.ai_tools.rubric.rubric import Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
@@ -245,12 +246,16 @@ async def post_rubric_update_to_refinement_session(
     # Update the session's rubric version pointer
     sq_rsession.rubric_version = rubric.version
     # Inform the refinement agent about the change
+
+    message = RUBRIC_UPDATE_TEMPLATE.format(
+        previous_version=rubric.version - 1,
+        new_version=rubric.version,
+        rubric=rubric.rubric_text,
+        output_schema=rubric.output_schema,
+    )
     await refinement_svc.add_user_message(
         sq_rsession,
-        (
-            f"The user updated the rubric (now v{rubric.version}) content to:\n\n"
-            f"{rubric.rubric_text}"
-        ),
+        message,
     )
 
     # Commit so the job will see these changes

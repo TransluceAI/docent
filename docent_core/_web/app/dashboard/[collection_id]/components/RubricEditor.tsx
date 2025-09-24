@@ -276,10 +276,24 @@ export default function RubricEditor({
     if (rubric) {
       if (maxVersion === undefined) throw new Error('Latest version not found');
 
+      // Validate JSON syntax before saving
+      let parsedSchema;
+      try {
+        parsedSchema = JSON.parse(schemaText);
+      } catch (e) {
+        setSchemaError(
+          `Invalid JSON: ${e instanceof Error ? e.message : 'Unknown error'}`
+        );
+        return;
+      }
+
+      // Clear any existing error
+      setSchemaError(null);
+
       const updatedRubric = {
         ...{
           ...rubric,
-          output_schema: JSON.parse(schemaText),
+          output_schema: parsedSchema,
         },
         // Possibly skips over some versions, if rubric.version < latestVersion
         // TODO(mengk): consider whether this is ok

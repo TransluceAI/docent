@@ -345,3 +345,20 @@ async def summarize_agent_runs(
         use_cache=True,
         completion_callback=_get_llm_callback(completion_callback),
     )
+
+
+##########################
+# Rubric update template #
+##########################
+
+RUBRIC_UPDATE_TEMPLATE = """
+<user_message>
+The user updated the rubric from v{previous_version} to v{new_version}.
+</user_message>
+<rubric>
+{rubric}
+</rubric>
+<output_schema>
+{output_schema}
+</output_schema>
+""".strip()
