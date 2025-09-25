@@ -63,6 +63,7 @@ jobs:
           POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
           COOKIE_DOMAIN=${{ vars.COOKIE_DOMAIN }}
           DOCENT_CORS_ORIGINS=${{ vars.DOCENT_CORS_ORIGINS }}
+          INVESTIGATOR_ADMIN_EMAILS=${{ vars.INVESTIGATOR_ADMIN_EMAILS }}
           EOF
 
       - name: Build and push backend to ECR
