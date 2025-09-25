@@ -475,7 +475,7 @@ class CounterfactualExperiment:
                 # sensitive information. However, we have a whitelisted set of error types that
                 # we can show the user.
 
-                logger.error(f"Rollout failed: {e}\n{traceback.format_exc()}")
+                logger.warning(f"Rollout failed: {e}\n{traceback.format_exc()}")
 
                 user_error_message: str | None = None
                 if isinstance(
