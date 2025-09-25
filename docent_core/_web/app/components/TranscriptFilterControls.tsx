@@ -10,6 +10,7 @@ import {
 import { clearFilters, replaceFilters } from '../store/collectionSlice';
 import { ComplexFilter } from '@/app/types/collectionTypes';
 import { FilterControls } from './FilterControls';
+import { useParams } from 'next/navigation';
 
 interface TranscriptFilterControlsProps {
   metadataData?: Record<string, Record<string, unknown>>;
@@ -20,9 +21,8 @@ export const TranscriptFilterControls = ({
 }: TranscriptFilterControlsProps) => {
   const dispatch = useDispatch<AppDispatch>();
   // Get the filter state
-  const collectionId = useSelector(
-    (state: RootState) => state.collection.collectionId
-  );
+  const params = useParams();
+  const collectionId = params.collection_id as string;
   useGetBaseFilterQuery(collectionId!, {
     skip: !collectionId,
   });
