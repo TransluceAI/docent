@@ -10,6 +10,7 @@ from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._worker.constants import WORKER_QUEUE_NAME
 from docent_core.docent.db.contexts import ViewContext
+from docent_core.investigator.db.contexts import WorkspaceContext
 
 logger = get_logger(__name__)
 
@@ -129,9 +130,9 @@ async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: An
     print(f"Enqueued job {j} to {queue_name} with func {func_name}")
 
 
-async def enqueue_job(view_ctx: ViewContext, job_id: str) -> None:
+async def enqueue_job(ctx: ViewContext | WorkspaceContext, job_id: str) -> None:
     """Enqueue a job to the worker."""
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", view_ctx, job_id)
+    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", ctx, job_id)
 
 
 async def cancel_job(job_id: str) -> None:

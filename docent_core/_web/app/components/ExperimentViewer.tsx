@@ -22,7 +22,6 @@ import UploadRunsDialog from './UploadRunsDialog';
 
 import { TranscriptFilterControls } from './TranscriptFilterControls';
 
-import { setExperimentViewerScrollPosition } from '../store/experimentViewerSlice';
 import {
   setSorting,
   selectSortField,
@@ -89,9 +88,9 @@ export default function ExperimentViewer({
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const hasWritePermission = useHasCollectionWritePermission();
 
-  const experimentViewerScrollPosition = useAppSelector(
-    (state) => state.experimentViewer.experimentViewerScrollPosition
-  );
+  // Local state for scroll position
+  const [experimentViewerScrollPosition, setExperimentViewerScrollPosition] =
+    useState<number | undefined>();
 
   const sortField = useAppSelector(selectSortField);
   const sortDirection = useAppSelector(selectSortDirection);
@@ -403,9 +402,9 @@ export default function ExperimentViewer({
   // Use debouncing to prevent too many updates
   useEffect(() => {
     if (debouncedScrollPosition) {
-      dispatch(setExperimentViewerScrollPosition(debouncedScrollPosition));
+      setExperimentViewerScrollPosition(debouncedScrollPosition);
     }
-  }, [debouncedScrollPosition, dispatch]);
+  }, [debouncedScrollPosition]);
 
   useEffect(() => {
     const node = scrollContainer;
@@ -423,7 +422,11 @@ export default function ExperimentViewer({
     return () => {
       node.removeEventListener('scroll', handleScroll);
     };
-  }, [experimentViewerScrollPosition, scrollContainer]);
+  }, [
+    experimentViewerScrollPosition,
+    scrollContainer,
+    setExperimentViewerScrollPosition,
+  ]);
 
   useEffect(() => {
     if (!collectionId) return;

@@ -32,15 +32,23 @@ export const shiftIntervals = (
     }))
     .filter((interval) => interval.start < interval.end);
 
-export const formatToolCallArgs = (args: Record<string, unknown> | undefined) =>
-  Object.entries(args || {})
-    .map(([k, v]) => `${k}=${stringify(v)}`)
-    .join(', ');
+export const formatToolCallData = (tool: ToolCall) => {
+  if (tool.type === 'custom') {
+    return tool.input || '';
+  } else {
+    const args = tool.arguments;
+    if (!args) return '';
+    if (typeof args === 'string') return args;
+    return Object.entries(args)
+      .map(([k, v]) => `${k}=${stringify(v)}`)
+      .join(', ');
+  }
+};
 
 export const getToolCallDisplayContent = (tool: ToolCall) =>
   tool.view
     ? tool.view.content
-    : `${tool.function}(${formatToolCallArgs(tool.arguments)})`;
+    : `${tool.function}(${formatToolCallData(tool)})`;
 
 export function getReasoningContent(
   content: string | Content[]
@@ -170,7 +178,7 @@ export function getMessageContentForCitations(
     for (const toolCall of message.tool_calls) {
       const innerContent = toolCall.view
         ? toolCall.view.content
-        : `${toolCall.function}(${formatToolCallArgs(toolCall.arguments)})`;
+        : `${toolCall.function}(${formatToolCallData(toolCall)})`;
 
       textContent += '\n<tool call>\n';
       toolCalls.push({
@@ -355,7 +363,7 @@ export function MessageBox({
                 <span className="text-muted-foreground">
                   (
                   <SegmentedText
-                    text={formatToolCallArgs(tool.source.arguments)}
+                    text={formatToolCallData(tool.source)}
                     intervals={shiftIntervals(
                       toolCallIntervals,
                       tool.source.function.length + 1

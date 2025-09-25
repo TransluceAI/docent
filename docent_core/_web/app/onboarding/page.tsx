@@ -709,7 +709,7 @@ transcript = Transcript(messages=[
 ])
 
 agent_run = AgentRun(
-    transcripts={"default": transcript},
+    transcripts=[transcript],
     metadata={"model": "gpt-5", "scores": {"accuracy": 0.95}}
 )
 

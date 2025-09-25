@@ -51,17 +51,32 @@ interface ToolCallError {
   message: string;
 }
 
-/** Tool call in a chat message */
-export interface ToolCall {
+/** Function tool call with JSON arguments */
+export interface FunctionToolCall {
   id: string;
   function: string;
-  type: string;
-  arguments?: Record<string, unknown>;
+  type: 'function';
+  arguments?: Record<string, unknown> | string;
   view?: {
     content: string;
     format: string;
   };
 }
+
+/** Custom tool call with text input */
+export interface CustomToolCall {
+  id: string;
+  function: string;
+  type: 'custom';
+  input?: string;
+  view?: {
+    content: string;
+    format: string;
+  };
+}
+
+/** Tool call in a chat message */
+export type ToolCall = FunctionToolCall | CustomToolCall;
 
 export type ChatMessage =
   | SystemMessage

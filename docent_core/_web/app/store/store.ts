@@ -2,7 +2,6 @@
 
 import { configureStore } from '@reduxjs/toolkit';
 
-import experimentViewerReducer from './experimentViewerSlice';
 import collectionReducer from './collectionSlice';
 import toastReducer from './toastSlice';
 import transcriptReducer from './transcriptSlice';
@@ -14,11 +13,11 @@ import rubricReducer from './rubricSlice';
 import { collectionApi } from '../api/collectionApi';
 import { refinementApi } from '../api/refinementApi';
 import { chatApi } from '../api/chatApi';
+import { investigatorApi } from '../api/investigatorApi';
 import refinementReducer from './refinementSlice';
 
 const store = configureStore({
   reducer: {
-    experimentViewer: experimentViewerReducer,
     rubric: rubricReducer,
     embed: embedReducer,
     collection: collectionReducer,
@@ -31,6 +30,7 @@ const store = configureStore({
     [collectionApi.reducerPath]: collectionApi.reducer,
     [refinementApi.reducerPath]: refinementApi.reducer,
     [chatApi.reducerPath]: chatApi.reducer,
+    [investigatorApi.reducerPath]: investigatorApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -47,7 +47,8 @@ const store = configureStore({
       .concat(rubricApi.middleware)
       .concat(collectionApi.middleware)
       .concat(refinementApi.middleware)
-      .concat(chatApi.middleware),
+      .concat(chatApi.middleware)
+      .concat(investigatorApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

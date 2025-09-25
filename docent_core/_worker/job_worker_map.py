@@ -1,4 +1,4 @@
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, Union
 
 from docent_core._worker.constants import WorkerFunction
 from docent_core.docent.db.contexts import ViewContext
@@ -12,8 +12,15 @@ from docent_core.docent.workers.embedding_worker import compute_embeddings
 from docent_core.docent.workers.refinement_worker import refinement_agent_job
 from docent_core.docent.workers.rubric_job_worker import rubric_job
 from docent_core.docent.workers.telemetry_worker import telemetry_processing_job
+from docent_core.investigator.db.contexts import WorkspaceContext
+from docent_core.investigator.workers.counterfactual_experiment_worker import (
+    counterfactual_experiment_job,
+)
 
-JOB_DISPATCHER_MAP: dict[str, Callable[[ViewContext, SQLAJob], Coroutine[Any, Any, None]]] = {
+ViewContextJob = Callable[[ViewContext, SQLAJob], Coroutine[Any, Any, None]]
+WorkspaceContextJob = Callable[[WorkspaceContext, SQLAJob], Coroutine[Any, Any, None]]
+
+JOB_DISPATCHER_MAP: dict[str, Union[ViewContextJob, WorkspaceContextJob]] = {
     WorkerFunction.RUBRIC_JOB.value: rubric_job,
     WorkerFunction.COMPUTE_EMBEDDINGS.value: compute_embeddings,
     WorkerFunction.CENTROID_ASSIGNMENT_JOB.value: centroid_assignment_job,
@@ -21,4 +28,5 @@ JOB_DISPATCHER_MAP: dict[str, Callable[[ViewContext, SQLAJob], Coroutine[Any, An
     WorkerFunction.CHAT_JOB.value: chat_job,
     WorkerFunction.CLUSTERING_JOB.value: clustering_job,
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: telemetry_processing_job,
+    WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value: counterfactual_experiment_job,
 }

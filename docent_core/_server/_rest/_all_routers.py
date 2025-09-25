@@ -9,6 +9,9 @@ from docent_core.docent.server.rest.refinement import refinement_router
 from docent_core.docent.server.rest.router import public_router, user_router
 from docent_core.docent.server.rest.rubric import rubric_router
 from docent_core.docent.server.rest.telemetry import telemetry_router
+from docent_core.investigator.server.rest.experiment import (
+    experiment_router as investigator_experiment_router,
+)
 
 
 class RouterSpec(TypedDict):
@@ -48,6 +51,11 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": onboarding_router,
         "prefix": "/rest",
+    },
+    # investigator endpoints
+    {
+        "router": investigator_experiment_router,
+        "prefix": "/rest/investigator",
     },
 ]
 

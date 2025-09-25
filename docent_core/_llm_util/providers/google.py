@@ -100,7 +100,7 @@ async def get_google_chat_completion_async(
                 thinking_budget=reasoning_budget(max_new_tokens, reasoning_effort),
             )
 
-        raw_output = await client.models.generate_content(
+        raw_output = await client.models.generate_content(  # type: ignore
             model=model_name,
             contents=input_messages,  # type: ignore
             config=types.GenerateContentConfig(
@@ -164,7 +164,7 @@ async def get_google_chat_completion_streaming_async(
                     thinking_budget=reasoning_budget(max_new_tokens, reasoning_effort),
                 )
 
-            stream = await client.models.generate_content_stream(
+            stream = await client.models.generate_content_stream(  # type: ignore
                 model=model_name,
                 contents=input_messages,  # type: ignore
                 config=types.GenerateContentConfig(

@@ -18,11 +18,12 @@ from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.services.monoservice import MonoService
+from docent_core.investigator.db.contexts import WorkspaceContext
 
 logger = get_logger(__name__)
 
 
-async def run_job(_: Any, ctx: ViewContext, job_id: str):
+async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
     mono_svc = await MonoService.init()
     canceled = False
 
@@ -61,8 +62,8 @@ async def run_job(_: Any, ctx: ViewContext, job_id: str):
             if job.type not in JOB_DISPATCHER_MAP:
                 raise ValueError(f"Unknown job type: {job.type}")
 
-            # Run the job with the appropriate function
-            await JOB_DISPATCHER_MAP[job.type](ctx, job)
+            await JOB_DISPATCHER_MAP[job.type](ctx, job)  # type: ignore
+
         except anyio.get_cancelled_exc_class():
             canceled = True
             raise

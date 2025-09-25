@@ -102,7 +102,7 @@ def _parse_message_content(
         return result
 
 
-def _parse_chat_messages(messages: list[ChatMessage]) -> list[ChatCompletionMessageParam]:
+def parse_chat_messages(messages: list[ChatMessage]) -> list[ChatCompletionMessageParam]:
     result: list[ChatCompletionMessageParam] = []
 
     for message in messages:
@@ -163,18 +163,24 @@ def _parse_chat_messages(messages: list[ChatMessage]) -> list[ChatCompletionMess
     return result
 
 
-def _parse_tools(tools: list[ToolInfo]) -> list[ChatCompletionToolParam]:
-    return [
-        ChatCompletionToolParam(
-            type="function",
-            function=FunctionDefinition(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.parameters.model_dump(exclude_none=True),
-            ),
+def parse_tools(tools: list[ToolInfo]) -> list[ChatCompletionToolParam]:
+    """Convert ToolInfo objects to OpenAI ChatCompletionToolParam format."""
+
+    result: list[ChatCompletionToolParam] = []
+
+    for tool in tools:
+        result.append(
+            ChatCompletionToolParam(
+                type="function",
+                function=FunctionDefinition(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.parameters.model_dump(exclude_none=True),
+                ),
+            )
         )
-        for tool in tools
-    ]
+
+    return result
 
 
 @backoff.on_exception(
@@ -199,8 +205,8 @@ async def get_openai_chat_completion_streaming_async(
     top_logprobs: int | None = None,
     timeout: float = 30.0,
 ):
-    input_messages = _parse_chat_messages(messages)
-    input_tools = _parse_tools(tools) if tools else omit
+    input_messages = parse_chat_messages(messages)
+    input_tools = parse_tools(tools) if tools else omit
 
     try:
         async with async_timeout_ctx(timeout):
@@ -382,8 +388,8 @@ async def get_openai_chat_completion_async(
     top_logprobs: int | None = None,
     timeout: float = 5.0,
 ) -> LLMOutput:
-    input_messages = _parse_chat_messages(messages)
-    input_tools = _parse_tools(tools) if tools else omit
+    input_messages = parse_chat_messages(messages)
+    input_tools = parse_tools(tools) if tools else omit
 
     try:
         async with async_timeout_ctx(timeout):  # type: ignore

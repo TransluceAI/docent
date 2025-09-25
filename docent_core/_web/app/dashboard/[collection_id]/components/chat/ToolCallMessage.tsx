@@ -13,12 +13,31 @@ export default function ToolCallMessage({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const fullArgs = () =>
-    Object.entries(tool.arguments || {})
-      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-      .join(', ');
+  const getToolData = () => {
+    if (tool.type === 'custom') {
+      return tool.input || '';
+    } else {
+      // Function tool call
+      const args = tool.arguments || {};
+      if (typeof args === 'string') {
+        return args;
+      }
+      return Object.entries(args)
+        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+        .join(', ');
+    }
+  };
 
-  const isExpandable = tool.arguments && Object.keys(tool.arguments).length > 0;
+  const isExpandable = () => {
+    if (tool.type === 'custom') {
+      return tool.input && tool.input.length > 0;
+    } else {
+      const args = tool.arguments;
+      if (!args) return false;
+      if (typeof args === 'string') return args.length > 0;
+      return Object.keys(args).length > 0;
+    }
+  };
 
   return (
     <div className="mt-1 p-1.5 bg-secondary/85 rounded text-xs break-all whitespace-pre-wrap">
@@ -26,7 +45,7 @@ export default function ToolCallMessage({
         Tool Call ID: {tool.id}
       </div>
       <div className="font-mono">
-        {isExpandable ? (
+        {isExpandable() ? (
           <button
             type="button"
             className="w-full text-left flex items-center hover:opacity-80"
@@ -56,7 +75,7 @@ export default function ToolCallMessage({
           (tool.view ? (
             <span className="font-mono">{tool.view.content}</span>
           ) : (
-            <div className="mt-1 text-muted-foreground">{fullArgs()}</div>
+            <div className="mt-1 text-muted-foreground">{getToolData()}</div>
           ))}
       </div>
     </div>

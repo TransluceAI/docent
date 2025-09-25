@@ -12,3 +12,4 @@ class WorkerFunction(str, Enum):
     CLUSTERING_JOB = "clustering_job"
     CHAT_JOB = "chat_job"
     TELEMETRY_PROCESSING_JOB = "telemetry_processing_job"
+    COUNTERFACTUAL_EXPERIMENT_JOB = "counterfactual_experiment_job"

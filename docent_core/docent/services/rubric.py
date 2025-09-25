@@ -264,8 +264,7 @@ class RubricService:
         callback: JudgeResultStreamingCallback | None = None,
         max_recall: bool = False,
     ) -> list[dict[str, Any] | None]:
-        """
-        Helper to evaluate a rubric with the appropriate API keys for a user.
+        """Helper to evaluate a rubric with the appropriate API keys for a user.
         Raises an error if trying to call a non-default model without a custom API key.
         """
         api_key_overrides = await self.service.get_api_key_overrides(user)
