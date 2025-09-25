@@ -74,6 +74,12 @@ export function useTranscriptChat({
     }
   }, [sseMessages]);
 
+  // Clear any persisted messages when the session changes or when the
+  // judge result changes (e.g., switching rubric version mid-stream).
+  useEffect(() => {
+    setPersistedMessages(undefined);
+  }, [sessionId, judgeResult?.id]);
+
   // SSE messages take precedence over chat state messages
   const messages = persistedMessages || chatState?.messages || [];
 

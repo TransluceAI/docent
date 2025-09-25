@@ -68,6 +68,10 @@ export const JudgeResultsList = ({
     return grouped;
   }, []);
 
+  //*****************
+  // CENTROID LOGIC *
+  //*****************
+
   // Keep track of which IDs have been assigned (to later compute resids)
   const assignedResultIdsSet = useMemo(() => {
     const allAssigned = Object.values(assignments).flat();
@@ -142,9 +146,7 @@ export const JudgeResultsList = ({
           <ResultsSection
             key={section.id}
             sectionTitle={section.title}
-            resultsByAgentRun={getLabeledAgentRunsAsMap(
-              section.resultsByAgentRun
-            )}
+            resultsByAgentRun={section.resultsByAgentRun}
             isClusteringActive={isClusteringActive}
             judgeRunLabelsMap={judgeRunLabelsMap}
             activeResultId={activeResultId}
@@ -215,7 +217,7 @@ export const ResultsSection = ({
   const handleNavigateToLabeling = useCallback(
     (result: JudgeResultWithCitations) => {
       router.push(
-        `/dashboard/${collectionId}/rubric/${result.rubric_id}/result/${result.id}`
+        `/dashboard/${collectionId}/rubric/${result.rubric_id}/agent_run/${result.agent_run_id}/result/${result.id}`
       );
       setActiveTab('label');
     },

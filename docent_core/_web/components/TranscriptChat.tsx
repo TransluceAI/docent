@@ -26,10 +26,7 @@ export interface TranscriptChatProps {
 
   // Result-specific props
   judgeResult?: JudgeResultWithCitations | null;
-  resultContext?: {
-    rubricId: string;
-    resultId: string;
-  };
+  showEmptyResultMessage?: boolean;
 
   // UI customization
   suggestedMessages?: SuggestedMessage[];
@@ -77,7 +74,7 @@ export default function TranscriptChat({
   runId,
   collectionId: propCollectionId,
   judgeResult,
-  resultContext,
+  showEmptyResultMessage = false,
   title = 'Transcript Chat',
   className = 'flex flex-col h-full space-y-2',
 }: TranscriptChatProps) {
@@ -243,6 +240,12 @@ export default function TranscriptChat({
             <>
               {headerElement}
               {judgeResult && <JudgeResultDetail judgeResult={judgeResult} />}
+              {showEmptyResultMessage && !judgeResult && (
+                <div className="text-xs text-muted-foreground flex items-center border rounded-lg bg-muted border-dashed h-24 justify-center p-2">
+                  Agent run {runId?.split('-')?.[0] || 'unknown'} has no result
+                  at this rubric version.
+                </div>
+              )}
             </>
           }
           inputHeaderElement={

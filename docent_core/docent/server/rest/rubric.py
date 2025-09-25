@@ -150,6 +150,26 @@ async def get_latest_rubric_version(
     return latest_version
 
 
+@rubric_router.get("/{collection_id}/result/{result_id}")
+async def get_result_by_id(
+    collection_id: str,
+    result_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> JudgeResultWithCitations:
+    """Get the full judge result (with citations parsed) by result ID."""
+    result = await rubric_svc.get_rubric_result_by_id(result_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Judge result not found")
+
+    # Fetch the matching rubric schema for the result's rubric/version so we can parse citations
+    sqla_rubric = await rubric_svc.get_rubric(result.rubric_id, result.rubric_version)
+    if sqla_rubric is None:
+        raise HTTPException(status_code=404, detail="Rubric version not found for result")
+
+    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
+
+
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/metrics")
 async def get_rubric_metrics(
     collection_id: str,

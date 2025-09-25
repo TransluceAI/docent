@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatArea } from '../../../components/chat/ChatArea';
-import useRefinementChat from '@/app/hooks/use-refinement-chat';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { ProgressBar } from '@/app/components/ProgressBar';
 import { Button } from '@/components/ui/button';
@@ -15,8 +14,18 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useGetJudgeRunLabelsQuery } from '@/app/api/rubricApi';
-import { useRetryLastMessageMutation } from '@/app/api/refinementApi';
+import {
+  useCancelRefinementJobMutation,
+  useGetRefinementSessionStateQuery,
+  useListenToRefinementJobQuery,
+  usePostMessageToRefinementSessionMutation,
+  useRetryLastMessageMutation,
+  useStartRefinementSessionMutation,
+} from '@/app/api/refinementApi';
 import { useRefinementTab } from '@/providers/use-refinement-tab';
+import { RefinementAgentSession } from '@/app/store/refinementSlice';
+import { skipToken } from '@reduxjs/toolkit/query';
+import { useRubricVersion } from '@/providers/use-rubric-version';
 
 interface RefinementChatProps {
   collectionId: string;
@@ -32,8 +41,7 @@ export default function RefinementChat({
   isOnResultRoute,
 }: RefinementChatProps) {
   const hasWritePermission = useHasCollectionWritePermission();
-  const [showLabelsInContext, setShowLabelsInContext] = useState(true);
-  const { setRefinementJobId } = useRefinementTab();
+  const { refinementJobId, setRefinementJobId } = useRefinementTab();
 
   // Judge run labels
   const { data: labels } = useGetJudgeRunLabelsQuery({
@@ -41,26 +49,131 @@ export default function RefinementChat({
     rubricId,
   });
   const hasLabels = (labels?.length ?? 0) > 0;
+  const [_showLabelsInContext, setShowLabelsInContext] = useState(true);
+  const showLabelsInContext = _showLabelsInContext && hasLabels;
 
-  const shouldShowLabelsInContext = showLabelsInContext && hasLabels;
+  // Start or get active refinement job
+  const [startRefinementSession] = useStartRefinementSessionMutation();
+  useEffect(() => {
+    if (!sessionId) return;
+    startRefinementSession({ collectionId, sessionId })
+      .unwrap()
+      .then((res) => {
+        if (res?.job_id) {
+          setRefinementJobId(res.job_id);
+        }
+      })
+      .catch(() => {});
+  }, [collectionId, sessionId, startRefinementSession, setRefinementJobId]);
+
+  // Handle sending messages to the refinement session
+  const [postMessage] = usePostMessageToRefinementSessionMutation();
+  const onSendMessage = useCallback(
+    (message: string) => {
+      if (!sessionId) return;
+      postMessage({
+        collectionId,
+        sessionId,
+        message,
+        showLabelsInContext,
+      })
+        .unwrap()
+        .then((res) => {
+          if (res?.job_id) setRefinementJobId(res.job_id);
+        })
+        .catch(() => {});
+    },
+    [
+      collectionId,
+      sessionId,
+      showLabelsInContext,
+      postMessage,
+      setRefinementJobId,
+    ]
+  );
+
+  // Handle canceling the refinement session and cleaning up local state
+  const [cancelRefinementSession] = useCancelRefinementJobMutation();
+  const onCancelMessage = useCallback(async () => {
+    if (!sessionId) return;
+    setRefinementJobId(null);
+    await cancelRefinementSession({ collectionId, sessionId })
+      .unwrap()
+      .catch(() => {
+        toast({
+          title: 'Error',
+          description: 'Failed to cancel refinement session',
+          variant: 'destructive',
+        });
+      });
+  }, [collectionId, sessionId, cancelRefinementSession, setRefinementJobId]);
 
   const [retryLastMessage] = useRetryLastMessageMutation();
+  const onRetry = async () => {
+    if (!sessionId) return;
 
+    await retryLastMessage({ collectionId, sessionId })
+      .unwrap()
+      .then((res) => {
+        if (res?.job_id) setRefinementJobId(res.job_id);
+      })
+      .catch(() => {
+        toast({
+          title: 'Error',
+          description: 'Failed to retry last message',
+          variant: 'destructive',
+        });
+      });
+  };
+
+  // Start listening to the job state via SSE when we have a jobId
   const {
-    rSession,
-    onSendMessage,
-    onCancelMessage,
-    messages,
-    isSSEConnected,
-    inputErrorMessage,
-  } = useRefinementChat({
-    collectionId,
-    sessionId,
-    rubricId,
-    showLabelsInContext: shouldShowLabelsInContext,
-  });
+    data: { isSSEConnected, rSession } = {
+      isSSEConnected: false,
+      rSession: null,
+    },
+  } = useListenToRefinementJobQuery(
+    refinementJobId ? { collectionId, jobId: refinementJobId } : skipToken
+  );
 
-  const showInitialProgress = useMemo(() => {
+  // Get the session state from DB if there was no active job to grab it from
+  const { data: initialState } = useGetRefinementSessionStateQuery(
+    !rSession && sessionId ? { collectionId, sessionId } : skipToken
+  );
+
+  // Persist the latest non-null session to prevent UI flicker when a new SSE
+  // connection is established and the query briefly returns null before the
+  // first message arrives.
+  const [persistedSession, setPersistedSession] =
+    useState<RefinementAgentSession | null>(null);
+
+  // Keep a state to prevent flickering when sending a message
+  useEffect(() => {
+    if (rSession) {
+      setPersistedSession(rSession);
+    } else if (initialState) {
+      setPersistedSession(initialState);
+    }
+  }, [rSession, initialState]);
+
+  // Listen for rubric version changes on the refinement session
+  // NOTE(cadentj): This will also switch to the latest version when the refinement chat component loads
+  // E.g. if click on a result in v3 where the latest version is v6, and then tab to refinement it will switch to v6
+  const { refetchLatestVersion } = useRubricVersion();
+  const lastSeenRubricVersionRef = useRef<number | null>(null);
+  useEffect(() => {
+    const currentVersion = persistedSession?.rubric_version ?? null;
+    if (
+      currentVersion !== null &&
+      currentVersion !== lastSeenRubricVersionRef.current
+    ) {
+      lastSeenRubricVersionRef.current = currentVersion;
+      refetchLatestVersion();
+    }
+  }, [refetchLatestVersion, persistedSession?.rubric_version]);
+
+  // Whether to show the summary progress bar
+  const showSummaryProgressBar = useMemo(() => {
     if (!rSession) return false;
     if (rSession.messages.length >= 2) return false;
     return rSession?.n_summaries > 0 && rSession?.n_summaries < 10;
@@ -101,26 +214,9 @@ export default function RefinementChat({
     );
   };
 
-  const onRetry = async () => {
-    if (!sessionId) return;
-
-    await retryLastMessage({ collectionId, sessionId })
-      .unwrap()
-      .then((res) => {
-        if (res?.job_id) setRefinementJobId(res.job_id);
-      })
-      .catch(() => {
-        toast({
-          title: 'Error',
-          description: 'Failed to retry last message',
-          variant: 'destructive',
-        });
-      });
-  };
-
   return (
     <div className="flex-1 flex flex-col space-y-3 h-full">
-      {showInitialProgress && (
+      {showSummaryProgressBar && (
         <div className="flex items-center gap-2 2xl:px-64 xl:px-16 md:px-16">
           <div className="flex-1">
             <ProgressBar current={rSession?.n_summaries || 0} total={10} />
@@ -130,7 +226,7 @@ export default function RefinementChat({
       <ChatArea
         key={sessionId || 'refinement-chat'}
         isReadonly={!hasWritePermission}
-        messages={messages}
+        messages={persistedSession?.messages ?? []}
         onSendMessage={onSendMessage}
         onCancelMessage={onCancelMessage}
         onRetry={onRetry}
@@ -143,7 +239,7 @@ export default function RefinementChat({
         inputAreaClassName={
           !isOnResultRoute ? '2xl:px-64 xl:px-16 md:px-16' : undefined
         }
-        inputErrorMessage={inputErrorMessage}
+        inputErrorMessage={persistedSession?.error_message}
         inputAreaFooter={undefined}
         headerElement={
           <div className="flex flex-col">

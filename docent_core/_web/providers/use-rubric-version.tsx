@@ -6,7 +6,12 @@ import {
   useEffect,
   useCallback,
 } from 'react';
-import { useGetLatestRubricVersionQuery } from '@/app/api/rubricApi';
+import {
+  useGetLatestRubricVersionQuery,
+  useGetResultByIdQuery,
+} from '@/app/api/rubricApi';
+import { useParams } from 'next/navigation';
+import { skipToken } from '@reduxjs/toolkit/query';
 
 interface RubricVersionContextValue {
   version: number | null;
@@ -39,23 +44,72 @@ export function RubricVersionProvider({
   collectionId,
   children,
 }: RubricVersionProviderProps) {
+  const { result_id: resultId } = useParams<{
+    result_id?: string;
+  }>();
+
+  // Get the judge result if we're on a result page
+  const { data: judgeResult } = useGetResultByIdQuery(
+    resultId
+      ? {
+          collectionId,
+          resultId,
+        }
+      : skipToken
+  );
+
+  // If we're not on a result page, get the latest version of the rubric
   const { data: latestVersion, refetch } = useGetLatestRubricVersionQuery({
     rubricId,
     collectionId,
   });
 
-  const refetchLatestVersion = useCallback(async () => {
-    await refetch();
-    setVersion(latestVersion ?? null);
-  }, [refetch, latestVersion]);
-
+  // Refetch latest version helper
   const [version, setVersion] = useState<number | null>(null);
+  const refetchLatestVersion = useCallback(async () => {
+    const { data: version } = await refetch();
+    setVersion(version ?? null);
+  }, [refetch]);
+
+  const updateIfLatestHasChagned = useCallback(async () => {
+    const before = latestVersion;
+    const { data: after } = await refetch();
+    if (before !== after && after) {
+      setVersion(after);
+    }
+  }, [latestVersion, refetch]);
+
+  // Browsers will throttle SSE connections when the tab is not in focus, so we need to
+  // refetch the latest version if it was incremented while the tab was not in focus.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      // On refocus, refetch the latest version and update if different
+      if (!document.hidden) {
+        updateIfLatestHasChagned();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [updateIfLatestHasChagned]);
 
   useEffect(() => {
+    // Skip if we don't have any versions
+    if (!judgeResult && !latestVersion) return;
+
+    // Resolve the version based on the result id
+    const resolvedVersion = resultId
+      ? judgeResult?.rubric_version
+      : latestVersion;
+
+    // Set the version if it's not already set
     if (version === null) {
-      setVersion(latestVersion ?? null);
+      setVersion(resolvedVersion ?? null);
     }
-  }, [latestVersion]);
+  }, [judgeResult, latestVersion]);
 
   const valueForProvider: RubricVersionContextValue = {
     version,

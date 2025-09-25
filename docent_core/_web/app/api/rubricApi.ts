@@ -152,6 +152,22 @@ export const rubricApi = createApi({
         { type: 'Rubric', id: rubricId, version: result },
       ],
     }),
+    getResultById: build.query<
+      JudgeResultWithCitations,
+      { collectionId: string; resultId: string }
+    >({
+      query: ({ collectionId, resultId }) => ({
+        url: `/${collectionId}/result/${resultId}`,
+        method: 'GET',
+      }),
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'JudgeResult' as const, id: result.rubric_id },
+              { type: 'JudgeRunLabel' as const, id: result.agent_run_id },
+            ]
+          : ['JudgeResult'],
+    }),
     getRubricMetrics: build.query<
       RubricMetricsResponse,
       { collectionId: string; rubricId: string }
@@ -467,6 +483,7 @@ export const {
   useGetRubricsQuery,
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
+  useGetResultByIdQuery,
   useGetRubricMetricsQuery,
   useGetJudgeModelsQuery,
   useCreateRubricMutation,

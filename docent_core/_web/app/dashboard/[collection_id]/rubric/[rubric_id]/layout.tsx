@@ -11,7 +11,7 @@ import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RefinementChat from './components/RefinementChat';
 import TranscriptChat from '@/components/TranscriptChat';
-import LabelArea from './result/[result_id]/components/LabelArea';
+import LabelArea from './agent_run/[agent_run_id]/result/[result_id]/components/LabelArea';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';
@@ -33,7 +33,10 @@ function RubricLayoutBody({
   rubricId,
   children,
 }: RubricLayoutBodyProps) {
-  const { result_id: resultId } = useParams<{ result_id?: string }>();
+  const { agent_run_id: agentRunId, result_id: resultId } = useParams<{
+    agent_run_id?: string;
+    result_id?: string;
+  }>();
   const isOnResultRoute = !!resultId;
 
   const { version } = useRubricVersion();
@@ -58,7 +61,7 @@ function RubricLayoutBody({
   useEffect(() => {
     let mounted = true;
     if (!collectionId || !rubricId) return;
-    // Default to an 'explore' session when landing on a rubric page
+    // Default to a 'guided' session when landing on a rubric page
     // so the refinement panel can read initial data.
     createOrGetRefinementSession({
       collectionId,
@@ -178,12 +181,12 @@ function RubricLayoutBody({
               </TabsContent>
 
               <TabsContent value="analyze" className="flex-1 min-h-0">
-                {isOnResultRoute && currentResult && (
+                {isOnResultRoute && agentRunId && (
                   <TranscriptChat
-                    runId={currentResult.agent_run_id}
+                    runId={agentRunId}
                     collectionId={collectionId}
                     judgeResult={currentResult}
-                    resultContext={{ rubricId, resultId: currentResult.id }}
+                    showEmptyResultMessage={!currentResult}
                     className="flex flex-col min-w-0 h-full"
                   />
                 )}
@@ -196,8 +199,9 @@ function RubricLayoutBody({
                     rubricId={rubricId}
                   />
                 ) : (
-                  <div className="text-xs text-muted-foreground p-2">
-                    Open a result to edit labels.
+                  <div className="text-xs text-muted-foreground flex items-center h-full justify-center p-2">
+                    Agent run {agentRunId?.split('-')[0]} has no result at this
+                    rubric version.
                   </div>
                 )}
               </TabsContent>

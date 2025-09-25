@@ -540,6 +540,8 @@ export const AgentRunTable = memo(function AgentRunTable({
     posthog.capture('agent_run_table_columns_clear_all', {
       collectionId,
     });
+
+    onSelectedColumnsChange([]);
   }, [onSelectedColumnsChange]);
 
   // Sort controls handlers

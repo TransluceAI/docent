@@ -68,7 +68,7 @@ export const JudgeResultCard = ({
 
   const navigateToCitation = React.useCallback(
     ({ citation }: { citation: Citation }) => {
-      const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`;
+      const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`;
       const isOnTargetPage = pathname === url;
 
       if (!isOnTargetPage) {
@@ -110,7 +110,8 @@ export const JudgeResultCard = ({
         <div
           className={cn(
             'self-stretch w-[2.5px] rounded-full flex-shrink-0 my-0.5',
-            'bg-border group-hover:bg-indigo-border transition-colors duration-200'
+            'bg-border group-hover:bg-indigo-border transition-colors duration-200',
+            active && 'bg-indigo-border'
           )}
         />
         <div
@@ -136,7 +137,7 @@ export const JudgeResultCard = ({
               navigateToCitation({ citation: firstCitation });
             } else {
               router.push(
-                `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/result/${judgeResult.id}`
+                `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`
               );
             }
 

@@ -119,7 +119,7 @@ const Breadcrumbs: React.FC = () => {
           )}
 
           {/* Transcript page */}
-          {agentRunId && (
+          {agentRunId && !resultId && (
             <>
               <ChevronRight size={18} />
               <span className="text-muted-foreground">
