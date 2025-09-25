@@ -62,6 +62,11 @@ export interface ClusteringStateResponse {
   assignments: Record<string, string[]>;
 }
 
+export interface RubricMetricsResponse {
+  latest_version: number;
+  judge_result_count: number;
+}
+
 // Type for the SSE payload
 export interface JudgeResultsPayload {
   results: JudgeResultWithCitations[];
@@ -112,6 +117,7 @@ export const rubricApi = createApi({
     'Centroids',
     'Assignments',
     'JudgeRunLabel',
+    'RubricMetrics',
   ],
   endpoints: (build) => ({
     getRubrics: build.query<Rubric[], { collectionId: string }>({
@@ -144,6 +150,19 @@ export const rubricApi = createApi({
       }),
       providesTags: (result, error, { rubricId }) => [
         { type: 'Rubric', id: rubricId, version: result },
+      ],
+    }),
+    getRubricMetrics: build.query<
+      RubricMetricsResponse,
+      { collectionId: string; rubricId: string }
+    >({
+      query: ({ collectionId, rubricId }) => ({
+        url: `/${collectionId}/rubric/${rubricId}/metrics`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, { rubricId }) => [
+        { type: 'RubricMetrics', id: rubricId },
+        { type: 'JudgeResult', id: rubricId },
       ],
     }),
     createRubric: build.mutation<
@@ -181,6 +200,7 @@ export const rubricApi = createApi({
         { type: 'ClusteringJob', id: rubricId },
         { type: 'Centroids', id: rubricId },
         { type: 'Assignments', id: rubricId },
+        { type: 'RubricMetrics', id: rubricId },
       ],
     }),
     deleteRubric: build.mutation<
@@ -191,7 +211,7 @@ export const rubricApi = createApi({
         url: `/${collectionId}/rubric/${rubricId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Rubric'],
+      invalidatesTags: ['Rubric', 'RubricMetrics'],
     }),
     getJudgeModels: build.query<ModelOption[], void>({
       query: () => ({
@@ -216,6 +236,7 @@ export const rubricApi = createApi({
       }),
       invalidatesTags: (result, error, { rubricId }) => [
         { type: 'RubricJob', id: rubricId },
+        { type: 'RubricMetrics', id: rubricId },
       ],
     }),
     cancelEvaluation: build.mutation<
@@ -228,6 +249,7 @@ export const rubricApi = createApi({
       }),
       invalidatesTags: (result, error, { rubricId }) => [
         { type: 'RubricJob', id: rubricId },
+        { type: 'RubricMetrics', id: rubricId },
       ],
     }),
     cancelClusteringJob: build.mutation<
@@ -445,6 +467,7 @@ export const {
   useGetRubricsQuery,
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
+  useGetRubricMetricsQuery,
   useGetJudgeModelsQuery,
   useCreateRubricMutation,
   useUpdateRubricMutation,

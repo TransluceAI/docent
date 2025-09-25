@@ -95,6 +95,22 @@ class RubricService:
         )
         return result.scalar_one_or_none()
 
+    async def get_rubric_version_stats(self, rubric_id: str) -> tuple[SQLARubric, int] | None:
+        """Return the latest rubric record and the number of judge results for it."""
+
+        latest_rubric = await self.get_rubric(rubric_id, version=None)
+        if latest_rubric is None:
+            return None
+
+        result = await self.session.execute(
+            select(func.count(SQLAJudgeResult.id)).where(
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == latest_rubric.version,
+            )
+        )
+        judge_result_count = result.scalar_one() or 0
+        return latest_rubric, judge_result_count
+
     async def add_rubric_version(self, rubric_id: str, rubric: Rubric) -> int:
         # Check that the version int is correct; raise if not
         latest_version = await self.get_latest_rubric_version(rubric_id)

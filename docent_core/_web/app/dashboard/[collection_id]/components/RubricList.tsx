@@ -19,6 +19,7 @@ import {
   useGetRubricJobStatusQuery,
   useCancelEvaluationMutation,
   useCopyRubricMutation,
+  useGetRubricMetricsQuery,
 } from '@/app/api/rubricApi';
 import { useGetCollectionsQuery } from '@/app/api/collectionApi';
 import { toast } from '@/hooks/use-toast';
@@ -57,6 +58,12 @@ function RubricCard({
     collectionId,
     rubricId: rubric.id,
   });
+
+  const { data: rubricMetrics, isFetching: isMetricsLoading } =
+    useGetRubricMetricsQuery({
+      collectionId,
+      rubricId: rubric.id,
+    });
 
   // Each card has its own cancellation mutation
   const [cancelEvaluation, { isLoading: isCancellingJob }] =
@@ -181,6 +188,25 @@ function RubricCard({
                   : rubric.rubric_text}
               </p>
             )}
+            <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+              {isMetricsLoading ? (
+                <div className="h-2 w-24 animate-pulse rounded bg-muted" />
+              ) : (
+                <>
+                  <span>
+                    Version {rubricMetrics?.latest_version ?? rubric.version}
+                  </span>
+                  <span className="text-muted-foreground/70">•</span>
+                  <span>
+                    {rubricMetrics
+                      ? rubricMetrics.judge_result_count === 0
+                        ? 'No results'
+                        : `${rubricMetrics.judge_result_count} result${rubricMetrics.judge_result_count === 1 ? '' : 's'}`
+                      : '—'}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

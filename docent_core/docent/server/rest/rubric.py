@@ -99,6 +99,11 @@ class UpdateRubricRequest(BaseModel):
     rubric: Rubric
 
 
+class RubricMetricsResponse(BaseModel):
+    latest_version: int
+    judge_result_count: int
+
+
 @rubric_router.put("/{collection_id}/rubric/{rubric_id}")
 async def add_rubric_version(
     collection_id: str,
@@ -143,6 +148,27 @@ async def get_latest_rubric_version(
     if latest_version is None:
         raise HTTPException(status_code=404, detail="Rubric not found")
     return latest_version
+
+
+@rubric_router.get("/{collection_id}/rubric/{rubric_id}/metrics")
+async def get_rubric_metrics(
+    collection_id: str,
+    rubric_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> RubricMetricsResponse:
+    stats = await rubric_svc.get_rubric_version_stats(rubric_id)
+    if stats is None:
+        raise HTTPException(status_code=404, detail="Rubric not found")
+
+    latest_rubric, judge_result_count = stats
+    if latest_rubric.collection_id != collection_id:
+        raise HTTPException(status_code=404, detail="Rubric not found")
+
+    return RubricMetricsResponse(
+        latest_version=latest_rubric.version,
+        judge_result_count=judge_result_count,
+    )
 
 
 @rubric_router.delete("/{collection_id}/rubric/{rubric_id}")
