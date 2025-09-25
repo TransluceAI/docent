@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { RootState, AppDispatch } from '../store/store';
+import { useDispatch } from 'react-redux';
+import { AppDispatch } from '../store/store';
 import {
   useGetAgentRunMetadataFieldsQuery,
   useGetBaseFilterQuery,
@@ -11,6 +11,7 @@ import { clearFilters, replaceFilters } from '../store/collectionSlice';
 import { ComplexFilter } from '@/app/types/collectionTypes';
 import { FilterControls } from './FilterControls';
 import { useParams } from 'next/navigation';
+import { skipToken } from '@reduxjs/toolkit/query';
 
 interface TranscriptFilterControlsProps {
   metadataData?: Record<string, Record<string, unknown>>;
@@ -23,11 +24,8 @@ export const TranscriptFilterControls = ({
   // Get the filter state
   const params = useParams();
   const collectionId = params.collection_id as string;
-  useGetBaseFilterQuery(collectionId!, {
-    skip: !collectionId,
-  });
-  const baseFilter = useSelector(
-    (state: RootState) => state.collection.baseFilter
+  const { data: baseFilter } = useGetBaseFilterQuery(
+    collectionId ? collectionId : skipToken
   );
   const { data: metadataFieldsData } = useGetAgentRunMetadataFieldsQuery(
     collectionId!,

@@ -168,12 +168,6 @@ export const collectionSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder.addMatcher(
-      collectionApi.endpoints.getBaseFilter.matchFulfilled,
-      (state, action) => {
-        state.baseFilter = action.payload ?? undefined;
-      }
-    );
-    builder.addMatcher(
       collectionApi.endpoints.postBaseFilter.matchFulfilled,
       (state, action) => {
         state.baseFilter = action.payload ?? undefined;
