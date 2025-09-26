@@ -41,7 +41,7 @@ export default function JudgeResultPage() {
           collectionId,
           rubricId,
           agentRunId,
-          version: version,
+          version,
         }
       : skipToken,
     {

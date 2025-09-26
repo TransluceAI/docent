@@ -1,12 +1,7 @@
-import { skipToken } from '@reduxjs/toolkit/query';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-import {
-  useGetResultByAgentRunQuery,
-  useGetResultByIdQuery,
-} from '@/app/api/rubricApi';
-import { useGetAgentRunQuery } from '@/app/api/collectionApi';
+import { useLazyGetResultByAgentRunQuery } from '@/app/api/rubricApi';
 
 interface UseRouteGuardProps {
   version: number | null;
@@ -27,106 +22,45 @@ export const useRouteGuard = ({ version }: UseRouteGuardProps) => {
 
   const router = useRouter();
 
-  // This file guards the following routes:
-  // 1. rubric/[rubric_id]/agent_run/[agent_run_id]
-  // 2. rubric/[rubric_id]/agent_run/[agent_run_id]/result/[result_id]
-  // 3. rubric/[rubric_id]/result/[result_id] (legacy route)
+  const [getResultByAgentRun] = useLazyGetResultByAgentRunQuery();
 
-  //--------------------------------
+  // Suppose I'm at rubric/[ru]/agent_run/[ar]/result/[re] (with version v)
+  // - Check whether ru exists -- if not: 404. if yes, continue
+  // - Check whether ar exists -- if not: redirect to rubric/[ru]. if yes, continue
+  // - Use the useGetResultByAgentRunQuery to get the re'.
+  // - If re is null, redirect to rubric/[ru]/agent_run/[ar].
+  // - If re' isn't null and re' != re, redirect to rubric/[ru]/agent_run/[ar]/result/[re'].
+  useEffect(() => {
+    const check = async () => {
+      // TODO Check whether ru exists
+      // TODO Check whether ar exists
+      // Assume the above is valid for now
 
-  const {
-    data: result,
-    isLoading: isLoadingResultByAgentRun,
-    isError: isErrorResultByAgentRun,
-  } = useGetResultByAgentRunQuery(
-    agentRunId && version
-      ? {
-          collectionId,
-          rubricId,
-          agentRunId,
-          version,
+      if (!agentRunId || !version) return;
+
+      // Check whether re exists on this agent run
+      const { data: result } = await getResultByAgentRun({
+        collectionId,
+        rubricId,
+        agentRunId,
+        version,
+      });
+
+      // No result exists on this (ru, ar, v) combination; redirect to rubric/[ru]/agent_run/[ar]
+      if (!result) {
+        router.push(
+          `/dashboard/${collectionId}/rubric/${rubricId}/agent_run/${agentRunId}`
+        );
+      } else {
+        // We're looking at the wrong result (or null); redirect to the appropriate one
+        if (result.id !== resultId) {
+          router.push(
+            `/dashboard/${collectionId}/rubric/${rubricId}/agent_run/${agentRunId}/result/${result.id}`
+          );
         }
-      : skipToken
-  );
-
-  // Guard for (1)
-  // > We have an agent_run_id so we get the first result for that run + rubric and redirect
-
-  useEffect(() => {
-    // If we're already on a result page (2) or (3), don't redirect
-    if (isLoadingResultByAgentRun || resultId) return;
-
-    // If found, redirect to the result page
-    if (result && !isErrorResultByAgentRun) {
-      router.push(
-        `/dashboard/${collectionId}/rubric/${rubricId}/agent_run/${agentRunId}/result/${result?.id}`
-      );
-    }
-  }, [
-    isLoadingResultByAgentRun,
-    isErrorResultByAgentRun,
-    result,
-    agentRunId,
-    collectionId,
-    rubricId,
-    router,
-    resultId,
-  ]);
-
-  // Guard for (1) and (2)
-  // A general check for whether the agent run on the route exists.
-  // If it doesn't, return to the rubric page.
-
-  const { data: agentRun, isLoading: isLoadingAgentRun } = useGetAgentRunQuery(
-    agentRunId
-      ? {
-          collectionId,
-          agentRunId,
-        }
-      : skipToken
-  );
-
-  useEffect(() => {
-    if (isLoadingAgentRun) return;
-
-    if (!agentRun) {
-      router.push(`/dashboard/${collectionId}/rubric/${rubricId}`);
-    }
-  }, [isLoadingAgentRun, agentRun, collectionId, rubricId, router]);
-
-  // Guard for (3)
-  // This is a legacy route, so we just get the result and either
-  // redirect to the new result page or the rubric page.
-
-  const { data: judgeResult, isLoading: isLoadingResultById } =
-    useGetResultByIdQuery(
-      resultId
-        ? {
-            collectionId,
-            resultId,
-          }
-        : skipToken
-    );
-
-  useEffect(() => {
-    // Don't run this effect if we're on a new route
-    if (isLoadingResultById || agentRunId) return;
-
-    // If not found, redirect to the rubric page
-    // else, redirect to the result page
-    if (!judgeResult) {
-      router.push(`/dashboard/${collectionId}/rubric/${rubricId}`);
-    } else {
-      router.push(
-        `/dashboard/${collectionId}/rubric/${rubricId}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult?.id}`
-      );
-    }
-  }, [
-    isLoadingResultById,
-    judgeResult,
-    collectionId,
-    rubricId,
-    router,
-    agentRunId,
-  ]);
+        // Otherwise, nothing to do; we're looking at the correct result
+      }
+    };
+    check();
+  }, [agentRunId, version, collectionId, rubricId, resultId, router]);
 };
