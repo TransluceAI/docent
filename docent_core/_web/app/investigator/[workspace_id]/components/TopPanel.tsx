@@ -126,20 +126,25 @@ export default function TopPanel({
   if (!isEditMode) {
     return (
       <div className="border-b bg-secondary p-3 space-y-3">
-        <div className="flex gap-3">
-          <div className="flex-1">
+        <div className="flex flex-wrap">
+          <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Base Context
             </label>
             <div className="flex gap-2">
-              <div className="flex-1 px-3 py-2 bg-background rounded-md border text-sm">
+              <div
+                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                title={
+                  selectedBaseContextName || baseContext || 'Not specified'
+                }
+              >
                 {selectedBaseContextName || baseContext || 'Not specified'}
               </div>
               {baseContext && onViewBaseContext && (
                 <Button
                   variant="outline"
                   onClick={onViewBaseContext}
-                  className="h-[38px] w-[38px] p-0"
+                  className="h-9 w-9 p-0"
                   title="View Base Context"
                 >
                   <Search className="h-4 w-4" />
@@ -148,19 +153,24 @@ export default function TopPanel({
             </div>
           </div>
 
-          <div className="flex-1">
+          <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Judge Configuration
             </label>
             <div className="flex gap-2">
-              <div className="flex-1 px-3 py-2 bg-background rounded-md border text-sm">
+              <div
+                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                title={
+                  selectedJudgeConfigName || judgeConfig || 'Not specified'
+                }
+              >
                 {selectedJudgeConfigName || judgeConfig || 'Not specified'}
               </div>
               {judgeConfig && onViewJudgeConfig && (
                 <Button
                   variant="outline"
                   onClick={onViewJudgeConfig}
-                  className="h-[38px] w-[38px] p-0"
+                  className="h-9 w-9 p-0"
                   title="View Judge Configuration"
                 >
                   <Search className="h-4 w-4" />
@@ -169,19 +179,22 @@ export default function TopPanel({
             </div>
           </div>
 
-          <div className="flex-1">
+          <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Backend Configuration
             </label>
             <div className="flex gap-2">
-              <div className="flex-1 px-3 py-2 bg-background rounded-md border text-sm">
+              <div
+                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                title={selectedBackendName || backendConfig || 'Not specified'}
+              >
                 {selectedBackendName || backendConfig || 'Not specified'}
               </div>
               {backendConfig && onViewBackendConfig && (
                 <Button
                   variant="outline"
                   onClick={onViewBackendConfig}
-                  className="h-[38px] w-[38px] p-0"
+                  className="h-9 w-9 p-0"
                   title="View Backend Configuration"
                 >
                   <Search className="h-4 w-4" />
@@ -190,12 +203,19 @@ export default function TopPanel({
             </div>
           </div>
 
-          <div className="flex-1">
+          <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Counterfactual Idea
             </label>
             <div className="flex gap-2">
-              <div className="flex-1 px-3 py-2 bg-background rounded-md border text-sm">
+              <div
+                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                title={
+                  selectedExperimentIdeaName ||
+                  counterfactualIdea ||
+                  'Not specified'
+                }
+              >
                 {selectedExperimentIdeaName ||
                   counterfactualIdea ||
                   'Not specified'}
@@ -204,7 +224,7 @@ export default function TopPanel({
                 <Button
                   variant="outline"
                   onClick={onViewCounterfactualIdea}
-                  className="h-[38px] w-[38px] p-0"
+                  className="h-9 w-9 p-0"
                   title="View Counterfactual Idea"
                 >
                   <Search className="h-4 w-4" />
@@ -214,8 +234,8 @@ export default function TopPanel({
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <div className="w-48">
+        <div className="flex flex-wrap">
+          <div className="w-48 pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Number of Counterfactuals
             </label>
@@ -224,7 +244,7 @@ export default function TopPanel({
             </div>
           </div>
 
-          <div className="w-48">
+          <div className="w-48 pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Number of Replicas
             </label>
@@ -235,12 +255,12 @@ export default function TopPanel({
 
           {/* Fork, Cancel, and Delete Buttons - Only show for existing experiments */}
           {!isNewExperiment && (
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 pr-3 pb-3">
               {onForkExperiment && (
                 <Button
                   onClick={onForkExperiment}
                   variant="outline"
-                  className="h-[38px]"
+                  className="h-9"
                 >
                   <Copy className="h-4 w-4 mr-2" />
                   Clone
@@ -250,7 +270,7 @@ export default function TopPanel({
                 <Button
                   onClick={onCancelExperiment}
                   variant="outline"
-                  className="h-[38px] text-red-text hover:bg-red-bg border-red-border"
+                  className="h-9 text-red-text hover:bg-red-bg border-red-border"
                 >
                   <X className="h-4 w-4 mr-2" />
                   Cancel
@@ -260,7 +280,7 @@ export default function TopPanel({
                 <Button
                   onClick={onDeleteExperiment}
                   variant="outline"
-                  className="h-[38px] text-red-text hover:bg-red-bg border-red-border"
+                  className="h-9 text-red-text hover:bg-red-bg border-red-border"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete
@@ -276,8 +296,8 @@ export default function TopPanel({
   // Edit mode - show selectors for new experiments
   return (
     <div className="border-b bg-background p-3 space-y-3">
-      <div className="flex gap-3">
-        <div className="flex-1">
+      <div className="flex flex-wrap">
+        <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Base Context
           </label>
@@ -291,14 +311,20 @@ export default function TopPanel({
               onValueChange={onBaseContextChange}
               disabled={isLoadingBaseContexts}
             >
-              <SelectTrigger className="flex-1">
+              <SelectTrigger
+                className="w-[280px]"
+                title={selectedBaseContextName || undefined}
+              >
                 {isLoadingBaseContexts ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Loading...</span>
                   </div>
                 ) : (
-                  <SelectValue placeholder="Select base context" />
+                  <SelectValue
+                    className="truncate"
+                    placeholder="Select base context"
+                  />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -308,8 +334,8 @@ export default function TopPanel({
                   </div>
                 ) : (
                   baseContexts?.map((bi) => (
-                    <SelectItem key={bi.id} value={bi.id}>
-                      {bi.name}
+                    <SelectItem key={bi.id} value={bi.id} title={bi.name}>
+                      <span className="block truncate">{bi.name}</span>
                     </SelectItem>
                   ))
                 )}
@@ -341,7 +367,7 @@ export default function TopPanel({
           </div>
         </div>
 
-        <div className="flex-1">
+        <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Judge Configuration
           </label>
@@ -355,14 +381,20 @@ export default function TopPanel({
               onValueChange={onJudgeConfigChange}
               disabled={isLoadingJudgeConfigs}
             >
-              <SelectTrigger className="flex-1">
+              <SelectTrigger
+                className="w-[280px]"
+                title={selectedJudgeConfigName || undefined}
+              >
                 {isLoadingJudgeConfigs ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Loading...</span>
                   </div>
                 ) : (
-                  <SelectValue placeholder="Select judge" />
+                  <SelectValue
+                    className="truncate"
+                    placeholder="Select judge"
+                  />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -372,8 +404,14 @@ export default function TopPanel({
                   </div>
                 ) : (
                   judgeConfigs?.map((jc) => (
-                    <SelectItem key={jc.id} value={jc.id}>
-                      {jc.name || 'Unnamed Judge'}
+                    <SelectItem
+                      key={jc.id}
+                      value={jc.id}
+                      title={jc.name || 'Unnamed Judge'}
+                    >
+                      <span className="block truncate">
+                        {jc.name || 'Unnamed Judge'}
+                      </span>
                     </SelectItem>
                   ))
                 )}
@@ -405,7 +443,7 @@ export default function TopPanel({
           </div>
         </div>
 
-        <div className="flex-1">
+        <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Backend Configuration
           </label>
@@ -419,14 +457,20 @@ export default function TopPanel({
               onValueChange={onBackendConfigChange}
               disabled={isLoadingBackends}
             >
-              <SelectTrigger className="flex-1">
+              <SelectTrigger
+                className="w-[280px]"
+                title={selectedBackendName || undefined}
+              >
                 {isLoadingBackends ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Loading...</span>
                   </div>
                 ) : (
-                  <SelectValue placeholder="Select backend" />
+                  <SelectValue
+                    className="truncate"
+                    placeholder="Select backend"
+                  />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -436,11 +480,12 @@ export default function TopPanel({
                   </div>
                 ) : (
                   backends?.map((backend) => (
-                    <SelectItem key={backend.id} value={backend.id}>
-                      {backend.name}
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({backend.provider} - {backend.model})
-                      </span>
+                    <SelectItem
+                      key={backend.id}
+                      value={backend.id}
+                      title={`${backend.name} (${backend.provider} - ${backend.model})`}
+                    >
+                      <span className="block truncate">{backend.name}</span>
                     </SelectItem>
                   ))
                 )}
@@ -471,7 +516,7 @@ export default function TopPanel({
           </div>
         </div>
 
-        <div className="flex-1">
+        <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Counterfactual Idea
           </label>
@@ -485,14 +530,17 @@ export default function TopPanel({
               onValueChange={onCounterfactualIdeaChange}
               disabled={isLoadingExperimentIdeas}
             >
-              <SelectTrigger className="flex-1">
+              <SelectTrigger
+                className="w-[280px]"
+                title={selectedExperimentIdeaName || undefined}
+              >
                 {isLoadingExperimentIdeas ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Loading...</span>
                   </div>
                 ) : (
-                  <SelectValue placeholder="Select idea" />
+                  <SelectValue className="truncate" placeholder="Select idea" />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -502,8 +550,8 @@ export default function TopPanel({
                   </div>
                 ) : (
                   experimentIdeas?.map((ei) => (
-                    <SelectItem key={ei.id} value={ei.id}>
-                      {ei.name}
+                    <SelectItem key={ei.id} value={ei.id} title={ei.name}>
+                      <span className="block truncate">{ei.name}</span>
                     </SelectItem>
                   ))
                 )}
@@ -537,8 +585,8 @@ export default function TopPanel({
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <div className="w-48">
+      <div className="flex flex-wrap">
+        <div className="w-48 pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Number of Counterfactuals
           </label>
@@ -570,7 +618,7 @@ export default function TopPanel({
           />
         </div>
 
-        <div className="w-48">
+        <div className="w-48 pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Number of Replicas
           </label>
@@ -604,7 +652,7 @@ export default function TopPanel({
 
         {/* Launch Button - Only show for new experiments */}
         {isNewExperiment && (
-          <div className="flex items-end">
+          <div className="flex items-end pr-3 pb-3">
             <Button
               onClick={onLaunchExperiment}
               disabled={!canLaunch}
