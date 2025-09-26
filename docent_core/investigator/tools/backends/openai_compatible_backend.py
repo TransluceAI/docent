@@ -68,6 +68,14 @@ class OpenAICompatibleBackendConfig(BaseModel):
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 base_url=self.base_url,
             )
+        elif self.provider == "openrouter":
+            assert self.base_url == "https://openrouter.ai/api/v1"
+            assert self.api_key is None
+
+            client = AsyncOpenAI(
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url=self.base_url,
+            )
 
         else:
             client = AsyncOpenAI(

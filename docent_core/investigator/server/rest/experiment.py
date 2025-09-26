@@ -516,6 +516,9 @@ async def list_available_models(
             elif request.provider == "google":
                 base_url = base_url or "https://generativelanguage.googleapis.com/v1beta/openai/"
                 api_key = os.getenv("GOOGLE_API_KEY")
+            elif request.provider == "openrouter":
+                base_url = base_url or "https://openrouter.ai/api/v1"
+                api_key = os.getenv("OPENROUTER_API_KEY")
             elif request.provider == "custom":
                 if not base_url:
                     raise HTTPException(

@@ -61,6 +61,7 @@ const PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'google', label: 'Google' },
+  { value: 'openrouter', label: 'OpenRouter' },
   { value: 'custom', label: 'Custom' },
 ];
 
@@ -68,6 +69,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1/',
   anthropic: 'https://api.anthropic.com/v1/',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  openrouter: 'https://openrouter.ai/api/v1',
 };
 
 // Common models for each provider (fallback if API call fails)
@@ -85,6 +87,11 @@ const FALLBACK_MODELS: Record<string, string[]> = {
     'claude-3-5-haiku-20241022',
   ],
   google: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+  openrouter: [
+    'openai/gpt-4o',
+    'anthropic/claude-3.5-sonnet',
+    'meta-llama/llama-3.1-8b-instruct',
+  ],
   custom: [],
 };
 
