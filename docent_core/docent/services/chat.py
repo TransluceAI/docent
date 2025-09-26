@@ -519,6 +519,7 @@ class ChatService:
 
                 # Handle provider errors first by surfacing an error state via sse_callback
                 if result.did_error:
+                    # TODO: if we hit rate limits after receiving a message, maybe we should still save the message
                     error_state = raw_chat_session.model_copy(
                         update={
                             "error_id": result.errors[0].error_type_id,

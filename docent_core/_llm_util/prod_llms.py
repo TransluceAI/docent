@@ -120,7 +120,6 @@ async def _parallelize_calls(
     # Save resolved messages to avoid multiple resolutions
     resolved_messages: list[list[ChatMessage] | None] = [None] * len(inputs)
 
-    # Signal to indicate cancellation due to hitting a usage limit
     cancelled_due_to_usage_limit: bool = False
 
     async def _limited_task(i: int, cur_input: MessagesInput, tg: TaskGroup):
@@ -168,13 +167,13 @@ async def _parallelize_calls(
 
                 # Always call the completion callback if provided
                 if completion_callback:
+                    # LLMService uses this callback to record cost, and may throw an error if we just exceeded limit
                     await completion_callback(i, result)
             except DocentUsageLimitException as e:
-                # Cooperative cancellation: mark result for this index, cancel remaining tasks
                 result = LLMOutput(
                     model=model_name,
                     completions=[],
-                    errors=[e],
+                    errors=[],  # Usage limit exceptions will be added to all results later if cancelled_due_to_usage_limit
                 )
                 cancelled_due_to_usage_limit = True
                 tg.cancel_scope.cancel()
@@ -249,18 +248,18 @@ async def _parallelize_calls(
         logger.info(
             f"Cancelled {len(inputs) - num_cached} unfinished LLM API calls; cached {num_cached} completed responses"
         )
-        # If the cancellation was triggered by a usage limit, fill remaining responses
-        if cancelled_due_to_usage_limit:
-            for i in range(len(responses)):
-                if responses[i] is None:
-                    responses[i] = LLMOutput(
-                        model=model_name,
-                        completions=[],
-                        errors=[DocentUsageLimitException()],
-                    )
-        else:
-            # Propagate other cancellation causes
-            raise
+        raise
+
+    if cancelled_due_to_usage_limit:
+        for i in range(len(responses)):
+            if responses[i] is None:
+                responses[i] = LLMOutput(
+                    model=model_name,
+                    completions=[],
+                    errors=[DocentUsageLimitException()],
+                )
+            else:
+                responses[i].errors.append(DocentUsageLimitException())
 
     # Cache results if available
     _cache_responses()
