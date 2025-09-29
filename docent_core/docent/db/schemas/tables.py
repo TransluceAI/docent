@@ -878,7 +878,10 @@ class SQLAModelUsage(SQLABase):
     id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=False, index=True)
     api_key_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_MODEL_API_KEYS}.id"), nullable=True, index=True
+        String(36),
+        ForeignKey(f"{TABLE_MODEL_API_KEYS}.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     model = mapped_column(JSONB, nullable=False)
     bucket_start = mapped_column(DateTime, nullable=False, index=True)
