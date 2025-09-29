@@ -158,12 +158,6 @@ def _validate_rubric_output(
     Returns:
         List of validated result strings with invalid citations removed
     """
-    # Parse citations and validate them in one pass
-    try:
-        jsonschema.validate(output, output_schema)
-    except jsonschema.ValidationError as e:
-        logger.warning(f"Rubric output validation failed: {e}")
-        return None
 
     def _validate(output: Any, schema: dict[str, Any]) -> Any:
         if schema.get("type") == "string" and schema.get("citations"):  # type: ignore
@@ -178,14 +172,31 @@ def _validate_rubric_output(
             return validated_text
         elif schema.get("type") == "object":
             properties: dict[str, Any] = schema.get("properties", {})
-            return {key: _validate(output[key], properties[key]) for key in properties}
+            validated_object: dict[str, Any] = {}
+            for key in properties:
+                if key not in output:
+                    # It's ok for keys to be missing if they aren't listed in `required`
+                    validated_object[key] = None
+                else:
+                    validated_object[key] = _validate(output[key], properties[key])
+            return validated_object
         elif schema.get("type") == "array":
             item_schema: dict[str, Any] = schema.get("items", {})
             return [_validate(item, item_schema) for item in output]
         else:
             return output
 
-    return _validate(output, output_schema)
+    try:
+        jsonschema.validate(output, output_schema)
+    except jsonschema.ValidationError as e:
+        logger.error(f"Rubric output failed validation phase 1: {e}")
+        return None
+
+    try:
+        return _validate(output, output_schema)
+    except Exception as e:
+        logger.error(f"Rubric output failed validation phase 2:\n{e}")
+        return None
 
 
 def _get_llm_callback(
