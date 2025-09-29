@@ -207,11 +207,17 @@ def _get_llm_callback(
     result_type: ResultType,
 ):
     async def _llm_callback(batch_index: int, llm_output: LLMOutput):
-        text = llm_output.first_text
-        output = json.loads(text) if text else None
+        # Return nothing if the LLM call failed
+        if llm_output.first_text is None:
+            await callback(batch_index, None)
+            return
 
-        # Return nothing if the LLM call failed (hence None)
-        if output is None:
+        text = llm_output.first_text
+
+        try:
+            output = json.loads(text)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse JSON for judge result:\n{text}")
             await callback(batch_index, None)
             return
 
