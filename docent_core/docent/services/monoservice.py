@@ -729,6 +729,51 @@ class MonoService:
 
         return metadata_map
 
+    async def get_metadata_field_range(
+        self, ctx: ViewContext, field_name: str
+    ) -> dict[str, float | None]:
+        """Return the numeric range for a metadata field across agent runs."""
+
+        field_parts = field_name.split(".")
+        if len(field_parts) < 2 or field_parts[0] != "metadata":
+            raise ValueError("Metadata ranges are only supported for metadata.* fields")
+
+        json_path_parts = field_parts[1:]
+        for part in json_path_parts:
+            if not part.replace("_", "").replace("-", "").isalnum():
+                raise ValueError("Invalid metadata field path")
+
+        async with self.db.session() as session:
+            json_expr = SQLAAgentRun.metadata_json
+            for part in json_path_parts:
+                json_expr = json_expr.op("->")(part)
+
+            text_expr = SQLAAgentRun.metadata_json
+            for idx, part in enumerate(json_path_parts):
+                if idx == len(json_path_parts) - 1:
+                    text_expr = text_expr.op("->>")(part)
+                else:
+                    text_expr = text_expr.op("->")(part)
+
+            numeric_clause = func.jsonb_typeof(json_expr) == "number"
+
+            query = (
+                select(
+                    func.min(text_expr).label("min_value"),
+                    func.max(text_expr).label("max_value"),
+                )
+                .select_from(SQLAAgentRun)
+                .where(
+                    SQLAAgentRun.collection_id == ctx.collection_id,
+                    numeric_clause,
+                )
+            )
+
+            result = await session.execute(query)
+            row = result.one()
+
+        return {"min": row.min_value, "max": row.max_value}
+
     async def get_agent_run(
         self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = True
     ) -> AgentRun | None:

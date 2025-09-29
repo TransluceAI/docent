@@ -54,6 +54,7 @@ export const collectionApi = createApi({
     'AgentRunMetadata',
     'AgentRunMetadataFields',
     'AgentRunMetadataFieldValues',
+    'AgentRunMetadataRange',
     'BaseFilter',
     'AgentRunIds',
   ],
@@ -109,6 +110,7 @@ export const collectionApi = createApi({
         'BaseFilter',
         'AgentRunIds',
         'AgentRunMetadataFieldValues',
+        'AgentRunMetadataRange',
       ],
     }),
     getAgentRunIds: build.query<
@@ -134,6 +136,14 @@ export const collectionApi = createApi({
     >({
       query: (collectionId) => `/${collectionId}/agent_run_metadata_fields`,
       providesTags: ['AgentRunMetadataFields'],
+    }),
+    getMetadataFieldRange: build.query<
+      { min: number | null; max: number | null },
+      { collectionId: string; fieldName: string }
+    >({
+      query: ({ collectionId, fieldName }) =>
+        `/${collectionId}/metadata_range/${encodeURIComponent(fieldName)}`,
+      providesTags: ['AgentRunMetadataRange'],
     }),
     getAgentRunSortableFields: build.query<
       AgentRunSortableFieldsResponse,
@@ -246,6 +256,7 @@ export const collectionApi = createApi({
                 collectionApi.util.invalidateTags([
                   'AgentRunIds',
                   'AgentRunMetadata',
+                  'AgentRunMetadataRange',
                 ])
               );
             }
@@ -272,6 +283,7 @@ export const {
   useGetBaseFilterQuery,
   usePostBaseFilterMutation,
   useGetAgentRunMetadataFieldsQuery,
+  useGetMetadataFieldRangeQuery,
   useGetAgentRunSortableFieldsQuery,
   useGetFieldValuesQuery,
   useGetAgentRunMetadataQuery,

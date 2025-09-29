@@ -494,6 +494,7 @@ export const FilterControls = ({
       {/* Step Filter */}
       {showStepFilter && (
         <StepFilter
+          collectionId={collectionId}
           metadataData={metadataData}
           onStepFilterChange={handleStepFilterChange}
           currentValue={stepFilterValue}
