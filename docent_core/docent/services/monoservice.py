@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import (
     Any,
     AsyncIterator,
@@ -16,19 +15,19 @@ from uuid import uuid4
 
 from passlib.context import CryptContext
 from sqlalchemy import (
+    ARRAY,
     ColumnElement,
-    bindparam,
+    String,
+    cast,
     delete,
     exists,
     func,
-    literal,
     select,
     true,
     update,
 )
-from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql import lateral, text
+from sqlalchemy.sql import text
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
@@ -395,8 +394,11 @@ class MonoService:
 
     async def check_space_for_runs(self, ctx: ViewContext, new_runs: int):
         existing_runs = await self.count_collection_agent_runs(ctx.collection_id)
-        if existing_runs + new_runs > 100_000:
-            raise ValueError("Number of agent runs in the current collection is too large")
+        agent_run_limit = 100_000
+        if existing_runs + new_runs > agent_run_limit:
+            raise ValueError(
+                f"Number of agent runs in the current collection is too large. Current limit: {agent_run_limit}, Current count: {existing_runs}, New runs: {new_runs}"
+            )
 
     async def add_agent_runs(
         self,
@@ -729,6 +731,51 @@ class MonoService:
                     metadata_map[run_id] = structured_metadata
 
         return metadata_map
+
+    async def get_metadata_field_range(
+        self, ctx: ViewContext, field_name: str
+    ) -> dict[str, float | None]:
+        """Return the numeric range for a metadata field across agent runs."""
+
+        field_parts = field_name.split(".")
+        if len(field_parts) < 2 or field_parts[0] != "metadata":
+            raise ValueError("Metadata ranges are only supported for metadata.* fields")
+
+        json_path_parts = field_parts[1:]
+        for part in json_path_parts:
+            if not part.replace("_", "").replace("-", "").isalnum():
+                raise ValueError("Invalid metadata field path")
+
+        async with self.db.session() as session:
+            json_expr = SQLAAgentRun.metadata_json
+            for part in json_path_parts:
+                json_expr = json_expr.op("->")(part)
+
+            text_expr = SQLAAgentRun.metadata_json
+            for idx, part in enumerate(json_path_parts):
+                if idx == len(json_path_parts) - 1:
+                    text_expr = text_expr.op("->>")(part)
+                else:
+                    text_expr = text_expr.op("->")(part)
+
+            numeric_clause = func.jsonb_typeof(json_expr) == "number"
+
+            query = (
+                select(
+                    func.min(text_expr).label("min_value"),
+                    func.max(text_expr).label("max_value"),
+                )
+                .select_from(SQLAAgentRun)
+                .where(
+                    SQLAAgentRun.collection_id == ctx.collection_id,
+                    numeric_clause,
+                )
+            )
+
+            result = await session.execute(query)
+            row = result.one()
+
+        return {"min": row.min_value, "max": row.max_value}
 
     async def get_agent_run(
         self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = True
@@ -2028,85 +2075,78 @@ class MonoService:
             List of all filterable fields
         """
         where_clause = ctx.get_base_where_clause(SQLAAgentRun)
+        limit_rows = 5000
 
-        metadata_prefix = array([literal("metadata")])
-
-        base_lateral = lateral(
-            func.jsonb_each(SQLAAgentRun.metadata_json).table_valued("key", "value")
-        ).alias("metadata_pairs")
-
-        json_paths = (
-            select(
-                func.array_append(metadata_prefix, base_lateral.c.key).label("path_arr"),
-                base_lateral.c.value.label("value"),
-                SQLAAgentRun.id.label("agent_run_id"),
-                literal(1).label("depth"),
-            )
-            .select_from(SQLAAgentRun)
-            .join(base_lateral, true())
+        # Base CTE (limit seed rows)
+        base = (
+            select(SQLAAgentRun.metadata_json.label("value"))
             .where(where_clause)
-            .where(func.jsonb_typeof(SQLAAgentRun.metadata_json) == "object")
-        ).cte("json_paths", recursive=True)
-
-        nested_lateral = lateral(
-            func.jsonb_each(json_paths.c.value).table_valued("key", "value")
-        ).alias("nested_pairs")
-
-        json_paths = json_paths.union_all(
-            select(
-                func.array_append(json_paths.c.path_arr, nested_lateral.c.key).label("path_arr"),
-                nested_lateral.c.value.label("value"),
-                json_paths.c.agent_run_id,
-                (json_paths.c.depth + 1).label("depth"),
-            )
-            .join(nested_lateral, true())
-            .where(func.jsonb_typeof(json_paths.c.value) == "object")
-            .where(json_paths.c.depth < bindparam("max_depth"))
+            .limit(limit_rows)
+            .cte("base")
         )
 
-        scalar_json_types = ("string", "number", "boolean")
+        # Seed recursive CTE: value + empty text[] path
+        walk = select(
+            base.c.value,
+            cast([], ARRAY(String())).label("path"),
+        ).cte("walk", recursive=True)
 
-        scalar_leaves = (
-            select(
-                json_paths.c.path_arr.label("path_arr"),
-                json_paths.c.value.label("value"),
-                json_paths.c.agent_run_id.label("agent_run_id"),
-            ).where(func.jsonb_typeof(json_paths.c.value).in_(scalar_json_types))
-        ).subquery()
+        # Table-valued function jsonb_each(value) -> (key, value), lateral
+        e = func.jsonb_each(walk.c.value).table_valued("key", "value")
 
-        metadata_query = (
+        # Recursive branch: ONLY descend into objects
+        obj_branch = (
             select(
-                func.array_to_string(scalar_leaves.c.path_arr, ".").label("path"),
-                scalar_leaves.c.value,
+                e.c.value,
+                func.array_append(walk.c.path, e.c.key).label("path"),
             )
-            .distinct(scalar_leaves.c.path_arr)
-            .order_by(scalar_leaves.c.path_arr, scalar_leaves.c.agent_run_id)
+            .select_from(walk.join(e.lateral(), true()))
+            .where(func.jsonb_typeof(walk.c.value) == "object")
         )
 
-        def _infer_filter_type(value: Any) -> Literal["str", "bool", "int", "float"] | None:
-            if isinstance(value, bool):
-                return "bool"
-            if isinstance(value, int):
-                return "int"
-            if isinstance(value, float):
+        walk = walk.union_all(obj_branch)
+
+        path = func.array_to_string(walk.c.path, ".")
+        val_type = func.jsonb_typeof(walk.c.value)
+
+        # Distinct type list per path (comma-separated)
+        stmt = (
+            select(
+                path.label("path"),
+                func.string_agg(func.distinct(val_type), ",").label("value_types"),
+            )
+            .where(func.array_length(walk.c.path, 1) > 0)
+            .group_by(path)
+            .order_by("path")
+        )
+
+        def _infer_filter_type_from_types(
+            value_types: str,
+        ) -> Literal["str", "bool", "int", "float"] | None:
+            """Infer filter type from comma-separated JSON types."""
+            types = [t.strip() for t in value_types.split(",")]
+
+            # Priority order for type inference
+            if "number" in types:
                 return "float"
-            if isinstance(value, Decimal):
-                if value == value.to_integral_value():
-                    return "int"
-                return "float"
-            if isinstance(value, str):
+            elif "string" in types:
                 return "str"
+            elif "boolean" in types:
+                return "bool"
             return None
 
         all_fields: dict[str, FilterableField] = {}
 
         async with self.db.session() as session:
-            result = await session.execute(metadata_query, {"max_depth": 2})
+            result = await session.execute(stmt)
             for row in result:
-                field_type = _infer_filter_type(row.value)
+                field_type = _infer_filter_type_from_types(row.value_types)
                 if field_type is None:
                     continue
-                all_fields[row.path] = {"name": row.path, "type": field_type}
+                all_fields["metadata." + row.path] = {
+                    "name": "metadata." + row.path,
+                    "type": field_type,
+                }
 
         all_fields["text"] = {"name": "text", "type": "str"}
 

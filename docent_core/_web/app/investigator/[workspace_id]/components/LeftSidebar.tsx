@@ -1,9 +1,20 @@
 'use client';
 
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+// Synchronized spinner animation - all spinners will be in sync
+const spinnerStyle = {
+  animation: 'spin 2s linear infinite',
+  transformOrigin: 'center center',
+};
 import type { ExperimentConfig } from '@/app/api/investigatorApi';
 import { formatDateTime } from '@/lib/dateUtils';
 import {
@@ -55,6 +66,77 @@ function ExperimentItem({
   const progress = experimentResult?.experiment_status?.progress ?? 0;
   const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
 
+  // Helper function to get experiment type name
+  const getTypeName = (type: string) => {
+    if (type === 'counterfactual') {
+      return 'Counterfactual';
+    } else if (type === 'simple_rollout') {
+      return 'Rollout';
+    }
+    return 'Experiment';
+  };
+
+  // Helper function to get status icon
+  const getStatusIcon = (status: string | undefined, isRunning: boolean) => {
+    if (isRunning) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center">
+              <Loader2
+                className="w-4 h-4 text-blue-text"
+                style={spinnerStyle}
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Running</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    } else if (status === 'completed') {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center">
+              <CheckCircle className="w-4 h-4 text-green-text" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Completed</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    } else if (status === 'error') {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center">
+              <XCircle className="w-4 h-4 text-red-text" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Error</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    } else if (status === 'cancelled') {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center">
+              <AlertCircle className="w-4 h-4 text-red-text" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Cancelled</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+    return null;
+  };
+
   return (
     <div
       className={`p-3 rounded-md cursor-pointer transition-colors ${
@@ -64,13 +146,54 @@ function ExperimentItem({
       }`}
       onClick={onSelect}
     >
-      <div className="font-medium text-sm">
-        Experiment #{experiment.id.slice(0, 8)}
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="font-medium text-sm">
+          {getTypeName(experiment.type)} #{experiment.id.slice(0, 8)}
+        </div>
+        {getStatusIcon(status, isRunning)}
       </div>
-      <div className="text-xs text-muted-foreground">
+
+      <div className="text-xs text-muted-foreground mb-1">
         {formatDateTime(experiment.created_at)}
       </div>
-      {isRunning ? (
+
+      {/* Subject info */}
+      <div className="text-xs text-muted-foreground mb-1">
+        <span className="font-medium">Subject:</span>{' '}
+        {experiment.type === 'counterfactual'
+          ? experiment.openai_compatible_backend?.name
+          : experiment.openai_compatible_backends
+              ?.map((b) => b.name)
+              .join(', ') || 'N/A'}
+      </div>
+
+      {/* Base context info */}
+      <div className="text-xs text-muted-foreground mb-1">
+        <span className="font-medium">Context:</span>{' '}
+        {experiment.base_context.name.length > 20
+          ? `${experiment.base_context.name.slice(0, 20)}...`
+          : experiment.base_context.name}
+      </div>
+
+      {/* Judge info */}
+      {experiment.judge_config && (
+        <div className="text-xs text-muted-foreground mb-1">
+          <span className="font-medium">Judge:</span>{' '}
+          {experiment.judge_config.name || 'Unnamed Judge'}
+        </div>
+      )}
+
+      {/* Counterfactual idea (only for counterfactual experiments) */}
+      {experiment.type === 'counterfactual' && (
+        <div className="text-xs text-muted-foreground mb-1">
+          <span className="font-medium">Idea:</span>{' '}
+          {experiment.idea.name.length > 20
+            ? `${experiment.idea.name.slice(0, 20)}...`
+            : experiment.idea.name}
+        </div>
+      )}
+
+      {isRunning && (
         <div className="mt-2">
           <div className="relative h-4 w-full rounded border border-border bg-background">
             <div
@@ -84,13 +207,7 @@ function ExperimentItem({
             </div>
           </div>
         </div>
-      ) : status === 'completed' ? (
-        <div className="mt-2 text-xs text-green-text">Completed</div>
-      ) : status === 'error' || status === 'errored' ? (
-        <div className="mt-2 text-xs text-red-text">Error</div>
-      ) : status === 'cancelled' ? (
-        <div className="mt-2 text-xs text-red-text">Cancelled</div>
-      ) : null}
+      )}
     </div>
   );
 }

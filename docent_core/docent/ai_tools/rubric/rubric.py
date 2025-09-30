@@ -170,10 +170,7 @@ def _validate_rubric_output(
             properties: dict[str, Any] = schema.get("properties", {})
             validated_object: dict[str, Any] = {}
             for key in properties:
-                if key not in output:
-                    # It's ok for keys to be missing if they aren't listed in `required`
-                    validated_object[key] = None
-                else:
+                if key in output:
                     validated_object[key] = _validate(output[key], properties[key])
             return validated_object
         elif schema.get("type") == "array":

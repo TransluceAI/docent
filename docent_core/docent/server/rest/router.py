@@ -632,6 +632,19 @@ async def get_field_values(
     return {"values": unique_values}
 
 
+@user_router.get("/{collection_id}/metadata_range/{field_name}")
+async def get_metadata_field_range(
+    field_name: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+):
+    try:
+        return await mono_svc.get_metadata_field_range(ctx, field_name)
+    except ValueError as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @user_router.get("/{collection_id}/agent_run")
 async def get_agent_run(
     agent_run_id: str,
@@ -720,7 +733,10 @@ async def post_agent_runs(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        await mono_svc.check_space_for_runs(ctx, len(request.agent_runs))
+        try:
+            await mono_svc.check_space_for_runs(ctx, len(request.agent_runs))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Cannot add agent runs: {str(e)}")
         await mono_svc.add_agent_runs(ctx, request.agent_runs)
 
     # Track with PostHog

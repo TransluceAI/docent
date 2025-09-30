@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import CodeMirror from '@uiw/react-codemirror';
+import { json as jsonLanguage } from '@codemirror/lang-json';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +15,6 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2, Plus, Code2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Textarea } from '@/components/ui/textarea';
 
 interface JsonSchemaProperty {
   type: string;
@@ -55,6 +57,7 @@ export function JsonSchemaEditor({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [lastValidJson, setLastValidJson] = useState<JsonSchema>(value);
   const [propertyIds, setPropertyIds] = useState<Record<string, string>>({});
+  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     const currentProps = Object.keys(value.properties);
@@ -442,17 +445,24 @@ export function JsonSchemaEditor({
             Edit the JSON schema directly. Must be a valid JSON object with type
             &quot;object&quot; and a properties field.
           </div>
-          <Textarea
+          <CodeMirror
             value={jsonText}
-            onChange={(e) => handleJsonTextChange(e.target.value)}
+            onChange={handleJsonTextChange}
+            extensions={[jsonLanguage()]}
+            theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
             className={cn(
-              'font-mono text-xs min-h-[200px]',
-              jsonError ? 'border-red-500' : ''
+              'border rounded-md overflow-hidden text-xs',
+              jsonError ? 'border-red-border' : 'border-border'
             )}
-            placeholder='{\n  "type": "object",\n  "properties": {\n    "example": {\n      "type": "string",\n      "description": "An example property"\n    }\n  },\n  "required": ["example"]\n}'
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: true,
+              bracketMatching: true,
+            }}
+            style={{ fontSize: '12px' }}
           />
           {jsonError && (
-            <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded">
+            <div className="text-xs text-red-text bg-red-bg/20 p-2 rounded border border-red-border">
               <strong>JSON Validation Error:</strong> {jsonError}
               <div className="mt-1 text-xs opacity-80">
                 Use the Reset button to restore the last valid state.
@@ -460,9 +470,7 @@ export function JsonSchemaEditor({
             </div>
           )}
           {!jsonError && (
-            <div className="text-xs text-green-600 dark:text-green-400">
-              ✓ Valid JSON schema
-            </div>
+            <div className="text-xs text-green-text">✓ Valid JSON schema</div>
           )}
         </div>
       ) : (

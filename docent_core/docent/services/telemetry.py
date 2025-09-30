@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -974,11 +974,6 @@ class TelemetryService:
         transcript_group_data: list[SQLATranscriptGroup] = []
         agent_run_ids = [ar.id for ar in agent_runs]
 
-        # Check collection size limit
-        query = select(func.count()).where(SQLAAgentRun.collection_id == ctx.collection_id)
-        result = await self.session.execute(query)
-        existing_count = result.scalar_one()
-
         # Count how many new agent runs we'll be adding (not updating)
         existing_agent_run_query = select(SQLAAgentRun.id).where(
             SQLAAgentRun.collection_id == ctx.collection_id, SQLAAgentRun.id.in_(agent_run_ids)
@@ -987,8 +982,8 @@ class TelemetryService:
         existing_agent_run_ids = set(existing_agent_run_result.scalars().all())
         new_agent_run_count = len(agent_run_ids) - len(existing_agent_run_ids)
 
-        if existing_count + new_agent_run_count > 100_000:
-            raise ValueError("Number of agent runs in the current collection is too large")
+        # Check collection size limit using the centralized method
+        await self.mono_svc.check_space_for_runs(ctx, new_agent_run_count)
 
         # Process all agent runs, transcripts, and transcript groups first
         for agent_run in agent_runs:

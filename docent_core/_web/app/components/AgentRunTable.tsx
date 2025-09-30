@@ -23,9 +23,10 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Columns3,
-  Upload,
   Check,
+  Columns3,
+  Loader2,
+  Upload,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import { Combobox } from './Combobox';
 import { useParams } from 'next/navigation';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -62,6 +64,7 @@ export type AgentRunTableRow = {
 const ROW_HEIGHT_PX = 32;
 const OVERSCAN_COUNT = 50;
 const METADATA_REQUEST_DEBOUNCE_MS = 150;
+const MIN_SKELETON_ROW_COUNT = 12;
 
 // Debounces metadata fetches to limit repeated requests while scrolling.
 function useDebouncedMetadataRequest(
@@ -144,6 +147,8 @@ export interface AgentRunTableProps {
   isOverDropZone: boolean;
   scrollContainerRef?: (node: HTMLDivElement | null) => void;
   emptyState?: ReactNode;
+  isLoadingAgentRuns: boolean;
+  isFetchingAgentRuns: boolean;
 }
 
 const formatMetadataValue = (value: unknown): string => {
@@ -262,6 +267,8 @@ export const AgentRunTable = memo(function AgentRunTable({
   isOverDropZone,
   scrollContainerRef,
   emptyState,
+  isLoadingAgentRuns,
+  isFetchingAgentRuns,
 }: AgentRunTableProps) {
   const internalScrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -323,6 +330,16 @@ export const AgentRunTable = memo(function AgentRunTable({
     }
     return agentRunIds.map((agentRunId) => ({ agentRunId }));
   }, [agentRunIds]);
+
+  const skeletonRowCount = useMemo(() => {
+    if (!containerHeight) {
+      return MIN_SKELETON_ROW_COUNT;
+    }
+    return Math.max(
+      MIN_SKELETON_ROW_COUNT,
+      Math.ceil(containerHeight / ROW_HEIGHT_PX)
+    );
+  }, [containerHeight]);
 
   const columns = useMemo<ColumnDef<AgentRunTableRow, unknown>[]>(() => {
     const baseColumn: ColumnDef<AgentRunTableRow> = {
@@ -505,6 +522,9 @@ export const AgentRunTable = memo(function AgentRunTable({
 
   const columnCount = columns.length || 1;
   const hasRows = totalRows > 0;
+  const showSkeletonRows = isLoadingAgentRuns && !hasRows;
+  const showFetchOverlay = isFetchingAgentRuns && hasRows;
+  const visibleColumns = table.getVisibleLeafColumns();
 
   const params = useParams();
   const collectionId = params?.collectionId;
@@ -589,107 +609,116 @@ export const AgentRunTable = memo(function AgentRunTable({
 
   return (
     <div className="relative flex flex-col h-full min-h-0 w-full space-y-3">
-      <div className="flex justify-end items-center gap-2">
-        {/* Sorting controls */}
-        <div className="flex items-center gap-1.5">
-          <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-          <Combobox
-            value={sortField ?? 'none'}
-            onChange={handleFieldChange}
-            options={sortOptions}
-            placeholder="Select field"
-            searchPlaceholder="Search fields..."
-            emptyMessage="No field found."
-            triggerClassName="bg-background font-mono text-muted-foreground max-w-lg justify-between"
-            valueClassName="truncate flex-1 min-w-0 text-left"
-            commandInputClassName="h-8 text-xs"
-            commandListClassName="custom-scrollbar"
-            optionClassName="font-mono text-muted-foreground text-xs"
-            popoverClassName="w-64"
-            popoverAlign="start"
-            renderValue={(selected) =>
-              sortField ? (selected?.label ?? sortField) : 'Select field'
-            }
-          />
+      <div className="flex items-center gap-2">
+        {showFetchOverlay && (
+          <div className="pointer-events-none inline-flex items-center gap-2 rounded-full border border-muted/60 bg-background/90 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur-sm">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            Updating runs
+          </div>
+        )}
 
-          {sortField && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDirectionChange}
-              className="h-7 text-xs bg-background font-mono text-muted-foreground border-border hover:bg-muted-foreground/10 flex items-center gap-1 px-2 w-16"
-            >
-              {sortDirection === 'asc' ? 'asc' : 'desc'}
-              {sortDirection === 'asc' ? (
-                <ArrowUp className="h-3 w-3" />
-              ) : (
-                <ArrowDown className="h-3 w-3" />
-              )}
-            </Button>
-          )}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Sorting controls */}
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+            <Combobox
+              value={sortField ?? 'none'}
+              onChange={handleFieldChange}
+              options={sortOptions}
+              placeholder="Select field"
+              searchPlaceholder="Search fields..."
+              emptyMessage="No field found."
+              triggerClassName="bg-background font-mono text-muted-foreground max-w-lg justify-between"
+              valueClassName="truncate flex-1 min-w-0 text-left"
+              commandInputClassName="h-8 text-xs"
+              commandListClassName="custom-scrollbar"
+              optionClassName="font-mono text-muted-foreground text-xs"
+              popoverClassName="w-64"
+              popoverAlign="start"
+              renderValue={(selected) =>
+                sortField ? (selected?.label ?? sortField) : 'Select field'
+              }
+            />
+
+            {sortField && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDirectionChange}
+                className="h-7 text-xs bg-background font-mono text-muted-foreground border-border hover:bg-muted-foreground/10 flex items-center gap-1 px-2 w-16"
+              >
+                {sortDirection === 'asc' ? 'asc' : 'desc'}
+                {sortDirection === 'asc' ? (
+                  <ArrowUp className="h-3 w-3" />
+                ) : (
+                  <ArrowDown className="h-3 w-3" />
+                )}
+              </Button>
+            )}
+          </div>
+
+          {/* Columns selection */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground"
+              >
+                <Columns3 className="h-3 w-3" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-72 p-0" align="end">
+              <Command>
+                <CommandInput
+                  placeholder="Search columns..."
+                  className="h-8 text-xs"
+                />
+                <CommandList>
+                  <CommandEmpty>No columns found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      onSelect={() => handleSelectAll()}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Select all
+                    </CommandItem>
+                    <CommandItem
+                      onSelect={() => handleClearAll()}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Clear all
+                    </CommandItem>
+                  </CommandGroup>
+                  <CommandGroup>
+                    {availableColumns.map((column) => {
+                      const checked = selectedColumns.includes(column);
+                      return (
+                        <CommandItem
+                          key={column}
+                          onSelect={() => handleToggleColumn(column, !checked)}
+                          className="text-xs font-mono"
+                        >
+                          <Check
+                            className={cn(
+                              'mr-2 h-4 w-4',
+                              checked ? 'opacity-100' : 'opacity-0'
+                            )}
+                          />
+                          {column}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-
-        {/* Columns selection */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1 text-xs text-muted-foreground"
-            >
-              <Columns3 className="h-3 w-3" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-72 p-0" align="end">
-            <Command>
-              <CommandInput
-                placeholder="Search columns..."
-                className="h-8 text-xs"
-              />
-              <CommandList>
-                <CommandEmpty>No columns found.</CommandEmpty>
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={() => handleSelectAll()}
-                    className="text-xs text-muted-foreground"
-                  >
-                    Select all
-                  </CommandItem>
-                  <CommandItem
-                    onSelect={() => handleClearAll()}
-                    className="text-xs text-muted-foreground"
-                  >
-                    Clear all
-                  </CommandItem>
-                </CommandGroup>
-                <CommandGroup>
-                  {availableColumns.map((column) => {
-                    const checked = selectedColumns.includes(column);
-                    return (
-                      <CommandItem
-                        key={column}
-                        onSelect={() => handleToggleColumn(column, !checked)}
-                        className="text-xs font-mono"
-                      >
-                        <Check
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            checked ? 'opacity-100' : 'opacity-0'
-                          )}
-                        />
-                        {column}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
-      <div className="border rounded-md flex-1 flex flex-col min-h-0">
+      <div className="border rounded-md flex-1 flex flex-col min-h-0 relative">
         <div
           className="flex-1 min-h-0 overflow-auto custom-scrollbar relative"
           ref={combinedScrollRef}
@@ -724,7 +753,39 @@ export const AgentRunTable = memo(function AgentRunTable({
               ))}
             </TableHeader>
             <TableBody>
-              {!hasRows ? (
+              {showSkeletonRows ? (
+                <>
+                  {Array.from({ length: skeletonRowCount }).map((_, index) => (
+                    <TableRow
+                      key={`skeleton-${index}`}
+                      className="text-xs select-none"
+                      style={{ height: ROW_HEIGHT_PX }}
+                    >
+                      {visibleColumns.map((column, columnIndex) => (
+                        <TableCell
+                          key={`${column.id}-${index}`}
+                          className={`py-1.5 ${
+                            columnIndex === 0
+                              ? 'sticky left-0 z-10 bg-background'
+                              : ''
+                          }`}
+                          style={{
+                            width: column.columnDef.size,
+                            maxWidth:
+                              column.columnDef.maxSize ?? column.columnDef.size,
+                          }}
+                        >
+                          <Skeleton
+                            className={`h-4 ${
+                              columnIndex === 0 ? 'w-16' : 'w-full'
+                            }`}
+                          />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </>
+              ) : !hasRows ? (
                 <TableRow>
                   <TableCell colSpan={columnCount} className="py-4">
                     <div className="flex flex-col items-center justify-center text-center text-xs text-foreground py-10">
@@ -765,7 +826,15 @@ export const AgentRunTable = memo(function AgentRunTable({
                           {row.getVisibleCells().map((cell, index) => (
                             <TableCell
                               key={cell.id}
-                              className={`py-1.5 ${index === 0 ? `sticky left-0 z-10 ${isActive ? 'bg-indigo-bg/80' : 'bg-background group-hover:bg-muted transition-colors duration-150'}` : ''}`}
+                              className={`py-1.5 ${
+                                index === 0
+                                  ? `sticky left-0 z-10 ${
+                                      isActive
+                                        ? 'bg-indigo-bg/80'
+                                        : 'bg-background group-hover:bg-muted transition-colors duration-150'
+                                    }`
+                                  : ''
+                              }`}
                               style={{
                                 width: cell.column.columnDef.size,
                                 maxWidth:

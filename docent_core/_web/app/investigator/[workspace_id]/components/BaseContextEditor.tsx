@@ -1,7 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Trash2, X, Copy, Settings } from 'lucide-react';
+import CodeMirror from '@uiw/react-codemirror';
+import { json as jsonLanguage } from '@codemirror/lang-json';
+import { useTheme } from 'next-themes';
+import {
+  Plus,
+  Trash2,
+  X,
+  Copy,
+  Settings,
+  Code2,
+  RefreshCw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -196,6 +207,12 @@ export default function BaseContextEditor({
     toolCalls?: { [messageIndex: number]: { [toolCallIndex: number]: string } };
   }>({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [jsonEditMode, setJsonEditMode] = useState(false);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [lastValidMessages, setLastValidMessages] =
+    useState<Message[]>(messages);
+  const { resolvedTheme } = useTheme();
 
   // Use onClose if provided (for readOnly mode), otherwise onCancel
   const handleClose = () => {
@@ -607,6 +624,147 @@ export default function BaseContextEditor({
     }
   };
 
+  const toggleJsonEditMode = () => {
+    if (!jsonEditMode) {
+      setJsonText(JSON.stringify(messages, null, 2));
+      setJsonError(null);
+      setLastValidMessages(messages);
+      setJsonEditMode(true);
+    } else {
+      if (jsonError) {
+        return;
+      }
+      setJsonEditMode(false);
+    }
+  };
+
+  const handleJsonTextChange = (text: string) => {
+    setJsonText(text);
+
+    try {
+      const parsed = JSON.parse(text);
+
+      if (!Array.isArray(parsed)) {
+        setJsonError('Messages must be an array');
+        return;
+      }
+
+      for (let i = 0; i < parsed.length; i++) {
+        const msg = parsed[i];
+
+        if (typeof msg !== 'object' || Array.isArray(msg)) {
+          setJsonError(`Message at index ${i} must be an object`);
+          return;
+        }
+
+        if (!msg.role || typeof msg.role !== 'string') {
+          setJsonError(
+            `Message at index ${i} is missing required field "role"`
+          );
+          return;
+        }
+
+        if (!['user', 'assistant', 'system', 'tool'].includes(msg.role)) {
+          setJsonError(
+            `Message at index ${i} has invalid role "${msg.role}". Must be one of: user, assistant, system, tool`
+          );
+          return;
+        }
+
+        if (msg.content === undefined || typeof msg.content !== 'string') {
+          setJsonError(
+            `Message at index ${i} is missing required field "content" or content is not a string`
+          );
+          return;
+        }
+
+        if (msg.tool_calls !== undefined) {
+          if (!Array.isArray(msg.tool_calls)) {
+            setJsonError(
+              `Message at index ${i} has invalid "tool_calls" (must be an array)`
+            );
+            return;
+          }
+
+          for (let j = 0; j < msg.tool_calls.length; j++) {
+            const tc = msg.tool_calls[j];
+            if (typeof tc !== 'object' || Array.isArray(tc)) {
+              setJsonError(
+                `Message at index ${i}, tool_call at index ${j} must be an object`
+              );
+              return;
+            }
+
+            if (!tc.id || typeof tc.id !== 'string') {
+              setJsonError(
+                `Message at index ${i}, tool_call at index ${j} is missing required field "id"`
+              );
+              return;
+            }
+
+            if (!tc.function || typeof tc.function !== 'string') {
+              setJsonError(
+                `Message at index ${i}, tool_call at index ${j} is missing required field "function"`
+              );
+              return;
+            }
+
+            if (!tc.type || tc.type !== 'function') {
+              setJsonError(
+                `Message at index ${i}, tool_call at index ${j} must have type "function"`
+              );
+              return;
+            }
+          }
+        }
+
+        if (
+          msg.tool_call_id !== undefined &&
+          typeof msg.tool_call_id !== 'string'
+        ) {
+          setJsonError(
+            `Message at index ${i} has invalid "tool_call_id" (must be a string)`
+          );
+          return;
+        }
+      }
+
+      const validatedMessages: Message[] = parsed.map((msg: any) => {
+        const message: Message = {
+          role: msg.role,
+          content: msg.content,
+        };
+
+        if (msg.tool_calls) {
+          message.tool_calls = msg.tool_calls.map((tc: any) => ({
+            id: tc.id,
+            function: tc.function,
+            type: 'function' as const,
+            arguments: tc.arguments || {},
+          }));
+        }
+
+        if (msg.tool_call_id) {
+          message.tool_call_id = msg.tool_call_id;
+        }
+
+        return message;
+      });
+
+      setJsonError(null);
+      setMessages(validatedMessages);
+      setLastValidMessages(validatedMessages);
+    } catch (e) {
+      setJsonError(e instanceof Error ? e.message : 'Invalid JSON');
+    }
+  };
+
+  const resetToLastValid = () => {
+    setJsonText(JSON.stringify(lastValidMessages, null, 2));
+    setJsonError(null);
+    setMessages(lastValidMessages);
+  };
+
   return (
     <div className="flex flex-col h-full m-6">
       {/* Header */}
@@ -842,320 +1000,414 @@ export default function BaseContextEditor({
           <div className="flex items-center justify-between">
             <Label>{readOnly ? 'Messages' : 'Messages *'}</Label>
             {!readOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addMessage}
-                className="h-8"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add Message
-              </Button>
+              <div className="flex gap-2">
+                {!jsonEditMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addMessage}
+                    className="h-8"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add Message
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant={jsonEditMode ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={toggleJsonEditMode}
+                  disabled={jsonEditMode && !!jsonError}
+                  title={
+                    jsonEditMode && jsonError
+                      ? 'Fix JSON errors before switching back'
+                      : undefined
+                  }
+                >
+                  <Code2 className="h-4 w-4 mr-2" />
+                  {jsonEditMode ? 'Visual Editor' : 'Edit JSON'}
+                </Button>
+                {jsonEditMode && jsonError && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={resetToLastValid}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reset
+                  </Button>
+                )}
+              </div>
             )}
           </div>
 
           {/* Message List */}
-          <div className="space-y-3 mt-3">
-            {messages.map((message, index) => (
-              <div
-                key={index}
+          {jsonEditMode ? (
+            <div className="space-y-2 mt-3">
+              <div className="text-xs text-muted-foreground">
+                Edit messages in OpenAI format. Must be an array of message
+                objects with &quot;role&quot; (user/assistant/system/tool) and
+                &quot;content&quot; fields. Assistant messages can include
+                &quot;tool_calls&quot; and tool messages can include
+                &quot;tool_call_id&quot;.
+              </div>
+              <CodeMirror
+                value={jsonText}
+                onChange={handleJsonTextChange}
+                extensions={[jsonLanguage()]}
+                theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
                 className={cn(
-                  'p-3 rounded-md transition-colors',
-                  getRoleStyle(message.role)
+                  'border rounded-md overflow-hidden text-xs',
+                  jsonError ? 'border-red-500' : 'border-border'
                 )}
-              >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2">
-                    {readOnly ? (
-                      <>
-                        <span
-                          className={cn(
-                            'text-xs px-2 py-1 rounded font-medium',
-                            getRoleBadgeStyle(message.role)
-                          )}
-                        >
-                          {message.role.charAt(0).toUpperCase() +
-                            message.role.slice(1)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Message {index + 1}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Select
-                          value={message.role}
-                          onValueChange={(value) =>
-                            updateMessage(index, 'role', value)
-                          }
-                        >
-                          <SelectTrigger className="w-32 h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="user">User</SelectItem>
-                            <SelectItem value="assistant">Assistant</SelectItem>
-                            <SelectItem value="system">System</SelectItem>
-                            <SelectItem value="tool">Tool</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <span
-                          className={cn(
-                            'text-xs px-2 py-1 rounded',
-                            getRoleBadgeStyle(message.role)
-                          )}
-                        >
-                          Message {index + 1}
-                        </span>
-                      </>
-                    )}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  bracketMatching: true,
+                }}
+                style={{ fontSize: '12px' }}
+              />
+              {jsonError && (
+                <div className="text-xs text-red-text bg-red-bg/20 p-2 rounded border border-red-border">
+                  <strong>Validation Error:</strong> {jsonError}
+                  <div className="mt-1 text-xs opacity-80">
+                    Use the Reset button to restore the last valid state.
                   </div>
-                  {!readOnly && messages.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeMessage(index)}
-                      className="h-8 w-8 p-0 hover:bg-red-100 dark:hover:bg-red-900/20"
-                    >
-                      <Trash2 className="h-3 w-3 text-red-500" />
-                    </Button>
-                  )}
                 </div>
-                {readOnly ? (
-                  <div className="space-y-3">
-                    <div className="text-sm whitespace-pre-wrap font-mono bg-background/50 p-2 rounded">
-                      {message.content}
-                    </div>
-                    {message.role === 'assistant' &&
-                      message.tool_calls &&
-                      message.tool_calls.length > 0 && (
-                        <div className="bg-secondary border border-border rounded-md p-3 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                              Tool Calls
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              ({message.tool_calls.length})
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            {message.tool_calls.map(
-                              (toolCall, toolCallIndex) => (
-                                <div
-                                  key={
-                                    toolCall.id || `${index}-${toolCallIndex}`
-                                  }
-                                  className="bg-background rounded-md border border-border/50 p-3 space-y-2"
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-sm font-medium text-primary">
-                                        {toolCall.function || 'Unnamed tool'}
-                                      </div>
-                                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-bg text-blue-text border border-blue-border">
-                                        {toolCall.type}
-                                      </span>
-                                    </div>
-                                    {toolCall.id && (
-                                      <div className="text-xs font-mono text-muted-foreground">
-                                        ID: {toolCall.id}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {toolCall.arguments !== undefined &&
-                                    toolCall.arguments !== null && (
-                                      <div className="space-y-1">
-                                        <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                                          Arguments
-                                        </div>
-                                        <pre className="text-xs font-mono bg-secondary rounded p-2 whitespace-pre-wrap break-words">
-                                          {formatToolData(toolCall)}
-                                        </pre>
-                                      </div>
-                                    )}
-                                  {toolCall.view?.content && (
-                                    <div className="space-y-1">
-                                      <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                                        View
-                                      </div>
-                                      <div className="text-xs font-mono bg-secondary rounded p-2 whitespace-pre-wrap break-words">
-                                        {toolCall.view.content}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )
+              )}
+              {!jsonError && (
+                <div className="text-xs text-green-text">
+                  ✓ Valid message array
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 mt-3">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    'p-3 rounded-md transition-colors',
+                    getRoleStyle(message.role)
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2">
+                      {readOnly ? (
+                        <>
+                          <span
+                            className={cn(
+                              'text-xs px-2 py-1 rounded font-medium',
+                              getRoleBadgeStyle(message.role)
                             )}
-                          </div>
-                        </div>
-                      )}
-                  </div>
-                ) : (
-                  <>
-                    <Textarea
-                      value={message.content}
-                      onChange={(e) =>
-                        updateMessage(index, 'content', e.target.value)
-                      }
-                      placeholder={`Enter ${message.role} message...`}
-                      rows={4}
-                      className={cn(
-                        'resize-none font-mono text-xs',
-                        errors.messages?.[index] ? 'border-red-500' : ''
-                      )}
-                    />
-
-                    {message.role === 'tool' && (
-                      <div className="mt-2">
-                        <Label className="text-xs">Tool Call ID</Label>
-                        <Input
-                          value={message.tool_call_id || ''}
-                          onChange={(e) =>
-                            updateMessage(index, 'tool_call_id', e.target.value)
-                          }
-                          placeholder="Enter tool call ID this message responds to..."
-                          className="text-xs mt-1"
-                        />
-                      </div>
-                    )}
-
-                    {message.role === 'assistant' && (
-                      <div className="mt-2 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Tool Calls</Label>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addToolCall(index)}
-                            className="text-xs h-6"
                           >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Add Tool Call
-                          </Button>
-                        </div>
-
-                        {message.tool_calls &&
-                          message.tool_calls.length > 0 && (
+                            {message.role.charAt(0).toUpperCase() +
+                              message.role.slice(1)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Message {index + 1}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Select
+                            value={message.role}
+                            onValueChange={(value) =>
+                              updateMessage(index, 'role', value)
+                            }
+                          >
+                            <SelectTrigger className="w-32 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="assistant">
+                                Assistant
+                              </SelectItem>
+                              <SelectItem value="system">System</SelectItem>
+                              <SelectItem value="tool">Tool</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <span
+                            className={cn(
+                              'text-xs px-2 py-1 rounded',
+                              getRoleBadgeStyle(message.role)
+                            )}
+                          >
+                            Message {index + 1}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {!readOnly && messages.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMessage(index)}
+                        className="h-8 w-8 p-0 hover:bg-red-100 dark:hover:bg-red-900/20"
+                      >
+                        <Trash2 className="h-3 w-3 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                  {readOnly ? (
+                    <div className="space-y-3">
+                      <div className="text-sm whitespace-pre-wrap font-mono bg-background/50 p-2 rounded">
+                        {message.content}
+                      </div>
+                      {message.role === 'assistant' &&
+                        message.tool_calls &&
+                        message.tool_calls.length > 0 && (
+                          <div className="bg-secondary border border-border rounded-md p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                Tool Calls
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({message.tool_calls.length})
+                              </span>
+                            </div>
                             <div className="space-y-2">
                               {message.tool_calls.map(
                                 (toolCall, toolCallIndex) => (
                                   <div
-                                    key={toolCallIndex}
-                                    className="border rounded p-2 space-y-2 bg-slate-50 dark:bg-slate-900/50"
+                                    key={
+                                      toolCall.id || `${index}-${toolCallIndex}`
+                                    }
+                                    className="bg-background rounded-md border border-border/50 p-3 space-y-2"
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <Select
-                                        value={toolCall.type || 'function'}
-                                        onValueChange={(value: 'function') =>
-                                          updateToolCall(index, toolCallIndex, {
-                                            type: value,
-                                          })
-                                        }
-                                      >
-                                        <SelectTrigger className="w-28 h-6 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="function">
-                                            Function
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      <Input
-                                        value={toolCall.id}
-                                        onChange={(e) =>
-                                          updateToolCall(index, toolCallIndex, {
-                                            id: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Tool call ID"
-                                        className="flex-1 text-xs h-6"
-                                      />
-                                      <Input
-                                        value={toolCall.function}
-                                        onChange={(e) =>
-                                          updateToolCall(index, toolCallIndex, {
-                                            function: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Tool name"
-                                        className="flex-1 text-xs h-6"
-                                      />
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() =>
-                                          removeToolCall(index, toolCallIndex)
-                                        }
-                                        className="h-6 w-6 p-0"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                    <div>
-                                      <Label className="text-xs">
-                                        Arguments (JSON)
-                                      </Label>
-                                      <Textarea
-                                        value={
-                                          typeof toolCall.arguments === 'string'
-                                            ? toolCall.arguments
-                                            : toolCall.arguments
-                                              ? JSON.stringify(
-                                                  toolCall.arguments,
-                                                  null,
-                                                  2
-                                                )
-                                              : '{}'
-                                        }
-                                        onChange={(e) => {
-                                          updateToolCall(index, toolCallIndex, {
-                                            arguments: e.target.value,
-                                          });
-                                        }}
-                                        placeholder='Enter tool arguments as JSON (e.g., {"key": "value"})'
-                                        className={cn(
-                                          'text-xs font-mono min-h-[60px] mt-1',
-                                          errors.toolCalls?.[index]?.[
-                                            toolCallIndex
-                                          ]
-                                            ? 'border-red-500'
-                                            : ''
-                                        )}
-                                        rows={3}
-                                      />
-                                      {errors.toolCalls?.[index]?.[
-                                        toolCallIndex
-                                      ] && (
-                                        <p className="text-xs text-red-500 mt-1">
-                                          {
-                                            errors.toolCalls[index][
-                                              toolCallIndex
-                                            ]
-                                          }
-                                        </p>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-sm font-medium text-primary">
+                                          {toolCall.function || 'Unnamed tool'}
+                                        </div>
+                                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-bg text-blue-text border border-blue-border">
+                                          {toolCall.type}
+                                        </span>
+                                      </div>
+                                      {toolCall.id && (
+                                        <div className="text-xs font-mono text-muted-foreground">
+                                          ID: {toolCall.id}
+                                        </div>
                                       )}
                                     </div>
+                                    {toolCall.arguments !== undefined &&
+                                      toolCall.arguments !== null && (
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                                            Arguments
+                                          </div>
+                                          <pre className="text-xs font-mono bg-secondary rounded p-2 whitespace-pre-wrap break-words">
+                                            {formatToolData(toolCall)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    {toolCall.view?.content && (
+                                      <div className="space-y-1">
+                                        <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                                          View
+                                        </div>
+                                        <div className="text-xs font-mono bg-secondary rounded p-2 whitespace-pre-wrap break-words">
+                                          {toolCall.view.content}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               )}
                             </div>
-                          )}
-                      </div>
-                    )}
+                          </div>
+                        )}
+                    </div>
+                  ) : (
+                    <>
+                      <Textarea
+                        value={message.content}
+                        onChange={(e) =>
+                          updateMessage(index, 'content', e.target.value)
+                        }
+                        placeholder={`Enter ${message.role} message...`}
+                        rows={4}
+                        className={cn(
+                          'resize-none font-mono text-xs',
+                          errors.messages?.[index] ? 'border-red-500' : ''
+                        )}
+                      />
 
-                    {errors.messages?.[index] && message.role !== 'tool' && (
-                      <p className="text-xs text-red-500 mt-1">
-                        {errors.messages[index]}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+                      {message.role === 'tool' && (
+                        <div className="mt-2">
+                          <Label className="text-xs">Tool Call ID</Label>
+                          <Input
+                            value={message.tool_call_id || ''}
+                            onChange={(e) =>
+                              updateMessage(
+                                index,
+                                'tool_call_id',
+                                e.target.value
+                              )
+                            }
+                            placeholder="Enter tool call ID this message responds to..."
+                            className="text-xs mt-1"
+                          />
+                        </div>
+                      )}
+
+                      {message.role === 'assistant' && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Tool Calls</Label>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addToolCall(index)}
+                              className="text-xs h-6"
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Add Tool Call
+                            </Button>
+                          </div>
+
+                          {message.tool_calls &&
+                            message.tool_calls.length > 0 && (
+                              <div className="space-y-2">
+                                {message.tool_calls.map(
+                                  (toolCall, toolCallIndex) => (
+                                    <div
+                                      key={toolCallIndex}
+                                      className="border rounded p-2 space-y-2 bg-slate-50 dark:bg-slate-900/50"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Select
+                                          value={toolCall.type || 'function'}
+                                          onValueChange={(value: 'function') =>
+                                            updateToolCall(
+                                              index,
+                                              toolCallIndex,
+                                              {
+                                                type: value,
+                                              }
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger className="w-28 h-6 text-xs">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="function">
+                                              Function
+                                            </SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                        <Input
+                                          value={toolCall.id}
+                                          onChange={(e) =>
+                                            updateToolCall(
+                                              index,
+                                              toolCallIndex,
+                                              {
+                                                id: e.target.value,
+                                              }
+                                            )
+                                          }
+                                          placeholder="Tool call ID"
+                                          className="flex-1 text-xs h-6"
+                                        />
+                                        <Input
+                                          value={toolCall.function}
+                                          onChange={(e) =>
+                                            updateToolCall(
+                                              index,
+                                              toolCallIndex,
+                                              {
+                                                function: e.target.value,
+                                              }
+                                            )
+                                          }
+                                          placeholder="Tool name"
+                                          className="flex-1 text-xs h-6"
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            removeToolCall(index, toolCallIndex)
+                                          }
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs">
+                                          Arguments (JSON)
+                                        </Label>
+                                        <Textarea
+                                          value={
+                                            typeof toolCall.arguments ===
+                                            'string'
+                                              ? toolCall.arguments
+                                              : toolCall.arguments
+                                                ? JSON.stringify(
+                                                    toolCall.arguments,
+                                                    null,
+                                                    2
+                                                  )
+                                                : '{}'
+                                          }
+                                          onChange={(e) => {
+                                            updateToolCall(
+                                              index,
+                                              toolCallIndex,
+                                              {
+                                                arguments: e.target.value,
+                                              }
+                                            );
+                                          }}
+                                          placeholder='Enter tool arguments as JSON (e.g., {"key": "value"})'
+                                          className={cn(
+                                            'text-xs font-mono min-h-[60px] mt-1',
+                                            errors.toolCalls?.[index]?.[
+                                              toolCallIndex
+                                            ]
+                                              ? 'border-red-500'
+                                              : ''
+                                          )}
+                                          rows={3}
+                                        />
+                                        {errors.toolCalls?.[index]?.[
+                                          toolCallIndex
+                                        ] && (
+                                          <p className="text-xs text-red-500 mt-1">
+                                            {
+                                              errors.toolCalls[index][
+                                                toolCallIndex
+                                              ]
+                                            }
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            )}
+                        </div>
+                      )}
+
+                      {errors.messages?.[index] && message.role !== 'tool' && (
+                        <p className="text-xs text-red-500 mt-1">
+                          {errors.messages[index]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

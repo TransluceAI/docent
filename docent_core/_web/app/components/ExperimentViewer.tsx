@@ -77,6 +77,16 @@ const processAgentRunMetadata = (
 
 const METADATA_FETCH_BATCH_SIZE = 200;
 
+type CachedExperimentViewerState = {
+  metadataData: Record<string, Record<string, unknown>>;
+  requestedMetadataIds: string[];
+  loadingMetadataIds: string[];
+  discoveredColumns: string[];
+  scrollPosition?: number;
+};
+
+const experimentViewerCache = new Map<string, CachedExperimentViewerState>();
+
 export default function ExperimentViewer({
   activeRunId,
 }: {
@@ -88,9 +98,16 @@ export default function ExperimentViewer({
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const hasWritePermission = useHasCollectionWritePermission();
 
+  const cachedState = useMemo(() => {
+    if (!collectionId) {
+      return undefined;
+    }
+    return experimentViewerCache.get(collectionId);
+  }, [collectionId]);
+
   // Local state for scroll position
   const [experimentViewerScrollPosition, setExperimentViewerScrollPosition] =
-    useState<number | undefined>();
+    useState<number | undefined>(() => cachedState?.scrollPosition);
 
   const sortField = useAppSelector(selectSortField);
   const sortDirection = useAppSelector(selectSortDirection);
@@ -99,12 +116,12 @@ export default function ExperimentViewer({
 
   const [metadataData, setMetadataData] = useState<
     Record<string, Record<string, unknown>>
-  >({});
+  >(() => cachedState?.metadataData ?? {});
   const [loadingMetadataIds, setLoadingMetadataIds] = useState<Set<string>>(
-    new Set()
+    () => new Set(cachedState?.loadingMetadataIds ?? [])
   );
   const [requestedMetadataIds, setRequestedMetadataIds] = useState<Set<string>>(
-    new Set()
+    () => new Set(cachedState?.requestedMetadataIds ?? [])
   );
 
   // Helper function to get localStorage key for selected columns
@@ -120,17 +137,21 @@ export default function ExperimentViewer({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false);
   const [discoveredColumns, setDiscoveredColumns] = useState<Set<string>>(
-    new Set()
+    () => new Set(cachedState?.discoveredColumns ?? [])
   );
   const hasAutoSelectedColumnsRef = useRef(false);
   const [hasLoadedSortFromStorage, setHasLoadedSortFromStorage] =
     useState(false);
+  const previousCollectionIdRef = useRef<string | undefined>(collectionId);
 
   // Load persisted column selection on mount and when collectionId changes
   useEffect(() => {
-    // Clear discovered columns when collection changes
-    setDiscoveredColumns(new Set());
-    hasAutoSelectedColumnsRef.current = false;
+    if (cachedState?.discoveredColumns) {
+      setDiscoveredColumns(new Set(cachedState.discoveredColumns));
+    } else {
+      setDiscoveredColumns(new Set());
+      hasAutoSelectedColumnsRef.current = false;
+    }
 
     const key = getColumnsStorageKey(collectionId);
     if (key) {
@@ -248,7 +269,11 @@ export default function ExperimentViewer({
   );
 
   // Fetch agent run IDs using RTK skipToken
-  const { data: agentRunIds } = useGetAgentRunIdsQuery(
+  const {
+    data: agentRunIds,
+    isLoading: isLoadingAgentRuns,
+    isFetching: isFetchingAgentRuns,
+  } = useGetAgentRunIdsQuery(
     collectionId
       ? {
           collectionId,
@@ -257,6 +282,8 @@ export default function ExperimentViewer({
         }
       : skipToken
   );
+
+  const isAgentRunQueryPending = isLoadingAgentRuns || isFetchingAgentRuns;
 
   const derivedColumns = useMemo(() => {
     const sortableFieldNames = new Set(
@@ -356,19 +383,38 @@ export default function ExperimentViewer({
     [sortableFieldsData]
   );
 
-  useEffect(() => {
-    setMetadataData({});
-    setLoadingMetadataIds(new Set<string>());
-  }, [collectionId]);
-
   /**
    * Scrolling
    */
   const scrolledOnceRef = useRef(false);
   const [scrollPosition, setScrollPosition] = useState<number | undefined>(
-    undefined
+    () => cachedState?.scrollPosition
   );
   const debouncedScrollPosition = useDebounce(scrollPosition, 100);
+
+  useEffect(() => {
+    if (collectionId === previousCollectionIdRef.current) {
+      return;
+    }
+
+    if (!collectionId) {
+      setMetadataData({});
+      setLoadingMetadataIds(new Set<string>());
+      setRequestedMetadataIds(new Set<string>());
+      setExperimentViewerScrollPosition(undefined);
+      setScrollPosition(undefined);
+      previousCollectionIdRef.current = collectionId;
+      return;
+    }
+
+    const cached = experimentViewerCache.get(collectionId);
+    setMetadataData(cached?.metadataData ?? {});
+    setLoadingMetadataIds(new Set(cached?.loadingMetadataIds ?? []));
+    setRequestedMetadataIds(new Set(cached?.requestedMetadataIds ?? []));
+    setExperimentViewerScrollPosition(cached?.scrollPosition);
+    setScrollPosition(cached?.scrollPosition);
+    previousCollectionIdRef.current = collectionId;
+  }, [collectionId]);
 
   // Upload state
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -391,6 +437,7 @@ export default function ExperimentViewer({
   const handleUploadSuccess = useCallback(() => {
     setMetadataData({});
     setLoadingMetadataIds(new Set<string>());
+    setRequestedMetadataIds(new Set<string>());
     dispatch(
       collectionApi.util.invalidateTags([
         'AgentRunIds',
@@ -399,9 +446,30 @@ export default function ExperimentViewer({
     );
   }, [dispatch]);
 
+  useEffect(() => {
+    if (!collectionId) {
+      return;
+    }
+
+    experimentViewerCache.set(collectionId, {
+      metadataData,
+      requestedMetadataIds: Array.from(requestedMetadataIds),
+      loadingMetadataIds: Array.from(loadingMetadataIds),
+      discoveredColumns: Array.from(discoveredColumns),
+      scrollPosition: experimentViewerScrollPosition,
+    });
+  }, [
+    collectionId,
+    metadataData,
+    requestedMetadataIds,
+    loadingMetadataIds,
+    discoveredColumns,
+    experimentViewerScrollPosition,
+  ]);
+
   // Use debouncing to prevent too many updates
   useEffect(() => {
-    if (debouncedScrollPosition) {
+    if (debouncedScrollPosition !== undefined) {
       setExperimentViewerScrollPosition(debouncedScrollPosition);
     }
   }, [debouncedScrollPosition]);
@@ -412,7 +480,10 @@ export default function ExperimentViewer({
       return;
     }
 
-    if (experimentViewerScrollPosition && !scrolledOnceRef.current) {
+    if (
+      experimentViewerScrollPosition !== undefined &&
+      !scrolledOnceRef.current
+    ) {
       node.scrollTop = experimentViewerScrollPosition;
       scrolledOnceRef.current = true;
     }
@@ -550,7 +621,7 @@ export default function ExperimentViewer({
   );
 
   const emptyStateContent =
-    agentRunIds === undefined ? (
+    agentRunIds === undefined && isAgentRunQueryPending ? (
       <Loader2 size={16} className="animate-spin text-muted-foreground" />
     ) : (
       <div className="flex flex-col items-center space-y-3">
@@ -620,6 +691,8 @@ export default function ExperimentViewer({
           isDragActive={isDragActive}
           isOverDropZone={isOverDropZone}
           scrollContainerRef={setScrollContainer}
+          isLoadingAgentRuns={isLoadingAgentRuns}
+          isFetchingAgentRuns={isFetchingAgentRuns}
           onRowMouseDown={handleRowMouseDown}
           emptyState={emptyStateContent}
         />

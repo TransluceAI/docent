@@ -7,8 +7,10 @@ import * as SliderPrimitive from '@radix-ui/react-slider';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useGetMetadataFieldRangeQuery } from '@/app/api/collectionApi';
 
 interface StepFilterProps {
+  collectionId: string;
   metadataData: Record<string, Record<string, unknown>>;
   onStepFilterChange: (stepValue: number | null) => void;
   currentValue?: number | null;
@@ -16,6 +18,7 @@ interface StepFilterProps {
 }
 
 export const StepFilter: React.FC<StepFilterProps> = ({
+  collectionId,
   metadataData,
   onStepFilterChange,
   currentValue = null,
@@ -28,8 +31,13 @@ export const StepFilter: React.FC<StepFilterProps> = ({
   // Debounce the step value changes to avoid too many API calls
   const debouncedStepValue = useDebounce(stepValue, 75);
 
-  // Calculate min and max step values from metadata
-  const stepRange = useMemo(() => {
+  const { data: metadataRangeData } = useGetMetadataFieldRangeQuery(
+    { collectionId, fieldName: 'metadata.step' },
+    { skip: !collectionId }
+  );
+
+  // Calculate min and max step values from locally loaded metadata as fallback
+  const localStepRange = useMemo(() => {
     const stepValues: number[] = [];
 
     Object.values(metadataData).forEach((record) => {
@@ -49,6 +57,50 @@ export const StepFilter: React.FC<StepFilterProps> = ({
       hasStepData: true,
     };
   }, [metadataData]);
+
+  const apiStepRange = useMemo(() => {
+    if (!metadataRangeData) {
+      return null;
+    }
+
+    const { min, max } = metadataRangeData;
+    if (min === null || max === null) {
+      return null;
+    }
+
+    const normalizedMin = Math.floor(min);
+    const normalizedMax = Math.ceil(max);
+
+    if (!Number.isFinite(normalizedMin) || !Number.isFinite(normalizedMax)) {
+      return null;
+    }
+
+    return {
+      min: normalizedMin,
+      max: normalizedMax,
+      hasStepData: true,
+    };
+  }, [metadataRangeData]);
+
+  const stepRange = useMemo(() => {
+    if (apiStepRange) {
+      return apiStepRange;
+    }
+
+    if (localStepRange.hasStepData) {
+      return localStepRange;
+    }
+
+    if (currentValue !== null) {
+      return {
+        min: currentValue,
+        max: currentValue,
+        hasStepData: true,
+      };
+    }
+
+    return localStepRange;
+  }, [apiStepRange, localStepRange, currentValue]);
 
   // Check if step filter should be shown
   const shouldShowStepFilter = stepRange.hasStepData;
@@ -122,6 +174,16 @@ export const StepFilter: React.FC<StepFilterProps> = ({
     return null;
   }
 
+  const clampToRange = (value: number) => {
+    if (!stepRange.hasStepData) {
+      return value;
+    }
+    return Math.min(Math.max(value, stepRange.min), stepRange.max);
+  };
+
+  const sliderValue =
+    stepValue !== null ? clampToRange(stepValue) : stepRange.min;
+
   const isEnabled = stepValue !== null;
 
   return (
@@ -135,7 +197,7 @@ export const StepFilter: React.FC<StepFilterProps> = ({
           <div className="relative">
             <div className="px-1">
               <SliderPrimitive.Root
-                value={[stepValue ?? stepRange.min]}
+                value={[sliderValue]}
                 onValueChange={handleSliderChange}
                 min={stepRange.min}
                 max={stepRange.max}
