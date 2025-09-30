@@ -136,29 +136,62 @@ interface CreateBaseContextRequest {
   tools?: ToolInfo[];
 }
 
-// Experiment Config types
-export interface ExperimentConfig {
+// Experiment Config types - using discriminated union
+// Note: The backend returns nested objects with their IDs included
+interface BaseExperimentConfig {
   id: string;
   workspace_id: string;
   created_at: string;
-  judge_config_id: string;
-  openai_compatible_backend_id: string;
-  idea_id: string;
-  base_context_id: string;
+}
+
+export interface CounterfactualExperimentConfig extends BaseExperimentConfig {
+  type: 'counterfactual';
+  judge_config: JudgeConfig; // Contains judge_config.id
+  idea: ExperimentIdea; // Contains idea.id
+  base_context: BaseContext; // Contains base_context.id
+  openai_compatible_backend: OpenAICompatibleBackend; // Contains openai_compatible_backend.id
   num_counterfactuals: number;
   num_replicas: number;
   max_turns: number;
 }
 
-interface CreateExperimentConfigRequest {
+export interface SimpleRolloutExperimentConfig extends BaseExperimentConfig {
+  type: 'simple_rollout';
+  base_context: BaseContext; // Contains base_context.id
+  openai_compatible_backend: OpenAICompatibleBackend; // Contains openai_compatible_backend.id
+  judge_config?: JudgeConfig | null; // Optional - contains judge_config.id if present
+  num_replicas: number;
+  max_turns: number;
+}
+
+// Discriminated union type
+export type ExperimentConfig =
+  | CounterfactualExperimentConfig
+  | SimpleRolloutExperimentConfig;
+
+interface CreateCounterfactualExperimentConfigRequest {
+  type: 'counterfactual';
   judge_config_id: string;
   openai_compatible_backend_id: string;
   idea_id: string;
   base_context_id: string;
-  num_counterfactuals?: number;
+  num_counterfactuals: number;
   num_replicas?: number;
   max_turns?: number;
 }
+
+interface CreateSimpleRolloutExperimentConfigRequest {
+  type: 'simple_rollout';
+  judge_config_id?: string | null;
+  openai_compatible_backend_id: string;
+  base_context_id: string;
+  num_replicas?: number;
+  max_turns?: number;
+}
+
+type CreateExperimentConfigRequest =
+  | CreateCounterfactualExperimentConfigRequest
+  | CreateSimpleRolloutExperimentConfigRequest;
 
 export interface AuthorizedUser {
   user_id: string;

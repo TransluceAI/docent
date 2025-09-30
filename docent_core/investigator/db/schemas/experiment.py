@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
@@ -16,6 +17,8 @@ logger = get_logger(__name__)
 TABLE_INVESTIGATOR_WORKSPACE = "investigator_workspaces"
 TABLE_COUNTERFACTUAL_EXPERIMENT_CONFIG = "counterfactual_experiment_configs"
 TABLE_COUNTERFACTUAL_EXPERIMENT_RESULT = "counterfactual_experiment_results"
+TABLE_SIMPLE_ROLLOUT_EXPERIMENT_CONFIG = "simple_rollout_experiment_configs"
+TABLE_SIMPLE_ROLLOUT_EXPERIMENT_RESULT = "simple_rollout_experiment_results"
 TABLE_JUDGE_CONFIG = "judge_configs"
 TABLE_OPENAI_COMPATIBLE_BACKEND = "openai_compatible_backends"
 TABLE_EXPERIMENT_IDEA = "experiment_ideas"
@@ -69,6 +72,13 @@ class SQLAInvestigatorWorkspace(SQLABase):
         back_populates="workspace",
         cascade="all, delete-orphan",
     )
+    simple_rollout_experiment_configs: Mapped[list["SQLASimpleRolloutExperimentConfig"]] = (
+        relationship(
+            "SQLASimpleRolloutExperimentConfig",
+            back_populates="workspace",
+            cascade="all, delete-orphan",
+        )
+    )
 
 
 class SQLAJudgeConfig(SQLABase):
@@ -98,6 +108,9 @@ class SQLAJudgeConfig(SQLABase):
     )
     experiment_configs: Mapped[list["SQLACounterfactualExperimentConfig"]] = relationship(
         "SQLACounterfactualExperimentConfig", back_populates="judge_config_obj"
+    )
+    simple_rollout_experiment_configs: Mapped[list["SQLASimpleRolloutExperimentConfig"]] = (
+        relationship("SQLASimpleRolloutExperimentConfig", back_populates="judge_config_obj")
     )
 
 
@@ -131,6 +144,11 @@ class SQLAOpenAICompatibleBackend(SQLABase):
     )
     experiment_configs: Mapped[list["SQLACounterfactualExperimentConfig"]] = relationship(
         "SQLACounterfactualExperimentConfig", back_populates="openai_compatible_backend_obj"
+    )
+    simple_rollout_experiment_configs: Mapped[list["SQLASimpleRolloutExperimentConfig"]] = (
+        relationship(
+            "SQLASimpleRolloutExperimentConfig", back_populates="openai_compatible_backend_obj"
+        )
     )
 
 
@@ -195,6 +213,9 @@ class SQLABaseContext(SQLABase):
     )
     experiment_configs: Mapped[list["SQLACounterfactualExperimentConfig"]] = relationship(
         "SQLACounterfactualExperimentConfig", back_populates="base_context_obj"
+    )
+    simple_rollout_experiment_configs: Mapped[list["SQLASimpleRolloutExperimentConfig"]] = (
+        relationship("SQLASimpleRolloutExperimentConfig", back_populates="base_context_obj")
     )
 
     def to_json_array_str(self) -> str:
@@ -320,6 +341,111 @@ class SQLACounterfactualExperimentResult(SQLABase):
     # Relationship back to experiment config
     experiment_config: Mapped["SQLACounterfactualExperimentConfig"] = relationship(
         "SQLACounterfactualExperimentConfig", back_populates="experiment_result"
+    )
+
+
+class SQLASimpleRolloutExperimentConfig(SQLABase):
+    """SQLAlchemy model for simple rollout experiment configurations."""
+
+    __tablename__ = TABLE_SIMPLE_ROLLOUT_EXPERIMENT_CONFIG
+
+    id = mapped_column(String(36), primary_key=True)
+
+    # Workspace that owns this experiment config
+    workspace_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_INVESTIGATOR_WORKSPACE}.id"), nullable=False, index=True
+    )
+
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    # Foreign keys to related configs (all must be in same workspace)
+    # Judge is optional for simple rollout experiments
+    judge_config_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_JUDGE_CONFIG}.id"), nullable=True, index=True
+    )
+    openai_compatible_backend_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_OPENAI_COMPATIBLE_BACKEND}.id"), nullable=False, index=True
+    )
+    base_context_id = mapped_column(
+        String(36), ForeignKey(f"{TABLE_BASE_CONTEXT}.id"), nullable=False, index=True
+    )
+
+    # Experiment parameters (simpler than counterfactual)
+    num_replicas = mapped_column(Integer, nullable=False, default=1)
+    max_turns = mapped_column(Integer, nullable=False, default=1)
+
+    # Soft delete - null means active, timestamp means deleted
+    deleted_at = mapped_column(DateTime, nullable=True, index=True)
+
+    # Relationships
+    workspace: Mapped["SQLAInvestigatorWorkspace"] = relationship(
+        "SQLAInvestigatorWorkspace", back_populates="simple_rollout_experiment_configs"
+    )
+    judge_config_obj: Mapped[Optional["SQLAJudgeConfig"]] = relationship(
+        "SQLAJudgeConfig", back_populates="simple_rollout_experiment_configs"
+    )
+    openai_compatible_backend_obj: Mapped["SQLAOpenAICompatibleBackend"] = relationship(
+        "SQLAOpenAICompatibleBackend", back_populates="simple_rollout_experiment_configs"
+    )
+    base_context_obj: Mapped["SQLABaseContext"] = relationship(
+        "SQLABaseContext", back_populates="simple_rollout_experiment_configs"
+    )
+
+    # Relationship to experiment result (one-to-one)
+    experiment_result: Mapped["SQLASimpleRolloutExperimentResult"] = relationship(
+        "SQLASimpleRolloutExperimentResult",
+        back_populates="experiment_config",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class SQLASimpleRolloutExperimentResult(SQLABase):
+    """SQLAlchemy model for simple rollout experiment results."""
+
+    __tablename__ = TABLE_SIMPLE_ROLLOUT_EXPERIMENT_RESULT
+
+    id = mapped_column(String(36), primary_key=True)
+
+    # Foreign key to the experiment config (one-to-one)
+    experiment_config_id = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_SIMPLE_ROLLOUT_EXPERIMENT_CONFIG}.id"),
+        nullable=False,
+        unique=True,  # Enforce one-to-one relationship
+        index=True,
+    )
+
+    # Link to docent collection containing agent runs
+    collection_id = mapped_column(
+        String(36),
+        ForeignKey("collections.id"),  # Reference to docent's collection table
+        nullable=True,  # Nullable initially, populated when agent runs are stored
+        index=True,
+    )
+
+    # Experiment status
+    status = mapped_column(String(50), nullable=False, default="in_progress")
+    progress = mapped_column(Integer, nullable=False, default=0)
+
+    # Lightweight metadata (streamed frequently)
+    # Store the agent run metadata map as JSONB
+    agent_run_metadata = mapped_column(JSONB, nullable=True)
+
+    # Store policy configs (simpler for simple rollout)
+    base_policy_config = mapped_column(JSONB, nullable=True)
+
+    # Timestamps
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    completed_at = mapped_column(DateTime, nullable=True)
+
+    # Relationship back to experiment config
+    experiment_config: Mapped["SQLASimpleRolloutExperimentConfig"] = relationship(
+        "SQLASimpleRolloutExperimentConfig", back_populates="experiment_result"
     )
 
 

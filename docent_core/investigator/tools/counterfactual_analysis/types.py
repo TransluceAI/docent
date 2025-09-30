@@ -68,6 +68,8 @@ class CounterfactualExperimentConfig(BaseModel):
     run the experiment, but not any results. This object should be immutable."""
 
     id: str = Field(default_factory=generate_uid)
+    type: Literal["counterfactual"] = "counterfactual"
+    workspace_id: str
     created_at: datetime
     judge_config: RubricJudgeConfig
     openai_compatible_backend: OpenAICompatibleBackendConfig
@@ -85,6 +87,7 @@ class CounterfactualExperimentConfig(BaseModel):
     ) -> "CounterfactualExperimentConfig":
         return cls(
             id=config.id,
+            workspace_id=config.workspace_id,
             created_at=config.created_at,
             judge_config=RubricJudgeConfig.from_sql(config.judge_config_obj),
             openai_compatible_backend=OpenAICompatibleBackendConfig.from_sql(

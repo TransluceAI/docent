@@ -18,9 +18,17 @@ from docent_core.docent.services.job import JobService
 from docent_core.investigator.db.contexts import WorkspaceContext
 from docent_core.investigator.db.schemas.experiment import (
     SQLACounterfactualExperimentResult,
+    SQLASimpleRolloutExperimentResult,
 )
 from docent_core.investigator.services.counterfactual_service import CounterfactualService
 from docent_core.investigator.services.monoservice import InvestigatorMonoService
+from docent_core.investigator.services.simple_rollout_service import SimpleRolloutService
+from docent_core.investigator.tools.counterfactual_analysis.types import (
+    CounterfactualExperimentConfig,
+)
+from docent_core.investigator.tools.simple_rollout.types import (
+    SimpleRolloutExperimentConfig,
+)
 
 logger = get_logger(__name__)
 
@@ -38,6 +46,13 @@ async def get_counterfactual_service(
 ) -> CounterfactualService:
     """Get the CounterfactualService instance."""
     return CounterfactualService(investigator_svc)
+
+
+async def get_simple_rollout_service(
+    investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
+) -> SimpleRolloutService:
+    """Get the SimpleRolloutService instance."""
+    return SimpleRolloutService(investigator_svc)
 
 
 async def get_authorized_investigator_user(
@@ -206,9 +221,10 @@ class BaseContextResponse(BaseModel):
 # =====================
 
 
-class CreateExperimentConfigRequest(BaseModel):
-    """Request model for creating an experiment config."""
+class CreateCounterfactualExperimentConfigRequest(BaseModel):
+    """Request model for creating a counterfactual experiment config."""
 
+    type: Literal["counterfactual"] = "counterfactual"
     judge_config_id: str
     openai_compatible_backend_id: str
     idea_id: str
@@ -218,19 +234,25 @@ class CreateExperimentConfigRequest(BaseModel):
     max_turns: int = 1
 
 
-class ExperimentConfigResponse(BaseModel):
-    """Response model for experiment config."""
+class CreateSimpleRolloutExperimentConfigRequest(BaseModel):
+    """Request model for creating a simple rollout experiment config."""
 
-    id: str
-    workspace_id: str
-    created_at: str
-    judge_config_id: str
+    type: Literal["simple_rollout"] = "simple_rollout"
+    judge_config_id: Optional[str] = None  # Optional for simple rollout
     openai_compatible_backend_id: str
-    idea_id: str
     base_context_id: str
-    num_counterfactuals: int
-    num_replicas: int
-    max_turns: int
+    num_replicas: int = 1
+    max_turns: int = 1
+
+
+# Union type with discriminator for automatic type selection
+CreateExperimentConfigRequest = Annotated[
+    Union[CreateCounterfactualExperimentConfigRequest, CreateSimpleRolloutExperimentConfigRequest],
+    Discriminator("type"),
+]
+
+
+# Response models removed - now returning config objects directly which include the type field
 
 
 # =====================
@@ -734,38 +756,59 @@ async def create_experiment_config(
     if not await investigator_svc.user_owns_workspace(user, workspace_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Validate experiment configuration limits
-    if request.num_counterfactuals > 64:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Number of counterfactuals ({request.num_counterfactuals}) exceeds maximum of 64",
-        )
+    # Handle different experiment types
+    if request.type == "counterfactual":
+        # Validate counterfactual experiment configuration limits
+        if request.num_counterfactuals > 64:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of counterfactuals ({request.num_counterfactuals}) exceeds maximum of 64",
+            )
 
-    if request.num_replicas > 256:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Number of replicas ({request.num_replicas}) exceeds maximum of 256",
-        )
+        if request.num_replicas > 256:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of replicas ({request.num_replicas}) exceeds maximum of 256",
+            )
 
-    # Total rollouts includes base context + counterfactuals, all multiplied by replicas
-    total_rollouts = (request.num_counterfactuals + 1) * request.num_replicas
-    if total_rollouts > 1024:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total rollouts (({request.num_counterfactuals} + 1) × {request.num_replicas} = {total_rollouts}) exceeds maximum of 1024",
-        )
+        # Total rollouts includes base context + counterfactuals, all multiplied by replicas
+        total_rollouts = (request.num_counterfactuals + 1) * request.num_replicas
+        if total_rollouts > 1024:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total rollouts (({request.num_counterfactuals} + 1) × {request.num_replicas} = {total_rollouts}) exceeds maximum of 1024",
+            )
 
-    experiment_config_id = await investigator_svc.create_experiment_config(
-        workspace_id=workspace_id,
-        judge_config_id=request.judge_config_id,
-        openai_compatible_backend_id=request.openai_compatible_backend_id,
-        idea_id=request.idea_id,
-        base_context_id=request.base_context_id,
-        num_counterfactuals=request.num_counterfactuals,
-        num_replicas=request.num_replicas,
-        max_turns=request.max_turns,
-    )
-    return {"id": experiment_config_id}
+        experiment_config_id = await investigator_svc.create_counterfactual_experiment_config(
+            workspace_id=workspace_id,
+            judge_config_id=request.judge_config_id,
+            openai_compatible_backend_id=request.openai_compatible_backend_id,
+            idea_id=request.idea_id,
+            base_context_id=request.base_context_id,
+            num_counterfactuals=request.num_counterfactuals,
+            num_replicas=request.num_replicas,
+            max_turns=request.max_turns,
+        )
+    elif request.type == "simple_rollout":
+        # Validate simple rollout experiment configuration limits
+        if request.num_replicas > 256:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of replicas ({request.num_replicas}) exceeds maximum of 256",
+            )
+
+        experiment_config_id = await investigator_svc.create_simple_rollout_experiment_config(
+            workspace_id=workspace_id,
+            judge_config_id=request.judge_config_id,
+            openai_compatible_backend_id=request.openai_compatible_backend_id,
+            base_context_id=request.base_context_id,
+            num_replicas=request.num_replicas,
+            max_turns=request.max_turns,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid experiment type")
+
+    return {"id": experiment_config_id, "type": request.type}
 
 
 @experiment_router.get("/workspaces/{workspace_id}/experiment-configs")
@@ -773,28 +816,37 @@ async def get_experiment_configs(
     workspace_id: str,
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
+    counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
     """List all experiment configs in a workspace."""
     # Check if user owns this workspace
     if not await investigator_svc.user_owns_workspace(user, workspace_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    return [
-        ExperimentConfigResponse(
-            id=config.id,
-            workspace_id=config.workspace_id,
-            created_at=config.created_at.isoformat(),
-            judge_config_id=config.judge_config_id,
-            openai_compatible_backend_id=config.openai_compatible_backend_id,
-            idea_id=config.idea_id,
-            base_context_id=config.base_context_id,
-            num_counterfactuals=config.num_counterfactuals,
-            num_replicas=config.num_replicas,
-            max_turns=config.max_turns,
-        )
-        for config in configs
-    ]
+    # Get both types of configs
+    counterfactual_configs = await investigator_svc.get_counterfactual_experiment_configs(
+        workspace_id
+    )
+    simple_rollout_configs = await investigator_svc.get_simple_rollout_experiment_configs(
+        workspace_id
+    )
+
+    results: list[CounterfactualExperimentConfig | SimpleRolloutExperimentConfig] = []
+
+    # Convert counterfactual configs to Pydantic models with type field
+    for config in counterfactual_configs:
+        pydantic_config = await counterfactual_svc.build_experiment_config(config.id)
+        if pydantic_config:
+            results.append(pydantic_config)
+
+    # Convert simple rollout configs to Pydantic models with type field
+    for config in simple_rollout_configs:
+        pydantic_config = await simple_rollout_svc.build_experiment_config(config.id)
+        if pydantic_config:
+            results.append(pydantic_config)
+
+    return results
 
 
 @experiment_router.get("/experiment-configs/{experiment_config_id}")
@@ -802,30 +854,43 @@ async def get_experiment_config(
     experiment_config_id: str,
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
+    counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
     """Get a single experiment config by ID."""
-    config = await investigator_svc.get_experiment_config(experiment_config_id)
-
-    if config is None:
-        raise HTTPException(status_code=404, detail="Experiment config not found")
-
-    # Check if user owns the workspace that contains this config
-    workspace = await investigator_svc.get_workspace(config.workspace_id)
-    if workspace and workspace.created_by != user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    return ExperimentConfigResponse(
-        id=config.id,
-        workspace_id=config.workspace_id,
-        created_at=config.created_at.isoformat(),
-        judge_config_id=config.judge_config_id,
-        openai_compatible_backend_id=config.openai_compatible_backend_id,
-        idea_id=config.idea_id,
-        base_context_id=config.base_context_id,
-        num_counterfactuals=config.num_counterfactuals,
-        num_replicas=config.num_replicas,
-        max_turns=config.max_turns,
+    # Try to get as counterfactual first
+    counterfactual_config = await investigator_svc.get_counterfactual_experiment_config(
+        experiment_config_id
     )
+
+    if counterfactual_config is not None:
+        # Check if user owns the workspace that contains this config
+        workspace = await investigator_svc.get_workspace(counterfactual_config.workspace_id)
+        if workspace and workspace.created_by != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Build the Pydantic config with type field
+        pydantic_config = await counterfactual_svc.build_experiment_config(experiment_config_id)
+        if pydantic_config:
+            return pydantic_config.model_dump()
+
+    # Try as simple rollout
+    simple_rollout_config = await investigator_svc.get_simple_rollout_experiment_config(
+        experiment_config_id
+    )
+
+    if simple_rollout_config is not None:
+        # Check if user owns the workspace that contains this config
+        workspace = await investigator_svc.get_workspace(simple_rollout_config.workspace_id)
+        if workspace and workspace.created_by != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Build the Pydantic config with type field
+        pydantic_config = await simple_rollout_svc.build_experiment_config(experiment_config_id)
+        if pydantic_config:
+            return pydantic_config.model_dump()
+
+    raise HTTPException(status_code=404, detail="Experiment config not found")
 
 
 @experiment_router.delete("/experiment-configs/{experiment_config_id}")
@@ -835,8 +900,17 @@ async def delete_experiment_config(
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
 ):
     """Delete an experiment config."""
-    # First check if the config exists
-    config = await investigator_svc.get_experiment_config(experiment_config_id)
+    # Determine the experiment type
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
+
+    if experiment_type is None:
+        raise HTTPException(status_code=404, detail="Experiment config not found")
+
+    # Get the config to check ownership
+    if experiment_type == "counterfactual":
+        config = await investigator_svc.get_counterfactual_experiment_config(experiment_config_id)
+    else:  # simple_rollout
+        config = await investigator_svc.get_simple_rollout_experiment_config(experiment_config_id)
 
     if config is None:
         raise HTTPException(status_code=404, detail="Experiment config not found")
@@ -845,7 +919,15 @@ async def delete_experiment_config(
     if not await investigator_svc.user_owns_workspace(user, config.workspace_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    deleted = await investigator_svc.delete_experiment_config(experiment_config_id)
+    # Delete based on type
+    if experiment_type == "counterfactual":
+        deleted = await investigator_svc.delete_counterfactual_experiment_config(
+            experiment_config_id
+        )
+    else:  # simple_rollout
+        deleted = await investigator_svc.delete_simple_rollout_experiment_config(
+            experiment_config_id
+        )
 
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete experiment config")
@@ -865,33 +947,63 @@ async def start_experiment(
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
-    """Start running a counterfactual experiment."""
+    """Start running an experiment (counterfactual or simple rollout)."""
 
     # Check if user owns this workspace
     if not await investigator_svc.user_owns_workspace(user, workspace_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Verify the experiment config exists and belongs to the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    if not any(c.id == experiment_config_id for c in configs):
+    # Determine experiment type
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
+
+    if experiment_type is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
+            detail=f"Experiment config {experiment_config_id} not found",
         )
 
-    ctx = WorkspaceContext(
-        workspace_id=workspace_id,
-        user=user,
-        base_filter=None,
+    # Get the config and verify it belongs to the workspace
+    if experiment_type == "counterfactual":
+        config = await investigator_svc.get_counterfactual_experiment_config(experiment_config_id)
+        if config is None or config.workspace_id != workspace_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
+            )
+
+        ctx = WorkspaceContext(
+            workspace_id=workspace_id,
+            user=user,
+            base_filter=None,
+        )
+
+        # Start or get existing job
+        job_id = await counterfactual_svc.start_or_get_experiment_job(ctx, experiment_config_id)
+
+    else:  # simple_rollout
+        config = await investigator_svc.get_simple_rollout_experiment_config(experiment_config_id)
+        if config is None or config.workspace_id != workspace_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
+            )
+
+        ctx = WorkspaceContext(
+            workspace_id=workspace_id,
+            user=user,
+            base_filter=None,
+        )
+
+        # Start or get existing job
+        job_id = await simple_rollout_svc.start_or_get_experiment_job(ctx, experiment_config_id)
+
+    logger.info(
+        f"Started {experiment_type} experiment job {job_id} for config {experiment_config_id}"
     )
 
-    # Start or get existing job
-    job_id = await counterfactual_svc.start_or_get_experiment_job(ctx, experiment_config_id)
-
-    logger.info(f"Started experiment job {job_id} for config {experiment_config_id}")
-
-    return {"job_id": job_id, "experiment_config_id": experiment_config_id}
+    return {"job_id": job_id, "experiment_config_id": experiment_config_id, "type": experiment_type}
 
 
 @experiment_router.post("/{workspace_id}/experiment/{experiment_config_id}/cancel")
@@ -901,68 +1013,118 @@ async def cancel_experiment(
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
-    """Cancel a running counterfactual experiment."""
+    """Cancel a running experiment (counterfactual or simple rollout)."""
 
     # Check if user owns this workspace
     if not await investigator_svc.user_owns_workspace(user, workspace_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Verify the experiment config exists and belongs to the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    if not any(c.id == experiment_config_id for c in configs):
+    if not await investigator_svc.experiment_config_exists(workspace_id, experiment_config_id):
         raise HTTPException(
             status_code=404,
             detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
         )
 
-    # Get active job for this experiment
-    active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
+    # Determine experiment type
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
 
-    if not active_job:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No active job found for experiment {experiment_config_id}",
-        )
+    if experiment_type == "counterfactual":
+        # Get active job for this experiment
+        active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
 
-    # we cancel the job directly instead of trying to cancel it gracefully using the job service
-    async with investigator_svc.db.session() as session:
-        job_svc = JobService(session, investigator_svc.db.session)
-        await job_svc.cancel_job(active_job.id)
-
-    # Save minimal cancelled experiment result
-    async with investigator_svc.db.session() as session:
-        existing = await session.execute(
-            select(SQLACounterfactualExperimentResult).where(
-                SQLACounterfactualExperimentResult.experiment_config_id == experiment_config_id
+        if not active_job:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No active job found for experiment {experiment_config_id}",
             )
-        )
-        sqla_result = existing.scalar_one_or_none()
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        # we cancel the job directly instead of trying to cancel it gracefully using the job service
+        async with investigator_svc.db.session() as session:
+            job_svc = JobService(session, investigator_svc.db.session)
+            await job_svc.cancel_job(active_job.id)
 
-        if sqla_result:
-            sqla_result.status = "cancelled"
-            sqla_result.completed_at = now
-        else:
-            session.add(
-                SQLACounterfactualExperimentResult(
-                    id=str(uuid4()),
-                    experiment_config_id=experiment_config_id,
-                    collection_id=None,
-                    status="cancelled",
-                    progress=0,
-                    agent_run_metadata=None,
-                    counterfactual_idea_output=None,
-                    counterfactual_context_output=None,
-                    parsed_counterfactual_ideas=None,
-                    counterfactual_policy_configs=None,
-                    base_policy_config=None,
-                    completed_at=now,
+        # Save minimal cancelled experiment result
+        async with investigator_svc.db.session() as session:
+            existing = await session.execute(
+                select(SQLACounterfactualExperimentResult).where(
+                    SQLACounterfactualExperimentResult.experiment_config_id == experiment_config_id
                 )
             )
+            sqla_result = existing.scalar_one_or_none()
 
-        await session.commit()
+            now = datetime.now(UTC).replace(tzinfo=None)
+
+            if sqla_result:
+                sqla_result.status = "cancelled"
+                sqla_result.completed_at = now
+            else:
+                session.add(
+                    SQLACounterfactualExperimentResult(
+                        id=str(uuid4()),
+                        experiment_config_id=experiment_config_id,
+                        collection_id=None,
+                        status="cancelled",
+                        progress=0,
+                        agent_run_metadata=None,
+                        counterfactual_idea_output=None,
+                        counterfactual_context_output=None,
+                        parsed_counterfactual_ideas=None,
+                        counterfactual_policy_configs=None,
+                        base_policy_config=None,
+                        completed_at=now,
+                    )
+                )
+
+            await session.commit()
+    elif experiment_type == "simple_rollout":
+        # Get active job for this experiment
+        active_job = await simple_rollout_svc.get_active_experiment_job(experiment_config_id)
+
+        if not active_job:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No active job found for experiment {experiment_config_id}",
+            )
+
+        # we cancel the job directly instead of trying to cancel it gracefully using the job service
+        async with investigator_svc.db.session() as session:
+            job_svc = JobService(session, investigator_svc.db.session)
+            await job_svc.cancel_job(active_job.id)
+
+        # Save minimal cancelled experiment result
+        async with investigator_svc.db.session() as session:
+            existing = await session.execute(
+                select(SQLASimpleRolloutExperimentResult).where(
+                    SQLASimpleRolloutExperimentResult.experiment_config_id == experiment_config_id
+                )
+            )
+            sqla_result = existing.scalar_one_or_none()
+
+            now = datetime.now(UTC).replace(tzinfo=None)
+
+            if sqla_result:
+                sqla_result.status = "cancelled"
+                sqla_result.completed_at = now
+            else:
+                session.add(
+                    SQLASimpleRolloutExperimentResult(
+                        id=str(uuid4()),
+                        experiment_config_id=experiment_config_id,
+                        collection_id=None,
+                        status="cancelled",
+                        progress=0,
+                        agent_run_metadata=None,
+                        base_policy_config=None,
+                        completed_at=now,
+                    )
+                )
+
+            await session.commit()
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown experiment type: {experiment_type}")
 
     logger.info(f"Cancelled experiment job {active_job.id} for config {experiment_config_id}")
 
@@ -976,6 +1138,7 @@ async def listen_to_experiment_job(
     user: User = Depends(get_user_anonymous_ok),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
     """Stream experiment state updates via Server-Sent Events."""
 
@@ -985,15 +1148,30 @@ async def listen_to_experiment_job(
 
     logger.info(f"Client listening to experiment job {job_id}")
 
+    # Determine job type to use appropriate service
+    from docent_core._worker.constants import WorkerFunction
+
+    job = await counterfactual_svc.get_job(job_id)  # This method is generic
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
     async def event_generator():
         """Generate SSE events from the job state stream."""
         try:
-            async for state in counterfactual_svc.listen_for_job_state(job_id):
-                # Format as Server-Sent Event
-                yield f"data: {state.model_dump_json()}\n\n"
+            if job.type == WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value:
+                async for state in counterfactual_svc.listen_for_job_state(job_id):
+                    # Format as Server-Sent Event
+                    yield f"data: {state.model_dump_json()}\n\n"
+            elif job.type == WorkerFunction.SIMPLE_ROLLOUT_EXPERIMENT_JOB.value:
+                async for state in simple_rollout_svc.listen_for_job_state(job_id):
+                    # Format as Server-Sent Event
+                    yield f"data: {state.model_dump_json()}\n\n"
+            else:
+                logger.error(f"Unknown job type: {job.type}")
+                yield 'data: {"error": "Unknown job type"}\n\n'
         except Exception as e:
             logger.error(f"Error streaming job {job_id}: {e}")
-            yield f'data: {{"error": "An error occurred while streaming experiment data"}}\n\n'
+            yield 'data: {"error": "An error occurred while streaming experiment data"}\n\n'
 
     return StreamingResponse(
         event_generator(),
@@ -1012,6 +1190,7 @@ async def get_active_experiment_jobs(
     user: User = Depends(get_user_anonymous_ok),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ) -> dict[str, dict[str, Optional[str]]]:
     """Get all active jobs for experiments in a workspace."""
 
@@ -1020,13 +1199,34 @@ async def get_active_experiment_jobs(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get all experiment configs for the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
+    counterfactual_configs = await investigator_svc.get_counterfactual_experiment_configs(
+        workspace_id
+    )
+    simple_rollout_configs = await investigator_svc.get_simple_rollout_experiment_configs(
+        workspace_id
+    )
 
     # Build a map of experiment_config_id -> active job info
     active_jobs_map: dict[str, dict[str, Optional[str]]] = {}
 
-    for config in configs:
+    # Check counterfactual experiments
+    for config in counterfactual_configs:
         active_job = await counterfactual_svc.get_active_experiment_job(config.id)
+
+        if active_job:
+            active_jobs_map[config.id] = {
+                "job_id": active_job.id,
+                "status": active_job.status.value,
+            }
+        else:
+            active_jobs_map[config.id] = {
+                "job_id": None,
+                "status": None,
+            }
+
+    # Check simple rollout experiments
+    for config in simple_rollout_configs:
+        active_job = await simple_rollout_svc.get_active_experiment_job(config.id)
 
         if active_job:
             active_jobs_map[config.id] = {
@@ -1049,6 +1249,7 @@ async def get_active_experiment_job(
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
     """
     Get the active job for an experiment config, if any.
@@ -1062,15 +1263,20 @@ async def get_active_experiment_job(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Verify the experiment config exists and belongs to the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    if not any(c.id == experiment_config_id for c in configs):
+    if not await investigator_svc.experiment_config_exists(workspace_id, experiment_config_id):
         raise HTTPException(
             status_code=404,
             detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
         )
 
-    # Get active job if it exists
-    active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
+    # Determine experiment type and get active job
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
+
+    active_job = None
+    if experiment_type == "counterfactual":
+        active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
+    elif experiment_type == "simple_rollout":
+        active_job = await simple_rollout_svc.get_active_experiment_job(experiment_config_id)
 
     if active_job:
         return {
@@ -1093,7 +1299,8 @@ async def get_experiment_result(
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
-):
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
+) -> Optional[dict[str, Any]]:
     """Get the experiment result - either from active job (Redis) or stored result (database)."""
 
     # Check if user owns this workspace
@@ -1101,32 +1308,59 @@ async def get_experiment_result(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Verify the experiment config exists and belongs to the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    if not any(c.id == experiment_config_id for c in configs):
+    if not await investigator_svc.experiment_config_exists(workspace_id, experiment_config_id):
         raise HTTPException(
             status_code=404,
             detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
         )
 
-    # First check if there's an active job for this experiment
-    active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
+    # Determine experiment type and use appropriate service
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
 
-    if active_job:
-        # Get the current state from Redis for the active job
-        summary = await counterfactual_svc.get_job_state_from_redis(active_job.id)
-        if summary is not None:
-            return summary.model_dump()
+    if experiment_type == "counterfactual":
+        # First check if there's an active job for this experiment
+        active_job = await counterfactual_svc.get_active_experiment_job(experiment_config_id)
 
-    # No active job or no Redis state, try to get the stored result from database
-    result = await counterfactual_svc.get_experiment_result(
-        experiment_config_id, include_agent_runs=False, user=user
-    )
+        if active_job:
+            # Get the current state from Redis for the active job
+            summary = await counterfactual_svc.get_job_state_from_redis(active_job.id)
+            if summary is not None:
+                return summary.model_dump()
 
-    if result is None:
-        return None
+        # No active job or no Redis state, try to get the stored result from database
+        result = await counterfactual_svc.get_experiment_result(
+            experiment_config_id, include_agent_runs=False, user=user
+        )
 
-    # Return the summary (lightweight version for streaming)
-    return result.summary().model_dump()
+        if result is None:
+            return None
+
+        # Return the summary (lightweight version for streaming)
+        return result.summary().model_dump()
+
+    elif experiment_type == "simple_rollout":
+        # First check if there's an active job for this experiment
+        active_job = await simple_rollout_svc.get_active_experiment_job(experiment_config_id)
+
+        if active_job:
+            # Get the current state from Redis for the active job
+            summary = await simple_rollout_svc.get_job_state_from_redis(active_job.id)
+            if summary is not None:
+                return summary.model_dump()
+
+        # No active job or no Redis state, try to get the stored result from database
+        result = await simple_rollout_svc.get_experiment_result(
+            experiment_config_id, include_agent_runs=False, user=user
+        )
+
+        if result is None:
+            return None
+
+        # Return the summary (lightweight version for streaming)
+        return result.summary().model_dump()
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown experiment type: {experiment_type}")
 
 
 @experiment_router.get("/{workspace_id}/experiment/job/{job_id}/status")
@@ -1164,6 +1398,7 @@ async def get_experiment_agent_run(
     user: User = Depends(get_authorized_investigator_user),
     investigator_svc: InvestigatorMonoService = Depends(get_investigator_mono_svc),
     counterfactual_svc: CounterfactualService = Depends(get_counterfactual_service),
+    simple_rollout_svc: SimpleRolloutService = Depends(get_simple_rollout_service),
 ):
     """Get a single agent run from an experiment result."""
 
@@ -1172,17 +1407,27 @@ async def get_experiment_agent_run(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Verify the experiment config exists and belongs to the workspace
-    configs = await investigator_svc.get_experiment_configs(workspace_id)
-    if not any(c.id == experiment_config_id for c in configs):
+    if not await investigator_svc.experiment_config_exists(workspace_id, experiment_config_id):
         raise HTTPException(
             status_code=404,
             detail=f"Experiment config {experiment_config_id} not found in workspace {workspace_id}",
         )
 
-    # Get the agent run from the result
-    agent_run = await counterfactual_svc.get_experiment_agent_run(
-        experiment_config_id, agent_run_id, user
-    )
+    # Determine experiment type and use appropriate service
+    experiment_type = await investigator_svc.get_experiment_config_type(experiment_config_id)
+
+    if experiment_type == "counterfactual":
+        # Get the agent run from the counterfactual result
+        agent_run = await counterfactual_svc.get_experiment_agent_run(
+            experiment_config_id, agent_run_id, user
+        )
+    elif experiment_type == "simple_rollout":
+        # Get the agent run from the simple rollout result
+        agent_run = await simple_rollout_svc.get_experiment_agent_run(
+            experiment_config_id, agent_run_id, user
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown experiment type: {experiment_type}")
 
     if agent_run is None:
         raise HTTPException(

@@ -22,14 +22,16 @@ interface TopPanelProps {
   workspaceId: string;
   isEditMode?: boolean;
   isNewExperiment?: boolean;
+  experimentType?: 'counterfactual' | 'simple_rollout';
   baseContext?: string;
   judgeConfig?: string;
   backendConfig?: string;
   counterfactualIdea?: string;
   numCounterfactuals?: number;
   numReplicas?: number;
+  onExperimentTypeChange?: (value: 'counterfactual' | 'simple_rollout') => void;
   onBaseContextChange?: (value: string) => void;
-  onJudgeConfigChange?: (value: string) => void;
+  onJudgeConfigChange?: (value: string | undefined) => void;
   onBackendConfigChange?: (value: string) => void;
   onCounterfactualIdeaChange?: (value: string) => void;
   onNumCounterfactualsChange?: (value: number) => void;
@@ -52,12 +54,14 @@ export default function TopPanel({
   workspaceId,
   isEditMode = false,
   isNewExperiment = false,
+  experimentType = 'counterfactual',
   baseContext,
   judgeConfig,
   backendConfig,
   counterfactualIdea,
   numCounterfactuals = 1,
   numReplicas = 16,
+  onExperimentTypeChange,
   onBaseContextChange,
   onJudgeConfigChange,
   onBackendConfigChange,
@@ -77,6 +81,7 @@ export default function TopPanel({
   onCancelExperiment,
   onDeleteExperiment,
 }: TopPanelProps) {
+  const CLEAR_JUDGE_VALUE = '__no_judge__';
   // Fetch base contexts from the API
   const { data: baseContexts, isLoading: isLoadingBaseContexts } =
     useGetBaseContextsQuery(workspaceId);
@@ -117,16 +122,32 @@ export default function TopPanel({
   const canLaunch =
     isNewExperiment &&
     baseContext &&
-    judgeConfig &&
     backendConfig &&
-    counterfactualIdea &&
-    numCounterfactuals > 0 &&
-    numReplicas > 0;
+    numReplicas > 0 &&
+    (experimentType === 'simple_rollout' ||
+      (experimentType === 'counterfactual' &&
+        judgeConfig &&
+        counterfactualIdea &&
+        numCounterfactuals > 0));
   // Display mode - show static values for existing experiments
   if (!isEditMode) {
     return (
       <div className="border-b bg-secondary p-3 space-y-3">
         <div className="flex flex-wrap">
+          {/* Experiment Type - Show as static for existing experiments */}
+          {!isNewExperiment && (
+            <div className="w-full sm:w-auto pr-3 pb-3">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Experiment Type
+              </label>
+              <div className="w-[200px] px-3 py-2 bg-background rounded-md border text-sm">
+                {experimentType === 'simple_rollout'
+                  ? 'Simple Rollout'
+                  : 'Counterfactual'}
+              </div>
+            </div>
+          )}
+
           <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
               Base Context
@@ -146,32 +167,6 @@ export default function TopPanel({
                   onClick={onViewBaseContext}
                   className="h-9 w-9 p-0"
                   title="View Base Context"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="w-full sm:w-auto pr-3 pb-3">
-            <label className="text-xs text-muted-foreground mb-1 block">
-              Judge Configuration
-            </label>
-            <div className="flex gap-2">
-              <div
-                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
-                title={
-                  selectedJudgeConfigName || judgeConfig || 'Not specified'
-                }
-              >
-                {selectedJudgeConfigName || judgeConfig || 'Not specified'}
-              </div>
-              {judgeConfig && onViewJudgeConfig && (
-                <Button
-                  variant="outline"
-                  onClick={onViewJudgeConfig}
-                  className="h-9 w-9 p-0"
-                  title="View Judge Configuration"
                 >
                   <Search className="h-4 w-4" />
                 </Button>
@@ -205,44 +200,77 @@ export default function TopPanel({
 
           <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
-              Counterfactual Idea
+              Judge Configuration{' '}
+              {experimentType === 'simple_rollout' && '(Optional)'}
             </label>
             <div className="flex gap-2">
               <div
                 className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
                 title={
-                  selectedExperimentIdeaName ||
-                  counterfactualIdea ||
-                  'Not specified'
+                  selectedJudgeConfigName || judgeConfig || 'Not specified'
                 }
               >
-                {selectedExperimentIdeaName ||
-                  counterfactualIdea ||
-                  'Not specified'}
+                {selectedJudgeConfigName || judgeConfig || 'Not specified'}
               </div>
-              {counterfactualIdea && onViewCounterfactualIdea && (
+              {judgeConfig && onViewJudgeConfig && (
                 <Button
                   variant="outline"
-                  onClick={onViewCounterfactualIdea}
+                  onClick={onViewJudgeConfig}
                   className="h-9 w-9 p-0"
-                  title="View Counterfactual Idea"
+                  title="View Judge Configuration"
                 >
                   <Search className="h-4 w-4" />
                 </Button>
               )}
             </div>
           </div>
+
+          {/* Counterfactual Idea - Only show for counterfactual experiments */}
+          {experimentType === 'counterfactual' && (
+            <div className="w-full sm:w-auto pr-3 pb-3">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Counterfactual Idea
+              </label>
+              <div className="flex gap-2">
+                <div
+                  className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                  title={
+                    selectedExperimentIdeaName ||
+                    counterfactualIdea ||
+                    'Not specified'
+                  }
+                >
+                  {selectedExperimentIdeaName ||
+                    counterfactualIdea ||
+                    'Not specified'}
+                </div>
+                {counterfactualIdea && onViewCounterfactualIdea && (
+                  <Button
+                    variant="outline"
+                    onClick={onViewCounterfactualIdea}
+                    className="h-9 w-9 p-0"
+                    title="View Counterfactual Idea"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap">
-          <div className="w-48 pr-3 pb-3">
-            <label className="text-xs text-muted-foreground mb-1 block">
-              Number of Counterfactuals
-            </label>
-            <div className="px-3 py-2 bg-background rounded-md border text-sm">
-              {numCounterfactuals}
+          {/* Number of Counterfactuals - Only show for counterfactual experiments */}
+          {experimentType === 'counterfactual' && (
+            <div className="w-48 pr-3 pb-3">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Number of Counterfactuals
+              </label>
+              <div className="px-3 py-2 bg-background rounded-md border text-sm">
+                {numCounterfactuals}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="w-48 pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
@@ -297,6 +325,44 @@ export default function TopPanel({
   return (
     <div className="border-b bg-background p-3 space-y-3">
       <div className="flex flex-wrap">
+        {/* Experiment Type Selector - Only show for new experiments */}
+        {isNewExperiment && onExperimentTypeChange && (
+          <div className="w-full sm:w-auto pr-3 pb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Experiment Type
+            </label>
+            <Select
+              value={experimentType}
+              onValueChange={onExperimentTypeChange}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue>
+                  {experimentType === 'counterfactual' && 'Counterfactual'}
+                  {experimentType === 'simple_rollout' && 'Simple Rollout'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="counterfactual">
+                  <div className="flex flex-col">
+                    <span className="font-medium">Counterfactual</span>
+                    <span className="text-xs text-muted-foreground">
+                      Test variations on a context
+                    </span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="simple_rollout">
+                  <div className="flex flex-col">
+                    <span className="font-medium">Simple Rollout</span>
+                    <span className="text-xs text-muted-foreground">
+                      Run a context with a subject model
+                    </span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Base Context
@@ -367,82 +433,7 @@ export default function TopPanel({
           </div>
         </div>
 
-        <div className="w-full sm:w-auto pr-3 pb-3">
-          <label className="text-xs text-muted-foreground mb-1 block">
-            Judge Configuration
-          </label>
-          <div className="flex gap-2">
-            <Select
-              value={
-                judgeConfigs?.some((jc) => jc.id === judgeConfig)
-                  ? judgeConfig
-                  : ''
-              }
-              onValueChange={onJudgeConfigChange}
-              disabled={isLoadingJudgeConfigs}
-            >
-              <SelectTrigger
-                className="w-[280px]"
-                title={selectedJudgeConfigName || undefined}
-              >
-                {isLoadingJudgeConfigs ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Loading...</span>
-                  </div>
-                ) : (
-                  <SelectValue
-                    className="truncate"
-                    placeholder="Select judge"
-                  />
-                )}
-              </SelectTrigger>
-              <SelectContent>
-                {judgeConfigs?.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-2">
-                    No judge configurations yet. Click + to create one.
-                  </div>
-                ) : (
-                  judgeConfigs?.map((jc) => (
-                    <SelectItem
-                      key={jc.id}
-                      value={jc.id}
-                      title={jc.name || 'Unnamed Judge'}
-                    >
-                      <span className="block truncate">
-                        {jc.name || 'Unnamed Judge'}
-                      </span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            {judgeConfig &&
-              judgeConfigs?.some((jc) => jc.id === judgeConfig) && (
-                <Button
-                  variant="outline"
-                  onClick={onViewJudgeConfig}
-                  className="h-9 w-9 p-0"
-                  title="View Judge Configuration"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-              )}
-            <Button
-              variant="outline"
-              onClick={onNewJudgeConfig}
-              className="h-9 w-9 p-0"
-              title={
-                judgeConfig && judgeConfigs?.some((jc) => jc.id === judgeConfig)
-                  ? 'Clone Judge Configuration'
-                  : 'New Judge Configuration'
-              }
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
+        {/* Backend Configuration */}
         <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
             Backend Configuration
@@ -516,107 +507,213 @@ export default function TopPanel({
           </div>
         </div>
 
+        {/* Judge Configuration - Only show for counterfactual experiments or optional for simple rollout */}
         <div className="w-full sm:w-auto pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Counterfactual Idea
+            Judge Configuration{' '}
+            {experimentType === 'simple_rollout' && '(Optional)'}
           </label>
           <div className="flex gap-2">
             <Select
-              value={
-                experimentIdeas?.some((ei) => ei.id === counterfactualIdea)
-                  ? counterfactualIdea
-                  : ''
-              }
-              onValueChange={onCounterfactualIdeaChange}
-              disabled={isLoadingExperimentIdeas}
+              value={(() => {
+                if (judgeConfigs?.some((jc) => jc.id === judgeConfig)) {
+                  return judgeConfig as string;
+                }
+                if (
+                  experimentType === 'simple_rollout' &&
+                  (!judgeConfig ||
+                    !judgeConfigs?.some((jc) => jc.id === judgeConfig))
+                ) {
+                  return CLEAR_JUDGE_VALUE;
+                }
+                return '';
+              })()}
+              onValueChange={(value) => {
+                if (value === CLEAR_JUDGE_VALUE) {
+                  onJudgeConfigChange?.(undefined);
+                } else {
+                  onJudgeConfigChange?.(value);
+                }
+              }}
+              disabled={isLoadingJudgeConfigs}
             >
               <SelectTrigger
                 className="w-[280px]"
-                title={selectedExperimentIdeaName || undefined}
+                title={selectedJudgeConfigName || undefined}
               >
-                {isLoadingExperimentIdeas ? (
+                {isLoadingJudgeConfigs ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Loading...</span>
                   </div>
                 ) : (
-                  <SelectValue className="truncate" placeholder="Select idea" />
+                  <SelectValue
+                    className="truncate"
+                    placeholder="Select judge"
+                  />
                 )}
               </SelectTrigger>
               <SelectContent>
-                {experimentIdeas?.length === 0 ? (
+                {experimentType === 'simple_rollout' && (
+                  <SelectItem value={CLEAR_JUDGE_VALUE}>
+                    <span className="block truncate">No judge</span>
+                  </SelectItem>
+                )}
+                {judgeConfigs?.length === 0 ? (
                   <div className="text-xs text-muted-foreground p-2">
-                    No counterfactual ideas yet. Click + to create one.
+                    No judge configurations yet. Click + to create one.
                   </div>
                 ) : (
-                  experimentIdeas?.map((ei) => (
-                    <SelectItem key={ei.id} value={ei.id} title={ei.name}>
-                      <span className="block truncate">{ei.name}</span>
+                  judgeConfigs?.map((jc) => (
+                    <SelectItem
+                      key={jc.id}
+                      value={jc.id}
+                      title={jc.name || 'Unnamed Judge'}
+                    >
+                      <span className="block truncate">
+                        {jc.name || 'Unnamed Judge'}
+                      </span>
                     </SelectItem>
                   ))
                 )}
               </SelectContent>
             </Select>
-            {counterfactualIdea &&
-              experimentIdeas?.some((ei) => ei.id === counterfactualIdea) && (
+            {judgeConfig &&
+              judgeConfigs?.some((jc) => jc.id === judgeConfig) && (
                 <Button
                   variant="outline"
-                  onClick={onViewCounterfactualIdea}
+                  onClick={onViewJudgeConfig}
                   className="h-9 w-9 p-0"
-                  title="View Counterfactual Idea"
+                  title="View Judge Configuration"
                 >
                   <Search className="h-4 w-4" />
                 </Button>
               )}
             <Button
               variant="outline"
-              onClick={onNewCounterfactualIdea}
+              onClick={onNewJudgeConfig}
               className="h-9 w-9 p-0"
               title={
-                counterfactualIdea &&
-                experimentIdeas?.some((ei) => ei.id === counterfactualIdea)
-                  ? 'Clone Counterfactual Idea'
-                  : 'New Counterfactual Idea'
+                judgeConfig && judgeConfigs?.some((jc) => jc.id === judgeConfig)
+                  ? 'Clone Judge Configuration'
+                  : 'New Judge Configuration'
               }
             >
               <Plus className="h-4 w-4" />
             </Button>
           </div>
         </div>
+
+        {/* Counterfactual Idea - Only show for counterfactual experiments */}
+        {experimentType === 'counterfactual' && (
+          <div className="w-full sm:w-auto pr-3 pb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Counterfactual Idea
+            </label>
+            <div className="flex gap-2">
+              <Select
+                value={
+                  experimentIdeas?.some((ei) => ei.id === counterfactualIdea)
+                    ? counterfactualIdea
+                    : ''
+                }
+                onValueChange={onCounterfactualIdeaChange}
+                disabled={isLoadingExperimentIdeas}
+              >
+                <SelectTrigger
+                  className="w-[280px]"
+                  title={selectedExperimentIdeaName || undefined}
+                >
+                  {isLoadingExperimentIdeas ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Loading...</span>
+                    </div>
+                  ) : (
+                    <SelectValue
+                      className="truncate"
+                      placeholder="Select idea"
+                    />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  {experimentIdeas?.length === 0 ? (
+                    <div className="text-xs text-muted-foreground p-2">
+                      No counterfactual ideas yet. Click + to create one.
+                    </div>
+                  ) : (
+                    experimentIdeas?.map((ei) => (
+                      <SelectItem key={ei.id} value={ei.id} title={ei.name}>
+                        <span className="block truncate">{ei.name}</span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {counterfactualIdea &&
+                experimentIdeas?.some((ei) => ei.id === counterfactualIdea) && (
+                  <Button
+                    variant="outline"
+                    onClick={onViewCounterfactualIdea}
+                    className="h-9 w-9 p-0"
+                    title="View Counterfactual Idea"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              <Button
+                variant="outline"
+                onClick={onNewCounterfactualIdea}
+                className="h-9 w-9 p-0"
+                title={
+                  counterfactualIdea &&
+                  experimentIdeas?.some((ei) => ei.id === counterfactualIdea)
+                    ? 'Clone Counterfactual Idea'
+                    : 'New Counterfactual Idea'
+                }
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap">
-        <div className="w-48 pr-3 pb-3">
-          <label className="text-xs text-muted-foreground mb-1 block">
-            Number of Counterfactuals
-          </label>
-          <Input
-            type="number"
-            min="1"
-            max="64"
-            value={numCounterfactuals || ''}
-            onChange={(e) => {
-              const value = parseInt(e.target.value);
-              // Only update if it's a valid number
-              if (!isNaN(value)) {
-                // Cap at 64 counterfactuals
-                const cappedValue = Math.min(Math.max(value, 1), 64);
-                onNumCounterfactualsChange?.(cappedValue);
-              } else if (e.target.value === '') {
-                // Allow clearing the field temporarily
-                onNumCounterfactualsChange?.(0);
-              }
-            }}
-            onBlur={(e) => {
-              // Set to 1 if empty or invalid on blur
-              const value = parseInt(e.target.value);
-              if (isNaN(value) || value < 1) {
-                onNumCounterfactualsChange?.(1);
-              }
-            }}
-            className="w-full"
-          />
-        </div>
+        {/* Number of Counterfactuals - Only show for counterfactual experiments */}
+        {experimentType === 'counterfactual' && (
+          <div className="w-48 pr-3 pb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Number of Counterfactuals
+            </label>
+            <Input
+              type="number"
+              min="1"
+              max="64"
+              value={numCounterfactuals || ''}
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                // Only update if it's a valid number
+                if (!isNaN(value)) {
+                  // Cap at 64 counterfactuals
+                  const cappedValue = Math.min(Math.max(value, 1), 64);
+                  onNumCounterfactualsChange?.(cappedValue);
+                } else if (e.target.value === '') {
+                  // Allow clearing the field temporarily
+                  onNumCounterfactualsChange?.(0);
+                }
+              }}
+              onBlur={(e) => {
+                // Set to 1 if empty or invalid on blur
+                const value = parseInt(e.target.value);
+                if (isNaN(value) || value < 1) {
+                  onNumCounterfactualsChange?.(1);
+                }
+              }}
+              className="w-full"
+            />
+          </div>
+        )}
 
         <div className="w-48 pr-3 pb-3">
           <label className="text-xs text-muted-foreground mb-1 block">

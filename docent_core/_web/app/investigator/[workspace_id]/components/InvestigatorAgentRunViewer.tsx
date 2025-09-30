@@ -12,6 +12,7 @@ import {
 } from '@/app/dashboard/[collection_id]/agent_run/components/MessageBox';
 import { ChevronDown, ChevronRight, X, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScorePill } from '@/components/ScorePill';
 
 interface InvestigatorAgentRunViewerProps {
   agentRun: AgentRun | null | undefined;
@@ -37,36 +38,7 @@ const getMessageContent = (content: string | any[]): string => {
     .join('\n');
 };
 
-// Score pill utils (following CounterfactualExperimentViewer pattern)
-const scoreToneClass = (score: number | null) => {
-  if (score === null || Number.isNaN(score)) {
-    return 'bg-secondary text-muted-foreground border-border';
-  }
-  if (score >= 9) return 'bg-green-bg text-green-text border-green-border';
-  if (score >= 5) return 'bg-orange-bg text-orange-text border-orange-border';
-  return 'bg-red-bg text-red-text border-red-border';
-};
-
-const ScorePill = ({
-  score,
-  title,
-}: {
-  score: number | null;
-  title?: string;
-}) => {
-  const cls =
-    'px-2 py-0.5 rounded-full border text-xs font-medium ' +
-    scoreToneClass(score);
-  const label =
-    score === null || Number.isNaN(score)
-      ? 'N/A'
-      : (score as number).toFixed(2);
-  return (
-    <span className={cls} title={title}>
-      {label}
-    </span>
-  );
-};
+// ScorePill component is now imported from shared components
 
 export default function InvestigatorAgentRunViewer({
   agentRun,

@@ -25,6 +25,9 @@ from docent_core.investigator.tools.judges.base import JudgeBase
 class RubricJudgeConfig(BaseModel):
     """Config for a rubric judge."""
 
+    id: str
+    name: str | None
+    workspace_id: str
     rubric: str
     model: str
     min_score: int
@@ -34,6 +37,9 @@ class RubricJudgeConfig(BaseModel):
     @classmethod
     def from_sql(cls, config: SQLAJudgeConfig) -> "RubricJudgeConfig":
         return cls(
+            id=config.id,
+            name=config.name,
+            workspace_id=config.workspace_id,
             rubric=config.rubric,
             model="claude-sonnet-4-20250514",  # TODO(neil): make this configurable
             min_score=0,

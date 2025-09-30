@@ -36,19 +36,19 @@ class ToolCallTrackingData(TypedDict):
 async def generate_interaction_stream(
     policy: BaseContextPolicy,
     subject_model: SubjectModelBase,
-    grader: JudgeBase,
+    grader: JudgeBase | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Generate a conversation transcript using a context policy with streaming updates.
 
     This function orchestrates an interaction between a policy (which generates user messages)
     and a subject model (which generates assistant responses), streaming all events in real-time,
-    followed by grading the resulting conversation.
+    followed by optionally grading the resulting conversation.
 
     The interaction flow is:
     1. Policy generates one or more user messages based on the previous subject model turn
     2. Subject model generates one or more assistant responses to the policy messages
     3. Steps 1-2 repeat until the policy signals end of rollout
-    4. The complete conversation is graded
+    4. If a grader is provided, the complete conversation is graded
 
     Args:
         policy: A context policy that generates user messages based on the previous subject
@@ -56,8 +56,8 @@ async def generate_interaction_stream(
                 when the conversation ends by yielding RolloutEnd.
         subject_model: The model being investigated, which generates assistant responses
                       to policy messages. Can generate multiple messages per turn.
-        grader: A judge that evaluates the final conversation transcript for the
-                target behavior or criteria.
+        grader: Optional judge that evaluates the final conversation transcript for the
+                target behavior or criteria. If None, no grading is performed.
 
     Yields:
         StreamEvent: A sequence of events in the following order:
@@ -72,15 +72,16 @@ async def generate_interaction_stream(
                     - MessageEnd - End of subject model response
             - After all turns:
                 * RolloutEnd - Indicates conversation is complete
-                * GradeStart - Beginning of grading process
-                * GradeUpdate(s) - Incremental grading information
-                * GradeEnd - Final grade with complete evaluation
+                * If grader is provided:
+                    - GradeStart - Beginning of grading process
+                    - GradeUpdate(s) - Incremental grading information
+                    - GradeEnd - Final grade with complete evaluation
 
     Example:
         >>> async for event in generate_interaction_stream(
         ...     policy=my_policy,
         ...     subject_model=my_model,
-        ...     grader=my_grader
+        ...     grader=my_grader  # Optional
         ... ):
         ...     if isinstance(event, TokenDelta):
         ...         print(event.content, end="")
@@ -283,6 +284,7 @@ async def generate_interaction_stream(
             yield RolloutEnd()
             break
 
-    # Stream grading events
-    async for grade_event in grader.grade_transcript_stream(conversation_history):
-        yield grade_event
+    # Stream grading events only if a grader is provided
+    if grader is not None:
+        async for grade_event in grader.grade_transcript_stream(conversation_history):
+            yield grade_event

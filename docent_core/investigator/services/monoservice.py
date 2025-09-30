@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, AsyncIterator, Sequence
+from typing import Any, AsyncIterator, Literal, Sequence
 from uuid import uuid4
 
 from sqlalchemy import delete, select, text, update
@@ -18,6 +18,7 @@ from docent_core.investigator.db.schemas.experiment import (
     SQLAInvestigatorWorkspace,
     SQLAJudgeConfig,
     SQLAOpenAICompatibleBackend,
+    SQLASimpleRolloutExperimentConfig,
 )
 
 logger = get_logger(__name__)
@@ -417,7 +418,7 @@ class InvestigatorMonoService:
     # Experiment Configs  #
     #######################
 
-    async def create_experiment_config(
+    async def create_counterfactual_experiment_config(
         self,
         workspace_id: str,
         judge_config_id: str,
@@ -458,7 +459,7 @@ class InvestigatorMonoService:
         )
         return experiment_config_id
 
-    async def get_experiment_configs(
+    async def get_counterfactual_experiment_configs(
         self, workspace_id: str
     ) -> Sequence[SQLACounterfactualExperimentConfig]:
         """List experiment configs in a workspace."""
@@ -474,7 +475,7 @@ class InvestigatorMonoService:
             result = await session.execute(query)
             return result.scalars().all()
 
-    async def get_experiment_config(
+    async def get_counterfactual_experiment_config(
         self, experiment_config_id: str
     ) -> SQLACounterfactualExperimentConfig | None:
         """Get a single experiment config by ID."""
@@ -485,7 +486,7 @@ class InvestigatorMonoService:
             result = await session.execute(query)
             return result.scalar_one_or_none()
 
-    async def delete_experiment_config(self, experiment_config_id: str) -> bool:
+    async def delete_counterfactual_experiment_config(self, experiment_config_id: str) -> bool:
         """Soft delete an experiment config."""
 
         async with self.db.session() as session:
@@ -503,6 +504,124 @@ class InvestigatorMonoService:
 
             if deleted:
                 logger.info(f"Soft deleted ExperimentConfig with ID: {experiment_config_id}")
+
+            return deleted
+
+    # Helper method to check if an experiment config exists
+    async def experiment_config_exists(self, workspace_id: str, experiment_config_id: str) -> bool:
+        """Check if an experiment config exists in a workspace (either type)."""
+        counterfactual_configs = await self.get_counterfactual_experiment_configs(workspace_id)
+        if any(c.id == experiment_config_id for c in counterfactual_configs):
+            return True
+
+        simple_rollout_configs = await self.get_simple_rollout_experiment_configs(workspace_id)
+        if any(c.id == experiment_config_id for c in simple_rollout_configs):
+            return True
+
+        return False
+
+    async def get_experiment_config_type(
+        self, experiment_config_id: str
+    ) -> Literal["counterfactual", "simple_rollout"] | None:
+        """Get the type of an experiment config (counterfactual or simple_rollout)."""
+        async with self.db.session() as session:
+            # Check counterfactual experiments
+            counterfactual = await session.get(
+                SQLACounterfactualExperimentConfig, experiment_config_id
+            )
+            if counterfactual:
+                return "counterfactual"
+
+            # Check simple rollout experiments
+            simple_rollout = await session.get(
+                SQLASimpleRolloutExperimentConfig, experiment_config_id
+            )
+            if simple_rollout:
+                return "simple_rollout"
+
+            return None
+
+    # SimpleRolloutExperiment methods
+    async def create_simple_rollout_experiment_config(
+        self,
+        workspace_id: str,
+        openai_compatible_backend_id: str,
+        base_context_id: str,
+        judge_config_id: str | None = None,
+        num_replicas: int = 1,
+        max_turns: int = 1,
+        experiment_config_id: str | None = None,
+    ) -> str:
+        """
+        Create a new simple rollout experiment config in a workspace.
+        Note: Judge is optional for simple rollout experiments.
+        """
+        experiment_config_id = experiment_config_id or str(uuid4())
+
+        async with self.db.session() as session:
+            session.add(
+                SQLASimpleRolloutExperimentConfig(
+                    id=experiment_config_id,
+                    workspace_id=workspace_id,
+                    judge_config_id=judge_config_id,
+                    openai_compatible_backend_id=openai_compatible_backend_id,
+                    base_context_id=base_context_id,
+                    num_replicas=num_replicas,
+                    max_turns=max_turns,
+                )
+            )
+
+        logger.info(
+            f"Created SimpleRolloutExperimentConfig with ID: {experiment_config_id} in workspace: {workspace_id}"
+        )
+        return experiment_config_id
+
+    async def get_simple_rollout_experiment_configs(
+        self, workspace_id: str
+    ) -> Sequence[SQLASimpleRolloutExperimentConfig]:
+        """List simple rollout experiment configs in a workspace."""
+        async with self.db.session() as session:
+            query = (
+                select(SQLASimpleRolloutExperimentConfig)
+                .where(SQLASimpleRolloutExperimentConfig.workspace_id == workspace_id)
+                .where(
+                    SQLASimpleRolloutExperimentConfig.deleted_at.is_(None)
+                )  # Filter out deleted configs
+                .order_by(SQLASimpleRolloutExperimentConfig.created_at.desc())
+            )
+            result = await session.execute(query)
+            return result.scalars().all()
+
+    async def get_simple_rollout_experiment_config(
+        self, experiment_config_id: str
+    ) -> SQLASimpleRolloutExperimentConfig | None:
+        """Get a single simple rollout experiment config by ID."""
+        async with self.db.session() as session:
+            query = select(SQLASimpleRolloutExperimentConfig).where(
+                SQLASimpleRolloutExperimentConfig.id == experiment_config_id
+            )
+            result = await session.execute(query)
+            return result.scalar_one_or_none()
+
+    async def delete_simple_rollout_experiment_config(self, experiment_config_id: str) -> bool:
+        """Soft delete a simple rollout experiment config."""
+        async with self.db.session() as session:
+            # Soft delete by setting deleted_at timestamp
+            result = await session.execute(
+                update(SQLASimpleRolloutExperimentConfig)
+                .where(SQLASimpleRolloutExperimentConfig.id == experiment_config_id)
+                .where(
+                    SQLASimpleRolloutExperimentConfig.deleted_at.is_(None)
+                )  # Only delete if not already deleted
+                .values(deleted_at=datetime.now(UTC).replace(tzinfo=None))
+            )
+            await session.commit()
+            deleted = result.rowcount > 0
+
+            if deleted:
+                logger.info(
+                    f"Soft deleted SimpleRolloutExperimentConfig with ID: {experiment_config_id}"
+                )
 
             return deleted
 

@@ -16,6 +16,9 @@ from docent_core.investigator.db.contexts import WorkspaceContext
 from docent_core.investigator.workers.counterfactual_experiment_worker import (
     counterfactual_experiment_job,
 )
+from docent_core.investigator.workers.simple_rollout_experiment_worker import (
+    simple_rollout_experiment_job,
+)
 
 ViewContextJob = Callable[[ViewContext, SQLAJob], Coroutine[Any, Any, None]]
 WorkspaceContextJob = Callable[[WorkspaceContext, SQLAJob], Coroutine[Any, Any, None]]
@@ -29,4 +32,5 @@ JOB_DISPATCHER_MAP: dict[str, Union[ViewContextJob, WorkspaceContextJob]] = {
     WorkerFunction.CLUSTERING_JOB.value: clustering_job,
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: telemetry_processing_job,
     WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value: counterfactual_experiment_job,
+    WorkerFunction.SIMPLE_ROLLOUT_EXPERIMENT_JOB.value: simple_rollout_experiment_job,
 }

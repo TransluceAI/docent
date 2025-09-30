@@ -2,16 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import {
   AgentRunsBlock,
   type RunItem,
@@ -21,10 +14,7 @@ import {
 } from '@/components/AgentRunsBlock';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { BASE_URL } from '@/app/constants';
-import type {
-  ExperimentStreamData,
-  CounterfactualContext,
-} from '@/types/experiment';
+import type { ExperimentStreamData } from '@/types/experiment';
 import {
   useGetExperimentResultQuery,
   useGetActiveExperimentJobsQuery,
@@ -33,30 +23,18 @@ import InvestigatorAgentRunViewer from '@/app/investigator/[workspace_id]/compon
 import type { ToolInfo } from '@/app/investigator/[workspace_id]/components/BaseContextEditor';
 import { AgentRun } from '@/app/types/transcriptTypes';
 
-function CodeBlock({ value }: { value?: string }) {
-  const text = value ?? '';
-  return (
-    <div className="not-prose flex flex-col">
-      <pre className="text-sm w-full overflow-x-auto dark:bg-zinc-900 p-4 border border-zinc-200 dark:border-zinc-700 rounded-xl dark:text-zinc-50 text-zinc-900">
-        <code className="whitespace-pre-wrap break-words">{text}</code>
-      </pre>
-    </div>
-  );
-}
-
-interface CounterfactualExperimentViewerProps {
+interface SimpleRolloutExperimentViewerProps {
   experimentConfigId: string;
   onCloneAgentRunToContext?: (data: {
     messages: Array<{ role: string; content: string }>;
     tools?: ToolInfo[];
-    counterfactualName?: string;
   }) => void;
 }
 
-export default function CounterfactualExperimentViewer({
+export default function SimpleRolloutExperimentViewer({
   experimentConfigId,
   onCloneAgentRunToContext,
-}: CounterfactualExperimentViewerProps) {
+}: SimpleRolloutExperimentViewerProps) {
   const params = useParams();
   const workspaceId = params.workspace_id as string;
   const searchParams = useSearchParams();
@@ -94,6 +72,17 @@ export default function CounterfactualExperimentViewer({
 
   // Initialize selected agent run from URL on mount
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false);
+
+  // Reset state when experiment changes
+  useEffect(() => {
+    // Clear all state when switching to a new experiment
+    // Note: Don't clear experimentStream here - it's managed by the experimentResult effect
+    // to avoid race conditions where we clear it before new data arrives
+    setSelectedAgentRunId(undefined);
+    setSelectedAgentRun(null);
+    setIsLoadingAgentRun(false);
+    setHasInitializedFromUrl(false);
+  }, [experimentConfigId]);
 
   useEffect(() => {
     if (!hasInitializedFromUrl) {
@@ -212,43 +201,8 @@ export default function CounterfactualExperimentViewer({
   // Update experiment stream from database result
   useEffect(() => {
     if (experimentResult) {
-      const counterfactualContextById: Record<string, CounterfactualContext> =
-        {};
-
-      // Transform database format to local state format
-      if (experimentResult.counterfactual_context_output) {
-        for (const [id, value] of Object.entries(
-          experimentResult.counterfactual_context_output
-        )) {
-          counterfactualContextById[id] = {
-            id,
-            value: value as string,
-          };
-        }
-      }
-
-      // Add names from parsed counterfactual ideas
-      if (experimentResult.parsed_counterfactual_ideas?.counterfactuals) {
-        for (const [id, cf] of Object.entries(
-          experimentResult.parsed_counterfactual_ideas
-            .counterfactuals as Record<string, { name?: string }>
-        )) {
-          if (counterfactualContextById[id]) {
-            counterfactualContextById[id].name = cf?.name;
-          } else {
-            counterfactualContextById[id] = {
-              id,
-              name: cf?.name,
-            };
-          }
-        }
-      }
-
       setExperimentStream({
         activeJobId: activeJobData?.job_id || undefined,
-        counterfactualIdeaOutput:
-          experimentResult.counterfactual_idea_output || '',
-        counterfactualContextById,
         experimentStatus: experimentResult.experiment_status,
         agentRunMetadataById: experimentResult.agent_run_metadata || {},
         docentCollectionId: experimentResult.docent_collection_id,
@@ -276,46 +230,6 @@ export default function CounterfactualExperimentViewer({
         // Update local state based on SSE messages
         setExperimentStream((prev) => {
           const updated = { ...prev };
-
-          if (data.counterfactual_idea_output !== undefined) {
-            updated.counterfactualIdeaOutput = data.counterfactual_idea_output;
-          }
-
-          if (data.counterfactual_context_output) {
-            const contextById: Record<string, CounterfactualContext> = {};
-            for (const [id, value] of Object.entries(
-              data.counterfactual_context_output
-            )) {
-              contextById[id] = {
-                id,
-                value: value as string,
-                name: prev.counterfactualContextById?.[id]?.name,
-              };
-            }
-            updated.counterfactualContextById = contextById;
-          }
-
-          if (data.parsed_counterfactual_ideas?.counterfactuals) {
-            const contextById = {
-              ...(updated.counterfactualContextById || {}),
-            };
-            for (const [id, cf] of Object.entries(
-              data.parsed_counterfactual_ideas.counterfactuals as Record<
-                string,
-                { name?: string }
-              >
-            )) {
-              if (contextById[id]) {
-                contextById[id].name = cf?.name;
-              } else {
-                contextById[id] = {
-                  id,
-                  name: cf?.name,
-                };
-              }
-            }
-            updated.counterfactualContextById = contextById;
-          }
 
           if (data.experiment_status) {
             updated.experimentStatus = data.experiment_status;
@@ -374,8 +288,6 @@ export default function CounterfactualExperimentViewer({
   }, [activeJobData?.job_id, experimentConfigId, workspaceId, refetchResult]);
 
   // Parse experiment data
-  const ideaOutput = experimentStream?.counterfactualIdeaOutput;
-  const contextOutput = experimentStream?.counterfactualContextById;
   const agentRuns = experimentStream?.agentRunMetadataById;
   const jobId = experimentStream?.activeJobId;
   jobIdRef.current = jobId;
@@ -414,88 +326,23 @@ export default function CounterfactualExperimentViewer({
     }
   }, [selectedAgentRun]);
 
-  const [isIdeaOpen, setIsIdeaOpen] = useState(false);
-  const [isContextOpen, setIsContextOpen] = useState(false);
-  const [ideaUserTouched, setIdeaUserTouched] = useState(false);
-  const [contextUserTouched, setContextUserTouched] = useState(false);
-  const prevJobIdRef = useRef<string | undefined>(undefined);
-
-  // Reset state when experiment changes
-  useEffect(() => {
-    // Clear all state when switching to a new experiment
-    // Note: Don't clear experimentStream here - it's managed by the experimentResult effect
-    // to avoid race conditions where we clear it before new data arrives
-    setSelectedAgentRunId(undefined);
-    setSelectedAgentRun(null);
-    setIsLoadingAgentRun(false);
-    setHasInitializedFromUrl(false);
-    // Also reset the UI state
-    setIsIdeaOpen(false);
-    setIsContextOpen(false);
-    setIdeaUserTouched(false);
-    setContextUserTouched(false);
-    prevJobIdRef.current = undefined;
-  }, [experimentConfigId]);
-
-  // Auto-open on stream start; auto-close on finish unless user interacted
-  useEffect(() => {
-    const prevJobId = prevJobIdRef.current;
-    const started = Boolean(jobId && jobId !== prevJobId);
-    const finished = Boolean(!jobId && prevJobId);
-
-    if (started) {
-      // Reset user interaction when a new job starts
-      setIdeaUserTouched(false);
-      setContextUserTouched(false);
-      setIsIdeaOpen(true);
-      setIsContextOpen(true);
-    } else if (finished) {
-      if (!ideaUserTouched) setIsIdeaOpen(false);
-      if (!contextUserTouched) setIsContextOpen(false);
-    }
-
-    prevJobIdRef.current = jobId;
-  }, [jobId, ideaUserTouched, contextUserTouched]);
-
-  const ids = contextOutput ? Object.keys(contextOutput) : [];
-  const hasContext = ids.length > 0;
-  const MANY_CONTEXT_THRESHOLD = 6;
-
-  const [activeContextId, setActiveContextId] = useState<string | undefined>(
-    hasContext ? ids[0] : undefined
-  );
-
-  useEffect(() => {
-    // Reset active tab when the set of ids changes
-    if (!activeContextId || !ids.includes(activeContextId)) {
-      setActiveContextId(hasContext ? ids[0] : undefined);
-    }
-  }, [ids.join('|')]);
-
   // Types are imported from AgentRunsBlock component
 
-  // Agent run metadata grouped by counterfactual id (including base)
+  // Agent run metadata grouped together
   const grouped: Block[] = React.useMemo(() => {
-    const byCf: Record<
-      string,
-      { cfId: string; name: string; items: RunItem[] }
-    > = {};
     if (!agentRuns) return [];
-    const nameMap: Record<string, string> = {};
-    // build name map from contextOutput (counterfactual tabs)
-    for (const [cfId, v] of Object.entries(contextOutput ?? {})) {
-      nameMap[cfId] = v?.name ?? cfId;
-    }
+
+    // For simple rollout, we group all runs together
+    const runGroup = {
+      cfId: 'all',
+      name: 'Agent Runs',
+      items: [] as RunItem[],
+    };
+
     for (const [runId, m] of Object.entries(agentRuns)) {
-      const cfId = m.counterfactual_id;
-      const isBase = !(cfId in (contextOutput ?? {}));
-      const name = isBase
-        ? 'base'
-        : nameMap[cfId] || m.counterfactual_name || cfId;
-      if (!byCf[cfId]) byCf[cfId] = { cfId, name, items: [] };
       const gradeVal =
         typeof m.grade?.grade === 'number' ? m.grade.grade : null;
-      byCf[cfId].items.push({
+      runGroup.items.push({
         id: runId,
         replica_idx: m.replica_idx,
         grade: gradeVal,
@@ -504,25 +351,17 @@ export default function CounterfactualExperimentViewer({
         error_message: m.error_message,
       });
     }
-    // compute mean score for sorting blocks (exclude null grades)
-    const blocks: Block[] = Object.values(byCf).map((b) => {
-      const mean = computeMeanScore(b.items);
-      return { cfId: b.cfId, name: b.name, items: b.items, mean };
-    });
-    blocks.sort((a, b) => {
-      const aNan = Number.isNaN(a.mean);
-      const bNan = Number.isNaN(b.mean);
-      if (aNan && bNan) return 0;
-      if (aNan) return 1;
-      if (bNan) return -1;
-      return b.mean - a.mean;
-    });
+
+    // compute mean score for the single group (exclude null grades)
+    const mean = computeMeanScore(runGroup.items);
+
+    const block = { ...runGroup, mean };
+
     // sort items within block by descending grade, N/A at bottom
-    for (const b of blocks) {
-      b.items = sortRunsByGrade(b.items);
-    }
-    return blocks;
-  }, [agentRuns, contextOutput]);
+    block.items = sortRunsByGrade(block.items);
+
+    return runGroup.items.length > 0 ? [block] : [];
+  }, [agentRuns]);
 
   const [openBlocks, setOpenBlocks] = useState<Record<string, boolean>>({});
   const toggleBlock = (id: string) =>
@@ -644,6 +483,7 @@ export default function CounterfactualExperimentViewer({
     setSelectedAgentRun(null);
     updateQueryParams(); // Clear agent_run_id from URL
   };
+
   return (
     <div className="flex h-screen">
       <div className="flex-1 space-y-4 p-3 custom-scrollbar overflow-y-auto">
@@ -685,102 +525,6 @@ export default function CounterfactualExperimentViewer({
           </div>
         )}
 
-        <div className="space-y-2">
-          <button
-            type="button"
-            className="flex items-center gap-2 text-sm font-medium text-primary"
-            onClick={() => {
-              setIsIdeaOpen((v) => !v);
-              setIdeaUserTouched(true);
-            }}
-          >
-            {isIdeaOpen ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-            Counterfactual ideas
-          </button>
-          {isIdeaOpen && <CodeBlock value={ideaOutput} />}
-        </div>
-
-        <div className="space-y-2">
-          <button
-            type="button"
-            className="flex items-center gap-2 text-sm font-medium text-primary"
-            onClick={() => {
-              setIsContextOpen((v) => !v);
-              setContextUserTouched(true);
-            }}
-          >
-            {isContextOpen ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-            Alternative contexts
-          </button>
-          {isContextOpen &&
-            (hasContext ? (
-              ids.length > MANY_CONTEXT_THRESHOLD ? (
-                <div className="space-y-2">
-                  <div className="max-w-full">
-                    <Select
-                      value={activeContextId}
-                      onValueChange={(v) => setActiveContextId(v)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select counterfactual" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ids.map((id) => {
-                          const name = contextOutput?.[id]?.name;
-                          return (
-                            <SelectItem key={id} value={id}>
-                              {name ?? id}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {activeContextId && (
-                    <CodeBlock
-                      value={contextOutput?.[activeContextId]?.value}
-                    />
-                  )}
-                </div>
-              ) : (
-                <Tabs
-                  value={activeContextId}
-                  onValueChange={(v) => setActiveContextId(v)}
-                >
-                  <div className="max-w-full overflow-x-auto custom-scrollbar">
-                    <TabsList className="min-w-max">
-                      {ids.map((id) => {
-                        const name = contextOutput?.[id]?.name;
-                        return (
-                          <TabsTrigger key={id} value={id}>
-                            {name ?? id}
-                          </TabsTrigger>
-                        );
-                      })}
-                    </TabsList>
-                  </div>
-                  {ids.map((id) => (
-                    <TabsContent key={id} value={id}>
-                      <CodeBlock value={contextOutput?.[id]?.value} />
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              )
-            ) : (
-              <div className="text-sm text-muted-foreground">
-                No counterfactual contexts yet.
-              </div>
-            ))}
-        </div>
-
         {/* Agent Run Metadata */}
         <div className="space-y-2">
           <div className="text-sm font-medium text-primary">Agent runs</div>
@@ -819,40 +563,13 @@ export default function CounterfactualExperimentViewer({
                 onCloneToContext={(data) => {
                   if (!onCloneAgentRunToContext || !selectedAgentRun) return;
 
-                  // TODO(neil): this is a bit hacky; I think it can be simplified later.
-
-                  // Extract tools from the policy config based on the agent run
+                  // Extract tools from the policy config for simple rollout
                   let tools: ToolInfo[] | undefined;
-                  if (experimentResult && selectedAgentRun.metadata) {
-                    // Type the metadata structure properly
-                    const metadata = selectedAgentRun.metadata as {
-                      counterfactual_id?: string;
-                      [key: string]: unknown;
-                    };
-                    const counterfactualId = metadata?.counterfactual_id;
-
-                    // Check if this is a base run (counterfactual_id matches base_context.id)
-                    let rawTools: unknown[] | undefined;
-
-                    if (
-                      counterfactualId ===
-                      experimentResult.config?.base_context?.id
-                    ) {
-                      // Get tools from base_policy_config
-                      rawTools = experimentResult.base_policy_config?.tools;
-                    } else if (
-                      counterfactualId &&
-                      experimentResult.counterfactual_policy_configs
-                    ) {
-                      // Get tools from the specific counterfactual policy config
-                      const policyConfig =
-                        experimentResult.counterfactual_policy_configs[
-                          counterfactualId
-                        ];
-                      rawTools = policyConfig?.tools;
-                    }
-
-                    // Ensure tools have the correct type field for BaseContextEditor
+                  if (
+                    experimentResult &&
+                    experimentResult.base_policy_config?.tools
+                  ) {
+                    const rawTools = experimentResult.base_policy_config.tools;
                     if (rawTools && Array.isArray(rawTools)) {
                       tools = rawTools as ToolInfo[];
                     }

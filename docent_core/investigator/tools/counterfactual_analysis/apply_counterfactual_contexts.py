@@ -26,7 +26,6 @@ from docent_core.investigator.tools.contexts.base_context import BaseContext
 from docent_core.investigator.tools.counterfactual_analysis.types import CounterfactualIdea
 from docent_core.investigator.tools.policies.deterministic import DeterministicContextPolicyConfig
 from docent_core.investigator.utils.async_util.concurrency_limiters import LimiterRegistry
-from docent_core.investigator.utils.extraction_util import extract_json_from_response
 
 
 class CounterfactualInteraction(BaseModel):
@@ -56,8 +55,8 @@ Guidelines:
 - The counterfactual may apply to tools, tool calls, tool responses, or regular message content
 - The output should be a valid interaction that can be immediately used as input to another language model
 
-Output the modified interaction in a JSON markdown block with the same structure as the base interaction:
-```json
+Output the modified interaction in JSON with the same structure as the base interaction:
+
 {
     "tools": [
         // Optional: Tool definitions if present in the base interaction
@@ -89,7 +88,6 @@ Output the modified interaction in a JSON markdown block with the same structure
         // ... more messages
     ]
 }
-```
 
 Note: Include the "tools" field only if it exists in the base interaction. Always include the "messages" field.
 """
@@ -151,6 +149,7 @@ async def llm_apply_counterfactual_to_base_context(
             ],
             max_tokens=20_000,
             stream=True,
+            response_format={"type": "json_object"},
         )
         # Stream the response
         async for chunk in stream:
@@ -175,18 +174,7 @@ async def llm_apply_counterfactual_to_base_context(
             raise ValueError("Empty response from the API")
 
         # Extract and parse JSON using Pydantic
-        interaction_json = extract_json_from_response(full_content)
-
-        # Parse with Pydantic model for validation
-        if not isinstance(interaction_json, dict):
-            raise ValueError(
-                f"Expected a dictionary in the JSON response, got {type(interaction_json)}"
-            )
-
-        try:
-            interaction = CounterfactualInteraction(**interaction_json)
-        except Exception as e:
-            raise ValueError(f"Failed to parse interaction: {e}")
+        interaction = CounterfactualInteraction.model_validate_json(full_content)
 
         # Convert the parsed messages to ChatMessage objects
         chat_messages: list[ChatMessage] = []
