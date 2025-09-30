@@ -26,6 +26,9 @@ from docent.data_models.chat import (
     UserMessage,
 )
 from docent.data_models.chat.tool import ToolCall
+from docent_core.investigator.tools.backends.openai_compatible_backend import (
+    ModelWithClient,
+)
 from docent_core.investigator.tools.common.types import (
     ExperimentStatus,
     Grade,
@@ -92,8 +95,9 @@ class SimpleRolloutExperiment:
             base_policy_config=self.config.base_context.to_deterministic_context_policy_config(),
         )
 
-        # Build the subject model client
-        self.subject_model_with_client = self.config.openai_compatible_backend.build_client()
+        self.subject_models_with_clients = [
+            backend.build_client() for backend in self.config.openai_compatible_backends
+        ]
 
         # Build judge client if needed (only if judge is configured)
         self.anthropic_client = None
@@ -112,7 +116,7 @@ class SimpleRolloutExperiment:
         """
         Run the simple rollout experiment.
 
-        This runs the specified number of replicas with the base context,
+        This runs the specified number of replicas for each backend with the base context,
         optionally grading each run.
 
         Yields the result after each update for streaming.
@@ -121,12 +125,35 @@ class SimpleRolloutExperiment:
         if self.anthropic_limiter:
             await self.anthropic_limiter.configure(rate_limiting(rpm=10_000, max_in_flight=128))
 
+        # Validate experiment configuration limits
+        if self.config.num_replicas > 256:
+            error_message = (
+                f"Number of replicas ({self.config.num_replicas}) exceeds maximum of 256"
+            )
+            logger.error(error_message)
+            self.result.experiment_status.status = "error"
+            self.result.experiment_status.error_message = error_message
+            yield self.result
+            return
+
+        # Total rollouts is replicas × backends
+        total_rollouts = self.config.num_replicas * len(self.config.openai_compatible_backends)
+        if total_rollouts > 1024:
+            error_message = (
+                f"Experiment configuration exceeds limits: "
+                f"{self.config.num_replicas} replicas × "
+                f"{len(self.config.openai_compatible_backends)} backends = {total_rollouts} rollouts. "
+                f"Maximum allowed is 1024 total rollouts."
+            )
+            logger.error(error_message)
+            self.result.experiment_status.status = "error"
+            self.result.experiment_status.error_message = error_message
+            yield self.result
+            return
+
         # Initialize result structures
         self.result.agent_runs = {}
         self.result.agent_run_metadata = {}
-
-        # Track total rollouts for progress
-        total_rollouts = self.config.num_replicas
         # Queue to collect streaming events from all rollouts
         event_queue: asyncio.Queue[tuple[str, StreamEvent]] = asyncio.Queue()
 
@@ -149,6 +176,8 @@ class SimpleRolloutExperiment:
         async def run_single_rollout(
             agent_run_id: str,
             replica_idx: int,
+            backend_name: str,
+            subject_model_with_client: ModelWithClient,
             policy_config: DeterministicContextPolicyConfig,
         ):
             """Run a single rollout and stream events to the queue."""
@@ -156,7 +185,7 @@ class SimpleRolloutExperiment:
                 # Build the policy and subject model for this rollout
                 policy = policy_config.build()
                 subject_model = OpenAICompatibleSubjectModel(
-                    self.subject_model_with_client,
+                    subject_model_with_client,
                     policy_config.tools,
                 )
 
@@ -189,60 +218,69 @@ class SimpleRolloutExperiment:
                 error_event = RolloutErrorEvent(error=e, user_error_message=user_error_message)
                 await event_queue.put((agent_run_id, error_event))
 
-        # Start all rollouts concurrently
+        # Start all rollouts concurrently (all backends × all replicas)
         async with anyio.create_task_group() as tg:
-            for replica_idx in range(self.config.num_replicas):
-                # Generate unique IDs for this rollout
-                agent_run_id = generate_uid()
-                transcript_id = generate_uid()
+            for backend_config, subject_model_with_client in zip(
+                self.config.openai_compatible_backends, self.subject_models_with_clients
+            ):
+                for replica_idx in range(self.config.num_replicas):
+                    # Generate unique IDs for this rollout
+                    agent_run_id = generate_uid()
+                    transcript_id = generate_uid()
 
-                # Create metadata for this rollout
-                metadata = SimpleRolloutAgentRunMetadata(
-                    model=self.subject_model_with_client.model,
-                    replica_idx=replica_idx,
-                )
-                self.result.agent_run_metadata[agent_run_id] = metadata
-
-                # Create the transcript (initially empty)
-                transcript_metadata = {}
-                if self.result.base_policy_config and self.result.base_policy_config.tools:
-                    # Store tools in transcript metadata for frontend display
-                    transcript_metadata["tools"] = [
-                        tool.model_dump() for tool in self.result.base_policy_config.tools
-                    ]
-
-                transcript = Transcript(
-                    id=transcript_id,
-                    messages=[],  # Will be populated as events stream in
-                    metadata=transcript_metadata,
-                )
-
-                # Create the agent run
-                agent_run = AgentRun(
-                    id=agent_run_id,
-                    name=f"Replica {replica_idx + 1}",
-                    description=f"Simple rollout replica {replica_idx + 1}",
-                    transcripts=[transcript],
-                    metadata=metadata.model_dump(),
-                )
-
-                # Store the agent run immediately
-                self.result.agent_runs[agent_run_id] = agent_run
-
-                # Initialize rollout state for message building
-                rollout_states[agent_run_id] = RolloutState(
-                    transcript=transcript,
-                    metadata=metadata,
-                )
-
-                # Start the rollout task (base_policy_config should never be None)
-                if self.result.base_policy_config:
-                    tg.start_soon(
-                        run_single_rollout,
-                        agent_run_id,
-                        replica_idx,
-                        self.result.base_policy_config,
+                    # Create metadata for this rollout
+                    metadata = SimpleRolloutAgentRunMetadata(
+                        model=subject_model_with_client.model,
+                        backend_name=backend_config.name,
+                        replica_idx=replica_idx,
                     )
+                    self.result.agent_run_metadata[agent_run_id] = metadata
+
+                    # Create the transcript (initially empty)
+                    transcript_metadata = {}
+                    if self.result.base_policy_config and self.result.base_policy_config.tools:
+                        # Store tools in transcript metadata for frontend display
+                        transcript_metadata["tools"] = [
+                            tool.model_dump() for tool in self.result.base_policy_config.tools
+                        ]
+
+                    transcript = Transcript(
+                        id=transcript_id,
+                        messages=[],
+                        metadata=transcript_metadata,
+                    )
+
+                    # Create the agent run with backend name in metadata
+                    agent_run = AgentRun(
+                        id=agent_run_id,
+                        name=f"{backend_config.name} - Replica {replica_idx + 1}",
+                        description=f"Simple rollout with {backend_config.name}, replica {replica_idx + 1}",
+                        transcripts=[transcript],
+                        metadata={
+                            **metadata.model_dump(),
+                            "backend_name": backend_config.name,
+                        },
+                    )
+
+                    # Store the agent run immediately
+                    self.result.agent_runs[agent_run_id] = agent_run
+
+                    # Initialize rollout state for message building
+                    rollout_states[agent_run_id] = RolloutState(
+                        transcript=transcript,
+                        metadata=metadata,
+                    )
+
+                    # Start the rollout task
+                    if self.result.base_policy_config:
+                        tg.start_soon(
+                            run_single_rollout,
+                            agent_run_id,
+                            replica_idx,
+                            backend_config.name,
+                            subject_model_with_client,
+                            self.result.base_policy_config,
+                        )
 
             # Process events from all rollouts until they complete
             while len(completed_runs) < total_rollouts:

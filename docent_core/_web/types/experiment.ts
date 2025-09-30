@@ -16,9 +16,10 @@ export interface ExperimentStatus {
 
 export interface AgentRunMetadata {
   model: string;
-  counterfactual_id: string;
-  counterfactual_name: string;
-  counterfactual_description: string;
+  backend_name?: string;
+  counterfactual_id?: string;
+  counterfactual_name?: string;
+  counterfactual_description?: string;
   replica_idx: number;
   grade?: { grade: number };
   state?: 'in_progress' | 'completed' | 'errored';
@@ -70,7 +71,8 @@ export interface BaseExperimentConfig {
   workspace_id: string;
   created_at: string;
   judge_config_id?: string | null;
-  openai_compatible_backend_id: string;
+  openai_compatible_backend_id?: string;
+  openai_compatible_backend_ids?: string[];
   base_context_id: string;
   num_replicas: number;
   max_turns: number;
@@ -86,6 +88,7 @@ export interface CounterfactualExperimentConfig extends BaseExperimentConfig {
 export interface SimpleRolloutExperimentConfig extends BaseExperimentConfig {
   type: 'simple_rollout';
   judge_config_id?: string | null;
+  openai_compatible_backend_ids: string[];
 }
 
 export type ExperimentConfig =

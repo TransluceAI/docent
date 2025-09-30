@@ -328,21 +328,22 @@ export default function SimpleRolloutExperimentViewer({
 
   // Types are imported from AgentRunsBlock component
 
-  // Agent run metadata grouped together
+  // Agent run metadata grouped by backend
   const grouped: Block[] = React.useMemo(() => {
     if (!agentRuns) return [];
 
-    // For simple rollout, we group all runs together
-    const runGroup = {
-      cfId: 'all',
-      name: 'Agent Runs',
-      items: [] as RunItem[],
-    };
+    const runsByBackend: Record<string, RunItem[]> = {};
 
     for (const [runId, m] of Object.entries(agentRuns)) {
+      const backendName = m.backend_name || 'Unknown Backend';
+
+      if (!runsByBackend[backendName]) {
+        runsByBackend[backendName] = [];
+      }
+
       const gradeVal =
         typeof m.grade?.grade === 'number' ? m.grade.grade : null;
-      runGroup.items.push({
+      runsByBackend[backendName].push({
         id: runId,
         replica_idx: m.replica_idx,
         grade: gradeVal,
@@ -352,15 +353,24 @@ export default function SimpleRolloutExperimentViewer({
       });
     }
 
-    // compute mean score for the single group (exclude null grades)
-    const mean = computeMeanScore(runGroup.items);
+    const blocks: Block[] = [];
 
-    const block = { ...runGroup, mean };
+    const sortedBackendNames = Object.keys(runsByBackend).sort();
 
-    // sort items within block by descending grade, N/A at bottom
-    block.items = sortRunsByGrade(block.items);
+    for (const backendName of sortedBackendNames) {
+      const items = runsByBackend[backendName];
 
-    return runGroup.items.length > 0 ? [block] : [];
+      const mean = computeMeanScore(items);
+
+      blocks.push({
+        cfId: backendName,
+        name: backendName,
+        items: sortRunsByGrade(items),
+        mean,
+      });
+    }
+
+    return blocks;
   }, [agentRuns]);
 
   const [openBlocks, setOpenBlocks] = useState<Record<string, boolean>>({});

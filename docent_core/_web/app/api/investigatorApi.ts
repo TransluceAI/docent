@@ -158,7 +158,7 @@ export interface CounterfactualExperimentConfig extends BaseExperimentConfig {
 export interface SimpleRolloutExperimentConfig extends BaseExperimentConfig {
   type: 'simple_rollout';
   base_context: BaseContext; // Contains base_context.id
-  openai_compatible_backend: OpenAICompatibleBackend; // Contains openai_compatible_backend.id
+  openai_compatible_backends: OpenAICompatibleBackend[]; // Array of backends
   judge_config?: JudgeConfig | null; // Optional - contains judge_config.id if present
   num_replicas: number;
   max_turns: number;
@@ -183,7 +183,7 @@ interface CreateCounterfactualExperimentConfigRequest {
 interface CreateSimpleRolloutExperimentConfigRequest {
   type: 'simple_rollout';
   judge_config_id?: string | null;
-  openai_compatible_backend_id: string;
+  openai_compatible_backend_ids: string[];
   base_context_id: string;
   num_replicas?: number;
   max_turns?: number;

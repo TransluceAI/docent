@@ -545,7 +545,7 @@ class InvestigatorMonoService:
     async def create_simple_rollout_experiment_config(
         self,
         workspace_id: str,
-        openai_compatible_backend_id: str,
+        openai_compatible_backend_ids: list[str],
         base_context_id: str,
         judge_config_id: str | None = None,
         num_replicas: int = 1,
@@ -559,20 +559,32 @@ class InvestigatorMonoService:
         experiment_config_id = experiment_config_id or str(uuid4())
 
         async with self.db.session() as session:
-            session.add(
-                SQLASimpleRolloutExperimentConfig(
-                    id=experiment_config_id,
-                    workspace_id=workspace_id,
-                    judge_config_id=judge_config_id,
-                    openai_compatible_backend_id=openai_compatible_backend_id,
-                    base_context_id=base_context_id,
-                    num_replicas=num_replicas,
-                    max_turns=max_turns,
-                )
+            config = SQLASimpleRolloutExperimentConfig(
+                id=experiment_config_id,
+                workspace_id=workspace_id,
+                judge_config_id=judge_config_id,
+                base_context_id=base_context_id,
+                num_replicas=num_replicas,
+                max_turns=max_turns,
             )
 
+            for backend_id in openai_compatible_backend_ids:
+                result = await session.execute(
+                    select(SQLAOpenAICompatibleBackend).where(
+                        SQLAOpenAICompatibleBackend.id == backend_id
+                    )
+                )
+                backend = result.scalar_one_or_none()
+                if not backend:
+                    raise ValueError(f"Backend with ID {backend_id} not found")
+                config.openai_compatible_backend_objs.append(backend)
+
+            session.add(config)
+            await session.commit()
+
         logger.info(
-            f"Created SimpleRolloutExperimentConfig with ID: {experiment_config_id} in workspace: {workspace_id}"
+            f"Created SimpleRolloutExperimentConfig with ID: {experiment_config_id} "
+            f"with {len(openai_compatible_backend_ids)} backends in workspace: {workspace_id}"
         )
         return experiment_config_id
 

@@ -90,6 +90,7 @@ export default function WorkspacePage() {
   const [selectedBackendId, setSelectedBackendId] = useState<
     string | undefined
   >();
+  const [selectedBackendIds, setSelectedBackendIds] = useState<string[]>([]);
   const [baseContextToView, setBaseContextToView] = useState<{
     name: string;
     prompt: Array<{
@@ -237,21 +238,25 @@ export default function WorkspacePage() {
       setSelectedJudgeConfigId(
         selectedExperiment.judge_config?.id || undefined
       );
-      setSelectedBackendId(selectedExperiment.openai_compatible_backend.id);
-      setNumReplicas(selectedExperiment.num_replicas);
 
-      // Set counterfactual-specific properties only if it's a counterfactual experiment
       if (selectedExperiment.type === 'counterfactual') {
+        setSelectedBackendId(selectedExperiment.openai_compatible_backend.id);
         setSelectedCounterfactualIdeaId(selectedExperiment.idea.id);
         setNumCounterfactuals(selectedExperiment.num_counterfactuals);
       } else {
         setSelectedCounterfactualIdeaId(undefined);
+        setSelectedBackendIds(
+          selectedExperiment.openai_compatible_backends?.map((b) => b.id) || []
+        );
       }
+
+      setNumReplicas(selectedExperiment.num_replicas);
     } else if (!isCreatingNew) {
       // Clear selections when no experiment is selected (unless creating new)
       setSelectedBaseContextId(undefined);
       setSelectedJudgeConfigId(undefined);
       setSelectedBackendId(undefined);
+      setSelectedBackendIds([]);
       setSelectedCounterfactualIdeaId(undefined);
     }
   }, [selectedExperiment, isCreatingNew]);
@@ -306,14 +311,17 @@ export default function WorkspacePage() {
 
       // Reset the selected IDs to the experiment's values
       setSelectedBaseContextId(experiment.base_context?.id);
-      setSelectedBackendId(experiment.openai_compatible_backend?.id);
 
       // Handle type-specific fields
       if (experiment.type === 'counterfactual') {
+        setSelectedBackendId(experiment.openai_compatible_backend?.id);
         setSelectedJudgeConfigId(experiment.judge_config?.id);
         setSelectedCounterfactualIdeaId(experiment.idea?.id);
         setNumCounterfactuals(experiment.num_counterfactuals);
       } else if (experiment.type === 'simple_rollout') {
+        setSelectedBackendIds(
+          experiment.openai_compatible_backends?.map((b) => b.id) || []
+        );
         setSelectedJudgeConfigId(experiment.judge_config?.id || undefined);
         setSelectedCounterfactualIdeaId(undefined);
         setNumCounterfactuals(1);
@@ -348,15 +356,18 @@ export default function WorkspacePage() {
 
     // Keep the selected IDs from the current experiment
     setSelectedBaseContextId(selectedExperiment.base_context?.id);
-    setSelectedBackendId(selectedExperiment.openai_compatible_backend?.id);
     setNumReplicas(selectedExperiment.num_replicas);
 
     // Handle type-specific fields
     if (selectedExperiment.type === 'counterfactual') {
+      setSelectedBackendId(selectedExperiment.openai_compatible_backend?.id);
       setSelectedJudgeConfigId(selectedExperiment.judge_config?.id);
       setSelectedCounterfactualIdeaId(selectedExperiment.idea?.id);
       setNumCounterfactuals(selectedExperiment.num_counterfactuals);
     } else if (selectedExperiment.type === 'simple_rollout') {
+      setSelectedBackendIds(
+        selectedExperiment.openai_compatible_backends?.map((b) => b.id) || []
+      );
       // Judge is optional for simple rollout
       setSelectedJudgeConfigId(
         selectedExperiment.judge_config?.id || undefined
@@ -446,11 +457,15 @@ export default function WorkspacePage() {
             max_turns: 1,
           }).unwrap();
         } else if (experimentType === 'simple_rollout') {
-          if (!selectedBaseContextId || !selectedBackendId) {
+          if (
+            !selectedBaseContextId ||
+            !selectedBackendIds ||
+            selectedBackendIds.length === 0
+          ) {
             toast({
               title: 'Error',
               description:
-                'Please select base context and backend before launching',
+                'Please select base context and at least one backend before launching',
               variant: 'destructive',
             });
             return;
@@ -461,7 +476,7 @@ export default function WorkspacePage() {
             type: 'simple_rollout',
             base_context_id: selectedBaseContextId,
             judge_config_id: selectedJudgeConfigId || undefined,
-            openai_compatible_backend_id: selectedBackendId,
+            openai_compatible_backend_ids: selectedBackendIds,
             num_replicas: numReplicas,
             max_turns: 1,
           }).unwrap();
@@ -668,10 +683,14 @@ export default function WorkspacePage() {
     }
   };
 
-  const handleViewBackendConfig = () => {
-    // Get the ID from either selectedBackendId or from the selected experiment
+  const handleViewBackendConfig = (backendId?: string) => {
+    // Get the ID from parameter, selectedBackendId, or from the selected experiment
     const backendIdToView =
-      selectedBackendId || selectedExperiment?.openai_compatible_backend?.id;
+      backendId ||
+      selectedBackendId ||
+      (selectedExperiment?.type === 'counterfactual'
+        ? selectedExperiment?.openai_compatible_backend?.id
+        : undefined);
 
     if (backendIdToView && backends) {
       const selectedBackend = backends.find((b) => b.id === backendIdToView);
@@ -1077,7 +1096,15 @@ export default function WorkspacePage() {
               }
               backendConfig={
                 selectedBackendId ||
-                selectedExperiment?.openai_compatible_backend?.id
+                (selectedExperiment?.type === 'counterfactual'
+                  ? selectedExperiment?.openai_compatible_backend?.id
+                  : undefined)
+              }
+              backendConfigs={
+                (isCreatingNew && experimentType === 'simple_rollout') ||
+                selectedExperiment?.type === 'simple_rollout'
+                  ? selectedBackendIds
+                  : undefined
               }
               counterfactualIdea={
                 selectedCounterfactualIdeaId ||
@@ -1102,6 +1129,7 @@ export default function WorkspacePage() {
               onJudgeConfigChange={handleJudgeConfigChange}
               onCounterfactualIdeaChange={handleCounterfactualIdeaChange}
               onBackendConfigChange={handleBackendChange}
+              onBackendConfigsChange={setSelectedBackendIds}
               onNumCounterfactualsChange={setNumCounterfactuals}
               onNumReplicasChange={setNumReplicas}
               onNewBaseContext={handleNewBaseContext}

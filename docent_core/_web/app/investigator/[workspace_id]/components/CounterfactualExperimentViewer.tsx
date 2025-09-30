@@ -487,7 +487,7 @@ export default function CounterfactualExperimentViewer({
       nameMap[cfId] = v?.name ?? cfId;
     }
     for (const [runId, m] of Object.entries(agentRuns)) {
-      const cfId = m.counterfactual_id;
+      const cfId = m.counterfactual_id ?? 'unknown';
       const isBase = !(cfId in (contextOutput ?? {}));
       const name = isBase
         ? 'base'

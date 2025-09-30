@@ -238,8 +238,8 @@ class CreateSimpleRolloutExperimentConfigRequest(BaseModel):
     """Request model for creating a simple rollout experiment config."""
 
     type: Literal["simple_rollout"] = "simple_rollout"
-    judge_config_id: Optional[str] = None  # Optional for simple rollout
-    openai_compatible_backend_id: str
+    judge_config_id: Optional[str] = None
+    openai_compatible_backend_ids: list[str]
     base_context_id: str
     num_replicas: int = 1
     max_turns: int = 1
@@ -797,10 +797,31 @@ async def create_experiment_config(
                 detail=f"Number of replicas ({request.num_replicas}) exceeds maximum of 256",
             )
 
+        # Validate backends
+        if not request.openai_compatible_backend_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one backend must be selected",
+            )
+
+        if len(request.openai_compatible_backend_ids) > 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of backends ({len(request.openai_compatible_backend_ids)}) exceeds maximum of 10",
+            )
+
+        # Total rollouts is replicas × backends
+        total_rollouts = request.num_replicas * len(request.openai_compatible_backend_ids)
+        if total_rollouts > 1024:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total rollouts ({request.num_replicas} × {len(request.openai_compatible_backend_ids)} = {total_rollouts}) exceeds maximum of 1024",
+            )
+
         experiment_config_id = await investigator_svc.create_simple_rollout_experiment_config(
             workspace_id=workspace_id,
             judge_config_id=request.judge_config_id,
-            openai_compatible_backend_id=request.openai_compatible_backend_id,
+            openai_compatible_backend_ids=request.openai_compatible_backend_ids,
             base_context_id=request.base_context_id,
             num_replicas=request.num_replicas,
             max_turns=request.max_turns,

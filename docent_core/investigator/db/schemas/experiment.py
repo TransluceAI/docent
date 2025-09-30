@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,11 +19,29 @@ TABLE_COUNTERFACTUAL_EXPERIMENT_CONFIG = "counterfactual_experiment_configs"
 TABLE_COUNTERFACTUAL_EXPERIMENT_RESULT = "counterfactual_experiment_results"
 TABLE_SIMPLE_ROLLOUT_EXPERIMENT_CONFIG = "simple_rollout_experiment_configs"
 TABLE_SIMPLE_ROLLOUT_EXPERIMENT_RESULT = "simple_rollout_experiment_results"
+TABLE_SIMPLE_ROLLOUT_CONFIG_BACKENDS = "simple_rollout_experiment_config_backends"
 TABLE_JUDGE_CONFIG = "judge_configs"
 TABLE_OPENAI_COMPATIBLE_BACKEND = "openai_compatible_backends"
 TABLE_EXPERIMENT_IDEA = "experiment_ideas"
 TABLE_BASE_CONTEXT = "base_contexts"
 TABLE_TMP_INVESTIGATOR_AUTHORIZED_USERS = "tmp_investigator_authorized_users"
+
+simple_rollout_experiment_config_backends = Table(
+    TABLE_SIMPLE_ROLLOUT_CONFIG_BACKENDS,
+    SQLABase.metadata,
+    Column(
+        "experiment_config_id",
+        String(36),
+        ForeignKey(f"{TABLE_SIMPLE_ROLLOUT_EXPERIMENT_CONFIG}.id"),
+        primary_key=True,
+    ),
+    Column(
+        "backend_id",
+        String(36),
+        ForeignKey(f"{TABLE_OPENAI_COMPATIBLE_BACKEND}.id"),
+        primary_key=True,
+    ),
+)
 
 
 def generate_uid() -> str:
@@ -147,7 +165,9 @@ class SQLAOpenAICompatibleBackend(SQLABase):
     )
     simple_rollout_experiment_configs: Mapped[list["SQLASimpleRolloutExperimentConfig"]] = (
         relationship(
-            "SQLASimpleRolloutExperimentConfig", back_populates="openai_compatible_backend_obj"
+            "SQLASimpleRolloutExperimentConfig",
+            secondary=simple_rollout_experiment_config_backends,
+            back_populates="openai_compatible_backend_objs",
         )
     )
 
@@ -365,9 +385,6 @@ class SQLASimpleRolloutExperimentConfig(SQLABase):
     judge_config_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_JUDGE_CONFIG}.id"), nullable=True, index=True
     )
-    openai_compatible_backend_id = mapped_column(
-        String(36), ForeignKey(f"{TABLE_OPENAI_COMPATIBLE_BACKEND}.id"), nullable=False, index=True
-    )
     base_context_id = mapped_column(
         String(36), ForeignKey(f"{TABLE_BASE_CONTEXT}.id"), nullable=False, index=True
     )
@@ -386,8 +403,10 @@ class SQLASimpleRolloutExperimentConfig(SQLABase):
     judge_config_obj: Mapped[Optional["SQLAJudgeConfig"]] = relationship(
         "SQLAJudgeConfig", back_populates="simple_rollout_experiment_configs"
     )
-    openai_compatible_backend_obj: Mapped["SQLAOpenAICompatibleBackend"] = relationship(
-        "SQLAOpenAICompatibleBackend", back_populates="simple_rollout_experiment_configs"
+    openai_compatible_backend_objs: Mapped[list["SQLAOpenAICompatibleBackend"]] = relationship(
+        "SQLAOpenAICompatibleBackend",
+        secondary=simple_rollout_experiment_config_backends,
+        back_populates="simple_rollout_experiment_configs",
     )
     base_context_obj: Mapped["SQLABaseContext"] = relationship(
         "SQLABaseContext", back_populates="simple_rollout_experiment_configs"

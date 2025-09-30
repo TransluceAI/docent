@@ -1,7 +1,16 @@
 'use client';
 
 import React from 'react';
-import { Plus, Loader2, Search, Copy, Trash2, X } from 'lucide-react';
+import {
+  Plus,
+  Loader2,
+  Search,
+  Copy,
+  Trash2,
+  X,
+  Check,
+  ChevronsUpDown,
+} from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -11,6 +20,12 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import {
   useGetBaseContextsQuery,
   useGetJudgeConfigsQuery,
@@ -26,6 +41,7 @@ interface TopPanelProps {
   baseContext?: string;
   judgeConfig?: string;
   backendConfig?: string;
+  backendConfigs?: string[];
   counterfactualIdea?: string;
   numCounterfactuals?: number;
   numReplicas?: number;
@@ -33,6 +49,7 @@ interface TopPanelProps {
   onBaseContextChange?: (value: string) => void;
   onJudgeConfigChange?: (value: string | undefined) => void;
   onBackendConfigChange?: (value: string) => void;
+  onBackendConfigsChange?: (values: string[]) => void;
   onCounterfactualIdeaChange?: (value: string) => void;
   onNumCounterfactualsChange?: (value: number) => void;
   onNumReplicasChange?: (value: number) => void;
@@ -41,7 +58,7 @@ interface TopPanelProps {
   onNewJudgeConfig?: () => void;
   onViewJudgeConfig?: () => void;
   onNewBackendConfig?: () => void;
-  onViewBackendConfig?: () => void;
+  onViewBackendConfig?: (backendId?: string) => void;
   onNewCounterfactualIdea?: () => void;
   onViewCounterfactualIdea?: () => void;
   onLaunchExperiment?: () => void;
@@ -58,6 +75,7 @@ export default function TopPanel({
   baseContext,
   judgeConfig,
   backendConfig,
+  backendConfigs,
   counterfactualIdea,
   numCounterfactuals = 1,
   numReplicas = 16,
@@ -65,6 +83,7 @@ export default function TopPanel({
   onBaseContextChange,
   onJudgeConfigChange,
   onBackendConfigChange,
+  onBackendConfigsChange,
   onCounterfactualIdeaChange,
   onNumCounterfactualsChange,
   onNumReplicasChange,
@@ -118,17 +137,24 @@ export default function TopPanel({
     (b) => b.id === backendConfig
   )?.name;
 
+  // Find the names of selected backends for multi-backend display
+  const selectedBackendNames = backends
+    ?.filter((b) => backendConfigs?.includes(b.id))
+    .map((b) => b.name)
+    .join(', ');
+
   // Check if all required fields are selected for Launch button
   const canLaunch =
     isNewExperiment &&
     baseContext &&
-    backendConfig &&
     numReplicas > 0 &&
-    (experimentType === 'simple_rollout' ||
-      (experimentType === 'counterfactual' &&
+    (experimentType === 'simple_rollout'
+      ? backendConfigs && backendConfigs.length > 0
+      : experimentType === 'counterfactual' &&
+        backendConfig &&
         judgeConfig &&
         counterfactualIdea &&
-        numCounterfactuals > 0));
+        numCounterfactuals > 0);
   // Display mode - show static values for existing experiments
   if (!isEditMode) {
     return (
@@ -174,29 +200,110 @@ export default function TopPanel({
             </div>
           </div>
 
-          <div className="w-full sm:w-auto pr-3 pb-3">
-            <label className="text-xs text-muted-foreground mb-1 block">
-              Backend Configuration
-            </label>
-            <div className="flex gap-2">
-              <div
-                className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
-                title={selectedBackendName || backendConfig || 'Not specified'}
-              >
-                {selectedBackendName || backendConfig || 'Not specified'}
+          {/* Backend Configuration - Different display for simple rollout vs counterfactual */}
+          {experimentType === 'simple_rollout' ? (
+            <div className="w-full sm:w-auto pr-3 pb-3">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Backend Configurations
+              </label>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="w-[280px] justify-between"
+                    >
+                      {backendConfigs && backendConfigs.length > 0 ? (
+                        <span className="truncate">
+                          {backendConfigs.length === 1
+                            ? backends?.find((b) => b.id === backendConfigs[0])
+                                ?.name
+                            : `${backendConfigs.length} backends selected`}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Not specified
+                        </span>
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[280px] p-0" align="start">
+                    <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
+                      {backends?.filter((b) => backendConfigs?.includes(b.id))
+                        .length === 0 ? (
+                        <div className="text-xs text-muted-foreground p-2">
+                          No backends selected
+                        </div>
+                      ) : (
+                        backends
+                          ?.filter((b) => backendConfigs?.includes(b.id))
+                          .map((backend) => (
+                            <div
+                              key={backend.id}
+                              className="flex items-center space-x-2 p-2 hover:bg-secondary rounded group"
+                            >
+                              <div className="flex items-center space-x-2 flex-1">
+                                <div className="flex h-4 w-4 items-center justify-center rounded border bg-primary border-primary">
+                                  <Check className="h-3 w-3 text-primary-foreground" />
+                                </div>
+                                <span
+                                  className="text-sm truncate flex-1"
+                                  title={`${backend.name} (${backend.provider} - ${backend.model})`}
+                                >
+                                  {backend.name}
+                                </span>
+                              </div>
+                              {onViewBackendConfig && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewBackendConfig(backend.id);
+                                  }}
+                                  title="View Backend Configuration"
+                                >
+                                  <Search className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
-              {backendConfig && onViewBackendConfig && (
-                <Button
-                  variant="outline"
-                  onClick={onViewBackendConfig}
-                  className="h-9 w-9 p-0"
-                  title="View Backend Configuration"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-              )}
             </div>
-          </div>
+          ) : (
+            <div className="w-full sm:w-auto pr-3 pb-3">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Backend Configuration
+              </label>
+              <div className="flex gap-2">
+                <div
+                  className="w-[280px] px-3 py-2 bg-background rounded-md border text-sm truncate"
+                  title={
+                    selectedBackendName || backendConfig || 'Not specified'
+                  }
+                >
+                  {selectedBackendName || backendConfig || 'Not specified'}
+                </div>
+                {backendConfig && onViewBackendConfig && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onViewBackendConfig()}
+                    className="h-9 w-9 p-0"
+                    title="View Backend Configuration"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="w-full sm:w-auto pr-3 pb-3">
             <label className="text-xs text-muted-foreground mb-1 block">
@@ -354,7 +461,7 @@ export default function TopPanel({
                   <div className="flex flex-col">
                     <span className="font-medium">Simple Rollout</span>
                     <span className="text-xs text-muted-foreground">
-                      Run a context with a subject model
+                      Run a context with subject model(s)
                     </span>
                   </div>
                 </SelectItem>
@@ -433,79 +540,191 @@ export default function TopPanel({
           </div>
         </div>
 
-        {/* Backend Configuration */}
-        <div className="w-full sm:w-auto pr-3 pb-3">
-          <label className="text-xs text-muted-foreground mb-1 block">
-            Backend Configuration
-          </label>
-          <div className="flex gap-2">
-            <Select
-              value={
-                backends?.some((b) => b.id === backendConfig)
-                  ? backendConfig
-                  : ''
-              }
-              onValueChange={onBackendConfigChange}
-              disabled={isLoadingBackends}
-            >
-              <SelectTrigger
-                className="w-[280px]"
-                title={selectedBackendName || undefined}
-              >
-                {isLoadingBackends ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Loading...</span>
+        {/* Backend Configuration - Different for simple rollout vs counterfactual */}
+        {experimentType === 'simple_rollout' ? (
+          <div className="w-full sm:w-auto pr-3 pb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Backend Configurations (select at least one)
+            </label>
+            <div className="flex gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-[280px] justify-between"
+                    disabled={isLoadingBackends}
+                  >
+                    {isLoadingBackends ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Loading...</span>
+                      </div>
+                    ) : backendConfigs && backendConfigs.length > 0 ? (
+                      <span className="truncate">
+                        {backendConfigs.length === 1
+                          ? backends?.find((b) => b.id === backendConfigs[0])
+                              ?.name
+                          : `${backendConfigs.length} backends selected`}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        Select backends
+                      </span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px] p-0" align="start">
+                  <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
+                    {backends?.length === 0 ? (
+                      <div className="text-xs text-muted-foreground p-2">
+                        No backend configurations yet. Click + to create one.
+                      </div>
+                    ) : (
+                      backends?.map((backend) => (
+                        <div
+                          key={backend.id}
+                          className="flex items-center space-x-2 p-2 hover:bg-secondary rounded group"
+                        >
+                          <div
+                            className="flex items-center space-x-2 flex-1 cursor-pointer"
+                            onClick={() => {
+                              const isSelected = backendConfigs?.includes(
+                                backend.id
+                              );
+                              const newBackends = isSelected
+                                ? (backendConfigs || []).filter(
+                                    (id) => id !== backend.id
+                                  )
+                                : [...(backendConfigs || []), backend.id];
+                              onBackendConfigsChange?.(newBackends);
+                            }}
+                          >
+                            <div
+                              className={cn(
+                                'flex h-4 w-4 items-center justify-center rounded border',
+                                backendConfigs?.includes(backend.id)
+                                  ? 'bg-primary border-primary'
+                                  : 'border-border'
+                              )}
+                            >
+                              {backendConfigs?.includes(backend.id) && (
+                                <Check className="h-3 w-3 text-primary-foreground" />
+                              )}
+                            </div>
+                            <span
+                              className="text-sm truncate flex-1"
+                              title={`${backend.name} (${backend.provider} - ${backend.model})`}
+                            >
+                              {backend.name}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onViewBackendConfig) {
+                                onViewBackendConfig(backend.id);
+                              }
+                            }}
+                            title="View Backend Configuration"
+                          >
+                            <Search className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ) : (
-                  <SelectValue
-                    className="truncate"
-                    placeholder="Select backend"
-                  />
-                )}
-              </SelectTrigger>
-              <SelectContent>
-                {backends?.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-2">
-                    No backend configurations yet. Click + to create one.
-                  </div>
-                ) : (
-                  backends?.map((backend) => (
-                    <SelectItem
-                      key={backend.id}
-                      value={backend.id}
-                      title={`${backend.name} (${backend.provider} - ${backend.model})`}
-                    >
-                      <span className="block truncate">{backend.name}</span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            {backendConfig && backends?.some((b) => b.id === backendConfig) && (
+                </PopoverContent>
+              </Popover>
               <Button
                 variant="outline"
-                onClick={onViewBackendConfig}
+                onClick={onNewBackendConfig}
                 className="h-9 w-9 p-0"
-                title="View Backend Configuration"
+                title="New Backend Configuration"
               >
-                <Search className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={onNewBackendConfig}
-              className="h-9 w-9 p-0"
-              title={
-                backendConfig && backends?.some((b) => b.id === backendConfig)
-                  ? 'Clone Backend Configuration'
-                  : 'New Backend Configuration'
-              }
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="w-full sm:w-auto pr-3 pb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Backend Configuration
+            </label>
+            <div className="flex gap-2">
+              <Select
+                value={
+                  backends?.some((b) => b.id === backendConfig)
+                    ? backendConfig
+                    : ''
+                }
+                onValueChange={onBackendConfigChange}
+                disabled={isLoadingBackends}
+              >
+                <SelectTrigger
+                  className="w-[280px]"
+                  title={selectedBackendName || undefined}
+                >
+                  {isLoadingBackends ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Loading...</span>
+                    </div>
+                  ) : (
+                    <SelectValue
+                      className="truncate"
+                      placeholder="Select backend"
+                    />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  {backends?.length === 0 ? (
+                    <div className="text-xs text-muted-foreground p-2">
+                      No backend configurations yet. Click + to create one.
+                    </div>
+                  ) : (
+                    backends?.map((backend) => (
+                      <SelectItem
+                        key={backend.id}
+                        value={backend.id}
+                        title={`${backend.name} (${backend.provider} - ${backend.model})`}
+                      >
+                        <span className="block truncate">{backend.name}</span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {backendConfig &&
+                backends?.some((b) => b.id === backendConfig) && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onViewBackendConfig?.()}
+                    className="h-9 w-9 p-0"
+                    title="View Backend Configuration"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              <Button
+                variant="outline"
+                onClick={onNewBackendConfig}
+                className="h-9 w-9 p-0"
+                title={
+                  backendConfig && backends?.some((b) => b.id === backendConfig)
+                    ? 'Clone Backend Configuration'
+                    : 'New Backend Configuration'
+                }
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Judge Configuration - Only show for counterfactual experiments or optional for simple rollout */}
         <div className="w-full sm:w-auto pr-3 pb-3">
