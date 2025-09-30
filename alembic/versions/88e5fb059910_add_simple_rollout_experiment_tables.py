@@ -1,7 +1,7 @@
 """add_simple_rollout_experiment_tables
 
 Revision ID: 88e5fb059910
-Revises: 863c43b0ddd3
+Revises: 88e5fb059910
 Create Date: 2025-09-27 11:45:20.132072
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "88e5fb059910"
-down_revision: Union[str, Sequence[str], None] = "863c43b0ddd3"
+down_revision: Union[str, Sequence[str], None] = "94689d4c6ebe"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
