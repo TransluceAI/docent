@@ -320,14 +320,3 @@ Your job is to find concrete examples of behavior in this agent run that might b
 Your output MUST adhere to the following schema:
 {output_schema}
 """
-
-
-def validate_schema(schema: str | dict[str, Any]) -> tuple[bool, str | None]:
-    """Validate whether a string or object is is valid JSON Schema."""
-    try:
-        if isinstance(schema, str):
-            schema = json.loads(schema)
-        jsonschema.validate(schema, DEFAULT_OUTPUT_SCHEMA)
-        return True, None
-    except (json.JSONDecodeError, jsonschema.ValidationError) as e:
-        return False, f"Invalid JSON Schema: {e}"

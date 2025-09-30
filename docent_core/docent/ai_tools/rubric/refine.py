@@ -2,6 +2,8 @@ import json
 import re
 from typing import Any, Protocol
 
+import jsonschema
+
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat.message import ChatMessage, SystemMessage, ToolMessage, UserMessage
 from docent.data_models.chat.tool import (
@@ -14,11 +16,7 @@ from docent.data_models.judge import JudgeRunLabel
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import MessagesInput
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
-from docent_core.docent.ai_tools.rubric.rubric import (
-    JudgeResult,
-    Rubric,
-    validate_schema,
-)
+from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, Rubric
 from docent_core.docent.services.llms import LLMService
 
 # TODO(mengk): if a user asks a statistical question, reframe it into a rubric question and then tell them to use the plotting functions to accomplish their goal.
@@ -197,15 +195,9 @@ def execute_set_rubric(rubric: Rubric, tool_call: ToolCall) -> ToolMessage:
         )
 
     # Output schema was edited: validate, set, and increment
-    is_valid_schema, err = validate_schema(output_schema)
-    if not is_valid_schema:
-        return ToolMessage(
-            content=f"Invalid output schema: {err}",
-            error={"detail": err},
-            tool_call_id=tool_call.id,
-            function=tool_call.function,
-        )
-    else:
+    try:
+        jsonschema.Draft202012Validator.check_schema(output_schema)
+
         rubric.output_schema = output_schema
         rubric.version += 1
         return ToolMessage(
@@ -213,6 +205,13 @@ def execute_set_rubric(rubric: Rubric, tool_call: ToolCall) -> ToolMessage:
             tool_call_id=tool_call.id,
             function=tool_call.function,
             error=None,
+        )
+    except jsonschema.SchemaError as e:
+        return ToolMessage(
+            content=f"Invalid output schema: {e}",
+            error={"detail": e},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
         )
 
 
