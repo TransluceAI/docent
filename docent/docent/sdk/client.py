@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.judge import JudgeRunLabel
 from docent.loaders import load_inspect
 
 logger = get_logger(__name__)
@@ -48,13 +49,18 @@ class Docent:
 
         self._login(api_key)
 
+    def _handle_response_errors(self, response: requests.Response):
+        """Handle API response and raise informative errors.
+        TODO: make this more informative."""
+        response.raise_for_status()
+
     def _login(self, api_key: str):
         """Login with email/password to establish session."""
         self._session.headers.update({"Authorization": f"Bearer {api_key}"})
 
         url = f"{self._server_url}/api-keys/test"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
 
         logger.info("Logged in with API key")
         return
@@ -90,7 +96,7 @@ class Docent:
         }
 
         response = self._session.post(url, json=payload)
-        response.raise_for_status()
+        self._handle_response_errors(response)
 
         response_data = response.json()
         collection_id = response_data.get("collection_id")
@@ -134,13 +140,13 @@ class Docent:
                 payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch]}
 
                 response = self._session.post(url, json=payload)
-                response.raise_for_status()
+                self._handle_response_errors(response)
 
                 pbar.update(len(batch))
 
         url = f"{self._server_url}/{collection_id}/compute_embeddings"
         response = self._session.post(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
 
         logger.info(f"Successfully added {total_runs} agent runs to Collection '{collection_id}'")
         return {"status": "success", "total_runs_added": total_runs}
@@ -156,7 +162,7 @@ class Docent:
         """
         url = f"{self._server_url}/collections"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
         return response.json()
 
     def list_rubrics(self, collection_id: str) -> list[dict[str, Any]]:
@@ -173,7 +179,7 @@ class Docent:
         """
         url = f"{self._server_url}/rubric/{collection_id}/rubrics"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
         return response.json()
 
     def get_rubric_run_state(self, collection_id: str, rubric_id: str) -> dict[str, Any]:
@@ -191,7 +197,7 @@ class Docent:
         """
         url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/rubric_run_state"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
         return response.json()
 
     def get_clustering_state(self, collection_id: str, rubric_id: str) -> dict[str, Any]:
@@ -209,7 +215,7 @@ class Docent:
         """
         url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/clustering_job"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
         return response.json()
 
     def get_cluster_centroids(self, collection_id: str, rubric_id: str) -> list[dict[str, Any]]:
@@ -244,6 +250,90 @@ class Docent:
         clustering_state = self.get_clustering_state(collection_id, rubric_id)
         return clustering_state.get("assignments", {})
 
+    def add_label(
+        self,
+        collection_id: str,
+        rubric_id: str,
+        label: JudgeRunLabel,
+    ) -> dict[str, Any]:
+        """Attach a manual label to an agent run for a rubric.
+
+        Args:
+            collection_id: ID of the Collection that owns the rubric.
+            rubric_id: ID of the rubric the label applies to.
+            label: A `JudgeRunLabel` that must comply with the rubric's output schema.
+
+        Returns:
+            dict: API response containing a status message.
+
+        Raises:
+            ValueError: If the label does not target the rubric specified in the path.
+            requests.exceptions.HTTPError: If the API request fails or validation errors occur.
+        """
+        if label.rubric_id != rubric_id:
+            raise ValueError("Label rubric_id must match the rubric_id argument")
+
+        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/label"
+        payload = {"label": label.model_dump(mode="json")}
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def add_labels(
+        self,
+        collection_id: str,
+        rubric_id: str,
+        labels: list[JudgeRunLabel],
+    ) -> dict[str, Any]:
+        """Attach multiple manual labels to a rubric.
+
+        Args:
+            collection_id: ID of the Collection that owns the rubric.
+            rubric_id: ID of the rubric the labels apply to.
+            labels: List of `JudgeRunLabel` objects.
+
+        Returns:
+            dict: API response containing status information.
+
+        Raises:
+            ValueError: If no labels are provided.
+            ValueError: If any label targets a different rubric.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        if not labels:
+            raise ValueError("labels must contain at least one entry")
+
+        rubric_ids = {label.rubric_id for label in labels}
+        if rubric_ids != {rubric_id}:
+            raise ValueError(
+                "All labels must specify the same rubric_id that is provided to add_labels"
+            )
+
+        payload = {"labels": [l.model_dump(mode="json") for l in labels]}
+
+        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/labels"
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def get_labels(self, collection_id: str, rubric_id: str) -> list[dict[str, Any]]:
+        """Retrieve all manual labels for a rubric.
+
+        Args:
+            collection_id: ID of the Collection that owns the rubric.
+            rubric_id: ID of the rubric to fetch labels for.
+
+        Returns:
+            list: List of label dictionaries. Each includes agent_run_id and label content.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/labels"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
     def get_agent_run(self, collection_id: str, agent_run_id: str) -> AgentRun | None:
         """Get a specific agent run by its ID.
 
@@ -259,7 +349,7 @@ class Docent:
         """
         url = f"{self._server_url}/{collection_id}/agent_run"
         response = self._session.get(url, params={"agent_run_id": agent_run_id})
-        response.raise_for_status()
+        self._handle_response_errors(response)
         if response.json() is None:
             return None
         else:
@@ -281,7 +371,7 @@ class Docent:
         """
         url = f"{self._server_url}/{collection_id}/make_public"
         response = self._session.post(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
 
         logger.info(f"Successfully made Collection '{collection_id}' public")
         return response.json()
@@ -303,13 +393,7 @@ class Docent:
         payload = {"email": email}
         response = self._session.post(url, json=payload)
 
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError:
-            if response.status_code == 404:
-                raise ValueError(f"The user you are trying to share with ({email}) does not exist.")
-            else:
-                raise  # Re-raise the original exception
+        self._handle_response_errors(response)
 
         logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
         return response.json()
@@ -328,7 +412,7 @@ class Docent:
         """
         url = f"{self._server_url}/{collection_id}/agent_run_ids"
         response = self._session.get(url)
-        response.raise_for_status()
+        self._handle_response_errors(response)
         return response.json()
 
     def recursively_ingest_inspect_logs(self, collection_id: str, fpath: str):
@@ -393,7 +477,7 @@ class Docent:
                         payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch_list]}
 
                         response = self._session.post(url, json=payload)
-                        response.raise_for_status()
+                        self._handle_response_errors(response)
 
                         runs_from_file += len(batch_list)
                         file_pbar.update(len(batch_list))
@@ -406,7 +490,7 @@ class Docent:
             logger.info("Computing embeddings for added runs...")
             url = f"{self._server_url}/{collection_id}/compute_embeddings"
             response = self._session.post(url)
-            response.raise_for_status()
+            self._handle_response_errors(response)
 
         logger.info(
             f"Successfully ingested {total_runs_added} total agent runs from {len(eval_files)} files"

@@ -19,6 +19,7 @@ from docent.data_models.chat.message import (
 from docent.data_models.citation import (
     parse_citations,
 )
+from docent.data_models.judge import JudgeRunLabel
 from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, ModelOption
@@ -34,7 +35,7 @@ from docent_core.docent.ai_tools.assistant.chat import (
     execute_add_label,
     make_system_prompt,
 )
-from docent_core.docent.ai_tools.rubric.rubric import JudgeRunLabel, Rubric
+from docent_core.docent.ai_tools.rubric.rubric import Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
@@ -573,12 +574,15 @@ class ChatService:
 
                             # Create a new label if it doesn't exist, else update the existing one
                             if existing is None:
-                                await self.rubric_svc.create_judge_run_label(
-                                    JudgeRunLabel(
-                                        agent_run_id=agent_run_id,
-                                        rubric_id=rubric.id,
-                                        label=label_dict,
-                                    )
+                                await self.rubric_svc.create_judge_run_labels(
+                                    ctx.collection_id,
+                                    [
+                                        JudgeRunLabel(
+                                            agent_run_id=agent_run_id,
+                                            rubric_id=rubric.id,
+                                            label=label_dict,
+                                        )
+                                    ],
                                 )
                             else:
                                 merged = dict(existing.label)

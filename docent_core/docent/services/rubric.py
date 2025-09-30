@@ -4,10 +4,12 @@ from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import and_, delete, exists, func, select, update
+import jsonschema
+from sqlalchemy import and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
+from docent.data_models.judge import JudgeRunLabel
 from docent_core._db_service.batched_writer import BatchedWriter
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core._worker.constants import WorkerFunction
@@ -20,7 +22,6 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
 )
 from docent_core.docent.ai_tools.rubric.rubric import (
     JudgeResult,
-    JudgeRunLabel,
     ResultType,
     Rubric,
     evaluate_rubric,
@@ -765,18 +766,54 @@ class RubricService:
     # Result Labels CRUD #
     ######################
 
-    async def create_judge_run_label(self, new_label: JudgeRunLabel) -> bool:
-        """Add a run label to a judge result."""
-        self.session.add(SQLAJudgeRunLabel.from_pydantic(new_label))
-        return True
+    async def create_judge_run_labels(
+        self, collection_id: str, labels: list[JudgeRunLabel]
+    ) -> None:
+        """Add one or more run labels to judge results."""
+
+        if not labels:
+            return
+
+        # Get the single rubric_id that all labels share
+        rubric_ids = {label.rubric_id for label in labels}
+        if len(rubric_ids) != 1:
+            raise ValueError("All labels in a batch must target the same rubric")
+        rubric_id = labels[0].rubric_id
+
+        # Get *latest* rubric for its output schema
+        sqla_rubric = await self.get_rubric(rubric_id, version=None)
+        if sqla_rubric is None:
+            raise ValueError(f"Rubric {rubric_id} not found")
+        if sqla_rubric.collection_id != collection_id:
+            raise ValueError(f"Rubric {rubric_id} does not belong to collection {collection_id}")
+
+        # Validate labels against rubric output schema (raises ValueError if invalid)
+        for label in labels:
+            jsonschema.validate(label.label, sqla_rubric.output_schema)
+
+        # Add labels to db
+        self.session.add_all([SQLAJudgeRunLabel.from_pydantic(label) for label in labels])
 
     async def update_judge_run_label(self, agent_run_id: str, label: dict[str, Any]) -> bool:
         """Update a run label for a judge result."""
-        await self.session.execute(
-            update(SQLAJudgeRunLabel)
-            .where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
-            .values(label=label)
+        # Check that there's an existing label
+        result = await self.session.execute(
+            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
         )
+        existing_label = result.scalar_one_or_none()
+        if existing_label is None:
+            raise ValueError(f"Label for agent run {agent_run_id} not found")
+
+        # Get *latest* rubric for its output schema
+        sqla_rubric = await self.get_rubric(existing_label.rubric_id, version=None)
+        if sqla_rubric is None:
+            raise ValueError(f"Rubric {existing_label.rubric_id} not found")
+
+        # Validate label against rubric output schema (raises ValueError if invalid)
+        jsonschema.validate(label, sqla_rubric.output_schema)
+
+        # Update label in db
+        existing_label.label = label
         return True
 
     async def get_judge_run_labels(self, rubric_id: str) -> list[JudgeRunLabel]:

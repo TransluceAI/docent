@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import {
   useGetRubricQuery,
@@ -35,8 +36,35 @@ function LabelArea({ result, collectionId, rubricId }: LabelAreaProps) {
     });
 
   // Initial state is the run label if it exists, otherwise the result output
-  const initialState =
+  const initialStateRaw =
     judgeRunLabel && isRunLabelSuccess ? judgeRunLabel.label : result.output;
+
+  // The backend returns JudgeResultsWithCitations, meaning text fields get converted into { text: ..., citations: ... } objects.
+  // Need to convert those objects back into strings, since labels don't care about the citations.
+  // Use currentViewedRubric.output_schema to check for key paths that are strings, and if they are objects with a text properly, just pull that out.
+  const initialState = useMemo(() => {
+    const schema = currentViewedRubric?.output_schema;
+    if (!schema) return {};
+
+    return Object.fromEntries(
+      Object.entries(initialStateRaw).map(([key, value]) => {
+        const property = schema.properties?.[key];
+
+        // If the property is a string, and the value is an object with a text property, pull that out
+        if (
+          property &&
+          property.type === 'string' &&
+          value &&
+          typeof value === 'object' &&
+          'text' in (value as Record<string, any>)
+        ) {
+          return [key, (value as { text: string }).text];
+        }
+
+        return [key, value];
+      })
+    );
+  }, [currentViewedRubric?.output_schema, initialStateRaw]);
 
   // Make sure that the label area is displaying the latest schema form
   const isOutdated =

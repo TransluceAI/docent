@@ -10,12 +10,12 @@ from docent.data_models.chat.tool import (
     ToolParam,
     ToolParams,
 )
+from docent.data_models.judge import JudgeRunLabel
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import MessagesInput
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES
 from docent_core.docent.ai_tools.rubric.rubric import (
     JudgeResult,
-    JudgeRunLabel,
     Rubric,
     validate_schema,
 )

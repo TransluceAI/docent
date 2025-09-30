@@ -19,7 +19,7 @@ type FormState = Record<string, any>;
 type FormAction =
   | { type: 'SET_ENUM'; key: string; value: string }
   | { type: 'SET_BOOLEAN'; key: string; value: boolean }
-  | { type: 'SET_EXPLANATION_TEXT'; key: string; value: string }
+  | { type: 'SET_TEXT'; key: string; value: string }
   | { type: 'SET_NUMBER'; key: string; value: number }
   | { type: 'RESET'; initialState: FormState };
 
@@ -30,9 +30,8 @@ const formReducer = (state: FormState, action: FormAction): FormState => {
       return { ...state, [action.key]: action.value };
     case 'SET_BOOLEAN':
       return { ...state, [action.key]: action.value };
-    case 'SET_EXPLANATION_TEXT':
-      // NOTE(cadentj): Explanation isn't directly stored as a value
-      return { ...state, [action.key]: { text: action.value } };
+    case 'SET_TEXT':
+      return { ...state, [action.key]: action.value };
     case 'SET_NUMBER':
       return { ...state, [action.key]: action.value };
     case 'RESET':
@@ -260,11 +259,9 @@ const LabelForm = ({
                 {key}
               </label>
               <TextInput
-                value={formState[key]?.text}
+                value={formState[key]}
                 placeholder={'Enter an updated explanation.'}
-                onChange={(value) =>
-                  dispatch({ type: 'SET_EXPLANATION_TEXT', key, value })
-                }
+                onChange={(value) => dispatch({ type: 'SET_TEXT', key, value })}
               />
             </div>
           );

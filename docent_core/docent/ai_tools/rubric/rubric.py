@@ -45,6 +45,9 @@ DEFAULT_OUTPUT_SCHEMA = {
         "explanation": {"type": "string", "citations": True},
         "label": {"type": "string", "enum": ["match", "no match"]},
     },
+    # Enforce strict schema
+    "required": ["label", "explanation"],
+    "additionalProperties": False,
 }
 
 DEFAULT_JUDGE_MODEL = PROVIDER_PREFERENCES.default_judge_models[0]
@@ -82,13 +85,6 @@ class ResultType(enum.Enum):
 
     DIRECT_RESULT = "direct_result"
     NEAR_MISS = "near_miss"
-
-
-class JudgeRunLabel(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    agent_run_id: str
-    rubric_id: str
-    label: dict[str, Any]
 
 
 class JudgeResult(BaseModel):

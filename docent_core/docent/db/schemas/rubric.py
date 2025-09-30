@@ -22,10 +22,10 @@ from docent_core._llm_util.providers.preferences import ModelOption
 if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 
+from docent.data_models.judge import JudgeRunLabel
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.ai_tools.rubric.rubric import (
     JudgeResult,
-    JudgeRunLabel,
     ResultType,
     Rubric,
 )
