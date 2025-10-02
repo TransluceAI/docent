@@ -275,7 +275,7 @@ async def evaluate_rubric(
     outputs = await llm_svc.get_completions(
         inputs=prompt_resolvers,
         model_options=[rubric.judge_model],
-        max_new_tokens=8192,
+        max_new_tokens=16384,
         timeout=180.0,
         use_cache=True,
         completion_callback=(
