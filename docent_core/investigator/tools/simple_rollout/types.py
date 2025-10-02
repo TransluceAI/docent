@@ -18,6 +18,7 @@ from docent_core.investigator.tools.backends.openai_compatible_backend import (
     OpenAICompatibleBackendConfig,
 )
 from docent_core.investigator.tools.backends.types import BackendConfig
+from docent_core.investigator.tools.common.signature_utils import update_hash_with_agent_run
 from docent_core.investigator.tools.common.types import ExperimentStatus, Grade, generate_uid
 from docent_core.investigator.tools.contexts.base_context import BaseContext
 from docent_core.investigator.tools.judges.rubric_judge import RubricJudgeConfig
@@ -237,18 +238,10 @@ class SimpleRolloutExperimentResult(BaseModel):
         if self.agent_runs:
             for run_id in sorted(subscribed_run_ids):
                 run = self.agent_runs.get(run_id)
-                if not run or not run.transcripts:
-                    continue
-                h.update(run_id.encode())
-                h.update(str(len(run.transcripts)).encode())
-                for t in run.transcripts:
-                    h.update(t.id.encode())
-                    h.update(str(len(t.messages)).encode())
-                    if t.messages:
-                        last_msg = t.messages[-1]
-                        if isinstance(last_msg.content, str):
-                            # Just track length of last message content (append-only)
-                            h.update(str(len(last_msg.content)).encode())
+                if run:
+                    h.update(run_id.encode())
+                    h.update(str(len(run.transcripts)).encode())
+                    update_hash_with_agent_run(h, run)
 
         return h.digest()
 
