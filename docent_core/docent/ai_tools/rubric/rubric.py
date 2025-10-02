@@ -45,9 +45,9 @@ DEFAULT_OUTPUT_SCHEMA = {
         "explanation": {"type": "string", "citations": True},
         "label": {"type": "string", "enum": ["match", "no match"]},
     },
-    # Enforce strict schema
+    # Require these properties to be present
     "required": ["label", "explanation"],
-    "additionalProperties": False,
+    # Allow additional properties though, as their presence is not breaking
 }
 
 DEFAULT_JUDGE_MODEL = PROVIDER_PREFERENCES.default_judge_models[0]
