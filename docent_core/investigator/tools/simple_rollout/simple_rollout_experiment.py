@@ -42,7 +42,6 @@ from docent_core.investigator.tools.backends.openai_compatible_backend import (
 )
 from docent_core.investigator.tools.common.types import (
     ExperimentStatus,
-    Grade,
     GradeEnd,
     MessageEnd,
     MessageStart,
@@ -460,12 +459,8 @@ class SimpleRolloutExperiment:
                     pass
 
                 elif isinstance(event, GradeEnd):
-                    # Store the grade
-                    metadata.grade = Grade(
-                        grade=event.annotation.grade,
-                        grader_prompt=event.annotation.grader_prompt,
-                        grader_response=event.annotation.grader_response,
-                    )
+                    # Store the grade (just the float value in metadata)
+                    metadata.grade = event.annotation.grade
 
                     metadata.state = "completed"
 

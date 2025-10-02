@@ -4,11 +4,12 @@ import queue
 import signal
 import threading
 import time
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any, AsyncGenerator, Callable, Coroutine, Optional
 
 import anyio
 import backoff
 import httpx
+import orjson
 from backoff.types import Details
 
 from docent._log_util.logger import get_logger
@@ -36,6 +37,15 @@ def _print_backoff_message(e: Details):
     logger.warning(
         f"AgentRunWriter backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
     )
+
+
+async def _generate_payload_chunks(runs: list[AgentRun]) -> AsyncGenerator[bytes, None]:
+    yield b'{"agent_runs": ['
+    for i, ar in enumerate(runs):
+        if i > 0:
+            yield b","
+        yield orjson.dumps(ar.model_dump(mode="json"))
+    yield b"]}"
 
 
 class AgentRunWriter:
@@ -175,7 +185,7 @@ class AgentRunWriter:
             logger.info("Cancelling pending tasks...")
             self._cancel_event.set()
             n_pending = self._queue.qsize()
-            logger.info(f"Cancelled ~{n_pending} pending tasks")
+            logger.info(f"Cancelled ~{n_pending} pending runs")
 
             # Give a brief moment to exit
             logger.info("Waiting for thread to exit...")
@@ -194,8 +204,11 @@ class AgentRunWriter:
             on_backoff=_print_backoff_message,
         )
         async def _post_batch(batch: list[AgentRun]) -> None:
-            payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch]}
-            resp = await client.post(self._endpoint, json=payload, timeout=self._request_timeout)
+            resp = await client.post(
+                self._endpoint,
+                content=_generate_payload_chunks(batch),
+                timeout=self._request_timeout,
+            )
             resp.raise_for_status()
 
         return _post_batch
@@ -246,7 +259,7 @@ def init(
     web_url: str = "https://docent.transluce.org",
     api_key: str | None = None,
     # Writer arguments
-    num_workers: int = 2,
+    num_workers: int = 4,
     queue_maxsize: int = 20_000,
     request_timeout: float = 30.0,
     flush_interval: float = 1.0,

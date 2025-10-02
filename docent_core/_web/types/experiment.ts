@@ -21,7 +21,8 @@ export interface AgentRunMetadata {
   counterfactual_name?: string;
   counterfactual_description?: string;
   replica_idx: number;
-  grade?: { grade: number };
+  // Grade is now a simple number (was previously an object with {grade: number})
+  grade?: number;
   state?: 'in_progress' | 'completed' | 'errored';
   error_type?: string;
   error_message?: string;

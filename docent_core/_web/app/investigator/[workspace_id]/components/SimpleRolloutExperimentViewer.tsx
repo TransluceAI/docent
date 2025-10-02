@@ -341,8 +341,7 @@ export default function SimpleRolloutExperimentViewer({
         runsByBackend[backendName] = [];
       }
 
-      const gradeVal =
-        typeof m.grade?.grade === 'number' ? m.grade.grade : null;
+      const gradeVal = typeof m.grade === 'number' ? m.grade : null;
       runsByBackend[backendName].push({
         id: runId,
         replica_idx: m.replica_idx,

@@ -20,6 +20,7 @@ _redis_lock = anyio.Lock()
 
 STREAM_KEY_FORMAT = "stream_{job_id}"
 STATE_KEY_FORMAT = "state_{job_id}"
+SUBSCRIPTIONS_KEY_FORMAT = "agent_run:subscriptions:{job_id}"
 
 
 def get_redis_url() -> str:

@@ -1,7 +1,8 @@
 """Type definitions for simple rollout experiments."""
 
+import hashlib
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,6 +18,7 @@ from docent_core.investigator.tools.backends.openai_compatible_backend import (
     OpenAICompatibleBackendConfig,
 )
 from docent_core.investigator.tools.backends.types import BackendConfig
+from docent_core.investigator.tools.common.signature_utils import update_hash_with_agent_run
 from docent_core.investigator.tools.common.types import ExperimentStatus, Grade, generate_uid
 from docent_core.investigator.tools.contexts.base_context import BaseContext
 from docent_core.investigator.tools.judges.rubric_judge import RubricJudgeConfig
@@ -91,7 +93,26 @@ class SimpleRolloutAgentRunMetadata(BaseModel):
     model: str
     backend_name: str
     replica_idx: int
-    grade: Optional[Grade] = None
+    # Now just a float; Grade object is automatically converted via validator for backwards compatibility
+    grade: Optional[float] = None
+
+    @field_validator("grade", mode="before")
+    @classmethod
+    def _extract_grade_from_object(cls, v: Any) -> float | None:
+        """Convert Grade object to float for backwards compatibility."""
+        if v is None:
+            return None
+        # If it's a Grade object (has a 'grade' attribute), extract the float
+        if isinstance(v, Grade):
+            return float(v.grade)
+        # If it's a dict with 'grade' key (from serialization), extract the float
+        if isinstance(v, dict) and "grade" in v:
+            return float(v["grade"])  # type: ignore[arg-type]
+        # If it's already a float or int, return as float
+        if isinstance(v, (float, int)):
+            return float(v)
+        # Otherwise try to convert to float
+        return float(v)  # type: ignore[arg-type]
 
     # Simple per-run state for UI display
     state: Literal["in_progress", "completed", "errored"] = "in_progress"
@@ -177,6 +198,52 @@ class SimpleRolloutExperimentResult(BaseModel):
             docent_collection_id=self.docent_collection_id,
             # subscribed_agent_runs is populated by the worker when streaming
         )
+
+    def compute_signature(self, subscribed_run_ids: set[str]) -> bytes:
+        """Compute a fast hash-based signature for change detection.
+
+        This signature changes whenever any relevant state changes, including:
+        - Experiment status, progress, or errors
+        - Agent run metadata (state, grade)
+        - Collection ID
+        - Subscribed run transcript data (message counts and content lengths)
+
+        Args:
+            subscribed_run_ids: Set of agent run IDs to include detailed transcript info for
+
+        Returns:
+            MD5 digest representing the current state (16 bytes)
+        """
+        h = hashlib.md5()
+
+        # Status (changes frequently during execution)
+        h.update(self.experiment_status.status.encode())
+        h.update(str(round(self.experiment_status.progress or 0.0, 3)).encode())
+        h.update(b"1" if self.experiment_status.error_message else b"0")
+
+        # Agent run metadata - state and grade
+        if self.agent_run_metadata:
+            for run_id in sorted(self.agent_run_metadata.keys()):
+                m = self.agent_run_metadata[run_id]
+                h.update(run_id.encode())
+                h.update((m.state or "").encode())
+                if m.grade is not None:
+                    h.update(str(m.grade).encode())
+
+        # Collection ID
+        if self.docent_collection_id:
+            h.update(self.docent_collection_id.encode())
+
+        # Subscribed runs - transcript message counts and last message length
+        if self.agent_runs:
+            for run_id in sorted(subscribed_run_ids):
+                run = self.agent_runs.get(run_id)
+                if run:
+                    h.update(run_id.encode())
+                    h.update(str(len(run.transcripts)).encode())
+                    update_hash_with_agent_run(h, run)
+
+        return h.digest()
 
     @classmethod
     def from_sql(cls, result: SQLASimpleRolloutExperimentResult) -> "SimpleRolloutExperimentResult":

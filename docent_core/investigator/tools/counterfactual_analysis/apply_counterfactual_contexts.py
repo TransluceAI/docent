@@ -11,7 +11,8 @@ from collections.abc import AsyncIterator
 from string import Template
 from typing import Any
 
-from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from docent.data_models.chat.message import ChatMessage, parse_chat_message
@@ -110,7 +111,7 @@ APPLY_COUNTERFACTUAL_IDEA_USER_PROMPT_TPL = Template(
 
 
 async def llm_apply_counterfactual_to_base_context(
-    client: AsyncOpenAI,
+    client: genai.Client,
     base_context: BaseContext,
     counterfactual_idea: CounterfactualIdea,
     limiter: LimiterRegistry,
@@ -146,28 +147,31 @@ async def llm_apply_counterfactual_to_base_context(
 
             async with limiter():
                 # Make the streaming API call
-                stream = await client.chat.completions.create(
+                # Google API expects Content objects with proper structure
+                stream = await client.aio.models.generate_content_stream(  # type: ignore
                     model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text=user_prompt)],
+                        )
                     ],
-                    max_tokens=20_000,
-                    stream=True,
-                    response_format={"type": "json_object"},
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        system_instruction=system_prompt,
+                    ),
                 )
                 # Stream the response
                 async for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_content += content
+                    content = chunk.text or ""
+                    full_content += content
 
-                        # Emit TokenDelta
-                        yield TokenDelta(
-                            message_id=message_uid,
-                            role="assistant",
-                            content=content,
-                        )
+                    # Emit TokenDelta
+                    yield TokenDelta(
+                        message_id=message_uid,
+                        role="assistant",
+                        content=content,
+                    )
 
                 # Emit MessageEnd
                 yield MessageEnd(

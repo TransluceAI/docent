@@ -1707,10 +1707,10 @@ async def subscribe_to_agent_run(
 
     # Add the agent run to the subscription set
     # TODO(neil): move this to the counterfactual service
-    from docent_core._server._broker.redis_client import get_redis_client
+    from docent_core._server._broker.redis_client import SUBSCRIPTIONS_KEY_FORMAT, get_redis_client
 
     REDIS = await get_redis_client()
-    await REDIS.sadd(f"agent_run:subscriptions:{job_id}", request.agent_run_id)  # type: ignore
+    await REDIS.sadd(SUBSCRIPTIONS_KEY_FORMAT.format(job_id=job_id), request.agent_run_id)  # type: ignore
 
     logger.info(f"Subscribed to agent run {request.agent_run_id} for job {job_id}")
 
@@ -1739,10 +1739,10 @@ async def unsubscribe_from_agent_run(
 
     # Remove the agent run from the subscription set
     # TODO(neil): move this to the counterfactual service
-    from docent_core._server._broker.redis_client import get_redis_client
+    from docent_core._server._broker.redis_client import SUBSCRIPTIONS_KEY_FORMAT, get_redis_client
 
     REDIS = await get_redis_client()
-    await REDIS.srem(f"agent_run:subscriptions:{job_id}", request.agent_run_id)  # type: ignore
+    await REDIS.srem(SUBSCRIPTIONS_KEY_FORMAT.format(job_id=job_id), request.agent_run_id)  # type: ignore
 
     logger.info(f"Unsubscribed from agent run {request.agent_run_id} for job {job_id}")
 

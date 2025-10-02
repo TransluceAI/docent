@@ -15,19 +15,21 @@ from uuid import uuid4
 
 from passlib.context import CryptContext
 from sqlalchemy import (
-    ARRAY,
     ColumnElement,
-    String,
-    cast,
+    Text,
+    column,
     delete,
+    distinct,
     exists,
     func,
+    literal,
+    literal_column,
     select,
-    true,
     update,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql import text
+from sqlalchemy.sql import lateral, text
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
@@ -2077,7 +2079,7 @@ class MonoService:
         where_clause = ctx.get_base_where_clause(SQLAAgentRun)
         limit_rows = 5000
 
-        # Base CTE (limit seed rows)
+        # Base CTE: slice of rows from the collection
         base = (
             select(SQLAAgentRun.metadata_json.label("value"))
             .where(where_clause)
@@ -2085,39 +2087,45 @@ class MonoService:
             .cte("base")
         )
 
-        # Seed recursive CTE: value + empty text[] path
-        walk = select(
-            base.c.value,
-            cast([], ARRAY(String())).label("path"),
-        ).cte("walk", recursive=True)
+        EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]").label("path")  # type: ignore
 
-        # Table-valued function jsonb_each(value) -> (key, value), lateral
-        e = func.jsonb_each(walk.c.value).table_valued("key", "value")
-
-        # Recursive branch: ONLY descend into objects
-        obj_branch = (
-            select(
-                e.c.value,
-                func.array_append(walk.c.path, e.c.key).label("path"),
-            )
-            .select_from(walk.join(e.lateral(), true()))
-            .where(func.jsonb_typeof(walk.c.value) == "object")
+        # Seed: (value, [], jsonb_typeof(value))
+        seed = select(  # type: ignore
+            base.c.value.label("value"),
+            EMPTY_TEXT_ARRAY,  # type: ignore
+            func.jsonb_typeof(base.c.value).label("value_type"),
         )
 
-        walk = walk.union_all(obj_branch)
+        # Recursive CTE with named columns
+        w = seed.cte(name="walk", recursive=True)
 
-        path = func.array_to_string(walk.c.path, ".")
-        val_type = func.jsonb_typeof(walk.c.value)
+        # LATERAL jsonb_each(w.value) as ch(key text, value jsonb)
+        ch = lateral(
+            func.jsonb_each(w.c.value).table_valued(
+                column("key", Text),
+                column("value", JSONB),
+            )
+        ).alias("ch")
 
-        # Distinct type list per path (comma-separated)
+        # Recursive term: descend only if current node is an object
+        rec = select(
+            ch.c.value.label("value"),
+            # use array_append to avoid || casting surprises
+            func.array_append(w.c.path, ch.c.key).label("path"),
+            func.jsonb_typeof(ch.c.value).label("value_type"),
+        ).select_from(w.join(ch, w.c.value_type == literal("object")))
+
+        walk = w.union_all(rec)
+
+        # Aggregate: keep path as text[] for grouping; stringify only in projection
         stmt = (
             select(
-                path.label("path"),
-                func.string_agg(func.distinct(val_type), ",").label("value_types"),
+                func.array_to_string(walk.c.path, literal(".")).label("path"),
+                func.string_agg(distinct(walk.c.value_type), literal(",")).label("value_types"),
             )
             .where(func.array_length(walk.c.path, 1) > 0)
-            .group_by(path)
-            .order_by("path")
+            .group_by(walk.c.path)
+            .order_by(func.array_to_string(walk.c.path, literal(".")))
         )
 
         def _infer_filter_type_from_types(
@@ -2138,6 +2146,12 @@ class MonoService:
         all_fields: dict[str, FilterableField] = {}
 
         async with self.db.session() as session:
+            # Log the compiled SQL query for debugging
+            compiled_query = stmt.compile(compile_kwargs={"literal_binds": True})
+            print("SQL Query for get_agent_run_metadata_fields:")
+            print(compiled_query)
+            print("=" * 80)
+
             result = await session.execute(stmt)
             for row in result:
                 field_type = _infer_filter_type_from_types(row.value_types)

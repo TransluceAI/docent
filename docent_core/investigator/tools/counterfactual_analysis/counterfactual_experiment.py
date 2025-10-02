@@ -37,6 +37,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator, Literal, TypedDict
 
 import anyio
+from google import genai
 from openai import (
     AsyncOpenAI,
     BadRequestError,
@@ -159,10 +160,7 @@ class CounterfactualExperiment:
         self.anthropic_client = AsyncOpenAI(
             api_key=os.getenv("ANTHROPIC_API_KEY"), base_url="https://api.anthropic.com/v1/"
         )
-        self.gemini_client = AsyncOpenAI(
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        )
+        self.gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
         # Build the appropriate subject model based on backend type
         if isinstance(self.config.backend, OpenAICompatibleBackendConfig):
@@ -748,7 +746,7 @@ class CounterfactualExperiment:
 
                 elif isinstance(event, GradeEnd):  # type: ignore[misc]
                     # Grading complete - update metadata with grade
-                    state.metadata.grade = event.annotation
+                    state.metadata.grade = event.annotation.grade
                     state.metadata.state = "completed"
 
                     # Update the agent run's metadata with the grade and grader output
@@ -763,8 +761,6 @@ class CounterfactualExperiment:
                         completed_rollouts_count / total_rollouts
                     )
 
-                # Yield progress update periodically (not for every event to avoid overwhelming)
-                # You could add throttling here if needed
                 yield self.result
 
         # Do not mark as completed here. The job will be marked completed

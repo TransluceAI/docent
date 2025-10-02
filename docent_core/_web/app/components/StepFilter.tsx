@@ -36,43 +36,21 @@ export const StepFilter: React.FC<StepFilterProps> = ({
     { skip: !collectionId }
   );
 
-  // Calculate min and max step values from locally loaded metadata as fallback
-  const localStepRange = useMemo(() => {
-    const stepValues: number[] = [];
-
-    Object.values(metadataData).forEach((record) => {
-      const stepValue = record['metadata.step'];
-      if (typeof stepValue === 'number' && Number.isInteger(stepValue)) {
-        stepValues.push(stepValue);
-      }
-    });
-
-    if (stepValues.length === 0) {
-      return { min: 0, max: 100, hasStepData: false };
-    }
-
-    return {
-      min: Math.min(...stepValues),
-      max: Math.max(...stepValues),
-      hasStepData: true,
-    };
-  }, [metadataData]);
-
-  const apiStepRange = useMemo(() => {
+  const stepRange = useMemo(() => {
     if (!metadataRangeData) {
-      return null;
+      return { min: null, max: null, hasStepData: false };
     }
 
     const { min, max } = metadataRangeData;
     if (min === null || max === null) {
-      return null;
+      return { min: null, max: null, hasStepData: false };
     }
 
     const normalizedMin = Math.floor(min);
     const normalizedMax = Math.ceil(max);
 
     if (!Number.isFinite(normalizedMin) || !Number.isFinite(normalizedMax)) {
-      return null;
+      return { min: null, max: null, hasStepData: false };
     }
 
     return {
@@ -82,28 +60,9 @@ export const StepFilter: React.FC<StepFilterProps> = ({
     };
   }, [metadataRangeData]);
 
-  const stepRange = useMemo(() => {
-    if (apiStepRange) {
-      return apiStepRange;
-    }
-
-    if (localStepRange.hasStepData) {
-      return localStepRange;
-    }
-
-    if (currentValue !== null) {
-      return {
-        min: currentValue,
-        max: currentValue,
-        hasStepData: true,
-      };
-    }
-
-    return localStepRange;
-  }, [apiStepRange, localStepRange, currentValue]);
-
-  // Check if step filter should be shown
-  const shouldShowStepFilter = stepRange.hasStepData;
+  // Check if step filter should be shown - only show when we have valid data
+  const shouldShowStepFilter =
+    stepRange.hasStepData && stepRange.min !== null && stepRange.max !== null;
 
   // Sync internal state with currentValue prop
   useEffect(() => {
@@ -146,6 +105,8 @@ export const StepFilter: React.FC<StepFilterProps> = ({
     } else if (
       !isNaN(numValue) &&
       Number.isInteger(numValue) &&
+      stepRange.min !== null &&
+      stepRange.max !== null &&
       numValue >= stepRange.min &&
       numValue <= stepRange.max
     ) {

@@ -1,7 +1,8 @@
+import hashlib
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from docent.data_models import AgentRun
 from docent_core.investigator.db.schemas.experiment import (
@@ -16,6 +17,7 @@ from docent_core.investigator.tools.backends.openai_compatible_backend import (
     OpenAICompatibleBackendConfig,
 )
 from docent_core.investigator.tools.backends.types import BackendConfig
+from docent_core.investigator.tools.common.signature_utils import update_hash_with_agent_run
 from docent_core.investigator.tools.common.types import ExperimentStatus, Grade, generate_uid
 from docent_core.investigator.tools.contexts.base_context import BaseContext
 from docent_core.investigator.tools.judges.rubric_judge import RubricJudgeConfig
@@ -122,10 +124,11 @@ class CounterfactualExperimentConfig(BaseModel):
 
 class CounterfactualAgentRunMetadata(BaseModel):
     """
-    Agent run metadata for counterfactual experiment rollouts. It is also sent to the frontend
-    for every update,so the information contained here must be lightweight. (Later, we could
-    separate these, in case there is metadata that we streamed to the frontend but not exported to
-    Docent.)
+    Agent run metadata for counterfactual experiment rollouts. It is sent to the frontend
+    for every update, so the information contained here MUST be lightweight.
+
+    Important footgun: this is separate from the metadata that is stored in the AgentRun object,
+    which is what actually appears in the Docent collection.
     """
 
     model: str
@@ -133,7 +136,28 @@ class CounterfactualAgentRunMetadata(BaseModel):
     counterfactual_name: str  # Name of the counterfactual being tested
     counterfactual_description: str  # Description of the counterfactual being tested
     replica_idx: int  # Index of the replica
-    grade: Optional[Grade] = None
+
+    # Grade is just a float
+    # Previous grade objects are automatically converted via validator for backwards compatibility
+    grade: Optional[float] = None
+
+    @field_validator("grade", mode="before")
+    @classmethod
+    def _extract_grade_from_object(cls, v: Any) -> float | None:
+        """Convert Grade object to float for backwards compatibility."""
+        if v is None:
+            return None
+        # If it's a Grade object (has a 'grade' attribute), extract the float
+        if isinstance(v, Grade):
+            return float(v.grade)
+        # If it's a dict with 'grade' key (from serialization), extract the float
+        if isinstance(v, dict) and "grade" in v:
+            return float(v["grade"])  # type: ignore[arg-type]
+        # If it's already a float or int, return as float
+        if isinstance(v, (float, int)):
+            return float(v)
+        # Otherwise try to convert to float
+        return float(v)  # type: ignore[arg-type]
 
     # Simple per-run state for UI display
     state: Literal["in_progress", "completed", "errored"] = "in_progress"
@@ -238,6 +262,70 @@ class CounterfactualExperimentResult(BaseModel):
             base_policy_config=self.base_policy_config,
             docent_collection_id=self.docent_collection_id,
         )
+
+    def compute_signature(self, subscribed_run_ids: set[str]) -> bytes:
+        """Compute a fast hash-based signature for change detection.
+
+        This signature changes whenever any relevant state changes, including:
+        - Experiment status, progress, or errors
+        - Counterfactual idea/context output lengths (append-only strings)
+        - Parsed counterfactual IDs
+        - Agent run metadata (state, grade)
+        - Collection ID
+        - Subscribed run transcript data (message counts and content lengths)
+
+        Args:
+            subscribed_run_ids: Set of agent run IDs to include detailed transcript info for
+
+        Returns:
+            MD5 digest representing the current state (16 bytes)
+        """
+        h = hashlib.md5()
+
+        # Status (changes frequently during execution)
+        h.update(self.experiment_status.status.encode())
+        h.update(str(round(self.experiment_status.progress or 0.0, 3)).encode())
+        h.update(b"1" if self.experiment_status.error_message else b"0")
+
+        # Idea output - just track length since it's append-only
+        idea_len = len(self.counterfactual_idea_output) if self.counterfactual_idea_output else 0
+        h.update(str(idea_len).encode())
+
+        # Context outputs - track lengths of each value
+        if self.counterfactual_context_output:
+            for k in sorted(self.counterfactual_context_output.keys()):
+                h.update(k.encode())
+                v = self.counterfactual_context_output[k]
+                v_len = len(v) if v else 0
+                h.update(str(v_len).encode())
+
+        # Parsed ideas - just the IDs
+        if self.parsed_counterfactual_ideas and self.parsed_counterfactual_ideas.counterfactuals:
+            for cf_id in sorted(self.parsed_counterfactual_ideas.counterfactuals.keys()):
+                h.update(cf_id.encode())
+
+        # Agent run metadata - state and grade
+        if self.agent_run_metadata:
+            for run_id in sorted(self.agent_run_metadata.keys()):
+                m = self.agent_run_metadata[run_id]
+                h.update(run_id.encode())
+                h.update((m.state or "").encode())
+                h.update(str(m.grade).encode() if m.grade else b"")
+
+        # Collection ID
+        if self.docent_collection_id:
+            h.update(self.docent_collection_id.encode())
+
+        # Subscribed runs - transcript message counts and last message length
+        if self.agent_runs:
+            for run_id in sorted(subscribed_run_ids):
+                run = self.agent_runs.get(run_id)
+                if run:
+                    h.update(run_id.encode())
+                    h.update(str(len(run.transcripts)).encode())
+                    update_hash_with_agent_run(h, run)
+
+        return h.digest()
 
     @classmethod
     def from_sql(

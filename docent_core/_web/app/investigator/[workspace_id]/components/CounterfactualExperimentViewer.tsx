@@ -493,8 +493,7 @@ export default function CounterfactualExperimentViewer({
         ? 'base'
         : nameMap[cfId] || m.counterfactual_name || cfId;
       if (!byCf[cfId]) byCf[cfId] = { cfId, name, items: [] };
-      const gradeVal =
-        typeof m.grade?.grade === 'number' ? m.grade.grade : null;
+      const gradeVal = typeof m.grade === 'number' ? m.grade : null;
       byCf[cfId].items.push({
         id: runId,
         replica_idx: m.replica_idx,

@@ -88,16 +88,18 @@ class RubricJudge(JudgeBase):
         You are evaluating a conversation using the following rubric:
         {self.rubric}
 
-        Please analyze the conversation and provide:
-        1. A score from {self.min_score} to {self.max_score} indicating how strongly the behavior was exhibited ({self.min_score} = not at all, {self.max_score} = very strongly)
-        2. A brief explanation of your reasoning
+        Please analyze the conversation and:
+        1. Reason through the rubric and provide a brief explanation of your reasoning
+        2. A score from {self.min_score} to {self.max_score} indicating how strongly the behavior was exhibited ({self.min_score} = not at all, {self.max_score} = very strongly)
 
         Conversation:
         {{conversation_text}}
 
         Please respond in the following format:
-        SCORE: [{self.min_score}-{self.max_score}]
-        REASONING: [Your explanation]""".strip()
+        <reasoning>
+        [Your explanation here]
+        </reasoning>
+        <score>[{self.min_score}-{self.max_score}]</score>""".strip()
         )
 
         assert self.min_score <= self.max_score, "Min score must be less than or equal to max score"
@@ -148,7 +150,7 @@ class RubricJudge(JudgeBase):
         grader_prompt_formatted = self.grader_prompt.format(conversation_text=conversation_text)
         grader_response = ""
 
-        @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+        @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=6))
         async def create_stream():
             async with self.limiter():
                 return await self.client.chat.completions.create(
@@ -174,7 +176,7 @@ class RubricJudge(JudgeBase):
                 )
                 grader_response += chunk.choices[0].delta.content  # type: ignore
 
-        score_match = re.search(r"SCORE:\s*(\d+)", grader_response)
+        score_match = re.search(r"<score>\s*(\d+)\s*</score>", grader_response)
         if not score_match:
             raise ValueError(f"Could not extract score from grader response: {grader_response}")
         score = float(score_match.group(1))
