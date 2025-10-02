@@ -10,6 +10,7 @@ from typing import (
     ParamSpec,
     Sequence,
     TypeVar,
+    cast,
 )
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import lateral, text
+from sqlalchemy.types import Numeric
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
@@ -749,23 +751,24 @@ class MonoService:
                 raise ValueError("Invalid metadata field path")
 
         async with self.db.session() as session:
-            json_expr = SQLAAgentRun.metadata_json
+            json_expr = cast(ColumnElement[Any], SQLAAgentRun.metadata_json)
             for part in json_path_parts:
-                json_expr = json_expr.op("->")(part)
+                json_expr = cast(ColumnElement[Any], json_expr.op("->")(part))
 
-            text_expr = SQLAAgentRun.metadata_json
+            text_expr = cast(ColumnElement[Any], SQLAAgentRun.metadata_json)
             for idx, part in enumerate(json_path_parts):
                 if idx == len(json_path_parts) - 1:
-                    text_expr = text_expr.op("->>")(part)
+                    text_expr = cast(ColumnElement[Any], text_expr.op("->>")(part))
                 else:
-                    text_expr = text_expr.op("->")(part)
+                    text_expr = cast(ColumnElement[Any], text_expr.op("->")(part))
 
             numeric_clause = func.jsonb_typeof(json_expr) == "number"
+            numeric_expr: ColumnElement[Any] = cast(ColumnElement[Any], text_expr.cast(Numeric))
 
             query = (
                 select(
-                    func.min(text_expr).label("min_value"),
-                    func.max(text_expr).label("max_value"),
+                    func.min(numeric_expr).label("min_value"),
+                    func.max(numeric_expr).label("max_value"),
                 )
                 .select_from(SQLAAgentRun)
                 .where(
@@ -777,7 +780,13 @@ class MonoService:
             result = await session.execute(query)
             row = result.one()
 
-        return {"min": row.min_value, "max": row.max_value}
+        min_value = row.min_value
+        max_value = row.max_value
+
+        return {
+            "min": float(min_value) if min_value is not None else None,
+            "max": float(max_value) if max_value is not None else None,
+        }
 
     async def get_agent_run(
         self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = True
