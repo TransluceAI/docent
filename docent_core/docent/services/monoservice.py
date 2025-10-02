@@ -2075,7 +2075,7 @@ class MonoService:
             List of all filterable fields
         """
         where_clause = ctx.get_base_where_clause(SQLAAgentRun)
-        limit_rows = 5000
+        limit_rows = 1000
 
         # Base CTE (limit seed rows)
         base = (
