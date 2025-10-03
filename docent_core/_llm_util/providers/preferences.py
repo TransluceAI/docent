@@ -223,11 +223,6 @@ class ProviderPreferences(BaseModel):
             ModelOption(
                 provider="openai",
                 model_name="gpt-5",
-                reasoning_effort="low",
-            ),
-            ModelOption(
-                provider="anthropic",
-                model_name="claude-sonnet-4-20250514",
                 reasoning_effort="medium",
             ),
         ]
