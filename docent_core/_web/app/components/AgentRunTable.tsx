@@ -777,11 +777,13 @@ export const AgentRunTable = memo(function AgentRunTable({
                               column.columnDef.maxSize ?? column.columnDef.size,
                           }}
                         >
-                          <Skeleton
-                            className={`h-4 ${
-                              columnIndex === 0 ? 'w-16' : 'w-full'
-                            }`}
-                          />
+                          <div>
+                            <Skeleton
+                              className={`h-4 ${
+                                columnIndex === 0 ? 'w-16' : 'w-full'
+                              }`}
+                            />
+                          </div>
                         </TableCell>
                       ))}
                     </TableRow>

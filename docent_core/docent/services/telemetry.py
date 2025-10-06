@@ -1461,8 +1461,6 @@ class TelemetryService:
                 transcript = Transcript(
                     id=thread_transcript_id,
                     messages=chat_thread,
-                    name=f"Chat Thread {i + 1}" if len(chat_threads) > 1 else "",
-                    description="",
                     transcript_group_id=thread_transcript_group_id,
                 )
                 transcripts.append(transcript)

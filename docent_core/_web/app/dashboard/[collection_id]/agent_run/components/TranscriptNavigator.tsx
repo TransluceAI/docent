@@ -178,7 +178,11 @@ const TranscriptListItem: React.FC<{
     <button
       onClick={() => onTranscriptSelect(transcriptId)}
       className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
-      title={transcriptId}
+      title={
+        transcriptsById[transcriptId]?.name
+          ? `${transcriptsById[transcriptId]?.name}\n${transcriptId}`
+          : transcriptId
+      }
     >
       {transcriptsById[transcriptId]?.name || transcriptId}
     </button>
