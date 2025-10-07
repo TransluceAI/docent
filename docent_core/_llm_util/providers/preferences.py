@@ -284,7 +284,7 @@ class ProviderPreferences(BaseModel):
                 provider="google",
                 model_name="gemini-2.5-flash",
                 reasoning_effort="medium",
-            ),
+            )
         ]
 
 

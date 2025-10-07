@@ -182,12 +182,15 @@ class Docent:
         self._handle_response_errors(response)
         return response.json()
 
-    def get_rubric_run_state(self, collection_id: str, rubric_id: str) -> dict[str, Any]:
+    def get_rubric_run_state(
+        self, collection_id: str, rubric_id: str, version: int | None = None
+    ) -> dict[str, Any]:
         """Get rubric run state for a given collection and rubric.
 
         Args:
             collection_id: ID of the Collection.
             rubric_id: The ID of the rubric to get run state for.
+            version: The version of the rubric to get run state for. If None, the latest version is used.
 
         Returns:
             dict: Dictionary containing rubric run state with results, job_id, and total_agent_runs.
@@ -196,7 +199,7 @@ class Docent:
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/rubric_run_state"
-        response = self._session.get(url)
+        response = self._session.get(url, params={"version": version})
         self._handle_response_errors(response)
         return response.json()
 

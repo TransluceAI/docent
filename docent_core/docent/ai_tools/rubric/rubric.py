@@ -1,6 +1,6 @@
 import enum
 import json
-from typing import Any, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 from uuid import uuid4
 
 import jsonschema
@@ -12,9 +12,11 @@ from docent.data_models.chat import ChatMessage
 from docent.data_models.citation import parse_citations
 from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
+from docent_core._llm_util.data_models.exceptions import ValidationFailedException
 from docent_core._llm_util.data_models.llm_output import LLMOutput
 from docent_core._llm_util.prod_llms import MessagesInput
 from docent_core._llm_util.providers.preferences import PROVIDER_PREFERENCES, ModelOption
+from docent_core.docent.ai_tools.rubric.forgiving_json import forgiving_json_loads
 from docent_core.docent.services.llms import LLMService
 
 logger = get_logger(__name__)
@@ -34,9 +36,13 @@ Rubric:
 Agent run:
 {agent_run}
 
-Reason through each part of the rubric carefully, then provide an output in JSON format.
-Your output MUST adhere to the following schema:
+Your response should convey your judgment of the agent run according to the criteria given in the rubric \
+provided above. Your entire response must be a valid JSON string which can be parsed with python `json.loads` \
+without any additional processing.
+The JSON object you produce must adhere to the following schema:
 {output_schema}
+
+Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
 """
 
 DEFAULT_OUTPUT_SCHEMA = {
@@ -102,6 +108,33 @@ class JudgeResult(BaseModel):
         return result_type.value
 
 
+def _traverse_schema_and_transform(
+    output: Any,
+    schema: dict[str, Any],
+    citation_string_handler: Callable[[str], Any],
+) -> Any:
+    """Recursively traverse output based on schema, applying citation_string_handler to citation strings."""
+    if schema.get("type") == "string" and schema.get("citations"):  # type: ignore
+        return citation_string_handler(output)
+    elif schema.get("type") == "object":
+        properties: dict[str, Any] = schema.get("properties", {})
+        result: dict[str, Any] = {}
+        for key in properties:
+            if key in output:
+                result[key] = _traverse_schema_and_transform(
+                    output[key], properties[key], citation_string_handler
+                )
+        return result
+    elif schema.get("type") == "array":
+        item_schema: dict[str, Any] = schema.get("items", {})
+        return [
+            _traverse_schema_and_transform(item, item_schema, citation_string_handler)
+            for item in output
+        ]
+    else:
+        return output
+
+
 class JudgeResultWithCitations(JudgeResult):
     @classmethod
     def from_judge_result(
@@ -109,24 +142,19 @@ class JudgeResultWithCitations(JudgeResult):
     ) -> "JudgeResultWithCitations":
         """Judge result must be validated against the schema before calling this function!"""
 
-        def _parse_citations(output: Any, schema: dict[str, Any]) -> Any:
-            if schema.get("type") == "string" and schema.get("citations"):  # type: ignore
-                text, citations = parse_citations(output)
-                return {
-                    "text": text,
-                    "citations": citations,
-                }
-            elif schema.get("type") == "object":
-                properties: dict[str, Any] = schema.get("properties", {})
-                return {key: _parse_citations(output[key], properties[key]) for key in properties}
-            elif schema.get("type") == "array":
-                item_schema: dict[str, Any] = schema.get("items", {})
-                return [_parse_citations(item, item_schema) for item in output]
-            else:
-                return output
+        def _parse_citation_string(output: str) -> dict[str, Any]:
+            text, citations = parse_citations(output)
+            return {"text": text, "citations": citations}
 
         data = result.model_dump()
-        data["output"] = _parse_citations(data["output"], schema)
+        try:
+            data["output"] = _traverse_schema_and_transform(
+                data["output"], schema, _parse_citation_string
+            )
+        except Exception as e:
+            logger.error(f"Failed to parse citations: {e}")
+            logger.error(f"Output: {data['output']}")
+            data["output"] = {"raw": data["output"]}
         return cls(**data)
 
 
@@ -144,7 +172,7 @@ class JudgeResultStreamingCallback(Protocol):
 
 def _validate_rubric_output(
     output: dict[str, Any], output_schema: dict[str, Any], agent_run: AgentRun
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Validate and filter citation text ranges in rubric results.
 
     Args:
@@ -152,107 +180,147 @@ def _validate_rubric_output(
         agent_run: Agent run containing transcript data for validation
 
     Returns:
-        List of validated result strings with invalid citations removed
+        Validated result dict with invalid citations removed
+
+    Raises:
+        ValidationFailedException: If validation fails
     """
 
-    def _validate(output: Any, schema: dict[str, Any]) -> Any:
-        if schema.get("type") == "string" and schema.get("citations"):  # type: ignore
-            validated_text = remove_invalid_citation_ranges(output, agent_run)
-            if validated_text != output:
-                logger.info(
-                    f"Citation validation removed invalid text range from citation in judge result. "
-                    f"Agent run ID: {agent_run.id}, "
-                    f"Original text: {output}, "
-                    f"Validated text: {validated_text}, "
-                )
-            return validated_text
-        elif schema.get("type") == "object":
-            properties: dict[str, Any] = schema.get("properties", {})
-            validated_object: dict[str, Any] = {}
-            for key in properties:
-                if key in output:
-                    validated_object[key] = _validate(output[key], properties[key])
-            return validated_object
-        elif schema.get("type") == "array":
-            item_schema: dict[str, Any] = schema.get("items", {})
-            return [_validate(item, item_schema) for item in output]
-        else:
-            return output
+    def _validate_citation_string(text: str) -> str:
+        validated_text = remove_invalid_citation_ranges(text, agent_run)
+        if validated_text != text:
+            logger.info(
+                f"Citation validation removed invalid text range from citation in judge result. "
+                f"Agent run ID: {agent_run.id}, "
+                f"Original text: {text}, "
+                f"Validated text: {validated_text}, "
+            )
+        return validated_text
 
     try:
         jsonschema.validate(output, output_schema)
     except jsonschema.ValidationError as e:
-        logger.error(f"Rubric output failed validation phase 1: {e}")
-        return None
+        raise ValidationFailedException(f"Schema validation failed: {e}", failed_output=str(output))
 
     try:
-        return _validate(output, output_schema)
+        return _traverse_schema_and_transform(output, output_schema, _validate_citation_string)
     except Exception as e:
-        logger.error(f"Rubric output failed validation phase 2:\n{e}")
-        return None
+        raise ValidationFailedException(
+            f"Citation validation failed: {e}", failed_output=str(output)
+        )
 
 
-def _get_llm_callback(
+def _parse_and_validate_llm_output(
+    llm_output: LLMOutput,
+    output_schema: dict[str, Any],
+    agent_run: AgentRun,
+) -> dict[str, Any]:
+    """Parse and validate LLM output for rubric evaluation.
+
+    Args:
+        llm_output: The LLM output to parse
+        output_schema: The schema to validate against
+        agent_run: Agent run for citation validation
+
+    Returns:
+        Validated output dict
+
+    Raises:
+        ValidationFailedException: If parsing or validation fails
+    """
+    if llm_output.first_text is None:
+        raise ValidationFailedException("LLM output has no text", failed_output=None)
+
+    try:
+        output = forgiving_json_loads(llm_output.first_text)
+    except json.JSONDecodeError as e:
+        raise ValidationFailedException(
+            f"Failed to parse JSON: {e}. Raw text: `{llm_output.first_text}`",
+            failed_output=llm_output.first_text,
+        )
+
+    if not isinstance(output, dict):
+        logger.error(f"Expected dict output, got {type(output)}")
+        logger.error(f"LLM output: {llm_output.first_text}")
+        raise ValidationFailedException(
+            f"Expected dict output, got {type(output)}. Raw text: {llm_output.first_text}",
+            failed_output=llm_output.first_text,
+        )
+
+    return _validate_rubric_output(cast(dict[str, Any], output), output_schema, agent_run)
+
+
+def _get_validation_callback(
+    rubric: Rubric,
+    agent_runs: list[AgentRun],
+):
+    """Validation callback that throws ValidationFailedException if output is invalid."""
+
+    async def _validation_callback(batch_index: int, llm_output: LLMOutput):
+        _parse_and_validate_llm_output(llm_output, rubric.output_schema, agent_runs[batch_index])
+
+    return _validation_callback
+
+
+def _get_completion_callback(
     rubric: Rubric,
     agent_run_ids: list[str],
     agent_runs: list[AgentRun],
     callback: JudgeResultStreamingCallback,
     result_type: ResultType,
 ):
-    async def _llm_callback(batch_index: int, llm_output: LLMOutput):
-        # Return nothing if the LLM call failed
-        if llm_output.first_text is None:
+    """Completion callback that handles final results (success or error)."""
+
+    async def _completion_callback(batch_index: int, llm_output: LLMOutput):
+        if llm_output.did_error:
             await callback(batch_index, None)
-            return
+        else:
+            validated_output = _parse_and_validate_llm_output(
+                llm_output, rubric.output_schema, agent_runs[batch_index]
+            )
+            await callback(
+                batch_index,
+                [
+                    JudgeResult(
+                        agent_run_id=agent_run_ids[batch_index],
+                        rubric_id=rubric.id,
+                        rubric_version=rubric.version,
+                        result_type=result_type,
+                        output=validated_output,
+                    )
+                ],
+            )
 
-        text = llm_output.first_text
+    return _completion_callback
 
-        try:
-            output = json.loads(text)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON for judge result:\n{text}")
-            await callback(batch_index, None)
-            return
 
-        # Validate citations and clean up text
-        validated_output = _validate_rubric_output(
-            output, rubric.output_schema, agent_runs[batch_index]
+def construct_rubric_prompt(rubric: Rubric, agent_run: AgentRun, prompt_template: str) -> str:
+    """Construct the full prompt text for rubric evaluation.
+
+    This is the canonical implementation of prompt construction - use this function
+    anywhere you need to construct a rubric evaluation prompt (including cost estimation).
+    """
+    output_schema_text = json.dumps(rubric.output_schema, indent=2)
+
+    prompt = prompt_template.format(
+        rubric=rubric.rubric_text,
+        agent_run=agent_run.to_text_new(),
+        output_schema=output_schema_text,
+    )
+
+    if _schema_requests_citations(rubric.output_schema):
+        prompt += (
+            "For strings which should contain citations (according to the schema) you must also follow these instructions: "
+            + TEXT_RANGE_CITE_INSTRUCTION
+            + RUBRIC_RESULT_EXPLANATION_INSTRUCTIONS
         )
-        if validated_output is None:
-            await callback(batch_index, None)
-            return
 
-        await callback(
-            batch_index,
-            [
-                JudgeResult(
-                    agent_run_id=agent_run_ids[batch_index],
-                    rubric_id=rubric.id,
-                    rubric_version=rubric.version,
-                    result_type=result_type,
-                    output=validated_output,
-                )
-            ],
-        )
-
-    return _llm_callback
+    return prompt
 
 
 def _get_prompt_resolver(rubric: Rubric, ar: AgentRun, prompt_template: str):
     def _prompt_resolver() -> list[ChatMessage | dict[str, Any]]:
-        output_schema_text = json.dumps(rubric.output_schema, indent=2)
-
-        prompt = prompt_template.format(
-            rubric=rubric.rubric_text, agent_run=ar.to_text_new(), output_schema=output_schema_text
-        )
-
-        if _schema_requests_citations(rubric.output_schema):
-            prompt += (
-                "For strings which should contain citations (according to the schema) you must also follow these instructions: "
-                + TEXT_RANGE_CITE_INSTRUCTION
-                + RUBRIC_RESULT_EXPLANATION_INSTRUCTIONS
-            )
-
+        prompt = construct_rubric_prompt(rubric, ar, prompt_template)
         return [{"role": "user", "content": prompt}]
 
     return _prompt_resolver
@@ -272,14 +340,15 @@ async def evaluate_rubric(
         _get_prompt_resolver(rubric, ar, rubric_prompt) for ar in agent_runs
     ]
 
-    outputs = await llm_svc.get_completions(
+    await llm_svc.get_completions(
         inputs=prompt_resolvers,
         model_options=[rubric.judge_model],
         max_new_tokens=16384,
         timeout=180.0,
         use_cache=True,
+        validation_callback=_get_validation_callback(rubric, agent_runs),
         completion_callback=(
-            _get_llm_callback(
+            _get_completion_callback(
                 rubric,
                 [ar.id for ar in agent_runs],
                 agent_runs,
@@ -290,15 +359,6 @@ async def evaluate_rubric(
             else None
         ),
     )
-
-    ans: list[dict[str, Any] | None] = [None] * len(prompt_resolvers)
-    for i, output in enumerate(outputs):
-        parsed_output = json.loads(output.first_text) if output.first_text else None
-        if isinstance(parsed_output, dict):
-            parsed_output = cast(dict[str, Any], parsed_output)
-            ans[i] = _validate_rubric_output(parsed_output, rubric.output_schema, agent_runs[i])
-
-    return ans
 
 
 RUBRIC_MAX_RECALL_PROMPT = """

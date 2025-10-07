@@ -162,6 +162,7 @@ class LLMService:
         max_concurrency: int = 100,
         timeout: float = 120.0,
         streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
+        validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
         use_cache: bool = False,
     ) -> list[LLMOutput]:
@@ -214,6 +215,7 @@ class LLMService:
             max_concurrency=max_concurrency,
             timeout=timeout,
             streaming_callback=streaming_callback,
+            validation_callback=validation_callback,
             completion_callback=usage_recording_callback,
             use_cache=use_cache,
             api_key_overrides=api_key_overrides,

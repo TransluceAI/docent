@@ -28,9 +28,12 @@ class ModelInfo:
     context_window: int
 
 
-# Prefix-ordered registry. First matching prefix wins.
 # Note: some providers charge extra for long prompts/outputs. We don't account for this yet.
 _REGISTRY: list[tuple[str, ModelInfo]] = [
+    (
+        "gpt-5-nano",
+        ModelInfo(rate={"input": 0.05, "output": 0.40}, context_window=400_000),
+    ),
     (
         "gpt-5-mini",
         ModelInfo(rate={"input": 0.25, "output": 2.0}, context_window=400_000),
@@ -72,13 +75,27 @@ _REGISTRY: list[tuple[str, ModelInfo]] = [
             context_window=1_000_000,
         ),
     ),
+    (
+        "grok-4-fast",
+        ModelInfo(
+            rate={"input": 0.20, "output": 0.50},
+            context_window=2_000_000,
+        ),
+    ),
+    (
+        "grok-4",
+        ModelInfo(
+            rate={"input": 3.0, "output": 15.0},
+            context_window=256_000,
+        ),
+    ),
 ]
 
 
 @lru_cache(maxsize=None)
 def get_model_info(model_name: str) -> Optional[ModelInfo]:
-    for prefix, info in _REGISTRY:
-        if model_name.startswith(prefix):
+    for registry_model_name, info in _REGISTRY:
+        if registry_model_name in model_name:
             return info
     return None
 

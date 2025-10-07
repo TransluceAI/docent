@@ -28,6 +28,15 @@ class DocentUsageLimitException(LLMException):
     user_message = "Free daily usage limit reached. Add your own API key in settings or contact us for increased limits."
 
 
+class ValidationFailedException(LLMException):
+    error_type_id = "validation_failed"
+    user_message = "The model returned invalid output that failed validation."
+
+    def __init__(self, message: str = "", failed_output: str | None = None):
+        super().__init__(message)
+        self.failed_output = failed_output
+
+
 LLM_ERROR_TYPES: list[type[LLMException]] = [
     LLMException,
     CompletionTooLongException,
@@ -35,4 +44,5 @@ LLM_ERROR_TYPES: list[type[LLMException]] = [
     ContextWindowException,
     NoResponseException,
     DocentUsageLimitException,
+    ValidationFailedException,
 ]

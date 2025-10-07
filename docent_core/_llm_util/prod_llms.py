@@ -6,14 +6,12 @@ not doing it now.
 - mengk
 """
 
-import asyncio
 import traceback
 from contextlib import nullcontext
 from functools import partial
 from typing import (
     Any,
     AsyncContextManager,
-    Coroutine,
     Literal,
     Protocol,
     Sequence,
@@ -31,6 +29,7 @@ from docent_core._llm_util.data_models.exceptions import (
     DocentUsageLimitException,
     LLMException,
     RateLimitException,
+    ValidationFailedException,
 )
 from docent_core._llm_util.data_models.llm_output import (
     AsyncLLMOutputStreamingCallback,
@@ -44,6 +43,8 @@ from docent_core._llm_util.providers.provider_registry import (
     SingleOutputGetter,
     SingleStreamingOutputGetter,
 )
+
+MAX_VALIDATION_ATTEMPTS = 3
 
 logger = get_logger(__name__)
 
@@ -76,6 +77,7 @@ def _get_single_streaming_callback(
 async def _parallelize_calls(
     single_output_getter: SingleOutputGetter | SingleStreamingOutputGetter,
     streaming_callback: AsyncLLMOutputStreamingCallback | None,
+    validation_callback: AsyncLLMOutputStreamingCallback | None,
     completion_callback: AsyncLLMOutputStreamingCallback | None,
     # Arguments for the individual completion getter
     client: Any,
@@ -126,81 +128,107 @@ async def _parallelize_calls(
         nonlocal responses, pbar, resolved_messages, cancelled_due_to_usage_limit
 
         async with semaphore or nullcontext():
-            try:
-                # Delay resolving until now to take advantage of pipelining
-                messages = _resolve_messages_input(cur_input)
-                # Save resolved messages to avoid multiple resolutions
-                resolved_messages[i] = messages
+            messages = _resolve_messages_input(cur_input)
+            resolved_messages[i] = messages
 
-                # Check if there's a cached result
-                cached_result = (
-                    cache.get(
-                        messages,
-                        model_name,
-                        tools=tools,
-                        tool_choice=tool_choice,
-                        reasoning_effort=reasoning_effort,
-                        temperature=temperature,
-                        logprobs=logprobs,
-                        top_logprobs=top_logprobs,
-                    )
-                    if cache is not None
-                    else None
+            retry_count = 0
+            result = None
+
+            # Check if there's a cached result
+            cached_result = (
+                cache.get(
+                    messages,
+                    model_name,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    reasoning_effort=reasoning_effort,
+                    temperature=temperature,
+                    logprobs=logprobs,
+                    top_logprobs=top_logprobs,
                 )
-                if cached_result is not None:
-                    result = cached_result
-                    # If there's a streaming callback, make sure to call it with the cached result
-                    if streaming_callback is not None:
-                        await streaming_callback(i, result)
-                # If not, call the LLM
-                else:
-                    if streaming_callback is None:
-                        result = await base_func(client=client, messages=messages)
-                    else:
-                        result = await base_func(
-                            client=client,
-                            streaming_callback=_get_single_streaming_callback(
-                                i, streaming_callback
-                            ),
-                            messages=messages,
+                if cache is not None
+                else None
+            )
+            if cached_result is not None:
+                result = cached_result
+                if streaming_callback is not None:
+                    await streaming_callback(i, result)
+            else:
+                while retry_count < MAX_VALIDATION_ATTEMPTS:
+                    try:
+                        if streaming_callback is None:
+                            result = await base_func(client=client, messages=messages)
+                        else:
+                            result = await base_func(
+                                client=client,
+                                streaming_callback=_get_single_streaming_callback(
+                                    i, streaming_callback
+                                ),
+                                messages=messages,
+                            )
+
+                        # Validate if validation callback provided and result is successful
+                        if validation_callback and not result.did_error:
+                            await validation_callback(i, result)
+
+                        break
+                    except ValidationFailedException as e:
+                        retry_count += 1
+                        logger.warning(
+                            f"Validation failed for {model_name} after {retry_count} attempts: {e}"
                         )
+                        if retry_count >= MAX_VALIDATION_ATTEMPTS:
+                            logger.error(
+                                f"Validation failed for {model_name} after {MAX_VALIDATION_ATTEMPTS} attempts: {e}"
+                            )
+                            result = LLMOutput(
+                                model=model_name,
+                                completions=[],
+                                errors=[e],
+                            )
+                            break
+                    except DocentUsageLimitException as e:
+                        result = LLMOutput(
+                            model=model_name,
+                            completions=[],
+                            errors=[],  # Usage limit exceptions will be added to all results later if cancelled_due_to_usage_limit
+                        )
+                        cancelled_due_to_usage_limit = True
+                        tg.cancel_scope.cancel()
+                        break
+                    except Exception as e:
+                        if not isinstance(e, LLMException):
+                            logger.warning(
+                                f"LLM call raised an exception that is not an LLMException: {e}"
+                            )
+                            llm_exception = LLMException(e)
+                            llm_exception.__cause__ = e
+                        else:
+                            llm_exception = e
 
-                # Always call the completion callback if provided
-                if completion_callback:
-                    # LLMService uses this callback to record cost, and may throw an error if we just exceeded limit
+                        error_message = f"Call to {model_name} failed even with backoff: {e.__class__.__name__}."
+
+                        if not isinstance(e, RateLimitException):
+                            error_message += f" Failure traceback:\n{traceback.format_exc()}"
+                        logger.error(error_message)
+
+                        result = LLMOutput(
+                            model=model_name,
+                            completions=[],
+                            errors=[llm_exception],
+                        )
+                        break
+
+            # Always call completion callback with final result (success or error)
+            if completion_callback and result is not None:
+                try:
                     await completion_callback(i, result)
-            except DocentUsageLimitException as e:
-                result = LLMOutput(
-                    model=model_name,
-                    completions=[],
-                    errors=[],  # Usage limit exceptions will be added to all results later if cancelled_due_to_usage_limit
-                )
-                cancelled_due_to_usage_limit = True
-                tg.cancel_scope.cancel()
-            except Exception as e:
-                if not isinstance(e, LLMException):
-                    logger.warning(f"LLM call raised an exception that is not an LLMException: {e}")
-                    llm_exception = LLMException(e)
-                    llm_exception.__cause__ = e
-                else:
-                    llm_exception = e
+                # LLMService uses this callback to record cost, and may throw an error if we just exceeded limit
+                except DocentUsageLimitException as e:
+                    result.errors.append(e)
+                    cancelled_due_to_usage_limit = True
+                    tg.cancel_scope.cancel()
 
-                error_message = (
-                    f"Call to {model_name} failed even with backoff: {e.__class__.__name__}."
-                )
-
-                if not isinstance(e, RateLimitException):
-                    # If the error is not a rate limit (which we don't need details for), add the traceback
-                    error_message += f" Failure traceback:\n{traceback.format_exc()}"
-                logger.error(error_message)
-
-                result = LLMOutput(
-                    model=model_name,
-                    completions=[],
-                    errors=[llm_exception],
-                )
-
-            # Set the result in either case
             responses[i] = result
             if pbar is not None:
                 pbar.update(1)
@@ -302,6 +330,7 @@ class LLMManager:
         max_concurrency: int | None = None,
         timeout: float = 5.0,
         streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
+        validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     ) -> list[LLMOutput]:
         while True:
@@ -327,6 +356,7 @@ class LLMManager:
                     else single_streaming_output_getter
                 ),
                 streaming_callback,
+                validation_callback,
                 completion_callback,
                 client,
                 inputs,
@@ -346,24 +376,22 @@ class LLMManager:
             )
             assert len(outputs) == len(inputs), "Number of outputs must match number of messages"
 
-            num_error = sum(1 for output in outputs if output.did_error)
-            if num_error > 0:
-                logger.warning(f"{model_name}: {num_error} failed calls")
+            # Only count errors that should trigger model rotation (API errors, not validation/usage errors)
+            num_rotation_errors = sum(
+                1
+                for output in outputs
+                if output.did_error
+                and any(
+                    not isinstance(e, (ValidationFailedException, DocentUsageLimitException))
+                    for e in output.errors
+                )
+            )
+            if num_rotation_errors > 0:
+                logger.warning(f"{model_name}: {num_rotation_errors} API errors")
                 if not self._rotate_model_option():
-                    # Out of options
                     break
             else:
-                # All calls succeeded
                 break
-
-        unfinished_callbacks: list[Coroutine[Any, Any, None]] = []
-        for batch_index, result in enumerate(outputs):
-            if result.did_error:
-                if completion_callback:
-                    unfinished_callbacks.append(completion_callback(batch_index, result))
-
-        if unfinished_callbacks:
-            await asyncio.gather(*unfinished_callbacks)
 
         return outputs
 
@@ -390,6 +418,7 @@ async def get_llm_completions_async(
     max_concurrency: int = 100,
     timeout: float = 120.0,
     streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
+    validation_callback: AsyncLLMOutputStreamingCallback | None = None,
     completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     use_cache: bool = False,
     api_key_overrides: dict[str, str] | None = None,
@@ -420,5 +449,6 @@ async def get_llm_completions_async(
         max_concurrency=max_concurrency,
         timeout=timeout,
         streaming_callback=streaming_callback,
+        validation_callback=validation_callback,
         completion_callback=completion_callback,
     )

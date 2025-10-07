@@ -9,7 +9,7 @@ from docent_core._llm_util.data_models.llm_output import (
     AsyncSingleLLMOutputStreamingCallback,
     LLMOutput,
 )
-from docent_core._llm_util.providers import anthropic, google, openai
+from docent_core._llm_util.providers import anthropic, google, openai, openrouter
 from docent_core._llm_util.providers.anthropic import (
     get_anthropic_chat_completion_async,
     get_anthropic_chat_completion_streaming_async,
@@ -21,6 +21,10 @@ from docent_core._llm_util.providers.google import (
 from docent_core._llm_util.providers.openai import (
     get_openai_chat_completion_async,
     get_openai_chat_completion_streaming_async,
+)
+from docent_core._llm_util.providers.openrouter import (
+    get_openrouter_chat_completion_async,
+    get_openrouter_chat_completion_streaming_async,
 )
 
 
@@ -150,6 +154,11 @@ PROVIDERS: dict[str, ProviderConfig] = {
         async_client_getter=openai.get_azure_openai_client_async,
         single_output_getter=get_openai_chat_completion_async,
         single_streaming_output_getter=get_openai_chat_completion_streaming_async,
+    ),
+    "openrouter": ProviderConfig(
+        async_client_getter=openrouter.get_openrouter_client_async,
+        single_output_getter=get_openrouter_chat_completion_async,
+        single_streaming_output_getter=get_openrouter_chat_completion_streaming_async,
     ),
 }
 """Registry of supported LLM providers with their respective configurations."""

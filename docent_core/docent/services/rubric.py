@@ -897,3 +897,103 @@ class RubricService:
         new_rubric = source_rubric.model_copy(update={"id": str(uuid4()), "version": 1})
 
         return await self.create_rubric(target_collection_id, new_rubric)
+
+    async def estimate_rubric_cost(
+        self,
+        rubric_id: str,
+        version: int | None,
+        agent_run_ids: list[str],
+        ctx: ViewContext,
+    ) -> tuple[float, dict[str, Any]]:
+        """Estimate the cost in cents to evaluate a rubric on a set of agent runs.
+
+        Args:
+            ctx: View context for accessing agent runs
+            rubric_id: The rubric ID
+            version: The rubric version (None for latest)
+            agent_run_ids: List of agent run IDs to evaluate
+
+        Returns:
+            A tuple of (total_cents, details_dict) where details_dict contains:
+                - model_name: The judge model name
+                - num_runs: Number of agent runs
+                - avg_tokens_per_run: Average tokens per run
+                - total_input_tokens: Total estimated input tokens
+                - total_cost_cents: Total estimated cost in cents
+        """
+        from docent._log_util.logger import get_logger
+        from docent.data_models._tiktoken_util import get_token_count
+        from docent_core._llm_util.model_registry import estimate_cost_cents
+
+        logger = get_logger(__name__)
+
+        # Get the rubric
+        sqla_rubric = await self.get_rubric(rubric_id, version)
+        if sqla_rubric is None:
+            raise ValueError(f"Rubric {rubric_id} (version={version}) not found")
+
+        if not agent_run_ids:
+            return 0.0, {
+                "model_name": "unknown",
+                "num_runs": 0,
+                "avg_tokens_per_run": 0,
+                "total_input_tokens": 0,
+                "total_cost_cents": 0.0,
+            }
+
+        # Extract model name from judge_model
+        judge_model = sqla_rubric.judge_model
+        model_name = judge_model.get("model_name", "unknown")
+
+        # Sample a few agent runs to estimate average token count
+        # We'll sample up to 10 runs to get a reasonable estimate
+        sample_size = min(10, len(agent_run_ids))
+        sample_ids = agent_run_ids[:sample_size]
+
+        # Get sample agent runs using the service (which properly loads transcripts)
+        sample_agent_runs = await self.service.get_agent_runs(
+            ctx, agent_run_ids=sample_ids, apply_base_where_clause=False
+        )
+
+        if not sample_agent_runs:
+            logger.warning("No agent runs found for cost estimation")
+            return 0.0, {
+                "model_name": model_name,
+                "num_runs": len(agent_run_ids),
+                "avg_tokens_per_run": 0,
+                "total_input_tokens": 0,
+                "total_cost_cents": 0.0,
+            }
+
+        # Estimate tokens for sample runs using the canonical prompt construction
+        from docent_core.docent.ai_tools.rubric.rubric import RUBRIC_PROMPT, construct_rubric_prompt
+
+        rubric_pydantic = sqla_rubric.to_pydantic()
+        total_sample_tokens = 0
+        for agent_run in sample_agent_runs:
+            # Use the canonical prompt construction function
+            prompt = construct_rubric_prompt(rubric_pydantic, agent_run, RUBRIC_PROMPT)
+            tokens = get_token_count(prompt)
+            total_sample_tokens += tokens
+
+        avg_tokens_per_run = int(total_sample_tokens / len(sample_agent_runs))
+
+        # Estimate total tokens for all runs
+        total_input_tokens = avg_tokens_per_run * len(agent_run_ids)
+
+        avg_output_tokens = 300  # A very rough guess
+        total_output_tokens = avg_output_tokens * len(agent_run_ids)
+
+        # Calculate costs
+        input_cost_cents = estimate_cost_cents(model_name, total_input_tokens, "input")
+        output_cost_cents = estimate_cost_cents(model_name, total_output_tokens, "output")
+        total_cost_cents = input_cost_cents + output_cost_cents
+
+        return total_cost_cents, {
+            "model_name": model_name,
+            "num_runs": len(agent_run_ids),
+            "avg_tokens_per_run": avg_tokens_per_run,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "total_cost_cents": total_cost_cents,
+        }
