@@ -66,6 +66,8 @@ class PrimitiveFilter(BaseCollectionFilter):
         # Extract value from JSONB using the table parameter
         if mode == "text":
             sqla_value = table.text_for_search  # type: ignore
+        elif mode == "created_at":
+            sqla_value = cast(table.created_at, String)  # type: ignore
         elif mode == "metadata":
             sqla_value = table.metadata_json  # type: ignore
         else:
