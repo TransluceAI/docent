@@ -8,7 +8,11 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.judges.types import JudgeResult, ResultType, Rubric
 from docent.judges.util.parse_output import parse_and_validate_llm_output
-from docent.judges.util.voting import find_modal_result, get_agreement_keys
+from docent.judges.util.voting import (
+    compute_output_distribution,
+    find_modal_result,
+    get_agreement_keys,
+)
 
 logger = get_logger(__name__)
 
@@ -74,6 +78,11 @@ class MajorityVotingJudge(BaseJudge):
         )
         final_output = indep_results[final_max_idx]
 
+        # Compute the distribution of the output across the agreement keys
+        final_output_distribution = compute_output_distribution(
+            indep_results, self.cfg.output_schema, agreement_keys
+        )
+
         return JudgeResult(
             agent_run_id=agent_run.id,
             rubric_id=self.cfg.id,
@@ -85,6 +94,7 @@ class MajorityVotingJudge(BaseJudge):
                 "final_results": indep_results,
                 "final_agt_key_modes_and_counts": final_agt_key_modes_and_counts,
                 "final_max_idx": final_max_idx,
+                "final_output_distribution": final_output_distribution,
             },
             result_type=ResultType.DIRECT_RESULT,
         )

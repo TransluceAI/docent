@@ -5,7 +5,7 @@ from typing import Any, cast
 def get_agreement_keys(schema: dict[str, Any]) -> list[str]:
     """Get list of top-level keys in schema that we want to measure agreement on.
 
-    This includes enum, bool, and int fields. We skip float and strings.
+    This includes enum and bool fields.
 
     Args:
         schema: JSON schema dict
@@ -29,10 +29,7 @@ def get_agreement_keys(schema: dict[str, Any]) -> list[str]:
         # Include boolean fields
         if field_type == "boolean":
             agreement_keys.append(key)
-        # Include integer fields
-        elif field_type == "integer":
-            agreement_keys.append(key)
-        # Include enum fields (even strings)
+        # Include enum fields (strings and numbers must be in this category)
         elif "enum" in field_schema:
             agreement_keys.append(key)
 
@@ -82,3 +79,36 @@ def find_modal_result(indep_results: list[dict[str, Any]], agreement_keys: list[
     max_idx = indep_result_scores.index(max(indep_result_scores))
 
     return max_idx, agt_key_modes_and_counts
+
+
+def compute_output_distribution(
+    indep_results: list[dict[str, Any]], output_schema: dict[str, Any], agreement_keys: list[str]
+):
+    def _get_possible_values(key: str) -> list[str | bool | int | float]:
+        if "enum" in output_schema.get("properties", {}).get(key, {}):
+            return output_schema.get("properties", {}).get(key, {}).get("enum", [])
+        elif output_schema.get("properties", {}).get(key, {}).get("type") == "boolean":
+            return [True, False]
+        else:
+            return []
+
+    distributions: dict[str, dict[str | bool | int | float, float]] = {
+        key: {value: 0.0 for value in _get_possible_values(key)} for key in agreement_keys
+    }
+    # Collect counts for each possible value
+    for result in indep_results:
+        for key in agreement_keys:
+            if (value := result.get(key)) is not None:  # Could be none if the key is optional
+                assert (
+                    value in distributions[key]
+                ), "this should never happen; the value must be in possible values, since judge results have been validated against the schema"
+                distributions[key][value] += 1
+    # Normalize
+    for key in distributions:
+        total = sum(distributions[key].values())
+        if total == 0:
+            continue
+        for value in distributions[key]:
+            distributions[key][value] /= total
+
+    return distributions

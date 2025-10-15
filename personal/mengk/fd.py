@@ -46,7 +46,7 @@ cfg = Rubric(
         model_name="gpt-5-mini",
     ),
 )
-j = MajorityVotingJudge(cfg=cfg, n_rollouts_per_input=1)
+j = MajorityVotingJudge(cfg=cfg, n_rollouts_per_input=5)
 
 
 # %%

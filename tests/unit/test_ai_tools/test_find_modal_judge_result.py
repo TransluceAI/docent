@@ -96,7 +96,7 @@ def test_get_agreement_keys_includes_expected_types():
         "properties": {
             "label": {"type": "string", "enum": ["match", "no match"]},
             "explanation": {"type": "string", "citations": True},
-            "score": {"type": "integer"},
+            "score": {"type": "integer", "enum": [0, 1, 2]},
             "confidence": {"type": "number"},
             "flag": {"type": "boolean"},
         },
