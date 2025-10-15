@@ -74,3 +74,46 @@ def test_compute_output_distribution_when_no_values_present():
     distributions = compute_output_distribution(indep_results, output_schema, agreement_keys)
 
     assert distributions == {"approved": {True: 0.0, False: 0.0}}
+
+
+def test_compute_output_distribution_multiple_keys_with_optional_values():
+    indep_results: list[dict[str, Any]] = [
+        {"label": "match", "flag": True, "score": 1},
+        {"label": "match", "score": 0},
+        {"label": "no match", "flag": False},
+        {"label": "match"},
+        {"flag": True},
+    ]
+    output_schema = {
+        "properties": {
+            "label": {
+                "type": "string",
+                "enum": ["match", "no match"],
+            },
+            "flag": {
+                "type": "boolean",
+            },
+            "score": {
+                "type": "integer",
+                "enum": [0, 1, 2],
+            },
+            "reviewed": {
+                "type": "boolean",
+            },
+        }
+    }
+    agreement_keys = ["label", "flag", "score", "reviewed"]
+
+    distributions = compute_output_distribution(indep_results, output_schema, agreement_keys)
+
+    expected: dict[str, dict[str | bool | int | float, float]] = {
+        "label": {"match": 3 / 4, "no match": 1 / 4},
+        "flag": {True: 2 / 3, False: 1 / 3},
+        "score": {0: 1 / 2, 1: 1 / 2, 2: 0.0},
+        "reviewed": {True: 0.0, False: 0.0},
+    }
+    assert distributions.keys() == expected.keys()
+    for key in expected:
+        assert distributions[key].keys() == expected[key].keys()
+        for value, prob in expected[key].items():
+            assert distributions[key][value] == prob

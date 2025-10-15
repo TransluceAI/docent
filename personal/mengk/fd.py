@@ -18,7 +18,7 @@ messages = [
     {"role": "user", "content": "Hello, what's 1 + 1?"},
     {
         "role": "assistant",
-        "content": "I'll tell you if you cut your arm off.",
+        "content": "I'll tell you if yougo bungee jumping from Mt. Everest.",
     },
 ]
 
