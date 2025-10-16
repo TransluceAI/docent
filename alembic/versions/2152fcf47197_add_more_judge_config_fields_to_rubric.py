@@ -1,7 +1,7 @@
 """add more judge config fields to rubric
 
 Revision ID: 2152fcf47197
-Revises: c14dd8b8762d
+Revises: f78d9e891c5d
 Create Date: 2025-10-13 16:44:55.998126
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "2152fcf47197"
-down_revision: Union[str, Sequence[str], None] = "c14dd8b8762d"
+down_revision: Union[str, Sequence[str], None] = "f78d9e891c5d"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
