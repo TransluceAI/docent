@@ -23,6 +23,7 @@ from docent.data_models.citation import (
 )
 from docent.data_models.judge import JudgeRunLabel
 from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
+from docent.judges import Rubric
 from docent_core._server._broker.redis_client import (
     STATE_KEY_FORMAT,
     STREAM_KEY_FORMAT,
@@ -35,7 +36,6 @@ from docent_core.docent.ai_tools.assistant.chat import (
     execute_add_label,
     make_system_prompt,
 )
-from docent_core.docent.ai_tools.rubric.rubric import Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob

@@ -51,6 +51,11 @@ DEFAULT_JUDGE_OUTPUT_SCHEMA = {
 DEFAULT_JUDGE_MODEL = PUBLIC_PROVIDER_PREFERENCES.default_judge_models[0]
 
 
+class JudgeVariant(str, enum.Enum):
+    MAJORITY = "majority"
+    MULTI_REFLECT = "multi-reflect"
+
+
 class Rubric(BaseModel):
     """TODO(mengk): this should really be called JudgeConfig,
     but temporarily keeping this for consistency with docent_core."""
@@ -64,6 +69,8 @@ class Rubric(BaseModel):
 
     # What the judge actually does
     rubric_text: str
+    n_rollouts_per_input: int = 1
+    judge_variant: JudgeVariant = JudgeVariant.MAJORITY
 
     # Default instructions for the judge
     system_prompt_template: str = DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE

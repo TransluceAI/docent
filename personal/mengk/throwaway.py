@@ -1,5 +1,14 @@
 # %%
 
+
+import docent
+
+client = docent.Docent()
+
+client.recursively_ingest_inspect_logs(collection_id, fpath="/Users/mengk/Downloads/inspect_logs")
+
+# %%
+
 ar = list(range(10))
 ar2 = [el for el in ar for _ in range(5)]
 ar2

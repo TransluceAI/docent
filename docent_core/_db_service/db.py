@@ -4,7 +4,6 @@ from typing import AsyncIterator
 
 import anyio
 from sqlalchemy import URL, create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -208,14 +207,15 @@ class DocentDB:
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
         """Provide a transactional scope around a series of operations."""
+        # I think we don't need automatic recovery of failed sessions, since the codepath
+        # has already errored out at that point.
+
         session = self._Session()
         try:
             yield session
-            await session.commit()
-        except SQLAlchemyError:
-            await session.rollback()
-            logger.error("Rolled back database transaction")
-            raise
+            # If already in the middle of a commit, see it through
+            with anyio.CancelScope(shield=True):
+                await session.commit()
         finally:
             with anyio.CancelScope(shield=True):
                 await session.close()

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._log_util import get_logger
 from docent.data_models.judge import JudgeRunLabel
 from docent.judges import JudgeResult, ResultType, Rubric
+from docent.judges.runner import run_rubric
 from docent_core._db_service.batched_writer import BatchedWriter
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core._worker.constants import WorkerFunction
@@ -21,7 +22,6 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
     ClusterFeedback,
     propose_clusters,
 )
-from docent_core.docent.ai_tools.rubric.rubric import evaluate_rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
@@ -332,7 +332,6 @@ class RubricService:
         async with BatchedWriter(self.session_cm_factory) as writer:
             # Use taskgroup for cancellation instead of events
             async with anyio.create_task_group() as tg:
-                cancel_scope = tg.cancel_scope
 
                 async def _callback(batch_index: int, judge_results: list[JudgeResult] | None):
                     if judge_results is None:
@@ -351,13 +350,13 @@ class RubricService:
                     if (
                         max_results is not None
                         and num_results >= max_results
-                        and not cancel_scope.cancel_called
+                        and not tg.cancel_scope.cancel_called
                     ):
-                        cancel_scope.cancel()
+                        tg.cancel_scope.cancel()
 
                 # Run the search, saving data to the database as we go
                 try:
-                    await evaluate_rubric(
+                    await run_rubric(
                         agent_runs,
                         rubric.to_pydantic(),
                         llm_svc=self.llm_svc,

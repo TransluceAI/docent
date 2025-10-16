@@ -3,6 +3,7 @@ from docent.judges.types import (
     JudgeResult,
     JudgeResultCompletionCallback,
     JudgeResultWithCitations,
+    JudgeVariant,
     ResultType,
     Rubric,
 )
@@ -18,4 +19,5 @@ __all__ = [
     "JudgeResultWithCitations",
     "JudgeResultCompletionCallback",
     "ResultType",
+    "JudgeVariant",
 ]

@@ -1,17 +1,7 @@
-"""
-At some point we'll want to do a refactor to support different types of provider/key swapping
-due to different scenarios. However, this'll probably be a breaking change, which is why I'm
-not doing it now.
-
-- mengk
-"""
-
 import traceback
-from contextlib import nullcontext
 from functools import partial
 from typing import (
     Any,
-    AsyncContextManager,
     Literal,
     Protocol,
     Sequence,
@@ -20,6 +10,7 @@ from typing import (
 )
 
 import anyio
+from anyio import Lock, Semaphore
 from anyio.abc import TaskGroup
 from tqdm.auto import tqdm
 
@@ -44,9 +35,11 @@ from docent._llm_util.providers.provider_registry import (
 from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, ToolInfo, parse_chat_message
 
-MAX_VALIDATION_ATTEMPTS = 3
-
 logger = get_logger(__name__)
+
+MAX_VALIDATION_ATTEMPTS = 3
+DEFAULT_MAX_CONCURRENCY = 100
+DEFAULT_SVC_MAX_CONCURRENCY = 100
 
 
 @runtime_checkable
@@ -91,7 +84,7 @@ async def _parallelize_calls(
     logprobs: bool,
     top_logprobs: int | None,
     timeout: float,
-    semaphore: AsyncContextManager[anyio.Semaphore] | None,
+    semaphore: Semaphore,
     # use_tqdm: bool,
     cache: LLMCache | None = None,
 ):
@@ -122,12 +115,13 @@ async def _parallelize_calls(
     # Save resolved messages to avoid multiple resolutions
     resolved_messages: list[list[ChatMessage] | None] = [None] * len(inputs)
 
-    cancelled_due_to_usage_limit: bool = False
+    # Not sure why the cast is necessary for the type checker
+    cancelled_due_to_usage_limit: bool = cast(bool, False)
 
     async def _limited_task(i: int, cur_input: MessagesInput, tg: TaskGroup):
         nonlocal responses, pbar, resolved_messages, cancelled_due_to_usage_limit
 
-        async with semaphore or nullcontext():
+        async with semaphore:
             messages = _resolve_messages_input(cur_input)
             resolved_messages[i] = messages
 
@@ -273,21 +267,24 @@ async def _parallelize_calls(
     # Cache what we have so far if something got cancelled
     except anyio.get_cancelled_exc_class():
         num_cached = _cache_responses()
-        logger.info(
-            f"Cancelled {len(inputs) - num_cached} unfinished LLM API calls; cached {num_cached} completed responses"
-        )
-        raise
+        if num_cached:
+            logger.info(
+                f"Cancelled {len(inputs) - num_cached} unfinished LLM API calls, but cached {num_cached} completed responses"
+            )
 
-    if cancelled_due_to_usage_limit:
-        for i in range(len(responses)):
-            if responses[i] is None:
-                responses[i] = LLMOutput(
-                    model=model_name,
-                    completions=[],
-                    errors=[DocentUsageLimitException()],
-                )
-            else:
-                responses[i].errors.append(DocentUsageLimitException())
+        # If the task was cancelled due to usage limit, set the response to a usage limit exception
+        if cancelled_due_to_usage_limit:
+            for i, response in enumerate(responses):
+                if response is None:
+                    responses[i] = LLMOutput(
+                        model=model_name,
+                        completions=[],
+                        errors=[DocentUsageLimitException()],
+                    )
+                else:
+                    response.errors.append(DocentUsageLimitException())
+
+        raise
 
     # Cache results if available
     _cache_responses()
@@ -300,51 +297,88 @@ async def _parallelize_calls(
     return cast(list[LLMOutput], responses)
 
 
-class LLMManager:
-    def __init__(
-        self,
-        model_options: list[ModelOption],
-        api_key_overrides: dict[str, str] | None = None,
-        use_cache: bool = False,
-    ):
-        # TODO(mengk): make this more robust, possibly move to a NoSQL database or something
-        try:
-            self.cache = LLMCache() if use_cache else None
-        except ValueError as e:
-            logger.warning(f"Disabling LLM cache due to init error: {e}")
-            self.cache = None
+class BaseLLMService:
+    def __init__(self, max_concurrency: int = DEFAULT_SVC_MAX_CONCURRENCY):
+        self._semaphore = Semaphore(max_concurrency)
+        self._client_cache: dict[tuple[str, str | None], Any] = {}  # (provider, api_key) -> client
+        self._client_cache_lock = Lock()
 
-        self.model_options = model_options
-        self.current_model_option_index = 0
-        self.api_key_overrides = api_key_overrides or {}
+    async def _get_cached_client(self, provider: str, override_key: str | None) -> Any:
+        """Return a cached client for the provider/api-key tuple, creating one if needed."""
+        cache_key = (provider, override_key)
+        async with self._client_cache_lock:
+            cached = self._client_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+            client_factory = PROVIDERS[provider]["async_client_getter"]
+            new_client = client_factory(override_key)
+            self._client_cache[cache_key] = new_client
+            return new_client
 
     async def get_completions(
         self,
+        *,
         inputs: list[MessagesInput],
+        model_options: list[ModelOption],
         tools: list[ToolInfo] | None = None,
         tool_choice: Literal["auto", "required"] | None = None,
-        max_new_tokens: int = 32,
+        max_new_tokens: int = 1024,
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
-        max_concurrency: int | None = None,
-        timeout: float = 5.0,
+        timeout: float = 120.0,
         streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
         validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
+        use_cache: bool = False,
+        _api_key_overrides: dict[str, str] = dict(),
     ) -> list[LLMOutput]:
+        """Request completions from a configured LLM provider."""
+
+        # We don't support logprobs for Anthropic yet
+        if logprobs:
+            for model_option in model_options:
+                if model_option.provider == "anthropic":
+                    raise ValueError(
+                        f"Logprobs are not supported for Anthropic, so we can't use model {model_option.model_name}"
+                    )
+
+        # Instantiate cache
+        # TODO(mengk): make this more robust, possibly move to a NoSQL database or something
+        try:
+            cache = LLMCache() if use_cache else None
+        except ValueError as e:
+            logger.warning(f"Disabling LLM cache due to init error: {e}")
+            cache = None
+
+        # Initialize pointer to which model we're using; used for model rotation after failures
+        current_model_option_index = 0
+
+        def _rotate_model_option() -> ModelOption | None:
+            nonlocal current_model_option_index
+
+            current_model_option_index += 1
+            if current_model_option_index >= len(model_options):
+                logger.error("All model options are exhausted")
+                return None
+
+            new_model_option = model_options[current_model_option_index]
+            logger.warning(f"Switched to next model {new_model_option.model_name}")
+            return new_model_option
+
         while True:
             # Parse the current model option
-            cur_option = self.model_options[self.current_model_option_index]
+            cur_option = model_options[current_model_option_index]
             provider, model_name, reasoning_effort = (
                 cur_option.provider,
                 cur_option.model_name,
                 cur_option.reasoning_effort,
             )
 
-            override_key = self.api_key_overrides.get(provider)
+            override_key = _api_key_overrides.get(provider)
 
-            client = PROVIDERS[provider]["async_client_getter"](override_key)
+            client = await self._get_cached_client(provider, override_key)
             single_output_getter = PROVIDERS[provider]["single_output_getter"]
             single_streaming_output_getter = PROVIDERS[provider]["single_streaming_output_getter"]
 
@@ -369,10 +403,8 @@ class LLMManager:
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
                 timeout=timeout,
-                semaphore=(
-                    anyio.Semaphore(max_concurrency) if max_concurrency is not None else None
-                ),
-                cache=self.cache,
+                semaphore=self._semaphore,
+                cache=cache,
             )
             assert len(outputs) == len(inputs), "Number of outputs must match number of messages"
 
@@ -388,22 +420,12 @@ class LLMManager:
             )
             if num_rotation_errors > 0:
                 logger.warning(f"{model_name}: {num_rotation_errors} API errors")
-                if not self._rotate_model_option():
+                if not _rotate_model_option():
                     break
             else:
                 break
 
         return outputs
-
-    def _rotate_model_option(self) -> ModelOption | None:
-        self.current_model_option_index += 1
-        if self.current_model_option_index >= len(self.model_options):
-            logger.error("All model options are exhausted")
-            return None
-
-        new_model_option = self.model_options[self.current_model_option_index]
-        logger.warning(f"Switched to next model {new_model_option.model_name}")
-        return new_model_option
 
 
 async def get_llm_completions_async(
@@ -415,40 +437,29 @@ async def get_llm_completions_async(
     temperature: float = 1.0,
     logprobs: bool = False,
     top_logprobs: int | None = None,
-    max_concurrency: int = 100,
     timeout: float = 120.0,
     streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
     validation_callback: AsyncLLMOutputStreamingCallback | None = None,
     completion_callback: AsyncLLMOutputStreamingCallback | None = None,
     use_cache: bool = False,
-    api_key_overrides: dict[str, str] | None = None,
+    _api_key_overrides: dict[str, str] = dict(),
 ) -> list[LLMOutput]:
-    # We don't support logprobs for Anthropic yet
-    if logprobs:
-        for model_option in model_options:
-            if model_option.provider == "anthropic":
-                raise ValueError(
-                    f"Logprobs are not supported for Anthropic, so we can't use model {model_option.model_name}"
-                )
+    """Convenience method for backward compatibility"""
 
-    # Create the LLM manager
-    llm_manager = LLMManager(
+    svc = BaseLLMService()
+    return await svc.get_completions(
+        inputs=inputs,
         model_options=model_options,
-        api_key_overrides=api_key_overrides,
-        use_cache=use_cache,
-    )
-
-    return await llm_manager.get_completions(
-        inputs,
         tools=tools,
         tool_choice=tool_choice,
         max_new_tokens=max_new_tokens,
         temperature=temperature,
         logprobs=logprobs,
         top_logprobs=top_logprobs,
-        max_concurrency=max_concurrency,
         timeout=timeout,
         streaming_callback=streaming_callback,
         validation_callback=validation_callback,
         completion_callback=completion_callback,
+        use_cache=use_cache,
+        _api_key_overrides=_api_key_overrides,
     )

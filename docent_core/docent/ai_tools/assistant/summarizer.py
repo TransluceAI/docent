@@ -2,7 +2,7 @@ import re
 from typing import Literal, Protocol, TypedDict
 
 from docent._llm_util.data_models.llm_output import LLMOutput
-from docent._llm_util.prod_llms import get_llm_completions_async
+from docent._llm_util.llm_svc import get_llm_completions_async
 from docent.data_models.citation import Citation, parse_citations
 from docent.data_models.transcript import (
     BLOCK_CITE_INSTRUCTION,

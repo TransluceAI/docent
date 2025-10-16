@@ -28,7 +28,7 @@ agent_runs = [AgentRun(transcripts=[Transcript(messages=[*messages])])]
 # %%
 
 from docent._llm_util.providers.preference_types import ModelOption
-from docent.judges.impl import MajorityVotingJudge
+from docent.judges.impl import MajorityVotingJudge, MultiReflectionJudge
 from docent.judges.types import Rubric
 
 cfg = Rubric(
@@ -45,15 +45,29 @@ cfg = Rubric(
         provider="openai",
         model_name="gpt-5-mini",
     ),
+    n_rollouts_per_input=3,
 )
-j = MajorityVotingJudge(cfg=cfg, n_rollouts_per_input=5)
 
 
 # %%
 
-print(cfg.materialize_system_prompt(agent_runs[0]))
-print(cfg.system_prompt_template)
-print(cfg.citation_instructions)
+j = MajorityVotingJudge(cfg=cfg)
+await j.estimate_output_distrs(
+    agent_runs[0],
+    n_initial_rollouts_to_sample=5,
+)
+
+# %%
+
+
+j = MultiReflectionJudge(cfg=cfg)
+await j.estimate_output_distrs(
+    agent_runs[0],
+    n_initial_rollouts_to_sample=5,
+    n_combinations_to_sample=5,
+    n_reflection_rollouts_to_sample=5,
+)
+
 
 # %%
 
