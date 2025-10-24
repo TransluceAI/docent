@@ -47,8 +47,16 @@ docent_client = Docent(api_key=ENV.get("DOCENT_API_KEY"), server_url="http://loc
 # %%
 
 collection_id = "4707073b-2e3b-444b-a2e1-5248beaaaa62"
-docent_client.get_dql_schema(collection_id)
+# docent_client.get_dql_schema(collection_id)
 # docent_client.execute_dql(collection_id, "SELECT id FROM agent_runs")
+arids = docent_client.select_agent_run_ids(
+    collection_id,
+    # "metadata_json ->> 'model_name' = '20250805-openhands-Qwen3-Coder-30B-A3B-Instruct'",
+    "metadata_json ->> 'instance_id' = 'astropy__astropy-14365'",
+)
+print(arids)
+ars = [docent_client.get_agent_run(collection_id, arid) for arid in arids]
+print(ars)
 
 
 # %%

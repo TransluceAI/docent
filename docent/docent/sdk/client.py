@@ -464,6 +464,52 @@ class Docent:
         self._handle_response_errors(response)
         return response.json()
 
+    def select_agent_run_ids(
+        self,
+        collection_id: str,
+        where_clause: str | None = None,
+        limit: int | None = None,
+    ) -> list[str]:
+        """Convenience helper to fetch agent run IDs via DQL.
+
+        Args:
+            collection_id: ID of the Collection to query.
+            where_clause: Optional DQL WHERE clause applied to the agent_runs table.
+            limit: Optional LIMIT applied to the underlying DQL query.
+
+        Returns:
+            list[str]: Agent run IDs matching the criteria.
+
+        Raises:
+            ValueError: If the inputs are invalid.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        query = "SELECT agent_runs.id AS agent_run_id FROM agent_runs"
+
+        if where_clause:
+            where_clause = where_clause.strip()
+            if not where_clause:
+                raise ValueError("where_clause must be a non-empty string when provided")
+            query += f" WHERE {where_clause}"
+
+        if limit is not None:
+            if limit <= 0:
+                raise ValueError("limit must be a positive integer when provided")
+            query += f" LIMIT {limit}"
+
+        result = self.execute_dql(collection_id, query)
+        rows = result.get("rows", [])
+        agent_run_ids = [str(row[0]) for row in rows if row]
+
+        if result.get("truncated"):
+            logger.warning(
+                "DQL query truncated at applied limit %s; returning %s agent run IDs",
+                result.get("applied_limit"),
+                len(agent_run_ids),
+            )
+
+        return agent_run_ids
+
     def list_agent_run_ids(self, collection_id: str) -> list[str]:
         """Get all agent run IDs for a collection.
 
