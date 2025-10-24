@@ -323,14 +323,14 @@ class MonoService:
         )
         field_map[SQLAAgentRun.__tablename__] = _dedupe(agent_run_infos)
 
-        transcript_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLATranscript.__table__,
-            json_column=cast(ColumnElement[Any], SQLATranscript.metadata_json),
-            column_name="metadata_json",
-            join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
-        )
-        field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
+        # transcript_infos = await self.get_json_metadata_fields_for_column(
+        #     collection_id,
+        #     table=SQLATranscript.__table__,
+        #     json_column=cast(ColumnElement[Any], SQLATranscript.metadata_json),
+        #     column_name="metadata_json",
+        #     join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
+        # )
+        # field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
 
         transcript_group_infos = await self.get_json_metadata_fields_for_column(
             collection_id,

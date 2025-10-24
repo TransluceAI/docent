@@ -215,6 +215,7 @@ const DQLEditor = ({
 
     const columns = agentRunsTable.columns
       .filter((column) => !column.alias_for)
+      .filter((column) => column.name.toLowerCase() !== 'text_for_search')
       .map((column) => column.name)
       .filter((name) => name && name.trim().length > 0);
 
