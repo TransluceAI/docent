@@ -17,6 +17,7 @@ from typing import (
 )
 from uuid import uuid4
 
+import sqlglot.expressions as exp
 from passlib.context import CryptContext
 from sqlalchemy import (
     ColumnElement,
@@ -33,8 +34,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql import lateral, text
+from sqlalchemy.sql import FromClause, lateral, text
 from sqlalchemy.types import Numeric
 
 from docent._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
@@ -58,7 +60,7 @@ from docent_core.docent.db.dql import (
     parameterize_expression,
     parse_dql_query,
 )
-from docent_core.docent.db.filters import ComplexFilter, FilterSQLContext
+from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.db.schemas.auth_models import (
     PERMISSION_LEVELS,
     Permission,
@@ -101,7 +103,7 @@ P = ParamSpec("P")
 T = TypeVar("T")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]")
+EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]")  # type: ignore[reportUnknownVariableType]
 MAX_DQL_RESULT_LIMIT: Final[int] = 10_000
 
 
@@ -156,10 +158,10 @@ class MonoService:
 
     async def _collect_json_field_records(
         self,
-        session,
+        session: AsyncSession,
         *,
-        from_clause,
-        value_expression,
+        from_clause: FromClause,
+        value_expression: ColumnElement[Any],
         value_column_name: str,
         limit_rows: int,
         where_clause: ColumnElement[bool] | None = None,
@@ -186,7 +188,7 @@ class MonoService:
         seed = select(  # type: ignore
             *base_group_columns,
             base_cte.c.value.label("value"),
-            EMPTY_TEXT_ARRAY.label("path"),
+            EMPTY_TEXT_ARRAY.label("path"),  # type: ignore[reportUnknownArgumentType]
             func.jsonb_typeof(base_cte.c.value).label("value_type"),
         )
 
@@ -227,7 +229,7 @@ class MonoService:
         result = await session.execute(stmt)
         records: list[JsonFieldInfo] = []
         for row in result:
-            raw_path = getattr(row, "path", None) or []
+            raw_path: list[str] = getattr(row, "path", None) or []
             path = tuple(str(segment) for segment in raw_path)
             labels = {
                 label: str(getattr(row, label))
@@ -250,8 +252,8 @@ class MonoService:
         self,
         collection_id: str,
         *,
-        table,
-        json_column,
+        table: FromClause,
+        json_column: ColumnElement[Any],
         column_name: str,
         join_condition: ColumnElement[bool] | None = None,
         group_specs: Sequence[tuple[str, ColumnElement[Any]]] | None = None,
@@ -316,24 +318,24 @@ class MonoService:
         agent_run_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
             table=SQLAAgentRun.__table__,
-            json_column=SQLAAgentRun.metadata_json,
+            json_column=cast(ColumnElement[Any], SQLAAgentRun.metadata_json),
             column_name="metadata_json",
         )
         field_map[SQLAAgentRun.__tablename__] = _dedupe(agent_run_infos)
 
-        # transcript_infos = await self.get_json_metadata_fields_for_column(
-        #     collection_id,
-        #     table=SQLATranscript.__table__,
-        #     json_column=SQLATranscript.metadata_json,
-        #     column_name="metadata_json",
-        #     join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
-        # )
-        # field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
+        transcript_infos = await self.get_json_metadata_fields_for_column(
+            collection_id,
+            table=SQLATranscript.__table__,
+            json_column=cast(ColumnElement[Any], SQLATranscript.metadata_json),
+            column_name="metadata_json",
+            join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
+        )
+        field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
 
         transcript_group_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
             table=SQLATranscriptGroup.__table__,
-            json_column=SQLATranscriptGroup.metadata_json,
+            json_column=cast(ColumnElement[Any], SQLATranscriptGroup.metadata_json),
             column_name="metadata_json",
             join_condition=SQLATranscriptGroup.agent_run_id == SQLAAgentRun.id,
         )
@@ -342,19 +344,19 @@ class MonoService:
         judge_output_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
             table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.output,
+            json_column=cast(ColumnElement[Any], SQLAJudgeResult.output),
             column_name="output",
             join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
+            group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
         )
 
         judge_metadata_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
             table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.result_metadata,
+            json_column=cast(ColumnElement[Any], SQLAJudgeResult.result_metadata),
             column_name="result_metadata",
             join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
+            group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
         )
 
         field_map[SQLAJudgeResult.__tablename__] = _dedupe(
@@ -864,7 +866,7 @@ class MonoService:
             collection_id=collection_id,
         )
         selected_columns = extract_selected_columns(expression)
-        requested_limit = get_query_limit_value(expression)
+        requested_limit = get_query_limit_value(cast(exp.Query, expression))
         server_cap = MAX_DQL_RESULT_LIMIT
         applied_limit = server_cap if requested_limit is None else min(requested_limit, server_cap)
 
@@ -873,7 +875,7 @@ class MonoService:
         else:
             fetch_limit = requested_limit + 1
 
-        apply_limit_cap(expression, fetch_limit)
+        apply_limit_cap(cast(exp.Query, expression), fetch_limit)
         compiled_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
         parameterized_sql, parameters = parameterize_expression(expression, "postgres")
         statement = text(parameterized_sql)
@@ -2444,7 +2446,7 @@ class MonoService:
         agent_run_infos = await self.get_json_metadata_fields_for_column(
             ctx.collection_id,
             table=SQLAAgentRun.__table__,
-            json_column=SQLAAgentRun.metadata_json,
+            json_column=cast(ColumnElement[Any], SQLAAgentRun.metadata_json),
             column_name="metadata_json",
         )
         for info in agent_run_infos:
@@ -2456,10 +2458,10 @@ class MonoService:
         judge_infos = await self.get_json_metadata_fields_for_column(
             ctx.collection_id,
             table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.output,
+            json_column=cast(ColumnElement[Any], SQLAJudgeResult.output),
             column_name="output",
             join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
+            group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
         )
         for info in judge_infos:
             rubric_id = info.labels.get("rubric_id")
@@ -2471,10 +2473,10 @@ class MonoService:
         judge_metadata_infos = await self.get_json_metadata_fields_for_column(
             ctx.collection_id,
             table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.result_metadata,
+            json_column=cast(ColumnElement[Any], SQLAJudgeResult.result_metadata),
             column_name="result_metadata",
             join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
+            group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
         )
         for info in judge_metadata_infos:
             rubric_id = info.labels.get("rubric_id")
