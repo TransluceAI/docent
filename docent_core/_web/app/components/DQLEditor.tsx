@@ -109,9 +109,7 @@ const DQLEditor = ({
   initialErrorMessage,
   onErrorMessageChange,
 }: DQLEditorProps) => {
-  const [query, setQuery] = useState<string>(
-    initialQuery ?? DEFAULT_DQL_QUERY
-  );
+  const [query, setQuery] = useState<string>(initialQuery ?? DEFAULT_DQL_QUERY);
   const [hasUserEditedQuery, setHasUserEditedQuery] = useState<boolean>(
     initialQuery !== undefined && !isFallbackQueryValue(initialQuery)
   );
@@ -134,7 +132,9 @@ const DQLEditor = ({
     if (initialQuery !== query) {
       setQuery(initialQuery);
     }
-    setHasUserEditedQuery(initialQuery !== undefined && !isFallbackQueryValue(initialQuery));
+    setHasUserEditedQuery(
+      initialQuery !== undefined && !isFallbackQueryValue(initialQuery)
+    );
   }, [initialQuery, query]);
 
   useEffect(() => {

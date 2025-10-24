@@ -37,6 +37,7 @@ nav:
           - concepts/data_models/chat_messages.md
           # - concepts/data_models/filters_and_dimensions.md
           - concepts/data_models/llm_output.md
+      - Docent Query Language: concepts/docent_query_language.md
       # - Developers:
       #     - developers/development_tips.md
   # - Integrations:

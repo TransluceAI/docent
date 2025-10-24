@@ -13,6 +13,7 @@ from typing import (
     Literal,
     Mapping,
     Sequence,
+    TypeAlias,
     TypeVar,
     cast,
     overload,
@@ -69,7 +70,6 @@ __all__ = [
 
 
 logger = get_logger(__name__)
-logger.setLevel(logging.DEBUG)
 
 DQL_COLLECTION_SETTING_KEY = "docent.collection_id"
 
@@ -125,6 +125,8 @@ class JsonFieldInfo:
 
 
 CollectionPredicateFactory = Callable[[str, str], SqlGlotExpression]
+QueryParameters: TypeAlias = dict[str, Any]
+SqlAndParameters: TypeAlias = tuple[str, QueryParameters]
 
 ALLOWED_EXPRESSION_TYPES: tuple[type[exp.Expression], ...] = (
     exp.Select,
@@ -311,11 +313,11 @@ class DQLRegistry:
         if table_key in self._tables or table_key in self._table_aliases:
             raise ValueError(f"Table '{name}' is already registered.")
 
-        table_columns = {col.lower(): col for col in allowed_columns}
+        table_columns: dict[str, str] = {col.lower(): col for col in allowed_columns}
         if not table_columns:
             raise ValueError(f"Table '{name}' must expose at least one column.")
 
-        alias_set = frozenset(alias.lower() for alias in (aliases or ()))
+        alias_set: frozenset[str] = frozenset(alias.lower() for alias in (aliases or ()))
         for alias in alias_set:
             if alias in self._tables or alias in self._table_aliases:
                 raise ValueError(f"Table alias '{alias}' is already registered.")
@@ -333,7 +335,7 @@ class DQLRegistry:
                     )
                 column_alias_map[alias_lower] = target_lower
 
-        json_paths = tuple(json_field_paths or ())
+        json_paths: tuple[str, ...] = tuple(json_field_paths or ())
         for path in json_paths:
             table_columns[path.lower()] = path
 
@@ -376,7 +378,7 @@ class DQLRegistry:
             )
 
         allowed_table = self._tables[table_key]
-        new_columns = list(columns)
+        new_columns: list[str] = list(columns)
         updated_columns = allowed_table.allowed_columns.union(
             {column.lower() for column in new_columns}
         )
@@ -547,11 +549,12 @@ def _literal_to_python(literal: exp.Literal) -> Any:
 def parameterize_expression(
     expression: SqlGlotExpression,
     sql_dialect: str,
-) -> tuple[str, dict[str, Any]]:
+) -> SqlAndParameters:
     cloned = expression.copy()
-    params: dict[str, Any] = {}
+    params: QueryParameters = {}
 
-    for index, literal in enumerate(list(cloned.find_all(exp.Literal)), start=1):
+    literals: list[exp.Literal] = list(cloned.find_all(exp.Literal))
+    for index, literal in enumerate(literals, start=1):
         param_name = f"__dql_param_{index}"
         params[param_name] = _literal_to_python(literal)
         literal.replace(exp.Parameter(this=param_name))
@@ -604,7 +607,7 @@ def _apply_collection_filter(
     setattr(scope, "_collection_filter_aliases", applied_aliases)
 
     predicate = predicate_factory(table_alias, collection_id)
-    existing_where = target.args.get("where")
+    existing_where = cast(exp.Where | None, target.args.get("where"))
     if existing_where is not None:
         combined = exp.and_(existing_where.this, predicate)  # type: ignore[reportUnknownMemberType]
         target.set("where", exp.Where(this=combined))
@@ -683,7 +686,7 @@ def parse_dql_query(
 
     logger.debug("Parsing DQL query for collection_id=%s: %s", collection_id, stripped)
     try:
-        statements = _parse_sql_statements(stripped)
+        statements: list[SqlGlotExpression] = _parse_sql_statements(stripped)
     except ParseError as exc:
         raise DQLParseError(str(exc)) from exc
 
@@ -698,7 +701,7 @@ def parse_dql_query(
     _ensure_select_only(expression)
     _ensure_allowed_expressions(expression)
     _validate_query_expression(expression, registry, collection_id)
-    table_names = sorted({table.name for table in expression.find_all(exp.Table)})
+    table_names: list[str] = sorted({table.name for table in expression.find_all(exp.Table)})
     logger.debug(
         "Validated DQL query for collection_id=%s tables=%s limit=%s",
         collection_id,
@@ -865,7 +868,14 @@ def extract_selected_columns(
         raise DQLParseError("Expected a SELECT query expression.")
 
     results: list[SelectedColumn] = []
-    select_expressions = list(expression.expressions or [])
+    select_expressions_raw = list(expression.expressions or [])
+
+    select_expressions: list[SqlGlotExpression] = []
+    for raw in select_expressions_raw:
+        if raw is None:
+            continue
+        assert isinstance(raw, exp.Expression)
+        select_expressions.append(raw)
 
     for select_expr in select_expressions:
         rendered = _render_sql(select_expr, sql_dialect)
@@ -893,7 +903,7 @@ def extract_selected_columns(
 def _ensure_select_only(expression: SqlGlotExpression) -> None:
     """Reject any query tree that attempts to mutate data or execute commands."""
 
-    disallowed = (
+    disallowed: tuple[type[exp.Expression], ...] = (
         exp.Delete,
         exp.Update,
         exp.Insert,
@@ -953,13 +963,13 @@ def _validate_scope(
     for alias, source in sources.items():
         alias_key = alias.lower()
         if isinstance(source, exp.Table):
-            table_name = source.name
+            table_name: str = source.name
             allowed_table = registry.get_table(table_name)
             base_alias_map[alias_key] = allowed_table
             base_alias_map.setdefault(table_name.lower(), allowed_table)
 
             if allowed_table.collection_predicate_factory:
-                table_alias = source.alias_or_name or alias
+                table_alias: str = source.alias_or_name or alias
                 _apply_collection_filter(
                     scope,
                     table_alias,
@@ -1003,7 +1013,9 @@ def _validate_columns(
     if not columns:
         return
 
-    unique_tables = tuple({id(table): table for table in base_alias_map.values()}.values())
+    unique_tables: tuple[AllowedTable, ...] = tuple(
+        {id(table): table for table in base_alias_map.values()}.values()
+    )
 
     for column in columns:
         if isinstance(column.this, exp.Star):

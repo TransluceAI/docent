@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import (
     Any,
     AsyncIterator,
+    Final,
     Literal,
     ParamSpec,
     Sequence,
@@ -29,6 +32,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import lateral, text
 from sqlalchemy.types import Numeric
@@ -41,6 +45,19 @@ from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.dql import (
+    DQL_COLLECTION_SETTING_KEY,
+    DQLExecutionError,
+    JsonFieldInfo,
+    SelectedColumn,
+    apply_limit_cap,
+    build_default_registry,
+    ensure_dql_collection_access,
+    extract_selected_columns,
+    get_query_limit_value,
+    parameterize_expression,
+    parse_dql_query,
+)
 from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.db.schemas.auth_models import (
     PERMISSION_LEVELS,
@@ -95,6 +112,40 @@ class _NotGiven:
 NOT_GIVEN = _NotGiven()
 
 
+EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]")
+MAX_DQL_RESULT_LIMIT: Final[int] = 10_000
+
+
+def _infer_filter_type_from_types(
+    value_types: str,
+) -> Literal["str", "bool", "int", "float"] | None:
+    """Infer a filter type from a comma-separated list of detected JSON value types."""
+
+    types = [t.strip() for t in value_types.split(",") if t.strip()]
+    if not types:
+        return None
+    if "number" in types:
+        return "float"
+    if "string" in types:
+        return "str"
+    if "boolean" in types:
+        return "bool"
+    return None
+
+
+@dataclass(slots=True)
+class DQLQueryResult:
+    columns: tuple[str, ...]
+    rows: list[tuple[Any, ...]]
+    selected_columns: list[SelectedColumn]
+    truncated: bool
+    execution_time_ms: float
+    compiled_sql: str
+    requested_limit: int | None
+    applied_limit: int
+    row_count: int
+
+
 class MonoService:
     def __init__(self, db: DocentDB):
         self.db = db
@@ -103,55 +154,6 @@ class MonoService:
     async def init(cls):
         db = await DocentDB.init()
         return cls(db)
-
-    #############
-    # Collection #
-    #############
-
-    async def create_collection(
-        self,
-        user: User,
-        collection_id: str | None = None,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        # Create FG
-        collection_id = collection_id or str(uuid4())
-        async with self.db.session() as session:
-            session.add(
-                SQLACollection(
-                    id=collection_id, name=name, description=description, created_by=user.id
-                )
-            )
-
-        # Create ACL entry for the user
-        await self.set_acl_permission(
-            SubjectType.USER,
-            subject_id=user.id,
-            resource_type=ResourceType.COLLECTION,
-            resource_id=collection_id,
-            permission=Permission.ADMIN,
-        )
-
-        logger.info(f"Created Collection with ID: {collection_id}")
-        return collection_id
-
-    async def update_collection(
-        self,
-        collection_id: str,
-        name: str | None | _NotGiven = NOT_GIVEN,
-        description: str | None | _NotGiven = NOT_GIVEN,
-    ):
-        """
-        Update the name and/or description of a Collection.
-        Fields set to `None` will be nulled in the database.
-        Fields not provided (i.e., left as NOT_GIVEN) will be unchanged.
-        """
-        values_to_update = {}
-        if name is not NOT_GIVEN:
-            values_to_update["name"] = name
-        if description is not NOT_GIVEN:
-            values_to_update["description"] = description
 
     async def _collect_json_field_records(
         self,
@@ -320,11 +322,21 @@ class MonoService:
         )
         field_map[SQLAAgentRun.__tablename__] = _dedupe(agent_run_infos)
 
+        transcript_infos = await self.get_json_metadata_fields_for_column(
+            collection_id,
+            table=SQLATranscript.__table__,
+            json_column=SQLATranscript.metadata_json,
+            column_name="metadata_json",
+            join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
+        )
+        field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
+
         transcript_group_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
             table=SQLATranscriptGroup.__table__,
             json_column=SQLATranscriptGroup.metadata_json,
             column_name="metadata_json",
+            join_condition=SQLATranscriptGroup.agent_run_id == SQLAAgentRun.id,
         )
         field_map[SQLATranscriptGroup.__tablename__] = _dedupe(transcript_group_infos)
 
@@ -351,6 +363,8 @@ class MonoService:
         )
 
         return field_map
+
+
     #############
     # Collection #
     #############
@@ -2425,51 +2439,77 @@ class MonoService:
             return result.rowcount > 0
 
     async def get_agent_run_metadata_fields(self, ctx: ViewContext) -> list[FilterableField]:
-        """Expose agent run filter fields derived from JSON metadata and related tables."""
+        """
+        Get all metadata fields from agent runs that can be used for filtering.
+
+        Args:
+            ctx: View context
+
+        Returns:
+            List of all filterable fields
+        """
+        where_clause = ctx.get_base_where_clause(SQLAAgentRun)
+        limit_rows = 5000
+
+        # Base CTE: slice of rows from the collection
+        base = (
+            select(SQLAAgentRun.metadata_json.label("value"))
+            .where(where_clause)
+            .limit(limit_rows)
+            .cte("base")
+        )
+
+        # Seed: (value, [], jsonb_typeof(value))
+        seed = select(  # type: ignore
+            base.c.value.label("value"),
+            EMPTY_TEXT_ARRAY,  # type: ignore
+            func.jsonb_typeof(base.c.value).label("value_type"),
+        )
+
+        # Recursive CTE with named columns
+        w = seed.cte(name="walk", recursive=True)
+
+        # LATERAL jsonb_each(w.value) as ch(key text, value jsonb)
+        ch = lateral(
+            func.jsonb_each(w.c.value).table_valued(
+                column("key", Text),
+                column("value", JSONB),
+            )
+        ).alias("ch")
+
+        # Recursive term: descend only if current node is an object
+        rec = select(
+            ch.c.value.label("value"),
+            # use array_append to avoid || casting surprises
+            func.array_append(w.c.path, ch.c.key).label("path"),
+            func.jsonb_typeof(ch.c.value).label("value_type"),
+        ).select_from(w.join(ch, w.c.value_type == literal("object")))
+
+        walk = w.union_all(rec)
+
+        # Aggregate: keep path as text[] for grouping; stringify only in projection
+        stmt = (
+            select(
+                func.array_to_string(walk.c.path, literal(".")).label("path"),
+                func.string_agg(distinct(walk.c.value_type), literal(",")).label("value_types"),
+            )
+            .where(func.array_length(walk.c.path, 1) > 0)
+            .group_by(walk.c.path)
+            .order_by(func.array_to_string(walk.c.path, literal(".")))
+        )
 
         all_fields: dict[str, FilterableField] = {}
 
-        agent_run_infos = await self.get_json_metadata_fields_for_column(
-            ctx.collection_id,
-            table=SQLAAgentRun.__table__,
-            json_column=SQLAAgentRun.metadata_json,
-            column_name="metadata_json",
-        )
-        for info in agent_run_infos:
-            if info.value_type is None or not info.path:
-                continue
-            field_name = "metadata." + ".".join(info.path)
-            all_fields[field_name] = {"name": field_name, "type": info.value_type}
-
-        judge_infos = await self.get_json_metadata_fields_for_column(
-            ctx.collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.output,
-            column_name="output",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-        for info in judge_infos:
-            rubric_id = info.labels.get("rubric_id")
-            if not rubric_id or info.value_type is None or not info.path:
-                continue
-            field_name = f"rubric.{rubric_id}." + ".".join(info.path)
-            all_fields[field_name] = {"name": field_name, "type": info.value_type}
-
-        judge_metadata_infos = await self.get_json_metadata_fields_for_column(
-            ctx.collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.result_metadata,
-            column_name="result_metadata",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-        for info in judge_metadata_infos:
-            rubric_id = info.labels.get("rubric_id")
-            if not rubric_id or info.value_type is None or not info.path:
-                continue
-            field_name = f"rubric.{rubric_id}." + ".".join(info.path)
-            all_fields[field_name] = {"name": field_name, "type": info.value_type}
+        async with self.db.session() as session:
+            result = await session.execute(stmt)
+            for row in result:
+                field_type = _infer_filter_type_from_types(row.value_types)
+                if field_type is None:
+                    continue
+                all_fields["metadata." + row.path] = {
+                    "name": "metadata." + row.path,
+                    "type": field_type,
+                }
 
         all_fields["text"] = {"name": "text", "type": "str"}
 
