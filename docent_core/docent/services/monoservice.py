@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import (
     Any,
     AsyncIterator,
+    Final,
     Literal,
     ParamSpec,
     Sequence,
@@ -29,6 +32,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import lateral, text
 from sqlalchemy.types import Numeric
@@ -41,7 +45,20 @@ from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.filters import ComplexFilter
+from docent_core.docent.db.dql import (
+    DQL_COLLECTION_SETTING_KEY,
+    DQLExecutionError,
+    JsonFieldInfo,
+    SelectedColumn,
+    apply_limit_cap,
+    build_default_registry,
+    ensure_dql_collection_access,
+    extract_selected_columns,
+    get_query_limit_value,
+    parameterize_expression,
+    parse_dql_query,
+)
+from docent_core.docent.db.filters import ComplexFilter, FilterSQLContext
 from docent_core.docent.db.schemas.auth_models import (
     PERMISSION_LEVELS,
     Permission,
@@ -84,6 +101,26 @@ P = ParamSpec("P")
 T = TypeVar("T")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
+EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]")
+MAX_DQL_RESULT_LIMIT: Final[int] = 10_000
+
+
+def _infer_filter_type_from_types(
+    value_types: str,
+) -> Literal["str", "bool", "int", "float"] | None:
+    """Infer a filter type from a comma-separated list of detected JSON value types."""
+
+    types = [t.strip() for t in value_types.split(",") if t.strip()]
+    if not types:
+        return None
+    if "number" in types:
+        return "float"
+    if "string" in types:
+        return "str"
+    if "boolean" in types:
+        return "bool"
+    return None
+
 
 class _NotGiven:
     """Sentinel class for detecting when a parameter was not provided."""
@@ -95,6 +132,19 @@ class _NotGiven:
 NOT_GIVEN = _NotGiven()
 
 
+@dataclass(slots=True)
+class DQLQueryResult:
+    columns: tuple[str, ...]
+    rows: list[tuple[Any, ...]]
+    selected_columns: list[SelectedColumn]
+    truncated: bool
+    execution_time_ms: float
+    compiled_sql: str
+    requested_limit: int | None
+    applied_limit: int
+    row_count: int
+
+
 class MonoService:
     def __init__(self, db: DocentDB):
         self.db = db
@@ -104,7 +154,6 @@ class MonoService:
         db = await DocentDB.init()
         return cls(db)
 
-<<<<<<< ours
     async def _collect_json_field_records(
         self,
         session,
@@ -272,14 +321,14 @@ class MonoService:
         )
         field_map[SQLAAgentRun.__tablename__] = _dedupe(agent_run_infos)
 
-        transcript_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLATranscript.__table__,
-            json_column=SQLATranscript.metadata_json,
-            column_name="metadata_json",
-            join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
-        )
-        field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
+        # transcript_infos = await self.get_json_metadata_fields_for_column(
+        #     collection_id,
+        #     table=SQLATranscript.__table__,
+        #     json_column=SQLATranscript.metadata_json,
+        #     column_name="metadata_json",
+        #     join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
+        # )
+        # field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
 
         transcript_group_infos = await self.get_json_metadata_fields_for_column(
             collection_id,
@@ -314,255 +363,6 @@ class MonoService:
 
         return field_map
 
-||||||| base
-    async def _collect_json_field_records(
-        self,
-        session,
-        *,
-        from_clause,
-        value_expression,
-        value_column_name: str,
-        limit_rows: int,
-        where_clause: ColumnElement[bool] | None = None,
-        group_specs: Sequence[tuple[str, ColumnElement[Any]]] | None = None,
-        exclude_null_values: bool = True,
-    ) -> list[JsonFieldInfo]:
-        """Walk a JSON column and surface nested paths so callers can extend metadata safely."""
-
-        group_specs = list(group_specs or [])
-        labeled_groups = [column_expr.label(label) for label, column_expr in group_specs]
-
-        base_stmt = select(*labeled_groups, value_expression.label("value")).select_from(
-            from_clause
-        )
-        if exclude_null_values:
-            base_stmt = base_stmt.where(value_expression.isnot(None))
-        if where_clause is not None:
-            base_stmt = base_stmt.where(where_clause)
-        base_stmt = base_stmt.limit(limit_rows)
-
-        base_cte = base_stmt.cte("json_base")
-        base_group_columns = [getattr(base_cte.c, label) for label, _ in group_specs]
-
-        seed = select(  # type: ignore
-            *base_group_columns,
-            base_cte.c.value.label("value"),
-            EMPTY_TEXT_ARRAY.label("path"),
-            func.jsonb_typeof(base_cte.c.value).label("value_type"),
-        )
-
-        walk_cte = seed.cte(name="json_walk", recursive=True)
-
-        child = lateral(
-            func.jsonb_each(walk_cte.c.value).table_valued(
-                column("key", Text),
-                column("value", JSONB),
-            )
-        ).alias("json_child")
-
-        recursive = select(  # type: ignore
-            *[getattr(walk_cte.c, label) for label, _ in group_specs],
-            child.c.value.label("value"),
-            func.array_append(walk_cte.c.path, child.c.key).label("path"),
-            func.jsonb_typeof(child.c.value).label("value_type"),
-        ).select_from(walk_cte.join(child, walk_cte.c.value_type == literal("object")))
-
-        walk = walk_cte.union_all(recursive)
-
-        path_column = walk.c.path
-        value_types_expr = func.string_agg(
-            distinct(walk.c.value_type),
-            literal(","),
-        ).label("value_types")
-
-        stmt = (
-            select(
-                *[getattr(walk.c, label) for label, _ in group_specs],
-                path_column.label("path"),
-                value_types_expr,
-            )
-            .where(func.array_length(path_column, 1) > 0)
-            .group_by(*[getattr(walk.c, label) for label, _ in group_specs], path_column)
-        )
-
-        result = await session.execute(stmt)
-        records: list[JsonFieldInfo] = []
-        for row in result:
-            raw_path = getattr(row, "path", None) or []
-            path = tuple(str(segment) for segment in raw_path)
-            labels = {
-                label: str(getattr(row, label))
-                for label, _ in group_specs
-                if getattr(row, label) is not None
-            }
-            value_types = getattr(row, "value_types") or ""
-            inferred_type = _infer_filter_type_from_types(value_types) if value_types else None
-            records.append(
-                JsonFieldInfo(
-                    column=value_column_name,
-                    path=path,
-                    value_type=inferred_type,
-                    labels=labels,
-                )
-            )
-        return records
-
-    async def get_json_metadata_fields_for_column(
-        self,
-        collection_id: str,
-        *,
-        table,
-        json_column,
-        column_name: str,
-        join_condition: ColumnElement[bool] | None = None,
-        group_specs: Sequence[tuple[str, ColumnElement[Any]]] | None = None,
-    ) -> list[JsonFieldInfo]:
-        """Discover JSON paths for a specific table column scoped to a collection."""
-
-        limit_rows = 5000
-
-        async with self.db.session() as session:
-            if join_condition is None:
-                collection_column = getattr(table.c, "collection_id", None)
-                if collection_column is None:
-                    raise ValueError(
-                        "Tables without a collection_id column must provide a join_condition."
-                    )
-                from_clause = table
-                where_clause = collection_column == collection_id
-            else:
-                from_clause = table.join(
-                    SQLAAgentRun.__table__,
-                    join_condition,
-                )
-                where_clause = SQLAAgentRun.collection_id == collection_id
-
-            return await self._collect_json_field_records(
-                session,
-                from_clause=from_clause,
-                value_expression=json_column,
-                value_column_name=column_name,
-                limit_rows=limit_rows,
-                where_clause=where_clause,
-                group_specs=group_specs,
-            )
-
-    async def get_json_metadata_fields_map(
-        self,
-        collection_id: str,
-    ) -> dict[str, list[JsonFieldInfo]]:
-        """Gather JSON metadata field infos for all DQL tables within a collection."""
-
-        def _dedupe(infos: list[JsonFieldInfo]) -> list[JsonFieldInfo]:
-            seen: set[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]] = set()
-            deduped: list[JsonFieldInfo] = []
-            for info in infos:
-                label_items = tuple(sorted(info.labels.items()))
-                key = (info.column.lower(), info.path, label_items)
-                if key in seen:
-                    continue
-                seen.add(key)
-                deduped.append(info)
-            deduped.sort(
-                key=lambda info: (
-                    info.column,
-                    info.path,
-                    tuple(sorted(info.labels.items())),
-                )
-            )
-            return deduped
-
-        field_map: dict[str, list[JsonFieldInfo]] = {}
-
-        agent_run_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLAAgentRun.__table__,
-            json_column=SQLAAgentRun.metadata_json,
-            column_name="metadata_json",
-        )
-        field_map[SQLAAgentRun.__tablename__] = _dedupe(agent_run_infos)
-
-<<<<<<< ours
-        transcript_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLATranscript.__table__,
-            json_column=SQLATranscript.metadata_json,
-            column_name="metadata_json",
-            join_condition=SQLATranscript.agent_run_id == SQLAAgentRun.id,
-        )
-        field_map[SQLATranscript.__tablename__] = _dedupe(transcript_infos)
-
-        transcript_group_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLATranscriptGroup.__table__,
-            json_column=SQLATranscriptGroup.metadata_json,
-            column_name="metadata_json",
-            join_condition=SQLATranscriptGroup.agent_run_id == SQLAAgentRun.id,
-        )
-        field_map[SQLATranscriptGroup.__tablename__] = _dedupe(transcript_group_infos)
-
-        judge_output_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.output,
-            column_name="output",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-
-        judge_metadata_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.result_metadata,
-            column_name="result_metadata",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-
-        field_map[SQLAJudgeResult.__tablename__] = _dedupe(
-            judge_output_infos + judge_metadata_infos
-        )
-
-        return field_map
-
-
-=======
->>>>>>> theirs
-||||||| base
-        raise NotImplementedError("JSON metadata field discovery is not supported in this build.")
-=======
-        transcript_group_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLATranscriptGroup.__table__,
-            json_column=SQLATranscriptGroup.metadata_json,
-            column_name="metadata_json",
-        )
-        field_map[SQLATranscriptGroup.__tablename__] = _dedupe(transcript_group_infos)
-
-        judge_output_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.output,
-            column_name="output",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-
-        judge_metadata_infos = await self.get_json_metadata_fields_for_column(
-            collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=SQLAJudgeResult.result_metadata,
-            column_name="result_metadata",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", SQLAJudgeResult.rubric_id),),
-        )
-
-        field_map[SQLAJudgeResult.__tablename__] = _dedupe(
-            judge_output_infos + judge_metadata_infos
-        )
-
-        return field_map
->>>>>>> theirs
     #############
     # Collection #
     #############
@@ -1034,6 +834,108 @@ class MonoService:
             agent_run_ids = result.scalars().all()
             logger.info(f"get_agent_run_ids: Found {len(agent_run_ids)} agent run IDs")
             return list(agent_run_ids)
+
+    ########
+    # DQL  #
+    ########
+
+    async def execute_dql_query(
+        self,
+        *,
+        user: User,
+        collection_id: str,
+        dql: str,
+    ) -> DQLQueryResult:
+
+        await ensure_dql_collection_access(
+            mono_service=self,
+            user=user,
+            collection_id=collection_id,
+        )
+
+        json_field_map = await self.get_json_metadata_fields_map(collection_id)
+        registry = build_default_registry(
+            collection_id=collection_id,
+            json_fields=json_field_map,
+        )
+        expression = parse_dql_query(
+            dql,
+            registry=registry,
+            collection_id=collection_id,
+        )
+        selected_columns = extract_selected_columns(expression)
+        requested_limit = get_query_limit_value(expression)
+        server_cap = MAX_DQL_RESULT_LIMIT
+        applied_limit = server_cap if requested_limit is None else min(requested_limit, server_cap)
+
+        if requested_limit is None or requested_limit > server_cap:
+            fetch_limit = server_cap + 1
+        else:
+            fetch_limit = requested_limit + 1
+
+        apply_limit_cap(expression, fetch_limit)
+        compiled_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
+        parameterized_sql, parameters = parameterize_expression(expression, "postgres")
+        statement = text(parameterized_sql)
+        logger.info(
+            "Executing DQL query for collection_id=%s user_id=%s fetch_limit=%s sql=%s params=%s",
+            collection_id,
+            user.id,
+            fetch_limit,
+            parameterized_sql,
+            parameters,
+        )
+
+        start_time = perf_counter()
+        async with self.db.dql_session() as session:
+            try:
+                await session.execute(text("SET TRANSACTION READ ONLY"))
+                await session.execute(
+                    text(
+                        f"SELECT set_config('{DQL_COLLECTION_SETTING_KEY}', :collection_id, true)"
+                    ),
+                    {"collection_id": collection_id},
+                )
+                result = await session.execute(statement, parameters or {})
+            except SQLAlchemyError as exc:
+                message = str(getattr(exc, "orig", exc)).strip()
+                if not message:
+                    message = "Failed to execute query."
+                raise DQLExecutionError(message) from exc
+
+            columns = tuple(result.keys())
+            raw_rows = result.fetchall()
+            result.close()
+        execution_time_ms = (perf_counter() - start_time) * 1000.0
+
+        has_extra = len(raw_rows) == fetch_limit
+        if has_extra:
+            raw_rows = raw_rows[:-1]
+
+        rows = [tuple(row) for row in raw_rows]
+
+        row_count = len(rows)
+        truncated = has_extra
+        logger.debug(
+            "DQL query finished for collection_id=%s user_id=%s row_count=%s truncated=%s execution_time_ms=%.2f",
+            collection_id,
+            user.id,
+            row_count,
+            truncated,
+            execution_time_ms,
+        )
+
+        return DQLQueryResult(
+            columns=tuple(str(column) for column in columns),
+            rows=rows,
+            selected_columns=selected_columns,
+            truncated=truncated,
+            execution_time_ms=execution_time_ms,
+            compiled_sql=compiled_sql,
+            requested_limit=requested_limit,
+            applied_limit=applied_limit,
+            row_count=row_count,
+        )
 
     async def get_agent_runs(
         self,
