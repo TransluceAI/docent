@@ -28,7 +28,7 @@ Agent run:
 {agent_run}
 </agent_run>
 
-Start by faithfully following the decision procedure in extremely careful detail, step by step. Your goal is to judge the agent run according to the criteria given in the rubric.
+Your goal is to judge the agent run according to the criteria given in the rubric. Start by faithfully following the decision procedure in extremely careful detail, step by step.
 
 When you are finished, output your final adjudication, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
 
@@ -51,9 +51,9 @@ Agent run:
 {agent_run}
 </agent_run>
 
-You must follow the decision procedure in extremely careful detail, step by step. Execute one step in the decision procedure per assistant message turn. After each turn, output a complete and detailed recount of *everything* you did and discovered -- treat assistant messages as your scratchpad. Then call the `step_finished` tool.
+Your goal is to judge the agent run according to the criteria given in the rubric. Start by faithfully following the decision procedure in extremely careful detail, step by step. You must execute **one step in the decision procedure per assistant message turn**. After each turn, output a complete and detailed recount of all actions you took, and everything you discovered. Then call the `step_finished` tool.
 
-When you are finished, output your final adjudication, which conveys your judgment of the agent run according to the criteria given in the rubric. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash. Surround the JSON string with <response>...</response> tags.
+When you are finished going through the decision procedure, output your final adjudication, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}
@@ -74,9 +74,9 @@ Agent run:
 {agent_run}
 </agent_run>
 
-Start by faithfully following the decision procedure in extremely careful detail, step by step. Your goal is to judge the agent run according to the criteria given in the rubric. You must show your reasoning work by outputting it in the assistant message, surrounded by <reasoning>...</reasoning> tags.
+Your goal is to judge the agent run according to the criteria given in the rubric. Start by faithfully following the decision procedure in extremely careful detail, step by step. You must *fully externalize* your reasoning work by outputting details in the assistant message, surrounded by <reasoning>...</reasoning> tags. The reasoning section can be as messy as you need. You should use *high* reasoning effort.
 
-When you are finished, output your final adjudication, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
+When you are finished, output your final adjudication in the assistant message, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}

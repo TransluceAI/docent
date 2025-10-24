@@ -81,7 +81,7 @@ async def _parallelize_calls(
     tool_choice: Literal["auto", "required"] | None,
     max_new_tokens: int,
     temperature: float,
-    reasoning_effort: Literal["low", "medium", "high"] | None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
     logprobs: bool,
     top_logprobs: int | None,
     timeout: float,

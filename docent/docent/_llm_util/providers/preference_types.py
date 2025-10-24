@@ -22,7 +22,7 @@ class ModelOption(BaseModel):
 
     provider: str
     model_name: str
-    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
 
 class ModelOptionWithContext(BaseModel):
@@ -39,7 +39,7 @@ class ModelOptionWithContext(BaseModel):
 
     provider: str
     model_name: str
-    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
     context_window: int
     uses_byok: bool
 

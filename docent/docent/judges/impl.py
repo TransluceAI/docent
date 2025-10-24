@@ -1,10 +1,12 @@
 import random
 import re
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from typing import Any, Sequence
 
 import anyio
 import yaml
+from pydantic_core import to_jsonable_python
 from tqdm.auto import tqdm
 
 from docent._llm_util.data_models.exceptions import ValidationFailedException
@@ -15,8 +17,8 @@ from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat.message import (
     AssistantMessage,
     ChatMessage,
-    SystemMessage,
     ToolMessage,
+    UserMessage,
 )
 from docent.data_models.chat.tool import ToolInfo
 from docent.judges.types import JudgeResult, JudgeVariant, ResultType, Rubric
@@ -27,14 +29,18 @@ from docent.judges.util.voting import (
     find_modal_result,
     get_agreement_keys,
 )
+from docent.trace import agent_run_context, agent_run_metadata
 
 logger = get_logger(__name__)
 
 
 class BaseJudge(ABC):
-    def __init__(self, cfg: Rubric, llm_svc: BaseLLMService):
+    def __init__(
+        self, cfg: Rubric, llm_svc: BaseLLMService, docent_collection_id: str | None = None
+    ):
         self.cfg = cfg
         self.llm_svc = llm_svc
+        self.docent_collection_id = docent_collection_id
 
     @abstractmethod
     async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
@@ -61,14 +67,24 @@ class BaseJudge(ABC):
     async def one_rollout(
         self, agent_run: AgentRun
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        if self.cfg.rollout_type == "multi_turn":
-            output, metadata = await self.one_multi_turn_rollout(
-                agent_run, max_turns=10, max_steps_per_turn=5
-            )
-        elif self.cfg.rollout_type == "single_turn":
-            output, metadata = await self.one_single_turn_rollout(agent_run)
-        else:
-            raise ValueError(f"Invalid rollout type: {self.cfg.rollout_type}")
+        with agent_run_context() if self.docent_collection_id is not None else nullcontext():
+            if self.cfg.rollout_type == "single_turn":
+                output, metadata = await self.one_single_turn_rollout(agent_run)
+            elif self.cfg.rollout_type == "multi_turn":
+                output, metadata = await self.one_multi_turn_rollout(
+                    agent_run, max_turns=10, max_steps_per_turn=5
+                )
+            else:
+                raise ValueError(f"Invalid rollout type: {self.cfg.rollout_type}")
+
+            if self.docent_collection_id is not None:
+                agent_run_metadata(
+                    {
+                        "agent_run_id": agent_run.id,
+                        "judge_output": output,
+                        "judge_rollout_metadata": to_jsonable_python(metadata),
+                    }
+                )
 
         return output, metadata
 
@@ -118,7 +134,7 @@ class BaseJudge(ABC):
     async def one_single_turn_rollout(
         self, agent_run: AgentRun
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        prompt = [{"role": "system", "content": self.cfg.materialize_system_prompt(agent_run)}]
+        prompt = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
         outputs = await self.llm_svc.get_completions(
             inputs=[prompt],
             model_options=[self.cfg.judge_model],
@@ -145,7 +161,7 @@ class BaseJudge(ABC):
     async def one_multi_turn_rollout(
         self, agent_run: AgentRun, max_turns: int, max_steps_per_turn: int
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        msgs = [SystemMessage(content=self.cfg.materialize_system_prompt(agent_run))]
+        msgs = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
         for _ in range(max_turns):
             msgs = await self.agent_one_turn(msgs, max_steps_per_turn=max_steps_per_turn)
 
@@ -235,8 +251,10 @@ class SingleRolloutJudge(BaseJudge):
 class MajorityVotingJudge(BaseJudge):
     """Rolls out the judge multiple times, then uses majority voting to determine the final result."""
 
-    def __init__(self, cfg: Rubric, llm_svc: BaseLLMService):
-        super().__init__(cfg, llm_svc)
+    def __init__(
+        self, cfg: Rubric, llm_svc: BaseLLMService, docent_collection_id: str | None = None
+    ):
+        super().__init__(cfg, llm_svc, docent_collection_id)
 
     async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
         indep_results: list[dict[str, Any]] = []
@@ -329,8 +347,10 @@ class MajorityVotingJudge(BaseJudge):
 class MultiReflectionJudge(BaseJudge):
     """Rolls out the judge multiple times, then uses reflection to determine the final result."""
 
-    def __init__(self, cfg: Rubric, llm_svc: BaseLLMService):
-        super().__init__(cfg, llm_svc)
+    def __init__(
+        self, cfg: Rubric, llm_svc: BaseLLMService, docent_collection_id: str | None = None
+    ):
+        super().__init__(cfg, llm_svc, docent_collection_id)
 
     async def one_rollout_second_stage(
         self, agent_run: AgentRun, first_stage_results: list[dict[str, Any]]
@@ -559,9 +579,9 @@ class MultiReflectionJudge(BaseJudge):
         }
 
 
-def build_judge(rubric: Rubric, llm_svc: BaseLLMService):
+def build_judge(rubric: Rubric, llm_svc: BaseLLMService, docent_collection_id: str | None = None):
     if rubric.judge_variant == JudgeVariant.MAJORITY:
-        return MajorityVotingJudge(rubric, llm_svc)
+        return MajorityVotingJudge(rubric, llm_svc, docent_collection_id)
     elif rubric.judge_variant == JudgeVariant.MULTI_REFLECT:
-        return MultiReflectionJudge(rubric, llm_svc)
+        return MultiReflectionJudge(rubric, llm_svc, docent_collection_id)
     raise ValueError(f"Invalid variant: {rubric.judge_variant}")
