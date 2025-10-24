@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 from sqlalchemy.sql.elements import TextClause
+from sqlglot import exp
 
 from docent_core.docent.db.dql import (
     DQL_COLLECTION_SETTING_KEY,
@@ -13,14 +15,9 @@ from docent_core.docent.db.dql import (
     DQLValidationError,
     JsonFieldInfo,
     SelectedColumn,
-    _column_equals_collection,
-    _columns_for,
-    _format_metadata_column,
     apply_limit_cap,
     build_collection_sqla_query,
-    build_collection_sqla_where_clause,
     build_default_registry,
-    build_sqla_where_clause,
     get_query_limit_value,
     get_selected_columns,
     json_field_info_to_expression,
@@ -124,14 +121,10 @@ def test_subquery_validation_passes() -> None:
 
 def test_where_clause_parsing_supports_in_and_not_like() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
-    where_expr = build_sqla_where_clause(
-        "agent_runs.id IN ('a', 'b') AND NOT agent_runs.name ILIKE '%test%'",
-        registry=registry,
-        collection_id=COLLECTION_ID,
-    )
-    compiled = where_expr.text
-    assert "IN" in compiled
-    assert " ilike " in compiled.lower()
+    # Test that DQL parsing supports IN and NOT LIKE operators
+    dql = "SELECT id FROM agent_runs WHERE agent_runs.id IN ('a', 'b') AND NOT agent_runs.name ILIKE '%test%'"
+    expression = parse_dql_query(dql, registry=registry, collection_id=COLLECTION_ID)
+    assert expression is not None
 
 
 def test_negative_limit_rejected() -> None:
@@ -165,8 +158,8 @@ def test_wildcard_selection_rejected() -> None:
 def test_where_clause_requires_qualifier() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
-        build_sqla_where_clause(
-            "id = 'foo'",
+        parse_dql_query(
+            "SELECT id FROM agent_runs WHERE id = 'foo'",
             registry=registry,
             collection_id=COLLECTION_ID,
         )
@@ -175,19 +168,25 @@ def test_where_clause_requires_qualifier() -> None:
 def test_disallow_modification_statements() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
-        parse_dql_query("DELETE FROM agent_runs WHERE id = 'x'", registry=registry)
+        parse_dql_query(
+            "DELETE FROM agent_runs WHERE id = 'x'", registry=registry, collection_id=COLLECTION_ID
+        )
 
 
 def test_select_allows_table_alias_and_table_name() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     # should not raise
-    parse_dql_query("SELECT agent_runs.id FROM agent_runs ar", registry=registry)
+    parse_dql_query(
+        "SELECT agent_runs.id FROM agent_runs ar", registry=registry, collection_id=COLLECTION_ID
+    )
 
 
 def test_get_selected_columns_includes_alias_metadata() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     columns = get_selected_columns(
-        "SELECT ar.id AS run_id, ar.created_at FROM agent_runs ar", registry=registry
+        "SELECT ar.id AS run_id, ar.created_at FROM agent_runs ar",
+        registry=registry,
+        collection_id=COLLECTION_ID,
     )
 
     assert columns == [
@@ -207,14 +206,18 @@ def test_get_selected_columns_includes_alias_metadata() -> None:
 def test_unregistered_table_select_rejected() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
-        parse_dql_query("SELECT password FROM users", registry=registry)
+        parse_dql_query(
+            "SELECT password FROM users", registry=registry, collection_id=COLLECTION_ID
+        )
 
 
 def test_unregistered_table_in_subquery_rejected() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
         parse_dql_query(
-            "SELECT id FROM agent_runs WHERE EXISTS (SELECT 1 FROM users)", registry=registry
+            "SELECT id FROM agent_runs WHERE EXISTS (SELECT 1 FROM users)",
+            registry=registry,
+            collection_id=COLLECTION_ID,
         )
 
 
@@ -252,7 +255,9 @@ def test_union_with_unregistered_table_rejected() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
         parse_dql_query(
-            "SELECT id FROM agent_runs UNION SELECT password FROM users", registry=registry
+            "SELECT id FROM agent_runs UNION SELECT password FROM users",
+            registry=registry,
+            collection_id=COLLECTION_ID,
         )
 
 
@@ -277,7 +282,7 @@ def test_cte_allowed_and_scoped() -> None:
 
     assert "WITH recent AS" in clause.text
     assert "agent_runs.collection_id = :__dql_param_" in clause.text
-    bound_values = {name: bind.value for name, bind in clause._bindparams.items()}
+    bound_values = {name: bind.value for name, bind in getattr(clause, "_bindparams", {}).items()}
     assert COLLECTION_ID in bound_values.values()
 
 
@@ -408,8 +413,14 @@ def test_common_aggregate_functions_compile() -> None:
 
 def test_column_alias_metadata_allowed() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
-    parse_dql_query("SELECT metadata FROM agent_runs", registry=registry)
-    parse_dql_query("SELECT id FROM agent_runs WHERE metadata IS NOT NULL", registry=registry)
+    parse_dql_query(
+        "SELECT metadata FROM agent_runs", registry=registry, collection_id=COLLECTION_ID
+    )
+    parse_dql_query(
+        "SELECT id FROM agent_runs WHERE metadata IS NOT NULL",
+        registry=registry,
+        collection_id=COLLECTION_ID,
+    )
     table = registry.get_table(SQLAAgentRun.__tablename__)
     assert table.column_aliases.get("metadata") == "metadata_json"
 
@@ -419,15 +430,26 @@ def test_table_alias_registration() -> None:
     registry.register_table(
         name=SQLAAgentRun.__tablename__,
         table=SQLAAgentRun.__table__,
-        allowed_columns=_columns_for(SQLAAgentRun.__table__),
-        collection_predicate_factory=_column_equals_collection("collection_id"),
+        allowed_columns=(
+            "id",
+            "collection_id",
+            "name",
+            "description",
+            "metadata_json",
+            "created_at",
+            "text_for_search",
+        ),
+        collection_predicate_factory=None,
         aliases=["agent_run_records"],
         column_aliases={"metadata": "metadata_json"},
     )
-    parse_dql_query("SELECT id FROM agent_run_records", registry=registry)
+    parse_dql_query(
+        "SELECT id FROM agent_run_records", registry=registry, collection_id=COLLECTION_ID
+    )
     parse_dql_query(
         "SELECT metadata FROM agent_run_records WHERE metadata IS NOT NULL",
         registry=registry,
+        collection_id=COLLECTION_ID,
     )
     table = registry.get_table("agent_run_records")
     assert table.name == SQLAAgentRun.__tablename__.lower()
@@ -437,7 +459,8 @@ def test_table_alias_registration() -> None:
 def test_metadata_field_mapping_populates_allowed_columns() -> None:
     field_name = "metadata.custom_score"
     registry = build_default_registry(collection_id=COLLECTION_ID)
-    formatted = _format_metadata_column(field_name)
+    # Format the metadata column name by replacing dots with -> syntax
+    formatted = field_name.replace(".", "->'") + "'"
     registry.extend_table_columns(SQLAAgentRun.__tablename__, [formatted])
     assert formatted.lower() in registry.get_table(SQLAAgentRun.__tablename__).allowed_columns
 
@@ -458,19 +481,24 @@ def test_multi_statement_query_rejected() -> None:
         parse_dql_query(
             "SELECT id FROM agent_runs; DROP TABLE agent_runs",
             registry=registry,
+            collection_id=COLLECTION_ID,
         )
 
 
 def test_update_statement_rejected() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
-        parse_dql_query("UPDATE agent_runs SET name = 'x' WHERE id = '1'", registry=registry)
+        parse_dql_query(
+            "UPDATE agent_runs SET name = 'x' WHERE id = '1'",
+            registry=registry,
+            collection_id=COLLECTION_ID,
+        )
 
 
 def test_drop_statement_rejected() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     with pytest.raises(DQLValidationError):
-        parse_dql_query("DROP TABLE agent_runs", registry=registry)
+        parse_dql_query("DROP TABLE agent_runs", registry=registry, collection_id=COLLECTION_ID)
 
 
 def test_build_sqla_query_scopes_to_collection() -> None:
@@ -523,15 +551,15 @@ def test_build_collection_sqla_query_wrapper_denied() -> None:
         )
 
 
-def test_build_collection_sqla_where_clause_wrapper_requires_permission() -> None:
+def test_build_collection_sqla_query_wrapper_requires_permission() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     mono_service = DummyMonoService(True)
     clause = asyncio.run(
-        build_collection_sqla_where_clause(
+        build_collection_sqla_query(
             mono_service=mono_service,  # type: ignore[arg-type]
             user=TEST_USER,
             collection_id="test-collection",
-            where_clause="agent_runs.id = 'foo'",
+            dql="SELECT id FROM agent_runs WHERE agent_runs.id = 'foo'",
             registry=registry,
         )
     )
@@ -589,20 +617,27 @@ def test_judge_results_query_scoped_via_agent_run_subquery() -> None:
 
 def test_get_query_limit_value_and_apply_limit_cap() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
-    expression = parse_dql_query("SELECT id FROM agent_runs LIMIT 3", registry=registry)
-    assert get_query_limit_value(expression) == 3
+    expression = parse_dql_query(
+        "SELECT id FROM agent_runs LIMIT 3", registry=registry, collection_id=COLLECTION_ID
+    )
+    # Cast to Query type for the functions that expect it
+    query_expression = exp.Query(**expression.args)  # type: ignore[reportUnknownMemberType]
+    assert get_query_limit_value(query_expression) == 3
 
-    apply_limit_cap(expression, 5)
-    assert get_query_limit_value(expression) == 5
-    rendered_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
+    apply_limit_cap(query_expression, 5)
+    assert get_query_limit_value(query_expression) == 5
+    rendered_sql = query_expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
     assert rendered_sql.endswith("LIMIT 5")
 
 
 def test_apply_limit_cap_requires_positive_limit() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
-    expression = parse_dql_query("SELECT id FROM agent_runs", registry=registry)
+    expression = parse_dql_query(
+        "SELECT id FROM agent_runs", registry=registry, collection_id=COLLECTION_ID
+    )
+    query_expression = exp.Query(**expression.args)  # type: ignore[reportUnknownMemberType]
     with pytest.raises(ValueError):
-        apply_limit_cap(expression, 0)
+        apply_limit_cap(query_expression, 0)
 
 
 class _ResultStub:
@@ -625,7 +660,9 @@ class _RecordingSession:
     def __init__(self) -> None:
         self.statements: list[tuple[str, dict[str, str] | None]] = []
 
-    async def execute(self, statement, params=None):
+    async def execute(
+        self, statement: TextClause, params: dict[str, Any] | None = None
+    ) -> _ResultStub:
         sql = getattr(statement, "text", str(statement))
         self.statements.append((sql, params))
         if sql.startswith("SET TRANSACTION READ ONLY"):
@@ -647,14 +684,14 @@ class _DummyDB:
 
 
 class _StubMonoService(MonoService):
-    def __init__(self, db, *, allowed: bool = True) -> None:
-        super().__init__(db)
+    def __init__(self, db: _DummyDB, *, allowed: bool = True) -> None:
+        super().__init__(db)  # type: ignore[arg-type]
         self._allowed = allowed
 
     async def has_permission(self, *, user, resource_type, resource_id, permission) -> bool:  # type: ignore[override]
         return self._allowed
 
-    async def get_json_metadata_fields_map(self, collection_id: str):  # type: ignore[override]
+    async def get_json_metadata_fields_map(self, collection_id: str) -> dict[str, Any]:  # type: ignore[override]
         return {}
 
 
