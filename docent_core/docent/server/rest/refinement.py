@@ -5,10 +5,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from docent._log_util import get_logger
+from docent.judges import Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server.util import generator_to_sse_stream
 from docent_core.docent.ai_tools.rubric.refine import RUBRIC_UPDATE_TEMPLATE
-from docent_core.docent.ai_tools.rubric.rubric import Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 from docent_core.docent.db.schemas.rubric import SQLARubric
@@ -58,7 +58,7 @@ class CreateRefinementSessionRequest(BaseModel):
 
 class PostRefinementMessageRequest(BaseModel):
     message: str
-    show_labels_in_context: bool
+    label_set_ids: list[str]
 
 
 @refinement_router.post("/{collection_id}/refinement-session/create/{rubric_id}")
@@ -199,7 +199,7 @@ async def post_message_to_refinement_session(
 
     # Trigger a new turn of the agent
     job_id = await refinement_svc.start_or_get_agent_job(
-        ctx, sq_rsession, show_labels_in_context=request.show_labels_in_context
+        ctx, sq_rsession, label_set_ids=request.label_set_ids
     )
     return {"job_id": job_id, "rsession": sq_rsession.to_pydantic().prepare_for_client()}
 

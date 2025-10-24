@@ -1,12 +1,9 @@
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._llm_util.providers.preference_types import merge_models_with_byok
 from docent._log_util.logger import get_logger
-from docent.data_models.judge import JudgeRunLabel
 from docent.judges import JudgeResultWithCitations, Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.db.contexts import ViewContext
@@ -277,6 +274,7 @@ class RubricRunStateResponse(BaseModel):
 
 class StartFilteredEvalJobRequest(BaseModel):
     max_results: int | None = None
+    label_set_ids: list[str] | None = None
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/evaluate")
@@ -300,7 +298,9 @@ async def start_eval_rubric_job(
     logger.info(
         f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results}"
     )
-    job_id = await rubric_svc.start_or_get_eval_rubric_job(ctx, rubric_id, request.max_results)
+    job_id = await rubric_svc.start_or_get_eval_rubric_job(
+        ctx, rubric_id, request.max_results, request.label_set_ids
+    )
 
     # Check if user has a custom API key (just for analytics purposes)
     if ctx.user:
@@ -467,143 +467,8 @@ async def clear_clusters(
     await rubric_svc.clear_centroids(sq_rubric.id, sq_rubric.version)
 
 
-###############
-# Labels CRUD #
-###############
-
-
-class CreateRunLabelRequest(BaseModel):
-    label: JudgeRunLabel
-
-
-class BatchCreateRunLabelsRequest(BaseModel):
-    labels: list[JudgeRunLabel]
-
-
-class DeleteRunLabelRequest(BaseModel):
-    agent_run_id: str
-
-
-class UpdateRunLabelRequest(BaseModel):
-    agent_run_id: str
-    label: dict[str, Any]
-
-
 class CopyRubricRequest(BaseModel):
     target_collection_id: str
-
-
-@rubric_router.post("/{collection_id}/rubric/{rubric_id}/label")
-async def create_judge_run_label(
-    collection_id: str,
-    rubric_id: str,
-    request: CreateRunLabelRequest,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-) -> dict[str, Any]:
-    """Add a label to a judge result."""
-    label_payload = request.label
-    if label_payload.rubric_id != rubric_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Label rubric_id must match path parameter",
-        )
-
-    try:
-        await rubric_svc.create_judge_run_labels(collection_id, [label_payload])
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"message": "Label added successfully"}
-
-
-@rubric_router.post("/{collection_id}/rubric/{rubric_id}/labels")
-async def create_judge_run_labels(
-    collection_id: str,
-    rubric_id: str,
-    request: BatchCreateRunLabelsRequest,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-):
-    """Add multiple labels to judge results."""
-    if not request.labels:
-        raise HTTPException(status_code=400, detail="At least one label is required")
-
-    unique_rubric_ids = {label.rubric_id for label in request.labels}
-    if len(unique_rubric_ids) != 1 or rubric_id not in unique_rubric_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="All labels must specify the same rubric_id as the path parameter",
-        )
-
-    try:
-        await rubric_svc.create_judge_run_labels(collection_id, request.labels)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"message": "Labels added successfully", "count": len(request.labels)}
-
-
-@rubric_router.put("/{collection_id}/rubric/{rubric_id}/label")
-async def update_judge_run_label(
-    collection_id: str,
-    rubric_id: str,
-    request: UpdateRunLabelRequest,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-):
-    """Update a label for a judge result."""
-    try:
-        await rubric_svc.update_judge_run_label(request.agent_run_id, request.label)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"message": "Label updated successfully"}
-
-
-@rubric_router.get("/{collection_id}/rubric/{rubric_id}/labels")
-async def get_judge_run_labels(
-    collection_id: str,
-    rubric_id: str,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
-) -> list[JudgeRunLabel]:
-    """Get all labels for judge results of a rubric across all versions."""
-    return await rubric_svc.get_judge_run_labels(rubric_id)
-
-
-@rubric_router.get("/{collection_id}/rubric/{rubric_id}/label/{agent_run_id}")
-async def get_judge_run_label(
-    collection_id: str,
-    rubric_id: str,
-    agent_run_id: str,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
-) -> JudgeRunLabel | None:
-    """Get a specific label for a judge result."""
-    return await rubric_svc.get_judge_run_label(agent_run_id)
-
-
-@rubric_router.delete("/{collection_id}/rubric/{rubric_id}/label")
-async def delete_judge_run_label(
-    collection_id: str,
-    rubric_id: str,
-    request: DeleteRunLabelRequest,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-):
-    """Delete a label from a judge result."""
-    await rubric_svc.delete_judge_run_label(request.agent_run_id)
-    return {"message": "Label deleted successfully"}
-
-
-@rubric_router.delete("/{collection_id}/rubric/{rubric_id}/labels")
-async def delete_all_judge_run_labels(
-    collection_id: str,
-    rubric_id: str,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-):
-    """Delete all labels for a rubric."""
-    await rubric_svc.delete_all_judge_run_labels(rubric_id)
-    return {"message": "All labels deleted successfully"}
 
 
 @rubric_router.post("/{collection_id}/rubric/{rubric_id}/copy")

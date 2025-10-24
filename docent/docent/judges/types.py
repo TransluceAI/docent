@@ -1,7 +1,7 @@
 import enum
 import json
 from string import Formatter
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Literal, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
@@ -19,12 +19,64 @@ DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
 Here is a rubric that we are using to judge transcripts of AI agent runs.
 
 Rubric:
+<rubric>
 {rubric}
+</rubric>
 
 Agent run:
+<agent_run>
 {agent_run}
+</agent_run>
 
-Your response should convey your judgment of the agent run according to the criteria given in the rubric provided above. Your entire response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
+Start by faithfully following the decision procedure in extremely careful detail, step by step. Your goal is to judge the agent run according to the criteria given in the rubric.
+
+When you are finished, output your final adjudication, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
+
+The JSON object you produce must adhere to the following schema:
+{output_schema}
+
+{citation_instructions}
+""".strip()
+
+DEFAULT_MULTI_TURN_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
+Here is a rubric that we are using to judge transcripts of AI agent runs.
+
+Rubric:
+<rubric>
+{rubric}
+</rubric>
+
+Agent run:
+<agent_run>
+{agent_run}
+</agent_run>
+
+You must follow the decision procedure in extremely careful detail, step by step. Execute one step in the decision procedure per assistant message turn. After each turn, output a complete and detailed recount of *everything* you did and discovered -- treat assistant messages as your scratchpad. Then call the `step_finished` tool.
+
+When you are finished, output your final adjudication, which conveys your judgment of the agent run according to the criteria given in the rubric. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash. Surround the JSON string with <response>...</response> tags.
+
+The JSON object you produce must adhere to the following schema:
+{output_schema}
+
+{citation_instructions}
+""".strip()
+
+DEFAULT_EXPOSED_REASONING_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
+Here is a rubric that we are using to judge transcripts of AI agent runs.
+
+Rubric:
+<rubric>
+{rubric}
+</rubric>
+
+Agent run:
+<agent_run>
+{agent_run}
+</agent_run>
+
+Start by faithfully following the decision procedure in extremely careful detail, step by step. Your goal is to judge the agent run according to the criteria given in the rubric. You must show your reasoning work by outputting it in the assistant message, surrounded by <reasoning>...</reasoning> tags.
+
+When you are finished, output your final adjudication, surrounded by <response>...</response> tags. The response must be a valid JSON string which can be parsed with python `json.loads` without any additional processing. Double quotes (`"`) in the middle of a string in the JSON object must be escaped with a backslash.
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}
@@ -51,6 +103,11 @@ DEFAULT_JUDGE_OUTPUT_SCHEMA = {
 DEFAULT_JUDGE_MODEL = PUBLIC_PROVIDER_PREFERENCES.default_judge_models[0]
 
 
+class JudgeVariant(str, enum.Enum):
+    MAJORITY = "majority"
+    MULTI_REFLECT = "multi-reflect"
+
+
 class Rubric(BaseModel):
     """TODO(mengk): this should really be called JudgeConfig,
     but temporarily keeping this for consistency with docent_core."""
@@ -64,6 +121,11 @@ class Rubric(BaseModel):
 
     # What the judge actually does
     rubric_text: str
+    n_rollouts_per_input: int = 1
+    judge_variant: JudgeVariant = JudgeVariant.MAJORITY
+    # TODO(mengk): add this to the database
+    # No need right now because multi-turn is still very experimental.
+    rollout_type: Literal["single_turn", "multi_turn"] = "single_turn"
 
     # Default instructions for the judge
     system_prompt_template: str = DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE
@@ -127,6 +189,15 @@ class Rubric(BaseModel):
         """
         validate_judge_result_schema(output_schema)
         return output_schema
+
+
+class MultiTurnRubric(Rubric):
+    system_prompt_template: str = DEFAULT_MULTI_TURN_JUDGE_SYSTEM_PROMPT_TEMPLATE
+    rollout_type: Literal["single_turn", "multi_turn"] = "multi_turn"
+
+
+class ExposedReasoningRubric(Rubric):
+    system_prompt_template: str = DEFAULT_EXPOSED_REASONING_JUDGE_SYSTEM_PROMPT_TEMPLATE
 
 
 class ResultType(enum.Enum):

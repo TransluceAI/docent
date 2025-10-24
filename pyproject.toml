@@ -54,9 +54,10 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.14",
     "mkdocstrings-python>=1.16.10",
-    # Viz
+    # Viz / data science
     "matplotlib",
     "jupyter>=1.0.0",
+    "scipy>=1.16.2",
     # Data registry
     "boto3>=1.35.0",
     "beaupy>=3.10.0",

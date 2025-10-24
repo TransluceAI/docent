@@ -62,12 +62,12 @@ async def refinement_agent_job(ctx: ViewContext, job: SQLAJob):
         await _event_callback(sq_rsession.to_pydantic().prepare_for_client())
 
         # Run the refinement agent
-        show_labels_in_context = job.job_json.get("show_labels_in_context", False)
+        label_set_ids = job.job_json.get("label_set_ids", [])
         final_state = await refinement_svc.refine_agent_one_turn(
             ctx,
             sq_rsession,
             sse_callback=_event_callback,
-            show_labels_in_context=show_labels_in_context,
+            label_set_ids=label_set_ids,
         )
 
         # Publish the final state and indicate that the job is finished

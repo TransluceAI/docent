@@ -1,5 +1,17 @@
 from collections import Counter
-from typing import Any, cast
+from typing import Any, TypedDict, cast
+
+import numpy as np
+
+
+class EstimateWithCI(TypedDict):
+    mean: float
+    var: float
+    n: int
+    ci_95: float
+
+
+JudgeOutputDistribution = dict[str | bool | int | float, EstimateWithCI]
 
 
 def get_agreement_keys(schema: dict[str, Any]) -> list[str]:
@@ -81,7 +93,7 @@ def find_modal_result(indep_results: list[dict[str, Any]], agreement_keys: list[
     return max_idx, agt_key_modes_and_counts
 
 
-def compute_output_distribution(
+def compute_output_distributions(
     indep_results: list[dict[str, Any]], output_schema: dict[str, Any], agreement_keys: list[str]
 ):
     def _get_possible_values(key: str) -> list[str | bool | int | float]:
@@ -92,23 +104,36 @@ def compute_output_distribution(
         else:
             return []
 
-    distributions: dict[str, dict[str | bool | int | float, float]] = {
-        key: {value: 0.0 for value in _get_possible_values(key)} for key in agreement_keys
+    raw_counts: dict[str, dict[str | bool | int | float, int]] = {
+        key: {value: 0 for value in _get_possible_values(key)} for key in agreement_keys
     }
     # Collect counts for each possible value
     for result in indep_results:
         for key in agreement_keys:
             if (value := result.get(key)) is not None:  # Could be none if the key is optional
                 assert (
-                    value in distributions[key]
+                    value in raw_counts[key]
                 ), "this should never happen; the value must be in possible values, since judge results have been validated against the schema"
-                distributions[key][value] += 1
-    # Normalize
-    for key in distributions:
-        total = sum(distributions[key].values())
-        if total == 0:
-            continue
-        for value in distributions[key]:
-            distributions[key][value] /= total
+                raw_counts[key][value] += 1
+
+    distributions: dict[str, JudgeOutputDistribution] = {}
+    for agt_key in agreement_keys:
+        distributions[agt_key] = {}
+
+        # First normalize the counts to get probabilities
+        counts = raw_counts[agt_key]
+        total = sum(counts.values())
+        probs = {value: (count / total) if total > 0 else 0.0 for value, count in counts.items()}
+
+        for output_key, value in probs.items():
+            mean, estimate_var = value, (value * (1 - value))
+            # TODO(mengk): change to the wilson score interval
+            ci_95 = float(1.96 * np.sqrt(estimate_var / total)) if total > 0 else 0.0
+            distributions[agt_key][output_key] = {
+                "mean": mean,
+                "var": estimate_var,
+                "n": total,
+                "ci_95": ci_95,
+            }
 
     return distributions

@@ -13,7 +13,6 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useGetJudgeRunLabelsQuery } from '@/app/api/rubricApi';
 import {
   useCancelRefinementJobMutation,
   useGetRefinementSessionStateQuery,
@@ -26,29 +25,31 @@ import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { RefinementAgentSession } from '@/app/store/refinementSlice';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useRubricVersion } from '@/providers/use-rubric-version';
+import { useGetLabelsInLabelSetsQuery } from '@/app/api/labelApi';
+import { useLabelSets } from '@/providers/use-label-sets';
 
 interface RefinementChatProps {
   collectionId: string;
   sessionId?: string;
-  rubricId: string;
   isOnResultRoute?: boolean;
 }
 
 export default function RefinementChat({
   collectionId,
   sessionId,
-  rubricId,
   isOnResultRoute,
 }: RefinementChatProps) {
   const hasWritePermission = useHasCollectionWritePermission();
   const { refinementJobId, setRefinementJobId } = useRefinementTab();
 
   // Judge run labels
-  const { data: labels } = useGetJudgeRunLabelsQuery({
-    collectionId,
-    rubricId,
-  });
-  const hasLabels = (labels?.length ?? 0) > 0;
+  const { labelSets } = useLabelSets();
+  const labelSetIds = labelSets.map((labelSet) => labelSet.id);
+  const { data: labels = [] } = useGetLabelsInLabelSetsQuery(
+    { collectionId, labelSetIds },
+    { skip: labelSetIds.length === 0 }
+  );
+  const hasLabels = labels.length > 0;
   const [_showLabelsInContext, setShowLabelsInContext] = useState(true);
   const showLabelsInContext = _showLabelsInContext && hasLabels;
 
@@ -75,7 +76,7 @@ export default function RefinementChat({
         collectionId,
         sessionId,
         message,
-        showLabelsInContext,
+        labelSetIds: showLabelsInContext ? labelSetIds : [],
       })
         .unwrap()
         .then((res) => {
@@ -87,6 +88,7 @@ export default function RefinementChat({
       collectionId,
       sessionId,
       showLabelsInContext,
+      labelSetIds,
       postMessage,
       setRefinementJobId,
     ]

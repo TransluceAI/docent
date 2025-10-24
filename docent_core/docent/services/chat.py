@@ -15,13 +15,11 @@ from docent.data_models.chat.message import (
     AssistantMessage,
     ChatMessage,
     SystemMessage,
-    ToolMessage,
     UserMessage,
 )
 from docent.data_models.citation import (
     parse_citations,
 )
-from docent.data_models.judge import JudgeRunLabel
 from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
 from docent_core._server._broker.redis_client import (
     STATE_KEY_FORMAT,
@@ -31,14 +29,12 @@ from docent_core._server._broker.redis_client import (
 )
 from docent_core._worker.constants import WorkerFunction
 from docent_core.docent.ai_tools.assistant.chat import (
-    create_add_label_tool,
-    execute_add_label,
     make_system_prompt,
 )
-from docent_core.docent.ai_tools.rubric.rubric import Rubric
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
+from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
@@ -138,12 +134,14 @@ class ChatService:
         session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]],
         mono_svc: MonoService,
         rubric_svc: RubricService,
+        label_svc: LabelService,
         llm_svc: LLMService,
     ):
         self.session = session
         self.session_cm_factory = session_cm_factory
         self.mono_svc = mono_svc
         self.rubric_svc = rubric_svc
+        self.label_svc = label_svc
         self.llm_svc = llm_svc
 
     async def get_session_by_id(self, session_id: str) -> SQLAChatSession | None:
@@ -221,7 +219,7 @@ class ChatService:
         session = sqla_session.to_pydantic()
         encoding = tiktoken.get_encoding(encoding_name)
 
-        context_messages, _, _ = await self._get_chat_context(ctx, sqla_session, session.messages)
+        context_messages, _ = await self._get_chat_context(ctx, sqla_session, session.messages)
 
         # Convert to text format and count tokens
         total_tokens = 0
@@ -397,7 +395,7 @@ class ChatService:
         ctx: ViewContext,
         sqla_session: SQLAChatSession,
         messages: list[ChatMessage],
-    ) -> tuple[list[ChatMessage], AgentRun, Rubric | None]:
+    ) -> tuple[list[ChatMessage], AgentRun]:
         """Get chat context including system prompt, context messages, and related objects."""
         if sqla_session.agent_run_id is None:
             raise ValueError(f"Session {sqla_session.id} has no agent run")
@@ -433,7 +431,7 @@ class ChatService:
         # Create context messages
         context_messages = [SystemMessage(content=system_prompt)] + messages
 
-        return context_messages, agent_run, rubric
+        return context_messages, agent_run
 
     async def one_turn(
         self,
@@ -450,7 +448,7 @@ class ChatService:
         if ctx.user is None:
             raise ValueError("User is required to run a chat job")
 
-        context_messages, agent_run, rubric = await self._get_chat_context(
+        context_messages, agent_run = await self._get_chat_context(
             ctx, sqla_session, raw_chat_session.messages
         )
 
@@ -492,19 +490,14 @@ class ChatService:
 
             last_message = raw_messages[-1]
 
-            # If the last message is an assistant message with no tool calls, break
+            # 1) If the last message is an assistant message with no tool calls, break
             if last_message.role == "assistant" and not getattr(last_message, "tool_calls", None):
                 break
 
-            # If user or tool: generate assistant continuation
+            # 2) If user or tool: generate assistant continuation
             if last_message.role in ("user", "tool"):
-                tools = None if rubric is None else [create_add_label_tool(rubric.output_schema)]
-                tool_choice = "auto" if rubric is not None else None
-
                 # Recompute context with the latest messages to avoid repeating tool calls
-                context_messages, _, _ = await self._get_chat_context(
-                    ctx, sqla_session, raw_messages
-                )
+                context_messages, _ = await self._get_chat_context(ctx, sqla_session, raw_messages)
 
                 outputs = await self.llm_svc.get_completions(
                     inputs=[context_messages],
@@ -513,8 +506,6 @@ class ChatService:
                     timeout=120.0,
                     use_cache=True,
                     streaming_callback=_llm_streaming_callback,
-                    tools=tools,
-                    tool_choice=tool_choice,
                 )
                 result = outputs[0]
 
@@ -544,6 +535,7 @@ class ChatService:
                         await sse_callback(error_state)
                     return error_state
 
+                # Append the assistant message to the raw messages
                 cleaned_text = remove_invalid_citation_ranges(completion.text or "", agent_run)
                 assistant_msg = AssistantMessage(
                     content=cleaned_text, tool_calls=completion.tool_calls
@@ -555,52 +547,10 @@ class ChatService:
                 if total_tokens > 0:
                     sqla_session.estimated_input_tokens = total_tokens
 
-            # If assistant with tool calls: execute tool calls
-            elif last_message.role == "assistant" and (tool_calls := last_message.tool_calls):
-                for tc in tool_calls:
-                    try:
-                        if tc.function == "add_label" and rubric is not None:
-                            tool_result_msg = execute_add_label(rubric, tc)
-
-                            if tool_result_msg.content == "No label provided.":
-                                raw_messages.append(tool_result_msg)
-                                continue
-
-                            # TODO(cadentj): Maybe check there's only one key
-                            label_dict = tc.arguments.get("label", {})
-
-                            agent_run_id = agent_run.id
-                            existing = await self.rubric_svc.get_judge_run_label(agent_run_id)
-
-                            # Create a new label if it doesn't exist, else update the existing one
-                            if existing is None:
-                                await self.rubric_svc.create_judge_run_labels(
-                                    ctx.collection_id,
-                                    [
-                                        JudgeRunLabel(
-                                            agent_run_id=agent_run_id,
-                                            rubric_id=rubric.id,
-                                            label=label_dict,
-                                        )
-                                    ],
-                                )
-                            else:
-                                merged = dict(existing.label)
-                                merged.update(label_dict)
-                                await self.rubric_svc.update_judge_run_label(agent_run_id, merged)
-
-                            raw_messages.append(tool_result_msg)
-                        else:
-                            raise ValueError(f"Unsupported tool call: {tc.function}")
-                    except Exception as e:
-                        raw_messages.append(
-                            ToolMessage(
-                                content=f"Error executing tool call: {e}",
-                                error={"detail": str(e)},
-                                tool_call_id=tc.id,
-                                function=tc.function,
-                            )
-                        )
+            # 3) If the last message is an assistant message with tool calls, execute the tool calls
+            elif last_message.role == "assistant" and last_message.tool_calls:
+                # Removing the agent writing labels feature for now
+                pass
 
             # Update session and notify
             await self._update_session(sqla_session, [m.model_dump() for m in raw_messages])
@@ -616,8 +566,8 @@ class ChatService:
                 )
 
         # Final state (parsed for presentation)
-        final_parsed = _parse_citations_in_messages(raw_messages, run=agent_run, streaming=False)
-        return raw_chat_session.model_copy(update={"messages": final_parsed})
+        parsed_messages = _parse_citations_in_messages(raw_messages, run=agent_run, streaming=False)
+        return raw_chat_session.model_copy(update={"messages": parsed_messages})
 
 
 async def cleanup_old_chat_sessions(session: AsyncSession, days_old: int = 7) -> int:

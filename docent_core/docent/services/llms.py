@@ -11,19 +11,19 @@ from docent._llm_util.data_models.llm_output import (
     LLMOutput,
     TokenType,
 )
-from docent._llm_util.data_models.simple_svc import BaseLLMService
+from docent._llm_util.llm_svc import (
+    DEFAULT_SVC_MAX_CONCURRENCY,
+    BaseLLMService,
+    MessagesInput,
+)
 from docent._llm_util.model_registry import estimate_cost_cents
-from docent._llm_util.prod_llms import MessagesInput, get_llm_completions_async
 from docent._llm_util.providers.preference_types import ModelOption, PublicProviderPreferences
 from docent._log_util import get_logger
 from docent.data_models.chat import ToolInfo
 from docent_core._env_util import ENV
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAModelApiKey
-from docent_core.docent.services.usage import (
-    UsageService,
-    check_spend_within_limit,
-)
+from docent_core.docent.services.usage import UsageService, check_spend_within_limit
 
 logger = get_logger(__name__)
 
@@ -34,8 +34,11 @@ class LLMService(BaseLLMService):
         session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]],
         user: User,
         usage_service: UsageService,
+        max_concurrency: int = DEFAULT_SVC_MAX_CONCURRENCY,
     ):
         """The LLM service manages its own sessions"""
+
+        super().__init__(max_concurrency)
 
         # Ensure environment variables are loaded before we get completions
         # This is only required because the backend relies on envvars to specify keys
@@ -168,19 +171,25 @@ class LLMService(BaseLLMService):
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
-        max_concurrency: int = 100,
         timeout: float = 120.0,
         streaming_callback: AsyncLLMOutputStreamingCallback | None = None,
         validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
         use_cache: bool = False,
+        _api_key_overrides: dict[str, str] = dict(),
     ) -> list[LLMOutput]:
+        if _api_key_overrides:
+            raise ValueError(
+                "api_key_overrides should not be provided to the LLMService.get_completions "
+                "method, as they are computed in this function."
+            )
+
         # Load user's saved BYOK keys
-        api_key_overrides, saved_byok_ids = await self._load_byok_keys()
+        _api_key_overrides, saved_byok_ids = await self._load_byok_keys()
 
         # Decide rate-limit gating and model option ordering
         providers_in_options = {opt.provider for opt in model_options}
-        byok_providers = {p for p in providers_in_options if p in api_key_overrides}
+        byok_providers = {p for p in providers_in_options if p in _api_key_overrides}
         platform_providers = providers_in_options - byok_providers
 
         # If we could end up using platform keys at all, enforce usage limits.
@@ -212,7 +221,7 @@ class LLMService(BaseLLMService):
             initial_usage_cents,
         )
 
-        outputs = await get_llm_completions_async(
+        outputs = await super().get_completions(
             inputs=inputs,
             model_options=model_options,
             tools=tools,
@@ -221,13 +230,12 @@ class LLMService(BaseLLMService):
             temperature=temperature,
             logprobs=logprobs,
             top_logprobs=top_logprobs,
-            max_concurrency=max_concurrency,
             timeout=timeout,
             streaming_callback=streaming_callback,
             validation_callback=validation_callback,
             completion_callback=usage_recording_callback,
             use_cache=use_cache,
-            api_key_overrides=api_key_overrides,
+            _api_key_overrides=_api_key_overrides,
         )
 
         # Record all collected usage data after LLM processing completes

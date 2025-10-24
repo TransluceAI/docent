@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._llm_util.data_models.exceptions import DocentUsageLimitException
 from docent._llm_util.data_models.llm_output import LLMCompletion, LLMOutput
-from docent._llm_util.prod_llms import MessagesInput
+from docent._llm_util.llm_svc import MessagesInput
 from docent._llm_util.providers.preference_types import ModelOption
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAModelApiKey, SQLAModelUsage
@@ -51,7 +51,7 @@ def mock_llm_call() -> Any:
         )
     ]
     return patch(
-        "docent_core.docent.services.llms.get_llm_completions_async", return_value=success_response
+        "docent._llm_util.llm_svc.BaseLLMService.get_completions", return_value=success_response
     )
 
 
@@ -133,7 +133,7 @@ async def test_byok_users_bypass_usage_limits(
 
     assert_successful_completion(outputs)
     mock_llm.assert_called_once()
-    assert mock_llm.call_args.kwargs["api_key_overrides"] == {"anthropic": api_key}
+    assert mock_llm.call_args.kwargs["_api_key_overrides"] == {"anthropic": api_key}
 
 
 @pytest.mark.integration

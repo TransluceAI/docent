@@ -22,8 +22,7 @@ from docent._log_util.logger import get_logger
 if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 
-from docent.data_models.judge import JudgeRunLabel
-from docent.judges import JudgeResult, ResultType, Rubric
+from docent.judges import JudgeResult, JudgeVariant, ResultType, Rubric
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
 
@@ -46,15 +45,21 @@ class SQLARubric(SQLABase):
     )
 
     rubric_text: Mapped[str] = mapped_column(Text, nullable=False)
-    judge_model: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Nullable for bwd compat
+    n_rollouts_per_input: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    # Nullable for bwd compat
+    judge_variant: Mapped[JudgeVariant | None] = mapped_column(
+        Enum(JudgeVariant), nullable=True, default=JudgeVariant.MAJORITY
+    )
 
-    # New fields that track other information about the rubric
-    # Both nullable for backwards compatibility
+    # Nullable for bwd compat
     system_prompt_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Nullable for bwd compat
     citation_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     # Follows https://json-schema.org standard
     output_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    judge_model: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     # --- START DEPRECATED ---
     high_level_description: Mapped[str] = mapped_column(Text, nullable=True)
@@ -96,10 +101,12 @@ class SQLARubric(SQLABase):
             version=rubric.version,
             collection_id=collection_id,
             rubric_text=rubric.rubric_text,
-            judge_model=rubric.judge_model.model_dump(),
+            n_rollouts_per_input=rubric.n_rollouts_per_input,
+            judge_variant=rubric.judge_variant,
             system_prompt_template=rubric.system_prompt_template,
             citation_instructions=rubric.citation_instructions,
             output_schema=rubric.output_schema,
+            judge_model=rubric.judge_model.model_dump(),
         )
 
     def to_pydantic(self) -> Rubric:
@@ -109,12 +116,16 @@ class SQLARubric(SQLABase):
             "id": self.id,
             "version": self.version,
             "rubric_text": self.rubric_text,
-            "judge_model": jm,
             "output_schema": self.output_schema,
+            "judge_model": jm,
         }
 
         # Necessary for backwards compatibility
-        # i.e., do not fill the field if they don't exist in the DB; use defaults.
+        # i.e., do not fill the field if they don't exist in the DB; use Pydantic defaults.
+        if self.n_rollouts_per_input is not None:
+            kwargs["n_rollouts_per_input"] = self.n_rollouts_per_input
+        if self.judge_variant is not None:
+            kwargs["judge_variant"] = self.judge_variant
         if self.system_prompt_template is not None:
             kwargs["system_prompt_template"] = self.system_prompt_template
         if self.citation_instructions is not None:
@@ -147,22 +158,24 @@ class SQLAJudgeRunLabel(SQLABase):
     rubric_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     label: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
-    @classmethod
-    def from_pydantic(cls, judge_run_label: JudgeRunLabel) -> "SQLAJudgeRunLabel":
-        return cls(
-            id=judge_run_label.id,
-            agent_run_id=judge_run_label.agent_run_id,
-            rubric_id=judge_run_label.rubric_id,
-            label=judge_run_label.label,
-        )
+    #### DEPRECATED METHODS (JudgeRunLabel does not exist) ###
 
-    def to_pydantic(self) -> JudgeRunLabel:
-        return JudgeRunLabel(
-            id=self.id,
-            agent_run_id=self.agent_run_id,
-            rubric_id=self.rubric_id,
-            label=self.label,
-        )
+    # @classmethod
+    # def from_pydantic(cls, judge_run_label: JudgeRunLabel) -> "SQLAJudgeRunLabel":
+    #     return cls(
+    #         id=judge_run_label.id,
+    #         agent_run_id=judge_run_label.agent_run_id,
+    #         rubric_id=judge_run_label.rubric_id,
+    #         label=judge_run_label.label,
+    #     )
+
+    # def to_pydantic(self) -> JudgeRunLabel:
+    #     return JudgeRunLabel(
+    #         id=self.id,
+    #         agent_run_id=self.agent_run_id,
+    #         rubric_id=self.rubric_id,
+    #         label=self.label,
+    #     )
 
 
 class SQLAJudgeResult(SQLABase):

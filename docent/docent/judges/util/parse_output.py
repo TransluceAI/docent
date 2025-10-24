@@ -1,10 +1,8 @@
-import json
 from typing import Any, cast
 
 import jsonschema
 
 from docent._llm_util.data_models.exceptions import ValidationFailedException
-from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
@@ -55,10 +53,8 @@ def _validate_rubric_output(
         )
 
 
-def parse_and_validate_llm_output(
-    llm_output: LLMOutput,
-    output_schema: dict[str, Any],
-    agent_run: AgentRun,
+def parse_and_validate_output_str(
+    output_str: str, output_schema: dict[str, Any], agent_run: AgentRun
 ) -> dict[str, Any]:
     """Parse and validate LLM output for rubric evaluation.
 
@@ -73,23 +69,19 @@ def parse_and_validate_llm_output(
     Raises:
         ValidationFailedException: If parsing or validation fails
     """
-    if llm_output.first_text is None:
-        raise ValidationFailedException("LLM output has no text", failed_output=None)
 
     try:
-        output = forgiving_json_loads(llm_output.first_text)
-    except json.JSONDecodeError as e:
+        output = forgiving_json_loads(output_str)
+    except Exception as e:
         raise ValidationFailedException(
-            f"Failed to parse JSON: {e}. Raw text: `{llm_output.first_text}`",
-            failed_output=llm_output.first_text,
+            f"Failed to parse JSON: {e}. Raw text: `{output_str}`",
+            failed_output=output_str,
         )
 
     if not isinstance(output, dict):
-        logger.error(f"Expected dict output, got {type(output)}")
-        logger.error(f"LLM output: {llm_output.first_text}")
         raise ValidationFailedException(
-            f"Expected dict output, got {type(output)}. Raw text: {llm_output.first_text}",
-            failed_output=llm_output.first_text,
+            f"Expected dict output, got {type(output)}. Raw text: {output_str}",
+            failed_output=output_str,
         )
 
     return _validate_rubric_output(cast(dict[str, Any], output), output_schema, agent_run)

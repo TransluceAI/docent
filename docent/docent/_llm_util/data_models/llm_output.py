@@ -96,6 +96,7 @@ class LLMOutput:
     errors: list[LLMException] = field(default_factory=list)
     usage: UsageMetrics = field(default_factory=UsageMetrics)
     from_cache: bool = False
+    duration: float | None = None
 
     @property
     def non_empty(self) -> bool:
@@ -140,6 +141,7 @@ class LLMOutput:
             "errors": [e.error_type_id for e in self.errors],
             "usage": self.usage.to_dict(),
             "from_cache": self.from_cache,
+            "duration": self.duration,
         }
 
     @classmethod
@@ -161,6 +163,7 @@ class LLMOutput:
             errors=errors,
             usage=UsageMetrics(**usage),
             from_cache=bool(data.get("from_cache", False)),
+            duration=data.get("duration"),
         )
 
 

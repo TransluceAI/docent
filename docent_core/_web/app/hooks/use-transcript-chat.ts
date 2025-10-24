@@ -11,7 +11,6 @@ import {
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
 import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
-import { rubricApi } from '@/app/api/rubricApi';
 import { ChatMessage } from '../types/transcriptTypes';
 
 export interface UseTranscriptChatOptions {
@@ -104,24 +103,6 @@ export function useTranscriptChat({
         );
       });
   }, [collectionId, runId, judgeResult?.id, getOrCreateChatSession]);
-
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (
-      lastMessage &&
-      lastMessage.role === 'tool' &&
-      lastMessage.function === 'add_label' &&
-      !lastMessage.error &&
-      judgeResult
-    ) {
-      dispatch(
-        rubricApi.util.invalidateTags([
-          { type: 'JudgeRunLabel', id: judgeResult.agent_run_id || '' },
-          { type: 'JudgeRunLabel', id: `LIST-${judgeResult.rubric_id}` },
-        ])
-      );
-    }
-  }, [messages, judgeResult, dispatch]);
 
   // Auto-populate citations from chat messages to enable transcript highlighting
   useEffect(() => {

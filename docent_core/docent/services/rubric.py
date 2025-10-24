@@ -4,13 +4,13 @@ from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
-import jsonschema
-from sqlalchemy import and_, delete, exists, func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
-from docent.data_models.judge import JudgeRunLabel
+from docent.data_models.judge import Label
 from docent.judges import JudgeResult, ResultType, Rubric
+from docent.judges.runner import run_rubric
 from docent_core._db_service.batched_writer import BatchedWriter
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core._worker.constants import WorkerFunction
@@ -21,12 +21,11 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
     ClusterFeedback,
     propose_clusters,
 )
-from docent_core.docent.ai_tools.rubric.rubric import evaluate_rubric
 from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
-    SQLAJudgeRunLabel,
     SQLARubric,
     SQLARubricCentroid,
 )
@@ -195,6 +194,7 @@ class RubricService:
         ctx: ViewContext,
         rubric_id: str,
         max_results: int | None = None,
+        label_set_ids: list[str] | None = None,
     ):
         """Start a job to evaluate the rubric."""
 
@@ -212,6 +212,7 @@ class RubricService:
                 job_json={
                     "rubric_id": rubric_id,
                     "max_results": max_results,
+                    "label_set_ids": label_set_ids,
                 },
             )
         )
@@ -262,6 +263,7 @@ class RubricService:
             raise ValueError(f"Rubric {rubric_id} not found")
 
         max_results = job.job_json.get("max_results", None)
+        label_set_ids = job.job_json.get("label_set_ids", None)
 
         if max_results is not None:
             existing_results = await self.session.execute(
@@ -281,19 +283,26 @@ class RubricService:
                 return
             max_results -= num_existing_results
 
-        # Get runs sorting by those with labels first
-        query = (
-            select(SQLAAgentRun.id)
-            # Join to labels
-            .outerjoin(
-                SQLAJudgeRunLabel,
-                and_(
-                    SQLAJudgeRunLabel.agent_run_id == SQLAAgentRun.id,
-                    SQLAJudgeRunLabel.rubric_id == rubric_id,
-                ),
+        # Build the query to prioritize labeled runs
+        query = select(SQLAAgentRun.id)
+
+        # Join to labels (new schema) to prioritize labeled runs
+        # Filter by label_set_ids if provided
+        if label_set_ids:
+            query = query.outerjoin(
+                SQLALabel,
+                (SQLALabel.agent_run_id == SQLAAgentRun.id)
+                & (SQLALabel.label_set_id.in_(label_set_ids)),
             )
-            # Runs without existing results
-            .where(
+        else:
+            query = query.outerjoin(
+                SQLALabel,
+                SQLALabel.agent_run_id == SQLAAgentRun.id,
+            )
+
+        # Runs without existing results
+        query = (
+            query.where(
                 SQLAAgentRun.collection_id == ctx.collection_id,
                 ~exists().where(
                     SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
@@ -303,16 +312,14 @@ class RubricService:
                 ),
             )
             .group_by(SQLAAgentRun.id)
-            .order_by(func.count(SQLAJudgeRunLabel.id).desc())
+            .order_by(func.count(SQLALabel.id).desc())
         )
 
-        filter_context, base_clause = await self.service._prepare_base_filter(
-            self.session,
-            ctx,
-        )
-        query = self.service._apply_filter_context_to_select(query, filter_context)
-        if base_clause is not None:
-            query = query.where(base_clause)
+        # Apply base filter if present
+        if ctx.base_filter is not None:
+            base_clause = ctx.base_filter.to_sqla_where_clause(SQLAAgentRun)
+            if base_clause is not None:
+                query = query.where(base_clause)
 
         result = await self.session.execute(query)
         agent_run_ids = cast(list[str], result.scalars().all())
@@ -338,7 +345,6 @@ class RubricService:
         async with BatchedWriter(self.session_cm_factory) as writer:
             # Use taskgroup for cancellation instead of events
             async with anyio.create_task_group() as tg:
-                cancel_scope = tg.cancel_scope
 
                 async def _callback(batch_index: int, judge_results: list[JudgeResult] | None):
                     if judge_results is None:
@@ -357,13 +363,13 @@ class RubricService:
                     if (
                         max_results is not None
                         and num_results >= max_results
-                        and not cancel_scope.cancel_called
+                        and not tg.cancel_scope.cancel_called
                     ):
-                        cancel_scope.cancel()
+                        tg.cancel_scope.cancel()
 
                 # Run the search, saving data to the database as we go
                 try:
-                    await evaluate_rubric(
+                    await run_rubric(
                         agent_runs,
                         rubric.to_pydantic(),
                         llm_svc=self.llm_svc,
@@ -764,129 +770,6 @@ class RubricService:
 
         return result
 
-    ######################
-    # Result Labels CRUD #
-    ######################
-
-    async def create_judge_run_labels(
-        self, collection_id: str, labels: list[JudgeRunLabel]
-    ) -> None:
-        """Add one or more run labels to judge results."""
-
-        if not labels:
-            return
-
-        # Get the single rubric_id that all labels share
-        rubric_ids = {label.rubric_id for label in labels}
-        if len(rubric_ids) != 1:
-            raise ValueError("All labels in a batch must target the same rubric")
-        rubric_id = labels[0].rubric_id
-
-        # Get *latest* rubric for its output schema
-        sqla_rubric = await self.get_rubric(rubric_id, version=None)
-        if sqla_rubric is None:
-            raise ValueError(f"Rubric {rubric_id} not found")
-        if sqla_rubric.collection_id != collection_id:
-            raise ValueError(f"Rubric {rubric_id} does not belong to collection {collection_id}")
-
-        # Validate labels against rubric output schema (raises ValueError if invalid)
-        for label in labels:
-            jsonschema.validate(label.label, sqla_rubric.output_schema)
-
-        # Add labels to db
-        self.session.add_all([SQLAJudgeRunLabel.from_pydantic(label) for label in labels])
-
-    async def update_judge_run_label(self, agent_run_id: str, label: dict[str, Any]) -> bool:
-        """Update a run label for a judge result."""
-        # Check that there's an existing label
-        result = await self.session.execute(
-            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
-        )
-        existing_label = result.scalar_one_or_none()
-        if existing_label is None:
-            raise ValueError(f"Label for agent run {agent_run_id} not found")
-
-        # Get *latest* rubric for its output schema
-        sqla_rubric = await self.get_rubric(existing_label.rubric_id, version=None)
-        if sqla_rubric is None:
-            raise ValueError(f"Rubric {existing_label.rubric_id} not found")
-
-        # Validate label against rubric output schema (raises ValueError if invalid)
-        jsonschema.validate(label, sqla_rubric.output_schema)
-
-        # Update label in db
-        existing_label.label = label
-        return True
-
-    async def get_judge_run_labels(self, rubric_id: str) -> list[JudgeRunLabel]:
-        """Get all result labels for a rubric.
-
-        Returns a list of labels with agent_run_id.
-        """
-        result = await self.session.execute(
-            select(SQLAJudgeRunLabel)
-            .where(SQLAJudgeRunLabel.rubric_id == rubric_id)
-            .order_by(SQLAJudgeRunLabel.id)
-        )
-        rows = result.scalars().all()
-        return [row.to_pydantic() for row in rows]
-
-    async def has_judge_run_labels(self, rubric_id: str) -> bool:
-        """Check if a rubric has any run labels."""
-        result = await self.session.execute(
-            select(exists().where(SQLAJudgeRunLabel.rubric_id == rubric_id))
-        )
-        return result.scalar_one()
-
-    async def delete_all_judge_run_labels(self, rubric_id: str):
-        """Delete all run labels for a rubric."""
-        await self.session.execute(
-            delete(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.rubric_id == rubric_id)
-        )
-
-    async def get_judge_run_label(self, agent_run_id: str) -> JudgeRunLabel | None:
-        """Get a run label for a judge result."""
-        result = await self.session.execute(
-            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
-        )
-
-        result_label = result.scalar_one_or_none()
-        if result_label is None:
-            return None
-        return result_label.to_pydantic()
-
-    async def get_judge_run_labels_and_results(
-        self, rubric_id: str
-    ) -> list[tuple[JudgeRunLabel, JudgeResult]]:
-        """Get all run labels and results for a rubric."""
-        # Use the latest rubric version to avoid mixing versions in context
-        latest_version = await self.get_latest_rubric_version(rubric_id)
-        if latest_version is None:
-            return []
-
-        result = await self.session.execute(
-            select(SQLAJudgeRunLabel, SQLAJudgeResult)
-            .join(SQLAJudgeResult, SQLAJudgeRunLabel.agent_run_id == SQLAJudgeResult.agent_run_id)
-            .where(
-                SQLAJudgeRunLabel.rubric_id == rubric_id,
-                SQLAJudgeResult.rubric_id == rubric_id,
-                SQLAJudgeResult.rubric_version == latest_version,
-                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
-            )
-        )
-        rows = result.all()
-        return [(row[0].to_pydantic(), row[1].to_pydantic()) for row in rows]
-
-    async def delete_judge_run_label(self, agent_run_id: str):
-        """Delete a judge run label from a judge result."""
-        # We only need agent_run_id since there's one label per agent run
-        result = await self.session.execute(
-            select(SQLAJudgeRunLabel).where(SQLAJudgeRunLabel.agent_run_id == agent_run_id)
-        )
-        label_to_delete = result.scalar_one_or_none()
-        if label_to_delete:
-            await self.session.delete(label_to_delete)
-
     async def copy_rubric_to_collection(
         self, source_rubric_id: str, target_collection_id: str
     ) -> str:
@@ -997,3 +880,33 @@ class RubricService:
             "total_output_tokens": total_output_tokens,
             "total_cost_cents": total_cost_cents,
         }
+
+    #################
+    # Label methods #
+    #################
+
+    async def get_judge_run_labels_and_results(
+        self, rubric_id: str, label_set_ids: list[str]
+    ) -> list[tuple[Label, JudgeResult]]:
+        """Get all run labels and results for a rubric."""
+        # Use the latest rubric version to avoid mixing versions in context
+        latest_version = await self.get_latest_rubric_version(rubric_id)
+        if latest_version is None:
+            return []
+
+        result = await self.session.execute(
+            select(SQLALabel, SQLAJudgeResult)
+            .join(
+                SQLALabelSet,
+                SQLALabel.label_set_id == SQLALabelSet.id,
+            )
+            .join(SQLAJudgeResult, SQLALabel.agent_run_id == SQLAJudgeResult.agent_run_id)
+            .where(
+                SQLALabelSet.id.in_(label_set_ids),
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == latest_version,
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
+            )
+        )
+        rows = result.all()
+        return [(row[0].to_pydantic(), row[1].to_pydantic()) for row in rows]

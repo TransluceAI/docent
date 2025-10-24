@@ -15,6 +15,7 @@ import { refinementApi } from '../api/refinementApi';
 import { chatApi } from '../api/chatApi';
 import { settingsApi } from '../api/settingsApi';
 import { investigatorApi } from '../api/investigatorApi';
+import { labelApi } from '../api/labelApi';
 import refinementReducer from './refinementSlice';
 
 const store = configureStore({
@@ -33,6 +34,7 @@ const store = configureStore({
     [chatApi.reducerPath]: chatApi.reducer,
     [settingsApi.reducerPath]: settingsApi.reducer,
     [investigatorApi.reducerPath]: investigatorApi.reducer,
+    [labelApi.reducerPath]: labelApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -51,7 +53,8 @@ const store = configureStore({
       .concat(refinementApi.middleware)
       .concat(chatApi.middleware)
       .concat(settingsApi.middleware)
-      .concat(investigatorApi.middleware),
+      .concat(investigatorApi.middleware)
+      .concat(labelApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

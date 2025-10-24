@@ -287,8 +287,18 @@ class DocentDB:
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
         """Provide a transactional scope around a series of operations."""
+        # I think we don't need automatic recovery of failed sessions, since the codepath
+        # has already errored out at that point.
+
         async with self._session_scope(self._Session) as session:
-            yield session
+            try:
+                yield session
+                # If already in the middle of a commit, see it through
+                with anyio.CancelScope(shield=True):
+                    await session.commit()
+            finally:
+                with anyio.CancelScope(shield=True):
+                    await session.close()
 
     @asynccontextmanager
     async def dql_session(self) -> AsyncIterator[AsyncSession]:

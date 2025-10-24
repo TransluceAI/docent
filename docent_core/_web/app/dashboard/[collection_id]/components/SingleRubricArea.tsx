@@ -1,26 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Tags, Loader2 } from 'lucide-react';
+import { Tags, Loader2, Minimize2, Maximize2 } from 'lucide-react';
 import RubricEditor from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
-import {
-  useDeleteAllJudgeRunLabelsMutation,
-  useGetJudgeRunLabelsQuery,
-} from '../../../api/rubricApi';
+import { useGetRubricQuery } from '../../../api/rubricApi';
 import { Button } from '@/components/ui/button';
 import {
   ResultFilterControlsTrigger,
   ResultFilterControlsBadges,
 } from '@/app/components/ResultFilterControls';
 import RunRubricButton from './RunRubricButton';
-import ClusterButton from './ClusterButton';
 import { AgreementPopover } from './AgreementPopover';
+import ClusterButton from './ClusterButton';
 import useJobStatus from '@/app/hooks/use-job-status';
 import { ProgressBar } from '@/app/components/ProgressBar';
 import { cn } from '@/lib/utils';
@@ -30,6 +27,8 @@ import ShareRubricButton from './ShareRubricButton';
 import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { usePostRubricUpdateToRefinementSessionMutation } from '@/app/api/refinementApi';
 import { toast } from '@/hooks/use-toast';
+import { useGetLabelsInLabelSetsQuery } from '@/app/api/labelApi';
+import { useLabelSets } from '@/providers/use-label-sets';
 
 interface SingleRubricAreaProps {
   rubricId: string;
@@ -49,7 +48,6 @@ export default function SingleRubricArea({
     postRubricUpdateToRefinementSession,
     { error: postRubricUpdateError },
   ] = usePostRubricUpdateToRefinementSessionMutation();
-  const [deleteAllJudgeRunLabels] = useDeleteAllJudgeRunLabelsMutation();
   const hasWritePermission = useHasCollectionWritePermission();
 
   // Unsaved changes from the editor
@@ -75,29 +73,35 @@ export default function SingleRubricArea({
     assignments,
     // Loading flags
     isResultsLoading,
-    isClusteringLoading,
   } = useJobStatus({
     collectionId,
     rubricId,
   });
 
-  // Judge run labels
-  const { data: labels, isSuccess: isLabelsSuccess } =
-    useGetJudgeRunLabelsQuery({
-      collectionId,
-      rubricId,
-    });
+  // Get the remote rubric
+  const { data: rubric } = useGetRubricQuery({
+    collectionId,
+    rubricId,
+    version,
+  });
+  const schema = rubric?.output_schema;
+
+  const { labelSets, clearLabelSets } = useLabelSets();
+  const labelSetIds = labelSets.map((labelSet) => labelSet.id);
+  const { data: labels = [], isSuccess: isLabelsSuccess } =
+    useGetLabelsInLabelSetsQuery(
+      { collectionId, labelSetIds },
+      { skip: labelSetIds.length === 0 }
+    );
   const hasLabels = (labels?.length ?? 0) > 0;
 
   const handleRubricSave = async (
     rubric: Rubric,
     clearLabels: boolean = false
   ) => {
+    // Just unlink the labels from the current rubric.
     if (hasLabels && clearLabels) {
-      deleteAllJudgeRunLabels({
-        collectionId,
-        rubricId: rubric.id,
-      });
+      clearLabelSets();
     }
 
     if (sessionId) {
@@ -121,30 +125,17 @@ export default function SingleRubricArea({
   };
 
   const [showDiff, setShowDiff] = useState(false);
+  const { applyFilters } = useResultFilterControls();
+  const filteredJudgeResultsList = useMemo(
+    () => applyFilters(judgeResults, labels ?? []),
+    [applyFilters, judgeResults, labels]
+  );
+
   const noJudgeResults = judgeResults.length == 0;
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  return (
-    <div className="space-y-2 flex flex-col flex-1 min-w-0">
-      <RubricEditor
-        collectionId={collectionId}
-        rubricId={rubricId}
-        rubricVersion={version}
-        setRubricVersion={setVersion}
-        showDiff={showDiff}
-        setShowDiff={setShowDiff}
-        onSave={handleRubricSave}
-        forceOpenSchema={noJudgeResults}
-        onCloseWithoutSave={() => {}}
-        shouldConfirmOnSave={hasLabels}
-        onHasUnsavedChangesUpdated={setHasUnsavedChanges}
-        editable={
-          !rubricJobId &&
-          hasWritePermission &&
-          !clusteringJobId &&
-          isLabelsSuccess
-        }
-      />
-
+  const ResultsSection = (
+    <>
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center justify-between">
         {/* Version changer */}
@@ -168,6 +159,16 @@ export default function SingleRubricArea({
 
         <div className="flex items-center gap-2">
           <div className="hidden lg:flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 text-xs text-muted-foreground"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </Button>
+
             <ShareRubricButton
               rubricId={rubricId}
               collectionId={collectionId}
@@ -185,7 +186,7 @@ export default function SingleRubricArea({
           )}
 
           {/* Rubric controls */}
-          {!clusteringJobId && hasWritePermission && (
+          {!clusteringJobId && hasWritePermission && centroids.length === 0 && (
             <RunRubricButton
               collectionId={collectionId}
               rubricId={rubricId}
@@ -195,12 +196,17 @@ export default function SingleRubricArea({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2 px-0.5 justify-between">
-        <ResultFilterControlsBadges />
-        <AgreementPopover
-          judgeResults={judgeResults}
-          judgeRunLabels={labels ?? []}
-        />
+      <div className="flex items-start gap-2 px-0.5 justify-between">
+        <div className="flex-1 min-w-0">
+          <ResultFilterControlsBadges />
+        </div>
+        <div className="flex-shrink-0">
+          <AgreementPopover
+            filteredJudgeResults={filteredJudgeResultsList}
+            labels={labels ?? []}
+            schema={schema}
+          />
+        </div>
       </div>
 
       {rubricJobId && (
@@ -220,7 +226,7 @@ export default function SingleRubricArea({
       )}
 
       {/* Results */}
-      {isResultsLoading ? (
+      {isResultsLoading || !schema ? (
         <div className="flex items-center justify-center">
           <Loader2 size={16} className="animate-spin text-muted-foreground" />
         </div>
@@ -230,14 +236,49 @@ export default function SingleRubricArea({
         </div>
       ) : (
         <JudgeResultsList
-          judgeRunLabels={labels ?? []}
+          labels={labels ?? []}
           centroids={centroids}
           assignments={assignments}
-          judgeResults={judgeResults}
+          filteredJudgeResultsList={filteredJudgeResultsList}
           isClusteringActive={clusteringJobId !== null}
           activeResultId={resultId}
+          schema={schema}
         />
       )}
+    </>
+  );
+
+  if (isExpanded) {
+    return (
+      <div className="space-y-2 flex flex-col flex-1 min-w-0">
+        {ResultsSection}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 flex flex-col flex-1 min-w-0">
+      <RubricEditor
+        collectionId={collectionId}
+        rubricId={rubricId}
+        rubricVersion={version}
+        setRubricVersion={setVersion}
+        showDiff={showDiff}
+        setShowDiff={setShowDiff}
+        forceOpenSchema={false}
+        onSave={handleRubricSave}
+        onCloseWithoutSave={() => {}}
+        shouldConfirmOnSave={hasLabels}
+        onHasUnsavedChangesUpdated={setHasUnsavedChanges}
+        editable={
+          !rubricJobId &&
+          hasWritePermission &&
+          !clusteringJobId &&
+          isLabelsSuccess
+        }
+      />
+
+      {ResultsSection}
     </div>
   );
 }

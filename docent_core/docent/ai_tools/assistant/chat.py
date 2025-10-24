@@ -13,7 +13,7 @@ from docent.data_models.chat.tool import (
     ToolParams,
 )
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
-from docent_core.docent.ai_tools.rubric.rubric import JudgeResult, Rubric
+from docent.judges import JudgeResult, Rubric
 from docent_core.docent.db.schemas.tables import sanitize_pg_text
 
 GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used

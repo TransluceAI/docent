@@ -1,8 +1,8 @@
 import { createContext, useContext, useState } from 'react';
 
 interface ActiveTabContextValue {
-  activeTab: 'refine' | 'analyze' | 'label';
-  setActiveTab: (tab: 'refine' | 'analyze' | 'label') => void;
+  activeTab: 'refine' | 'analyze';
+  setActiveTab: (tab: 'refine' | 'analyze') => void;
   refinementJobId: string | null;
   setRefinementJobId: (jobId: string | null) => void;
 }
@@ -31,9 +31,7 @@ export function RefinementTabProvider({
   collectionId: string;
   rubricId: string;
 }) {
-  const [activeTab, setActiveTab] = useState<'refine' | 'analyze' | 'label'>(
-    'refine'
-  );
+  const [activeTab, setActiveTab] = useState<'refine' | 'analyze'>('refine');
 
   const [refinementJobId, setRefinementJobId] = useState<string | null>(null);
 

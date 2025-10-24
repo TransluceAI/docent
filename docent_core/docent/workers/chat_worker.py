@@ -16,6 +16,7 @@ from docent_core.docent.services.chat import (
     ChatService,
     ChatSession,
 )
+from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
@@ -34,8 +35,9 @@ async def chat_job(ctx: ViewContext, job: SQLAJob):
     async with db.session() as session:
         usage_svc = UsageService(db.session)
         llm_svc = LLMService(db.session, ctx.user, usage_svc)
+        label_svc = LabelService(session, db.session, mono_svc)
         rubric_svc = RubricService(session, db.session, mono_svc, llm_svc)
-        chat_svc = ChatService(session, db.session, mono_svc, rubric_svc, llm_svc)
+        chat_svc = ChatService(session, db.session, mono_svc, rubric_svc, label_svc, llm_svc)
 
         sqla_chat_session = await chat_svc.get_session_by_id(job.job_json["session_id"])
         if sqla_chat_session is None:

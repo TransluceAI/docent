@@ -8,7 +8,8 @@ from tqdm import tqdm
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.judge import JudgeRunLabel
+from docent.data_models.judge import Label
+from docent.judges.util.meta_schema import validate_judge_result_schema
 from docent.loaders import load_inspect
 
 logger = get_logger(__name__)
@@ -50,9 +51,15 @@ class Docent:
         self._login(api_key)
 
     def _handle_response_errors(self, response: requests.Response):
-        """Handle API response and raise informative errors.
-        TODO: make this more informative."""
-        response.raise_for_status()
+        """Handle API response and raise informative errors."""
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                detail = error_data.get("detail", response.text)
+            except Exception:
+                detail = response.text
+
+            raise requests.HTTPError(f"HTTP {response.status_code}: {detail}", response=response)
 
     def _login(self, api_key: str):
         """Login with email/password to establish session."""
@@ -253,30 +260,55 @@ class Docent:
         clustering_state = self.get_clustering_state(collection_id, rubric_id)
         return clustering_state.get("assignments", {})
 
-    def add_label(
+    def create_label_set(
         self,
-        collection_id: str,
-        rubric_id: str,
-        label: JudgeRunLabel,
-    ) -> dict[str, Any]:
-        """Attach a manual label to an agent run for a rubric.
+        name: str,
+        label_schema: dict[str, Any],
+        description: str | None = None,
+    ) -> str:
+        """Create a new label set with a JSON schema.
 
         Args:
-            collection_id: ID of the Collection that owns the rubric.
-            rubric_id: ID of the rubric the label applies to.
-            label: A `JudgeRunLabel` that must comply with the rubric's output schema.
+            name: Name of the label set.
+            label_schema: JSON schema for validating labels in this set.
+            description: Optional description of the label set.
 
         Returns:
-            dict: API response containing a status message.
+            str: The ID of the created label set.
 
         Raises:
-            ValueError: If the label does not target the rubric specified in the path.
+            ValueError: If the response is missing the label_set_id.
+            jsonschema.ValidationError: If the label schema is invalid.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        validate_judge_result_schema(label_schema)
+
+        url = f"{self._server_url}/label_set"
+        payload = {
+            "name": name,
+            "label_schema": label_schema,
+            "description": description,
+        }
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def add_label(
+        self,
+        label: Label,
+    ) -> dict[str, str]:
+        """Create a label in a label set.
+
+        Args:
+            label: A `Label` object that must comply with the label set's schema.
+
+        Returns:
+            dict: API response containing the label_id.
+
+        Raises:
             requests.exceptions.HTTPError: If the API request fails or validation errors occur.
         """
-        if label.rubric_id != rubric_id:
-            raise ValueError("Label rubric_id must match the rubric_id argument")
-
-        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/label"
+        url = f"{self._server_url}/label"
         payload = {"label": label.model_dump(mode="json")}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -284,56 +316,48 @@ class Docent:
 
     def add_labels(
         self,
-        collection_id: str,
-        rubric_id: str,
-        labels: list[JudgeRunLabel],
+        labels: list[Label],
     ) -> dict[str, Any]:
-        """Attach multiple manual labels to a rubric.
+        """Create multiple labels.
 
         Args:
-            collection_id: ID of the Collection that owns the rubric.
-            rubric_id: ID of the rubric the labels apply to.
-            labels: List of `JudgeRunLabel` objects.
+            labels: List of `Label` objects.
 
         Returns:
-            dict: API response containing status information.
+            dict: API response containing label_ids list and optional errors list.
 
         Raises:
             ValueError: If no labels are provided.
-            ValueError: If any label targets a different rubric.
             requests.exceptions.HTTPError: If the API request fails.
         """
         if not labels:
             raise ValueError("labels must contain at least one entry")
 
-        rubric_ids = {label.rubric_id for label in labels}
-        if rubric_ids != {rubric_id}:
-            raise ValueError(
-                "All labels must specify the same rubric_id that is provided to add_labels"
-            )
-
-        payload = {"labels": [l.model_dump(mode="json") for l in labels]}
-
-        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/labels"
+        url = f"{self._server_url}/labels"
+        payload = {"labels": [label.model_dump(mode="json") for label in labels]}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
         return response.json()
 
-    def get_labels(self, collection_id: str, rubric_id: str) -> list[dict[str, Any]]:
-        """Retrieve all manual labels for a rubric.
+    def get_labels(
+        self, label_set_id: str, filter_valid_labels: bool = False
+    ) -> list[dict[str, Any]]:
+        """Retrieve all labels in a label set.
 
         Args:
-            collection_id: ID of the Collection that owns the rubric.
-            rubric_id: ID of the rubric to fetch labels for.
+            label_set_id: ID of the label set to fetch labels for.
+            filter_valid_labels: If True, only return labels that match the label set schema
+                INCLUDING requirements. Default is False (returns all labels).
 
         Returns:
-            list: List of label dictionaries. Each includes agent_run_id and label content.
+            list: List of label dictionaries.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}/labels"
-        response = self._session.get(url)
+        url = f"{self._server_url}/label_set/{label_set_id}/labels"
+        params = {"filter_valid_labels": filter_valid_labels}
+        response = self._session.get(url, params=params)
         self._handle_response_errors(response)
         return response.json()
 

@@ -1,42 +1,78 @@
 'use client';
 
-import {
-  JudgeRunLabel,
-  JudgeResultWithCitations,
-} from '@/app/store/rubricSlice';
-import { useCallback, useMemo, useState } from 'react';
-import { JudgeResultCard } from './JudgeResultCard';
-import { Loader2, ChevronDown, ChevronRight, Tag } from 'lucide-react';
-import { useResultFilterControls } from '@/providers/use-result-filters';
+import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
+import { useMemo, useState } from 'react';
+import { Loader2, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RubricCentroid } from '@/app/api/rubricApi';
-import { useRefinementTab } from '@/providers/use-refinement-tab';
-import { useParams, useRouter } from 'next/navigation';
+import VirtualResultsList from './VirtualResultsList';
+import { SchemaDefinition } from '@/app/types/schema';
+import { Label } from '@/app/api/labelApi';
 
 interface JudgeResultsListProps {
   centroids: RubricCentroid[];
   assignments: Record<string, string[]>;
-  judgeResults: JudgeResultWithCitations[];
-  judgeRunLabels: JudgeRunLabel[];
+  filteredJudgeResultsList: JudgeResultWithCitations[];
+  labels: Label[];
   isClusteringActive?: boolean;
   activeResultId?: string;
+  schema: SchemaDefinition;
 }
 
 export const JudgeResultsList = ({
   centroids,
   assignments,
-  judgeResults,
-  judgeRunLabels,
+  filteredJudgeResultsList,
+  labels,
   isClusteringActive,
   activeResultId,
+  schema,
 }: JudgeResultsListProps) => {
-  const { applyFilters, labeled } = useResultFilterControls();
-  const filteredJudgeResultsList = useMemo(
-    () => applyFilters(judgeResults, judgeRunLabels),
-    [applyFilters, judgeResults, judgeRunLabels]
-  );
+  if (centroids.length > 0) {
+    return (
+      <CentroidsList
+        assignments={assignments}
+        centroids={centroids}
+        isClusteringActive={isClusteringActive}
+        activeResultId={activeResultId}
+        schema={schema}
+        filteredJudgeResultsList={filteredJudgeResultsList}
+        labels={labels}
+      />
+    );
+  }
 
-  // Create result_id -> result map
+  // Default: flat list grouped by agent run
+  return (
+    <VirtualResultsList
+      filteredJudgeResultsList={filteredJudgeResultsList}
+      activeResultId={activeResultId}
+      schema={schema}
+      labels={labels}
+    />
+  );
+};
+
+interface CentroidsListProps {
+  assignments: Record<string, string[]>;
+  centroids: RubricCentroid[];
+  isClusteringActive?: boolean;
+  activeResultId?: string;
+  schema: SchemaDefinition;
+  filteredJudgeResultsList: JudgeResultWithCitations[];
+  labels: Label[];
+}
+
+const CentroidsList = ({
+  assignments,
+  centroids,
+  isClusteringActive,
+  activeResultId,
+  schema,
+  filteredJudgeResultsList,
+  labels,
+}: CentroidsListProps) => {
+  // 1. Compute a result_id -> result map to quickly assign results to centroids
   const judgeResultsMap = useMemo(() => {
     const map = new Map<string, JudgeResultWithCitations>();
     for (const result of filteredJudgeResultsList) {
@@ -45,40 +81,7 @@ export const JudgeResultsList = ({
     return map;
   }, [filteredJudgeResultsList]);
 
-  // Create agent_run_id -> label map
-  const judgeRunLabelsMap = useMemo(() => {
-    const map = new Map<string, JudgeRunLabel>();
-    if (judgeRunLabels) {
-      for (const label of judgeRunLabels) {
-        map.set(label.agent_run_id, label);
-      }
-    }
-    return map;
-  }, [judgeRunLabels]);
-
-  // Helper to group results by agent run
-  const groupByAgentRun = useCallback((results: JudgeResultWithCitations[]) => {
-    const grouped: Record<string, JudgeResultWithCitations[]> = {};
-    for (const result of results) {
-      if (!grouped[result.agent_run_id]) {
-        grouped[result.agent_run_id] = [];
-      }
-      grouped[result.agent_run_id].push(result);
-    }
-    return grouped;
-  }, []);
-
-  //*****************
-  // CENTROID LOGIC *
-  //*****************
-
-  // Keep track of which IDs have been assigned (to later compute resids)
-  const assignedResultIdsSet = useMemo(() => {
-    const allAssigned = Object.values(assignments).flat();
-    return new Set(allAssigned);
-  }, [assignments]);
-
-  // Create centroid sections
+  // 2. Create the centroid sections by assigning results to centroids
   const centroidSections = useMemo(() => {
     return centroids.map((centroid) => {
       const resultIds = assignments[centroid.id] || [];
@@ -88,212 +91,97 @@ export const JudgeResultsList = ({
       return {
         id: centroid.id,
         title: centroid.centroid || `Cluster ${centroid.id.slice(0, 8)}`,
-        resultsByAgentRun: groupByAgentRun(results),
+        resultsByAgentRun: results,
       };
     });
-  }, [centroids, assignments, judgeResultsMap, groupByAgentRun]);
+  }, [centroids, assignments, judgeResultsMap]);
 
-  // Create residual section
+  // 3. Compute residuals by filtering out assigned results
   const residualSection = useMemo(() => {
+    const allAssigned = Object.values(assignments).flat();
+    const assignedResultIdsSet = new Set(allAssigned);
     const residualResults = filteredJudgeResultsList.filter(
       (r) => !assignedResultIdsSet.has(r.id)
     );
-    if (residualResults.length === 0) return null;
     return {
       id: 'residuals',
       title: centroids.length > 0 ? 'Residuals' : 'Results',
-      resultsByAgentRun: groupByAgentRun(residualResults),
-    } as {
-      id: string;
-      title: string;
-      resultsByAgentRun: Record<string, JudgeResultWithCitations[]>;
-    } | null;
-  }, [
-    filteredJudgeResultsList,
-    assignedResultIdsSet,
-    centroids.length,
-    groupByAgentRun,
-  ]);
+      resultsByAgentRun: residualResults,
+    };
+  }, [filteredJudgeResultsList, centroids.length, assignments]);
 
-  // Create a map of labeled agent run ids
-  // This is for the specific case of, no results but we want to display agent run id headers
-  const getLabeledAgentRunsAsMap = useCallback(
-    (existingMap: Record<string, JudgeResultWithCitations[]>) => {
-      if (Object.keys(existingMap).length !== 0) {
-        return existingMap;
-      } else if (labeled) {
-        return (
-          judgeRunLabels?.reduce(
-            (acc, label) => {
-              acc[label.agent_run_id] = [];
-              return acc;
-            },
-            {} as Record<string, JudgeResultWithCitations[]>
-          ) || existingMap
-        );
-      }
-
-      return existingMap;
-    },
-    [judgeRunLabels, labeled]
+  // Keep track of the currently viewed centroid
+  const [selectedCentroidId, setSelectedCentroidId] = useState<string | null>(
+    null
   );
 
-  // If dropdowns are enabled and there are centroids, render clustered collapsible sections
-  if (centroidSections.length > 0) {
+  // Display the centroid section if one is selected
+  if (selectedCentroidId) {
+    const selected = centroidSections.find((s) => s.id === selectedCentroidId);
+    if (!selected) return null; // This should never happen
+
     return (
-      <div className="space-y-2 grow overflow-y-auto custom-scrollbar">
-        {centroidSections.map((section) => (
-          <ResultsSection
-            key={section.id}
-            sectionTitle={section.title}
-            resultsByAgentRun={section.resultsByAgentRun}
-            isClusteringActive={isClusteringActive}
-            judgeRunLabelsMap={judgeRunLabelsMap}
-            activeResultId={activeResultId}
-          />
-        ))}
-        {residualSection && (
-          <ResultsSection
-            key={residualSection.id}
-            sectionTitle={residualSection.title}
-            resultsByAgentRun={getLabeledAgentRunsAsMap(
-              residualSection.resultsByAgentRun
-            )}
-            isClusteringActive={isClusteringActive}
-            judgeRunLabelsMap={judgeRunLabelsMap}
-            activeResultId={activeResultId}
-          />
-        )}
+      <div className="flex flex-col min-h-0 grow gap-2">
+        <button
+          onClick={() => setSelectedCentroidId(null)}
+          className="flex border items-center p-1.5 text-left gap-1.5 rounded hover:bg-muted"
+          title="Back to clusters"
+        >
+          <div className="flex-1 text-xs text-primary ml-1 break-words">
+            <span className="text-xs mr-2 px-1 inline-flex rounded-sm bg-secondary border text-muted-foreground flex">
+              {`${selected.resultsByAgentRun.length} matches`}
+              {isClusteringActive && (
+                <Loader2 className="size-3 animate-spin ml-1" />
+              )}
+            </span>
+            {selected.title}
+          </div>
+          <X className="size-3" />
+        </button>
+
+        <VirtualResultsList
+          filteredJudgeResultsList={selected.resultsByAgentRun}
+          activeResultId={activeResultId}
+          schema={schema}
+          labels={labels}
+        />
       </div>
     );
   }
 
-  // Default: flat list grouped by agent run
+  // Else, display the list of centroids
   return (
-    <div className="custom-scrollbar overflow-y-auto">
-      <ResultsSection
-        resultsByAgentRun={getLabeledAgentRunsAsMap(
-          groupByAgentRun(filteredJudgeResultsList)
-        )}
-        judgeRunLabelsMap={judgeRunLabelsMap}
-        activeResultId={activeResultId}
-      />
-    </div>
-  );
-};
-
-interface ResultsSectionProps {
-  resultsByAgentRun: Record<string, JudgeResultWithCitations[]>;
-  judgeRunLabelsMap?: Map<string, JudgeRunLabel>;
-  sectionTitle?: string;
-  isClusteringActive?: boolean;
-  navToTranscriptOnClick?: boolean;
-  activeResultId?: string;
-}
-
-export const ResultsSection = ({
-  resultsByAgentRun,
-  judgeRunLabelsMap = new Map(),
-  sectionTitle,
-  isClusteringActive = false,
-  navToTranscriptOnClick = true,
-  activeResultId,
-}: ResultsSectionProps) => {
-  const [expanded, setExpanded] = useState<boolean>(!sectionTitle);
-  const uniqueRuns = useMemo(
-    () => Object.keys(resultsByAgentRun).length,
-    [resultsByAgentRun]
-  );
-  const rows = useMemo(
-    () => Object.entries(resultsByAgentRun),
-    [resultsByAgentRun]
-  );
-  const { setActiveTab } = useRefinementTab();
-  const { collection_id: collectionId } = useParams<{
-    collection_id: string;
-  }>();
-  const router = useRouter();
-
-  const handleNavigateToLabeling = useCallback(
-    (result: JudgeResultWithCitations) => {
-      router.push(
-        `/dashboard/${collectionId}/rubric/${result.rubric_id}/agent_run/${result.agent_run_id}/result/${result.id}`
-      );
-      setActiveTab('label');
-    },
-    [collectionId, router, setActiveTab]
-  );
-
-  const shouldShowContent = (sectionTitle && expanded) || !sectionTitle;
-
-  return (
-    <div className={cn('space-y-2 grow')}>
-      {sectionTitle && (
-        <div
-          className="text-xs p-1.5 bg-background hover:bg-muted rounded border border-border flex cursor-pointer items-center gap-1.5"
-          onClick={() => setExpanded((e) => !e)}
-        >
-          {expanded ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          )}
-          <div className="flex-shrink-0 flex items-center">
-            <span className="text-xs px-1.5 py-0.5 rounded-sm bg-secondary text-muted-foreground flex items-center min-w-[2rem] justify-center">
-              {`${uniqueRuns} runs`}
-              {isClusteringActive && (
-                <Loader2 className="h-3 w-3 animate-spin ml-1" />
-              )}
-            </span>
-          </div>
-          <div className="flex-1 text-xs text-primary ml-1">
-            <div className="flex items-center gap-2">{sectionTitle}</div>
-          </div>
-        </div>
-      )}
-
-      {shouldShowContent && (
-        <div className={cn('space-y-2', sectionTitle && 'ml-3')}>
-          {rows.map(([agentRunId, results]) => (
-            <div key={agentRunId} className="group px-0">
-              <div className="space-y-2 pb-2">
-                <div className="text-xs px-2 bg-secondary text-muted-foreground justify-between py-1 font-medium rounded-sm flex items-center">
-                  <span>Agent Run {agentRunId.slice(0, 8)}</span>
-                  {results.length > 0 && navToTranscriptOnClick && (
-                    <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleNavigateToLabeling(results[0]);
-                      }}
-                      title="Open labeling area"
-                    >
-                      <Tag size={14} />
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  {results.map((judgeResult, idx) => (
-                    <div
-                      key={`${agentRunId}-${idx}`}
-                      id={`result-${judgeResult.id}`}
-                    >
-                      <JudgeResultCard
-                        judgeResult={judgeResult}
-                        judgeRunLabel={judgeRunLabelsMap.get(
-                          judgeResult.agent_run_id
-                        )}
-                        navToTranscriptOnClick={navToTranscriptOnClick}
-                        active={judgeResult.id === activeResultId}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+    <div className="space-y-2 grow overflow-y-auto custom-scrollbar min-h-0">
+      {[...centroidSections, residualSection].map((section) => {
+        const isDisabled = section.resultsByAgentRun.length === 0;
+        return (
+          <button
+            key={section.id}
+            type="button"
+            className={cn(
+              'text-left text-xs p-1.5 rounded border flex items-center gap-1.5 w-full bg-background text-primary border-border',
+              isDisabled
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:bg-muted cursor-pointer'
+            )}
+            onClick={() => {
+              if (!isDisabled) setSelectedCentroidId(section.id);
+            }}
+            disabled={isDisabled}
+          >
+            <div className="flex-1 text-xs text-primary ml-1 break-words">
+              <span className="text-xs mr-2 px-1 inline-flex rounded-sm bg-secondary border text-muted-foreground flex">
+                {`${section.resultsByAgentRun.length} matches`}
+                {isClusteringActive && (
+                  <Loader2 className="size-3 animate-spin ml-1" />
+                )}
+              </span>
+              {section.title}
             </div>
-          ))}
-        </div>
-      )}
+            {!isDisabled && <ChevronRight className="size-3" />}
+          </button>
+        );
+      })}
     </div>
   );
 };
