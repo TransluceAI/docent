@@ -15,7 +15,6 @@ from typing import (
     TypeAlias,
     TypeVar,
     cast,
-    overload,
 )
 
 import sqlglot
@@ -25,8 +24,11 @@ from sqlalchemy.sql.schema import Table
 from sqlalchemy.sql.selectable import FromClause
 from sqlglot import exp
 from sqlglot.errors import ParseError
-from sqlglot.optimizer.scope import Scope, build_scope
-from sqlglot.optimizer.scope import find_all_in_scope as _find_all_in_scope_impl
+from sqlglot.optimizer.scope import find_all_in_scope  # type: ignore[reportUnknownVariableType]
+from sqlglot.optimizer.scope import (
+    Scope,
+    build_scope,
+)
 
 from docent._log_util import get_logger
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
@@ -61,7 +63,6 @@ __all__ = [
     "parameterize_expression",
     "build_default_registry",
     "build_collection_sqla_query",
-    "build_collection_sqla_where_clause",
     "extract_selected_columns",
     "get_selected_columns",
     "parse_dql_query",
@@ -94,7 +95,7 @@ class AllowedTable:
     allowed_columns: frozenset[str]
     collection_predicate_factory: "CollectionPredicateFactory | None" = None
     aliases: frozenset[str] = field(default_factory=frozenset)
-    column_aliases: Mapping[str, str] = field(default_factory=dict)
+    column_aliases: Mapping[str, str] = field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
     json_field_paths: frozenset[str] = field(default_factory=frozenset)
 
 
@@ -120,7 +121,7 @@ class JsonFieldInfo:
     column: str
     path: tuple[str, ...] = field(default_factory=tuple)
     value_type: Literal["str", "bool", "int", "float"] | None = None
-    labels: Mapping[str, str] = field(default_factory=dict)
+    labels: Mapping[str, str] = field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
 
 
 CollectionPredicateFactory = Callable[[str, str], SqlGlotExpression]
@@ -249,15 +250,6 @@ def _format_json_column_expression(column: str, path: Sequence[str]) -> str:
     if not path:
         return column
     return column + "".join(f"->'{_escape_json_path_segment(segment)}'" for segment in path)
-
-
-def _format_metadata_column(field_path: str) -> str:
-    """Translate a metadata field path into the JSON traversal that Postgres expects."""
-
-    segments = [segment for segment in field_path.split(".") if segment]
-    if segments and segments[0].lower() == "metadata":
-        segments = segments[1:]
-    return _format_json_column_expression("metadata_json", segments)
 
 
 def json_field_info_to_expression(info: JsonFieldInfo) -> str:
@@ -468,37 +460,6 @@ def build_default_registry(
     return registry
 
 
-@overload
-def _find_all_in_scope(
-    expression: SqlGlotExpression,
-    expression_types: type[SqlGlotColumn],
-) -> Iterator[SqlGlotColumn]:
-    """Overload for column lookups so tooling knows the iterator yields columns."""
-
-    ...
-
-
-@overload
-def _find_all_in_scope(
-    expression: SqlGlotExpression,
-    expression_types: type[TExpr] | tuple[type[TExpr], ...],
-) -> Iterator[TExpr]:
-    """Overload for arbitrary expression lookups to keep type inference accurate."""
-
-    ...
-
-
-def _find_all_in_scope(
-    expression: SqlGlotExpression,
-    expression_types: type[SqlGlotExpression] | tuple[type[SqlGlotExpression], ...],
-) -> Iterator[SqlGlotExpression]:
-    """Yield scoped expressions while preserving sqlglot's typing guarantees."""
-
-    for item in _find_all_in_scope_impl(expression, expression_types):
-        assert isinstance(item, exp.Expression)
-        yield item
-
-
 def _parse_sql_statements(sql: str) -> list[SqlGlotExpression]:
     """Parse SQL into expressions, ignoring empty statements introduced by the parser."""
 
@@ -510,14 +471,6 @@ def _parse_sql_statements(sql: str) -> list[SqlGlotExpression]:
         assert isinstance(stmt, exp.Expression)
         results.append(stmt)
     return results
-
-
-def _parse_sql_expression(sql: str) -> SqlGlotExpression:
-    """Parse a single SQL expression, returning the sqlglot AST."""
-
-    parsed = sqlglot.parse_one(sql, read="postgres")  # type: ignore[reportUnknownMemberType]
-    assert isinstance(parsed, exp.Expression)
-    return parsed
 
 
 def _render_sql(expression: SqlGlotExpression, sql_dialect: str) -> str:
@@ -629,7 +582,7 @@ def _apply_expression_sugar(expression: SqlGlotExpression) -> None:
         if has_argument:
             continue
         # COUNT() is rewritten to COUNT(1) so users can avoid the '*' DQL forbids.
-        count.set("this", exp.Literal.number(1))
+        count.set("this", exp.Literal.number(1))  # type: ignore[reportUnknownMemberType]
 
 
 async def ensure_dql_collection_access(
@@ -670,8 +623,8 @@ async def ensure_dql_collection_access(
 def parse_dql_query(
     dql: str,
     *,
-    registry: DQLRegistry | None = None,
-    collection_id: str | None = None,
+    registry: DQLRegistry,
+    collection_id: str,
 ) -> SqlGlotExpression:
     """Parse and validate a DQL SELECT statement against the registry and optional collection."""
 
@@ -713,8 +666,8 @@ def parse_dql_query(
 def build_sqla_query(
     dql: str,
     *,
-    registry: DQLRegistry | None = None,
-    collection_id: str | None = None,
+    registry: DQLRegistry,
+    collection_id: str,
     sql_dialect: str = "postgres",
 ) -> TextClause:
     """Wrap the validated DQL in a SQLAlchemy text clause so callers can execute it safely."""
@@ -724,46 +677,6 @@ def build_sqla_query(
     logger.debug("Compiled DQL query SQL: %s", sql)
     if params:
         logger.debug("DQL query parameters: %s", params)
-    clause = text(sql)
-    if params:
-        clause = clause.bindparams(**params)
-    return clause
-
-
-def build_sqla_where_clause(
-    where_clause: str,
-    *,
-    registry: DQLRegistry | None = None,
-    collection_id: str | None = None,
-    allow_without_collection: bool = False,
-    sql_dialect: str = "postgres",
-) -> TextClause:
-    """Produce a SQLAlchemy text WHERE clause after ensuring it is read-only and scoped."""
-
-    registry = registry or build_default_registry(
-        collection_id=collection_id,
-        allow_without_collection=allow_without_collection or collection_id is None,
-    )
-    stripped = where_clause.strip()
-    if not stripped:
-        raise DQLParseError("WHERE clause cannot be empty.")
-
-    logger.debug(
-        "Parsing DQL WHERE clause for collection_id=%s: %s",
-        collection_id,
-        stripped,
-    )
-    try:
-        expression = _parse_sql_expression(stripped)
-    except ParseError as exc:
-        raise DQLParseError(str(exc)) from exc
-
-    _apply_expression_sugar(expression)
-    _validate_condition_expression(expression, registry)
-    sql, params = parameterize_expression(expression, sql_dialect)
-    logger.debug("Compiled DQL WHERE SQL: %s", sql)
-    if params:
-        logger.debug("DQL WHERE parameters: %s", params)
     clause = text(sql)
     if params:
         clause = clause.bindparams(**params)
@@ -807,52 +720,16 @@ async def build_collection_sqla_query(
     )
 
 
-async def build_collection_sqla_where_clause(
-    *,
-    mono_service: MonoService,
-    user: User,
-    collection_id: str,
-    where_clause: str,
-    registry: DQLRegistry | None = None,
-    sql_dialect: str = "postgres",
-) -> TextClause:
-    """Assemble a collection-aware WHERE clause, reusing metadata discovery logic."""
-
-    logger.debug(
-        "Building collection-scoped DQL WHERE clause for user_id=%s collection_id=%s",
-        user.id,
-        collection_id,
-    )
-    await ensure_dql_collection_access(
-        mono_service=mono_service,
-        user=user,
-        collection_id=collection_id,
-    )
-    effective_registry = registry
-    if effective_registry is None:
-        json_fields = await mono_service.get_json_metadata_fields_map(collection_id)
-        effective_registry = build_default_registry(
-            collection_id=collection_id,
-            json_fields=json_fields,
-        )
-
-    return build_sqla_where_clause(
-        where_clause,
-        registry=effective_registry,
-        collection_id=collection_id,
-        sql_dialect=sql_dialect,
-    )
-
-
 def get_selected_columns(
     dql: str,
     *,
-    registry: DQLRegistry | None = None,
+    registry: DQLRegistry,
+    collection_id: str,
     sql_dialect: str = "postgres",
 ) -> list[SelectedColumn]:
     """Return the projected columns for a DQL query so callers can build safe schemas."""
 
-    expression = parse_dql_query(dql, registry=registry)
+    expression = parse_dql_query(dql, registry=registry, collection_id=collection_id)
     return extract_selected_columns(expression, sql_dialect=sql_dialect)
 
 
@@ -932,13 +809,13 @@ def _ensure_allowed_expressions(expression: SqlGlotExpression) -> None:
 def _validate_query_expression(
     expression: SqlGlotExpression,
     registry: DQLRegistry,
-    collection_id: str | None,
+    collection_id: str,
 ) -> None:
     """Validate a parsed query and enforce collection scoping when an id is provided."""
 
     scope = cast(Scope, build_scope(expression))
     filter_applied = _validate_scope(scope, registry, collection_id, parent_alias_map=None)
-    if collection_id is not None and not filter_applied:
+    if not filter_applied:
         raise DQLValidationError(
             "DQL queries must reference collection-scoped tables when a collection id is supplied."
         )
@@ -1031,7 +908,7 @@ def _validate_columns(
                     f"Column '{column.sql()}' must be qualified when multiple tables are present."  # type: ignore[reportUnknownMemberType]
                 )
             allowed_table = unique_tables[0]
-            _resolve_column_name(allowed_table, column_name, column.sql())
+            _resolve_column_name(allowed_table, column_name, column.sql())  # type: ignore[reportUnknownMemberType]
             continue
 
         if qualifier in derived_aliases:
@@ -1041,39 +918,16 @@ def _validate_columns(
         if not allowed_table:
             raise DQLValidationError(f"Unknown table or alias '{column.table}'.")
 
-        _resolve_column_name(allowed_table, column_name, column.sql())
+        _resolve_column_name(allowed_table, column_name, column.sql())  # type: ignore[reportUnknownMemberType]
 
 
 def _reject_stars(expression: SqlGlotExpression) -> None:
     """Fail fast when a query attempts to use '*' instead of explicit columns."""
 
-    for _ in _find_all_in_scope(expression, exp.Star):
+    for _ in find_all_in_scope(expression, exp.Star):  # type: ignore[reportUnknownVariableType]
         raise DQLValidationError(
             "Wildcard selection is not allowed; explicitly list the permitted columns."
         )
-
-
-def _validate_condition_expression(expression: SqlGlotExpression, registry: DQLRegistry) -> None:
-    """Validate standalone expressions (e.g., WHERE clauses) for column and query safety."""
-
-    for node in expression.walk():
-        if isinstance(node, exp.Column):
-            if isinstance(node.this, exp.Star):
-                raise DQLValidationError("Wildcard columns are not allowed in WHERE clauses.")
-            qualifier = node.table
-            if not qualifier:
-                raise DQLValidationError(
-                    f"Column '{node.sql()}' must be qualified with a table name or alias."  # type: ignore[reportUnknownMemberType]
-                )
-            allowed_table = registry.get_table(qualifier)
-            _resolve_column_name(allowed_table, node.name.lower(), node.sql())
-
-        elif isinstance(node, exp.Query):
-            _ensure_select_only(node)
-            _validate_query_expression(node, registry, None)
-
-        elif isinstance(node, (exp.Delete, exp.Update, exp.Insert, exp.Command)):
-            raise DQLValidationError("Only read-only expressions are permitted in WHERE clauses.")
 
 
 def _ensure_non_negative_limits(expression: SqlGlotExpression) -> None:
@@ -1122,7 +976,7 @@ def apply_limit_cap(expression: exp.Query, limit_value: int) -> None:
     if limit_value <= 0:
         raise ValueError("limit_value must be positive.")
 
-    literal = exp.Literal.number(limit_value)
+    literal = exp.Literal.number(limit_value)  # type: ignore[reportUnknownMemberType]
     existing = cast(exp.Limit | None, expression.args.get("limit"))
     if existing is None:
         expression.set("limit", exp.Limit(expression=literal))
