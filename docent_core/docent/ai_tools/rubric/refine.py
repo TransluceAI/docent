@@ -14,7 +14,7 @@ from docent.data_models.chat.tool import (
     ToolParam,
     ToolParams,
 )
-from docent.data_models.judge import JudgeRunLabel
+from docent.data_models.judge import Label
 from docent.judges import JudgeResult, Rubric
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 
@@ -244,7 +244,7 @@ def clear_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
 
 
 def update_user_message_with_labels(
-    messages: list[ChatMessage], labels_and_results: list[tuple[JudgeRunLabel, JudgeResult]]
+    messages: list[ChatMessage], labels_and_results: list[tuple[Label, JudgeResult]]
 ) -> None:
     """Add labels and corresponding results to the most recent user message.
     Clear labels from past user messages.
@@ -255,7 +255,7 @@ def update_user_message_with_labels(
     tool_message = ""
     for label, result in labels_and_results:
         result_text = json.dumps(result.output, indent=2)
-        label_text = json.dumps(label.label, indent=2)
+        label_text = json.dumps(label.label_value, indent=2)
         agent_run_id = label.agent_run_id
         formatted_label = LABEL_TEMPLATE.format(
             agent_run_id=agent_run_id, result=result_text, label=label_text

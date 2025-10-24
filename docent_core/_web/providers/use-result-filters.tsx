@@ -1,10 +1,8 @@
 'use client';
 import { createContext, useCallback, useContext, useState } from 'react';
 import { SchemaDefinition } from '@/app/types/schema';
-import {
-  JudgeRunLabel,
-  JudgeResultWithCitations,
-} from '@/app/store/rubricSlice';
+import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
+import { Label } from '@/app/api/labelApi';
 import { useGetRubricQuery } from '@/app/api/rubricApi';
 
 export type Operator = '==' | '!=' | '<' | '<=' | '>' | '>=' | 'contains';
@@ -24,7 +22,7 @@ interface ResultFilterControlsContextValue {
   setLabeled: (labeled: boolean) => void;
   applyFilters: (
     results: JudgeResultWithCitations[],
-    labels?: JudgeRunLabel[]
+    labels?: Label[]
   ) => JudgeResultWithCitations[];
   getValidOps: (key: string) => Operator[];
 }
@@ -113,7 +111,7 @@ export function ResultFilterControlsProvider({
 
   const applyFilters = useCallback(
     // This assumes that there's a unique label and result per agent_run_id
-    (results: JudgeResultWithCitations[], labels?: JudgeRunLabel[]) => {
+    (results: JudgeResultWithCitations[], labels?: Label[]) => {
       if (labeled) {
         const labeledResults = results.filter((result) => {
           const label = labels?.find(

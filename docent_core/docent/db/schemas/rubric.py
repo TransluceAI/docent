@@ -22,7 +22,6 @@ from docent._log_util.logger import get_logger
 if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 
-from docent.data_models.judge import JudgeRunLabel
 from docent.judges import JudgeResult, JudgeVariant, ResultType, Rubric
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
@@ -159,22 +158,24 @@ class SQLAJudgeRunLabel(SQLABase):
     rubric_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     label: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
-    @classmethod
-    def from_pydantic(cls, judge_run_label: JudgeRunLabel) -> "SQLAJudgeRunLabel":
-        return cls(
-            id=judge_run_label.id,
-            agent_run_id=judge_run_label.agent_run_id,
-            rubric_id=judge_run_label.rubric_id,
-            label=judge_run_label.label,
-        )
+    #### DEPRECATED METHODS (JudgeRunLabel does not exist) ###
 
-    def to_pydantic(self) -> JudgeRunLabel:
-        return JudgeRunLabel(
-            id=self.id,
-            agent_run_id=self.agent_run_id,
-            rubric_id=self.rubric_id,
-            label=self.label,
-        )
+    # @classmethod
+    # def from_pydantic(cls, judge_run_label: JudgeRunLabel) -> "SQLAJudgeRunLabel":
+    #     return cls(
+    #         id=judge_run_label.id,
+    #         agent_run_id=judge_run_label.agent_run_id,
+    #         rubric_id=judge_run_label.rubric_id,
+    #         label=judge_run_label.label,
+    #     )
+
+    # def to_pydantic(self) -> JudgeRunLabel:
+    #     return JudgeRunLabel(
+    #         id=self.id,
+    #         agent_run_id=self.agent_run_id,
+    #         rubric_id=self.rubric_id,
+    #         label=self.label,
+    #     )
 
 
 class SQLAJudgeResult(SQLABase):

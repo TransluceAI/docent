@@ -11,7 +11,6 @@ import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RefinementChat from './components/RefinementChat';
 import TranscriptChat from '@/components/TranscriptChat';
-import LabelArea from './agent_run/[agent_run_id]/result/[result_id]/components/LabelArea';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';
@@ -22,6 +21,7 @@ import {
 import { TextSelectionProvider } from '@/providers/use-text-selection';
 import { useAppSelector } from '@/app/store/hooks';
 import { useRouteGuard } from '@/hooks/use-route-guard';
+import { LabelSetsProvider } from '@/providers/use-label-sets';
 
 interface RubricLayoutBodyProps {
   collectionId: string;
@@ -132,7 +132,12 @@ function RubricLayoutBody({
       {/* Left: SingleRubricArea (collapsible) */}
       {leftSidebarOpen && (
         <Card className="flex min-w-0 basis-1/3 max-w-1/3 grow-0 shrink-0">
-          <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
+          <ResultFilterControlsProvider
+            collectionId={collectionId}
+            rubricId={rubricId}
+          >
+            <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
+          </ResultFilterControlsProvider>
         </Card>
       )}
 
@@ -157,18 +162,15 @@ function RubricLayoutBody({
               defaultValue={activeTab}
               value={activeTab}
               onValueChange={(value) =>
-                setActiveTab(value as 'refine' | 'analyze' | 'label')
+                setActiveTab(value as 'refine' | 'analyze')
               }
               className={`flex flex-col h-full `}
             >
               {isOnResultRoute && (
-                <TabsList className="grid grid-cols-3 justify-start w-full mb-2">
+                <TabsList className="grid grid-cols-2 justify-start w-full mb-2">
                   <TabsTrigger value="refine">Refine</TabsTrigger>
                   <TabsTrigger value="analyze" disabled={!isOnResultRoute}>
                     Analyze
-                  </TabsTrigger>
-                  <TabsTrigger value="label" disabled={!isOnResultRoute}>
-                    Label
                   </TabsTrigger>
                 </TabsList>
               )}
@@ -177,7 +179,6 @@ function RubricLayoutBody({
                 <RefinementChat
                   collectionId={collectionId}
                   sessionId={sessionId}
-                  rubricId={rubricId}
                   isOnResultRoute={isOnResultRoute}
                 />
               </TabsContent>
@@ -191,20 +192,6 @@ function RubricLayoutBody({
                     showEmptyResultMessage={!currentResult}
                     className="flex flex-col min-w-0 h-full"
                   />
-                )}
-              </TabsContent>
-              <TabsContent value="label" className="flex-1 min-h-0">
-                {isOnResultRoute && currentResult ? (
-                  <LabelArea
-                    result={currentResult}
-                    collectionId={collectionId}
-                    rubricId={rubricId}
-                  />
-                ) : (
-                  <div className="text-xs text-muted-foreground flex items-center h-full justify-center p-2">
-                    Agent run {agentRunId?.split('-')[0]} has no result at this
-                    rubric version.
-                  </div>
                 )}
               </TabsContent>
             </Tabs>
@@ -228,18 +215,12 @@ export default function RubricLayout({
   return (
     <Suspense>
       <CitationNavigationProvider>
-        <ResultFilterControlsProvider
-          rubricId={rubricId}
-          collectionId={collectionId}
-        >
-          <RubricVersionProvider
-            rubricId={rubricId}
+        <RubricVersionProvider rubricId={rubricId} collectionId={collectionId}>
+          <RefinementTabProvider
             collectionId={collectionId}
+            rubricId={rubricId}
           >
-            <RefinementTabProvider
-              collectionId={collectionId}
-              rubricId={rubricId}
-            >
+            <LabelSetsProvider rubricId={rubricId}>
               <TextSelectionProvider>
                 <RubricLayoutBody
                   collectionId={collectionId}
@@ -248,9 +229,9 @@ export default function RubricLayout({
                   {children}
                 </RubricLayoutBody>
               </TextSelectionProvider>
-            </RefinementTabProvider>
-          </RubricVersionProvider>
-        </ResultFilterControlsProvider>
+            </LabelSetsProvider>
+          </RefinementTabProvider>
+        </RubricVersionProvider>
       </CitationNavigationProvider>
     </Suspense>
   );

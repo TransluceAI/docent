@@ -4,7 +4,6 @@ import {
   Rubric,
   JudgeResultWithCitations,
   ModelOption,
-  JudgeRunLabel,
 } from '@/app/store/rubricSlice';
 
 // Types based on the backend models
@@ -116,7 +115,6 @@ export const rubricApi = createApi({
     'ClusteringJob',
     'Centroids',
     'Assignments',
-    'JudgeRunLabel',
     'RubricMetrics',
   ],
   endpoints: (build) => ({
@@ -162,10 +160,7 @@ export const rubricApi = createApi({
       }),
       providesTags: (result) =>
         result
-          ? [
-              { type: 'JudgeResult', id: result.rubric_id },
-              { type: 'JudgeRunLabel', id: result.agent_run_id },
-            ]
+          ? [{ type: 'JudgeResult', id: result.rubric_id }]
           : ['JudgeResult'],
     }),
     getResultByAgentRun: build.query<
@@ -184,10 +179,7 @@ export const rubricApi = createApi({
       }),
       providesTags: (result) =>
         result
-          ? [
-              { type: 'JudgeResult', id: result.rubric_id },
-              { type: 'JudgeRunLabel', id: result.agent_run_id },
-            ]
+          ? [{ type: 'JudgeResult', id: result.rubric_id }]
           : ['JudgeResult'],
     }),
     getRubricMetrics: build.query<
@@ -263,13 +255,15 @@ export const rubricApi = createApi({
         collectionId: string;
         rubricId: string;
         max_results?: number | null;
+        label_set_ids?: string[];
       }
     >({
-      query: ({ collectionId, rubricId, max_results }) => ({
+      query: ({ collectionId, rubricId, max_results, label_set_ids }) => ({
         url: `/${collectionId}/${rubricId}/evaluate`,
         method: 'POST',
         body: {
           max_results: max_results ?? null,
+          label_set_ids: label_set_ids ?? null,
         },
       }),
       invalidatesTags: (result, error, { rubricId }) => [
@@ -375,114 +369,6 @@ export const rubricApi = createApi({
         { type: 'Assignments', id: rubricId },
       ],
     }),
-
-    // LABELS
-    deleteAllJudgeRunLabels: build.mutation<
-      void,
-      { collectionId: string; rubricId: string }
-    >({
-      query: ({ collectionId, rubricId }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/labels`,
-        method: 'DELETE',
-      }),
-      invalidatesTags: (result, error, { rubricId }) => [
-        { type: 'JudgeRunLabel', id: `LIST-${rubricId}` },
-        'JudgeRunLabel', // Invalidate all JudgeRunLabel caches to clear individual labels
-      ],
-    }),
-    createJudgeRunLabel: build.mutation<
-      void,
-      {
-        collectionId: string;
-        rubricId: string;
-        agentRunId: string;
-        label: Record<string, any>;
-      }
-    >({
-      query: ({ collectionId, rubricId, agentRunId, label }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/label`,
-        method: 'POST',
-        body: {
-          label: {
-            agent_run_id: agentRunId,
-            rubric_id: rubricId,
-            label: label,
-          } as JudgeRunLabel,
-        },
-      }),
-      invalidatesTags: (result, error, { rubricId, agentRunId }) => [
-        { type: 'JudgeRunLabel', id: `LIST-${rubricId}` },
-        { type: 'JudgeRunLabel', id: agentRunId },
-      ],
-    }),
-    updateJudgeRunLabel: build.mutation<
-      void,
-      {
-        collectionId: string;
-        rubricId: string;
-        agentRunId: string;
-        label: Record<string, any>;
-      }
-    >({
-      query: ({ collectionId, rubricId, agentRunId, label }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/label`,
-        method: 'PUT',
-        body: { agent_run_id: agentRunId, label },
-      }),
-      invalidatesTags: (result, error, { rubricId, agentRunId }) => [
-        { type: 'JudgeRunLabel', id: `LIST-${rubricId}` },
-        { type: 'JudgeRunLabel', id: agentRunId },
-      ],
-    }),
-    getJudgeRunLabels: build.query<
-      JudgeRunLabel[],
-      { collectionId: string; rubricId: string }
-    >({
-      query: ({ collectionId, rubricId }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/labels`,
-        method: 'GET',
-      }),
-      providesTags: (result, error, { rubricId }) =>
-        result
-          ? [
-              { type: 'JudgeRunLabel', id: `LIST-${rubricId}` },
-              ...result.map((label) => ({
-                type: 'JudgeRunLabel' as const,
-                id: label.agent_run_id,
-              })),
-            ]
-          : [{ type: 'JudgeRunLabel', id: `LIST-${rubricId}` }],
-    }),
-    getJudgeRunLabel: build.query<
-      JudgeRunLabel,
-      { collectionId: string; rubricId: string; agentRunId: string }
-    >({
-      query: ({ collectionId, rubricId, agentRunId }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/label/${agentRunId}`,
-        method: 'GET',
-      }),
-      providesTags: (result, error, { agentRunId }) => [
-        { type: 'JudgeRunLabel', id: agentRunId },
-      ],
-    }),
-    deleteJudgeRunLabel: build.mutation<
-      void,
-      {
-        collectionId: string;
-        rubricId: string;
-        agentRunId: string;
-      }
-    >({
-      query: ({ collectionId, rubricId, agentRunId }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/label`,
-        method: 'DELETE',
-        body: { agent_run_id: agentRunId },
-      }),
-      invalidatesTags: (result, error, { rubricId, agentRunId }) => [
-        { type: 'JudgeRunLabel', id: `LIST-${rubricId}` },
-        { type: 'JudgeRunLabel', id: agentRunId },
-      ],
-    }),
     copyRubric: build.mutation<
       { rubric_id: string },
       {
@@ -522,12 +408,4 @@ export const {
   useGetClusteringStateQuery,
   useGetRubricJobStatusQuery,
   useClearClustersMutation,
-
-  // LABELS
-  useDeleteAllJudgeRunLabelsMutation,
-  useGetJudgeRunLabelsQuery,
-  useGetJudgeRunLabelQuery,
-  useDeleteJudgeRunLabelMutation,
-  useCreateJudgeRunLabelMutation,
-  useUpdateJudgeRunLabelMutation,
 } = rubricApi;

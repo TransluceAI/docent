@@ -9,13 +9,6 @@ export interface ModelOption {
   uses_byok: boolean;
 }
 
-export interface JudgeRunLabel {
-  id: string;
-  agent_run_id: string;
-  rubric_id: string;
-  label: Record<string, any>;
-}
-
 export interface Rubric {
   id: string;
   version: number;
