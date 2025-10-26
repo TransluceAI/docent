@@ -2,7 +2,8 @@ from typing import Any, AsyncContextManager, Callable, Optional
 from uuid import uuid4
 
 import jsonschema
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
@@ -14,6 +15,16 @@ from docent_core.docent.db.schemas.label import (
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
+
+
+class LabelSetWithCount(BaseModel):
+    """Label set with count of labels."""
+
+    id: str
+    name: str
+    description: str | None
+    label_schema: dict[str, Any]
+    label_count: int
 
 
 class LabelService:
@@ -134,27 +145,6 @@ class LabelService:
 
         return valid_labels
 
-    async def get_labels_in_label_sets(self, label_set_ids: list[str]) -> list[Label]:
-        """Get all labels in multiple label sets.
-
-        Args:
-            label_set_ids: The label set IDs
-
-        Returns:
-            List of labels in the label sets
-        """
-        # Verify label sets exist
-        for label_set_id in label_set_ids:
-            label_set = await self.get_label_set(label_set_id)
-            if label_set is None:
-                raise ValueError(f"Label set {label_set_id} not found")
-
-        result = await self.session.execute(
-            select(SQLALabel).where(SQLALabel.label_set_id.in_(label_set_ids))
-        )
-        sqla_labels = result.scalars().all()
-        return [sqla_label.to_pydantic() for sqla_label in sqla_labels]
-
     async def update_label(self, label_id: str, label_value: dict[str, Any]) -> bool:
         """Update a label's value and validate against schema.
 
@@ -202,14 +192,19 @@ class LabelService:
     ##################
 
     async def create_label_set(
-        self, name: str, label_schema: dict[str, Any], description: Optional[str] = None
+        self,
+        collection_id: str,
+        name: str,
+        label_schema: dict[str, Any],
+        description: Optional[str] = None,
     ) -> str:
         """Create a label set with a JSON schema.
 
         Args:
+            collection_id: The collection ID
             name: The label set name
-            description: The label set description (optional)
             label_schema: JSON schema for validating labels
+            description: The label set description (optional)
 
         Returns:
             The label set ID
@@ -217,6 +212,7 @@ class LabelService:
         label_set_id = str(uuid4())
         sqla_label_set = SQLALabelSet(
             id=label_set_id,
+            collection_id=collection_id,
             name=name,
             description=description,
             label_schema=label_schema,
@@ -238,14 +234,53 @@ class LabelService:
         )
         return result.scalar_one_or_none()
 
-    async def get_all_label_sets(self) -> list[SQLALabelSet]:
-        """Get all label sets.
+    async def get_all_label_sets(self, collection_id: str) -> list[SQLALabelSet]:
+        """Get all label sets in a collection.
+
+        Args:
+            collection_id: The collection ID
 
         Returns:
-            List of all label sets
+            List of label sets in the collection
         """
-        result = await self.session.execute(select(SQLALabelSet))
+        result = await self.session.execute(
+            select(SQLALabelSet).where(SQLALabelSet.collection_id == collection_id)
+        )
         return list(result.scalars().all())
+
+    async def update_label_set(
+        self,
+        label_set_id: str,
+        name: str,
+        label_schema: dict[str, Any],
+        description: Optional[str] = None,
+    ) -> bool:
+        """Update a label set.
+
+        Args:
+            label_set_id: The label set ID
+            name: The new label set name
+            label_schema: The new JSON schema for validating labels
+            description: The new label set description (optional)
+
+        Returns:
+            True if updated successfully
+
+        Raises:
+            ValueError: If label set doesn't exist
+        """
+        result = await self.session.execute(
+            select(SQLALabelSet).where(SQLALabelSet.id == label_set_id)
+        )
+        existing_label_set = result.scalar_one_or_none()
+        if existing_label_set is None:
+            raise ValueError(f"Label set {label_set_id} not found")
+
+        # Update the label set fields
+        existing_label_set.name = name
+        existing_label_set.label_schema = label_schema
+        existing_label_set.description = description
+        return True
 
     async def delete_label_set(self, label_set_id: str) -> None:
         """Delete a label set (cascade deletes labels).
@@ -259,3 +294,54 @@ class LabelService:
         label_set_to_delete = result.scalar_one_or_none()
         if label_set_to_delete:
             await self.session.delete(label_set_to_delete)
+
+    async def get_label_sets_with_counts(self, collection_id: str) -> list[LabelSetWithCount]:
+        """Get all label sets with label counts for a specific collection.
+
+        Args:
+            collection_id: The collection ID
+
+        Returns:
+            List of label sets with their label counts in this collection
+        """
+        # Get all label sets in this collection
+        label_sets = await self.get_all_label_sets(collection_id)
+
+        # Count labels for each label set
+        result = await self.session.execute(
+            select(SQLALabel.label_set_id, func.count(SQLALabel.id)).group_by(
+                SQLALabel.label_set_id
+            )
+        )
+        # Build a dict mapping label_set_id to count
+        label_counts: dict[str, int] = {}
+        for row in result.all():
+            label_set_id, count = row
+            label_counts[label_set_id] = count
+
+        # Combine label sets with their counts
+        return [
+            LabelSetWithCount(
+                id=ls.id,
+                name=ls.name,
+                description=ls.description,
+                label_schema=ls.label_schema,
+                label_count=label_counts.get(ls.id, 0),
+            )
+            for ls in label_sets
+        ]
+
+    async def get_labels_by_agent_run(self, agent_run_id: str) -> list[Label]:
+        """Get all labels for a specific agent run.
+
+        Args:
+            agent_run_id: The agent run ID
+
+        Returns:
+            List of labels for the agent run
+        """
+        result = await self.session.execute(
+            select(SQLALabel).where(SQLALabel.agent_run_id == agent_run_id)
+        )
+        sqla_labels = result.scalars().all()
+        return [sqla_label.to_pydantic() for sqla_label in sqla_labels]

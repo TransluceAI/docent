@@ -58,7 +58,7 @@ class CreateRefinementSessionRequest(BaseModel):
 
 class PostRefinementMessageRequest(BaseModel):
     message: str
-    label_set_ids: list[str]
+    label_set_id: str | None = None
 
 
 @refinement_router.post("/{collection_id}/refinement-session/create/{rubric_id}")
@@ -199,7 +199,7 @@ async def post_message_to_refinement_session(
 
     # Trigger a new turn of the agent
     job_id = await refinement_svc.start_or_get_agent_job(
-        ctx, sq_rsession, label_set_ids=request.label_set_ids
+        ctx, sq_rsession, label_set_id=request.label_set_id
     )
     return {"job_id": job_id, "rsession": sq_rsession.to_pydantic().prepare_for_client()}
 

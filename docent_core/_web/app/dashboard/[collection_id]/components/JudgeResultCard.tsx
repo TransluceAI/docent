@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -13,7 +12,7 @@ import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { SchemaDefinition } from '@/app/types/schema';
 import { toast } from '@/hooks/use-toast';
 import posthog from 'posthog-js';
-import { Tag, Pencil, X } from 'lucide-react';
+import { Tag, Pencil, X, ExternalLink } from 'lucide-react';
 import { TextWithCitations } from '@/components/CitationRenderer';
 import {
   DropdownMenu,
@@ -34,27 +33,26 @@ import {
   CitationNavigationContext,
 } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
 import { useLabelSets } from '@/providers/use-label-sets';
+import { cn } from '@/lib/utils';
+import LabelSetsDialog from './LabelSetsDialog';
 
 interface LabelSetMenuItemsProps {
-  usedLabelSetIds: string[];
-  onLabelSetSelect: (labelSetId: string) => void;
+  onLabelSetCreated: (labelSetId: string) => void;
   schema: SchemaDefinition;
 }
 
 const LabelSetMenuItems = ({
-  usedLabelSetIds,
-  onLabelSetSelect,
+  onLabelSetCreated,
   schema,
 }: LabelSetMenuItemsProps) => {
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newLabelSetName, setNewLabelSetName] = useState('');
+  const [showLabelSetsDialog, setShowLabelSetsDialog] = useState(false);
 
   const { collection_id: collectionId } = useParams<{
     collection_id: string;
   }>();
   const [createLabelSet] = useCreateLabelSetMutation();
-
-  const { labelSets, setLabelSets } = useLabelSets();
+  const { setActiveLabelSet } = useLabelSets();
 
   const handleCreateLabelSet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,17 +66,14 @@ const LabelSetMenuItems = ({
     })
       .unwrap()
       .then((result) => {
-        onLabelSetSelect(result.label_set_id);
-        setNewLabelSetName('');
-        setIsCreatingNew(false);
-
         const newLabelSet = {
           id: result.label_set_id,
           name: trimmed,
           label_schema: schema,
         };
-        console.log('newLabelSet', newLabelSet);
-        setLabelSets([...labelSets, newLabelSet]);
+        setActiveLabelSet(newLabelSet);
+        onLabelSetCreated(result.label_set_id);
+        setNewLabelSetName('');
       })
       .catch((error) => {
         console.error('Failed to create label set:', error);
@@ -90,59 +85,45 @@ const LabelSetMenuItems = ({
       });
   };
 
+  const handleImportLabelSet = (labelSet: any) => {
+    setActiveLabelSet(labelSet);
+    onLabelSetCreated(labelSet.id);
+    setShowLabelSetsDialog(false);
+  };
+
   return (
     <>
-      <div className="max-h-32 overflow-y-auto">
-        {labelSets.map((labelSet, idx) => {
-          const isUsed = usedLabelSetIds.includes(labelSet.id);
-          return (
-            <button
-              key={labelSet.id}
-              onClick={() => !isUsed && onLabelSetSelect(labelSet.id)}
-              disabled={isUsed}
-              className={cn(
-                'w-full text-left px-2 py-1.5 text-xs',
-                isUsed
-                  ? 'opacity-50 cursor-not-allowed text-muted-foreground'
-                  : 'hover:bg-muted cursor-pointer',
-                idx === 0 && 'rounded-t-sm'
-              )}
-            >
-              {labelSet.name}
-            </button>
-          );
-        })}
-      </div>
-      {isCreatingNew ? (
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={() => setShowLabelSetsDialog(true)}
+          className="w-full text-xs flex gap-2 items-center hover:bg-muted rounded px-2 py-2"
+        >
+          Select an existing label set
+          <ExternalLink className="size-3" />
+        </button>
         <form onSubmit={handleCreateLabelSet}>
           <input
             type="text"
             value={newLabelSetName}
             onChange={(e) => setNewLabelSetName(e.target.value)}
-            placeholder="Enter label set name..."
+            placeholder="Or create new label set..."
             className="w-full text-xs border rounded px-2 py-1"
             autoFocus
-            onBlur={() => {
-              if (!newLabelSetName.trim()) {
-                setIsCreatingNew(false);
-              }
-            }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setNewLabelSetName('');
-                setIsCreatingNew(false);
               }
             }}
           />
         </form>
-      ) : (
-        <button
-          onClick={() => setIsCreatingNew(true)}
-          className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded-b-sm text-muted-foreground border-t"
-        >
-          + Create new label set...
-        </button>
-      )}
+      </div>
+      <LabelSetsDialog
+        open={showLabelSetsDialog}
+        onOpenChange={setShowLabelSetsDialog}
+        onImportLabelSet={handleImportLabelSet}
+        currentRubricSchema={schema}
+      />
     </>
   );
 };
@@ -172,9 +153,9 @@ const LabelBadge = React.forwardRef<
   HTMLDivElement,
   LabelBadgeProps & React.HTMLAttributes<HTMLDivElement>
 >(({ labeledValue, labelSetId, onEdit, onClear, ...props }, ref) => {
-  const { labelSets } = useLabelSets();
+  const { activeLabelSet } = useLabelSets();
   const labelSetName =
-    labelSets.find((ls) => ls.id === labelSetId)?.name || labelSetId;
+    activeLabelSet?.id === labelSetId ? activeLabelSet.name : labelSetId;
 
   return (
     <div
@@ -208,57 +189,59 @@ interface EnumInputProps {
   propertyKey: string;
   options: string[];
   resultValue: string;
-  labelValues?: Record<string, string>;
-  usedLabelSetIds: string[];
+  labelValue?: string;
   onSubmit: (labelSetId: string, value: string) => void;
   onClearLabel: (labelSetId: string) => void;
   schema: SchemaDefinition;
+  isRequiredWarning?: boolean;
 }
 
 const EnumInput = ({
   propertyKey,
   options,
   resultValue,
-  labelValues,
-  usedLabelSetIds,
+  labelValue,
   onSubmit,
   onClearLabel,
   schema,
+  isRequiredWarning = false,
 }: EnumInputProps) => {
-  const [newSetId, setNewSetId] = useState<string | null>(null);
+  const hasLabel = labelValue !== undefined;
+  const { activeLabelSetId } = useLabelSets();
+  const [tempLabelSetId, setTempLabelSetId] = useState<string | null>(null);
+  const effectiveLabelSetId = activeLabelSetId || tempLabelSetId;
 
-  const LabelButton = (labelSetId?: string, key?: string) => {
-    if (labelSetId && labelValues?.[labelSetId] === undefined) return null;
-
-    const effectiveSetId = labelSetId || newSetId;
-
-    return (
+  return (
+    <div className="gap-1 text-xs flex items-center flex-wrap">
+      <label
+        className={`font-semibold ${isRequiredWarning ? 'text-red-500' : ''}`}
+      >
+        {propertyKey}:
+      </label>
+      <span className="mr-1">{resultValue}</span>
       <DropdownMenu
-        key={key}
         onOpenChange={(open) => {
-          if (!open) {
-            setNewSetId(null);
-          }
+          if (!open) setTempLabelSetId(null);
         }}
       >
         <DropdownMenuTrigger asChild>
-          {labelSetId ? (
+          {hasLabel && activeLabelSetId ? (
             <LabelBadge
-              labeledValue={labelValues?.[labelSetId]}
-              labelSetId={labelSetId}
-              onClear={() => onClearLabel(labelSetId)}
+              labeledValue={labelValue}
+              labelSetId={activeLabelSetId}
+              onClear={() => onClearLabel(activeLabelSetId)}
             />
           ) : (
             <TagButton />
           )}
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56" align="start">
-          {effectiveSetId ? (
+          {effectiveLabelSetId ? (
             <DropdownMenuRadioGroup
-              value={labelValues?.[effectiveSetId]}
+              value={labelValue}
               onValueChange={(value) => {
-                onSubmit(effectiveSetId, value);
-                setNewSetId(null);
+                onSubmit(effectiveLabelSetId, value);
+                setTempLabelSetId(null);
               }}
             >
               {options.map((value) => (
@@ -273,22 +256,12 @@ const EnumInput = ({
             </DropdownMenuRadioGroup>
           ) : (
             <LabelSetMenuItems
-              usedLabelSetIds={usedLabelSetIds}
-              onLabelSetSelect={setNewSetId}
+              onLabelSetCreated={setTempLabelSetId}
               schema={schema}
             />
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-    );
-  };
-
-  return (
-    <div className="gap-1 text-xs flex items-center flex-wrap">
-      <label className="font-semibold">{propertyKey}: </label>
-      <span className="mr-1">{resultValue}</span>
-      {usedLabelSetIds.map((labelSetId) => LabelButton(labelSetId, labelSetId))}
-      {LabelButton(undefined, 'new')}
     </div>
   );
 };
@@ -296,89 +269,79 @@ const EnumInput = ({
 interface BooleanInputProps {
   propertyKey: string;
   resultValue: boolean;
-  labelValues?: Record<string, boolean>;
-  usedLabelSetIds: string[];
+  labelValue?: boolean;
   onSubmit: (labelSetId: string, value: boolean) => void;
   onClearLabel?: (labelSetId: string) => void;
   schema: SchemaDefinition;
+  isRequiredWarning?: boolean;
 }
 
 const BooleanInput = ({
   propertyKey,
   resultValue,
-  labelValues,
-  usedLabelSetIds,
+  labelValue,
   onSubmit,
   onClearLabel,
   schema,
+  isRequiredWarning = false,
 }: BooleanInputProps) => {
-  const [newSetId, setNewSetId] = useState<string | null>(null);
-
-  const LabelButton = (labelSetId?: string, key?: string) => {
-    if (labelSetId && labelValues?.[labelSetId] === undefined) return null;
-
-    const effectiveSetId = labelSetId || newSetId;
-
-    return (
-      <DropdownMenu
-        key={key}
-        onOpenChange={(open) => {
-          if (!open) {
-            setNewSetId(null);
-          }
-        }}
-      >
-        <DropdownMenuTrigger asChild>
-          {labelSetId ? (
-            <LabelBadge
-              labeledValue={String(labelValues?.[labelSetId])}
-              labelSetId={labelSetId}
-              onClear={() => onClearLabel?.(labelSetId)}
-            />
-          ) : (
-            <TagButton />
-          )}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56">
-          {effectiveSetId ? (
-            <DropdownMenuRadioGroup
-              value={String(labelValues?.[effectiveSetId] ?? resultValue)}
-              onValueChange={(val) => {
-                onSubmit(effectiveSetId, val === 'true');
-                setNewSetId(null);
-              }}
-            >
-              {['true', 'false'].map((value) => (
-                <DropdownMenuRadioItem
-                  className="text-xs"
-                  key={value}
-                  value={value}
-                >
-                  {value}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          ) : (
-            <LabelSetMenuItems
-              usedLabelSetIds={usedLabelSetIds}
-              onLabelSetSelect={setNewSetId}
-              schema={schema}
-            />
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
+  const hasLabel = labelValue !== undefined;
+  const { activeLabelSetId } = useLabelSets();
+  const [tempLabelSetId, setTempLabelSetId] = useState<string | null>(null);
+  const effectiveLabelSetId = activeLabelSetId || tempLabelSetId;
 
   return (
     <div className="gap-1 text-xs flex items-center">
-      <label className="font-semibold">{propertyKey}: </label>
+      <label
+        className={`font-semibold ${isRequiredWarning ? 'text-red-500' : ''}`}
+      >
+        {propertyKey}:
+      </label>
       <div className="flex items-center gap-1">
         <span>{String(resultValue)}</span>
-        {usedLabelSetIds.map((labelSetId) =>
-          LabelButton(labelSetId, labelSetId)
-        )}
-        {LabelButton(undefined, 'new')}
+        <DropdownMenu
+          onOpenChange={(open) => {
+            if (!open) setTempLabelSetId(null);
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            {hasLabel && activeLabelSetId ? (
+              <LabelBadge
+                labeledValue={String(labelValue)}
+                labelSetId={activeLabelSetId}
+                onClear={() => onClearLabel?.(activeLabelSetId)}
+              />
+            ) : (
+              <TagButton />
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56">
+            {effectiveLabelSetId ? (
+              <DropdownMenuRadioGroup
+                value={String(labelValue ?? resultValue)}
+                onValueChange={(val) => {
+                  onSubmit(effectiveLabelSetId, val === 'true');
+                  setTempLabelSetId(null);
+                }}
+              >
+                {['true', 'false'].map((value) => (
+                  <DropdownMenuRadioItem
+                    className="text-xs"
+                    key={value}
+                    value={value}
+                  >
+                    {value}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            ) : (
+              <LabelSetMenuItems
+                onLabelSetCreated={setTempLabelSetId}
+                schema={schema}
+              />
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -387,140 +350,112 @@ const BooleanInput = ({
 interface NumberInputProps {
   propertyKey: string;
   resultValue: number;
-  labelValues?: Record<string, number>;
+  labelValue?: number;
   maximum: number;
   minimum: number;
-  usedLabelSetIds: string[];
   onSubmit: (labelSetId: string, value: number) => void;
   onClearLabel?: (labelSetId: string) => void;
   schema: SchemaDefinition;
+  isRequiredWarning?: boolean;
 }
 
 const NumberInput = ({
   propertyKey,
   resultValue,
-  labelValues,
+  labelValue,
   maximum,
   minimum,
-  usedLabelSetIds,
   onSubmit,
   onClearLabel,
   schema,
+  isRequiredWarning = false,
 }: NumberInputProps) => {
-  const [openPopover, setOpenPopover] = useState<string | null>(null);
-  const [newSetId, setNewSetId] = useState<string | null>(null);
+  const { activeLabelSetId } = useLabelSets();
+  const [openPopover, setOpenPopover] = useState(false);
+  const [localValue, setLocalValue] = useState(String(labelValue ?? ''));
+  const [tempLabelSetId, setTempLabelSetId] = useState<string | null>(null);
+  const effectiveLabelSetId = activeLabelSetId || tempLabelSetId;
 
-  // If we have a label, cast the values to strings to use as local state
-  const labelAsStrings = labelValues
-    ? Object.fromEntries(
-        Object.entries(labelValues).map(([key, value]) => [key, String(value)])
-      )
-    : {};
-
-  const [localValue, _setLocalValue] =
-    useState<Record<string, string>>(labelAsStrings);
-
-  const setLocalValue = (labelSetId: string, value: string) => {
-    _setLocalValue((prev) => ({ ...prev, [labelSetId]: value }));
-  };
-
-  // Sync local state when labelValues updates from server
+  // Sync local state when labelValue updates from server
   useEffect(() => {
-    const updated = labelValues
-      ? Object.fromEntries(
-          Object.entries(labelValues).map(([key, value]) => [
-            key,
-            String(value),
-          ])
-        )
-      : {};
-    _setLocalValue(updated);
-  }, [labelValues]);
+    setLocalValue(labelValue !== undefined ? String(labelValue) : '');
+  }, [labelValue]);
 
   // Helper to check whether the entered value is a valid number
-  const submit = (labelSetId: string) => {
-    const parsed = parseInt(localValue[labelSetId], 10);
+  const submit = () => {
+    if (!effectiveLabelSetId) return;
+    const parsed = parseInt(localValue, 10);
     if (!isNaN(parsed)) {
       const clamped = Math.min(maximum, Math.max(minimum, parsed));
-      onSubmit(labelSetId, clamped);
+      onSubmit(effectiveLabelSetId, clamped);
+      setTempLabelSetId(null);
     }
   };
 
-  const LabelButton = (labelSetId?: string, key?: string) => {
-    if (labelSetId && labelValues?.[labelSetId] === undefined) return null;
-
-    const effectiveSetId = labelSetId || newSetId;
-    const popoverKey = key ?? labelSetId ?? '__new__';
-
-    return (
-      <Popover
-        key={popoverKey}
-        open={openPopover === popoverKey}
-        onOpenChange={(open) => {
-          setOpenPopover(open ? popoverKey : null);
-          if (!open) {
-            setNewSetId(null);
-          }
-        }}
-      >
-        <PopoverTrigger asChild>
-          {labelSetId ? (
-            <LabelBadge
-              labeledValue={String(labelValues?.[labelSetId])}
-              labelSetId={labelSetId}
-              onClear={() => onClearLabel?.(labelSetId)}
-              onEdit={() => setOpenPopover(labelSetId)}
-            />
-          ) : (
-            <TagButton />
-          )}
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-1" align="start">
-          {effectiveSetId ? (
-            <form
-              className="flex flex-col gap-2 p-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                submit(effectiveSetId);
-                setOpenPopover(null);
-                setNewSetId(null);
-              }}
-            >
-              <input
-                type="number"
-                value={localValue[effectiveSetId] ?? ''}
-                onChange={(e) => setLocalValue(effectiveSetId, e.target.value)}
-                className="border rounded px-2 py-1 text-xs"
-                max={maximum}
-                min={minimum}
-              />
-              <Button size="sm" type="submit">
-                Save
-              </Button>
-            </form>
-          ) : (
-            <LabelSetMenuItems
-              usedLabelSetIds={usedLabelSetIds}
-              onLabelSetSelect={setNewSetId}
-              schema={schema}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
-    );
-  };
+  const hasLabel = labelValue !== undefined;
 
   return (
     <div className="space-y-2">
       <div className="text-xs">
-        <span className="font-semibold shrink-0">{propertyKey}: </span>{' '}
+        <span
+          className={`font-semibold shrink-0 ${isRequiredWarning ? 'text-red-500' : ''}`}
+        >
+          {propertyKey}:
+        </span>{' '}
         <span>{String(resultValue)}</span>
       </div>
       <div className="flex items-center gap-1">
-        {usedLabelSetIds.map((labelSetId) =>
-          LabelButton(labelSetId, labelSetId)
-        )}
-        {LabelButton(undefined, 'new')}
+        <Popover
+          open={openPopover}
+          onOpenChange={(open) => {
+            setOpenPopover(open);
+            if (!open) setTempLabelSetId(null);
+          }}
+        >
+          <PopoverTrigger asChild>
+            {hasLabel && activeLabelSetId ? (
+              <LabelBadge
+                labeledValue={String(labelValue)}
+                labelSetId={activeLabelSetId}
+                onClear={() => onClearLabel?.(activeLabelSetId)}
+                onEdit={() => setOpenPopover(true)}
+              />
+            ) : (
+              <TagButton />
+            )}
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-1" align="start">
+            {effectiveLabelSetId ? (
+              <form
+                className="flex flex-col gap-2 p-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submit();
+                  setOpenPopover(false);
+                }}
+              >
+                <input
+                  type="number"
+                  value={localValue}
+                  onChange={(e) => setLocalValue(e.target.value)}
+                  className="border rounded px-2 py-1 text-xs"
+                  max={maximum}
+                  min={minimum}
+                />
+                <Button size="sm" type="submit">
+                  Save
+                </Button>
+              </form>
+            ) : (
+              <LabelSetMenuItems
+                onLabelSetCreated={(id) => {
+                  setTempLabelSetId(id);
+                }}
+                schema={schema}
+              />
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );
@@ -528,28 +463,29 @@ const NumberInput = ({
 
 interface TextWithCitationsInputProps {
   judgeResult: JudgeResultWithCitations;
-  labelValues?: Record<string, string>;
+  labelValue?: string;
   propertyKey: string;
   placeholder: string;
-  usedLabelSetIds: string[];
   onSubmit: (labelSetId: string, value: string) => void;
   onClearLabel?: (labelSetId: string) => void;
   schema: SchemaDefinition;
+  isRequiredWarning?: boolean;
 }
 
 const TextWithCitationsInput = ({
   judgeResult,
-  labelValues,
+  labelValue,
   propertyKey,
   placeholder,
-  usedLabelSetIds,
   onSubmit,
   onClearLabel,
   schema,
+  isRequiredWarning = false,
 }: TextWithCitationsInputProps) => {
   const { collection_id: collectionId } = useParams<{
     collection_id: string;
   }>();
+  const { activeLabelSetId } = useLabelSets();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -559,17 +495,12 @@ const TextWithCitationsInput = ({
   // Labels state *
   //***************
 
-  const [value, _setValue] = useState<Record<string, string>>(
-    labelValues ?? {}
-  );
-  const setValue = (labelSetId: string, value: string) => {
-    _setValue((prev) => ({ ...prev, [labelSetId]: value }));
-  };
+  const [value, setValue] = useState<string>(labelValue ?? '');
 
-  // Sync local state when labelValues updates from server
+  // Sync local state when labelValue updates from server
   useEffect(() => {
-    _setValue(labelValues ?? {});
-  }, [labelValues]);
+    setValue(labelValue ?? '');
+  }, [labelValue]);
 
   //*********************
   // Result value state *
@@ -632,8 +563,9 @@ const TextWithCitationsInput = ({
     el.style.height = `${el.scrollHeight + 2}px`;
   };
 
-  const [openPopover, setOpenPopover] = useState<string | null>(null);
-  const [newSetId, setNewSetId] = useState<string | null>(null);
+  const [openPopover, setOpenPopover] = useState(false);
+  const [tempLabelSetId, setTempLabelSetId] = useState<string | null>(null);
+  const effectiveLabelSetId = activeLabelSetId || tempLabelSetId;
 
   useEffect(() => {
     if (openPopover) {
@@ -644,87 +576,7 @@ const TextWithCitationsInput = ({
     }
   }, [openPopover]);
 
-  const AddLabelButton = (labelSetId?: string, key?: string) => {
-    if (labelSetId && labelValues?.[labelSetId] === undefined) return null;
-
-    // Determine which labelSetId to use for the form
-    const effectiveSetId = labelSetId || newSetId;
-
-    // Use a unique key for the "add new label" button
-    const popoverKey = key ?? labelSetId ?? '__new__';
-
-    return (
-      <Popover
-        key={popoverKey}
-        open={openPopover === popoverKey}
-        onOpenChange={(open) => {
-          setOpenPopover(open ? popoverKey : null);
-          if (!open) {
-            setNewSetId(null);
-          }
-        }}
-      >
-        <PopoverTrigger asChild>
-          {labelSetId ? (
-            <LabelBadge
-              labeledValue={labelValues?.[labelSetId]}
-              labelSetId={labelSetId}
-              onClear={() => onClearLabel?.(labelSetId)}
-              onEdit={() => setOpenPopover(labelSetId)}
-            />
-          ) : (
-            <TagButton />
-          )}
-        </PopoverTrigger>
-        <PopoverContent
-          className={cn(' p-1', effectiveSetId ? 'w-96' : 'w-56')}
-          align="start"
-        >
-          {effectiveSetId ? (
-            <form
-              className="flex flex-col p-1 gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                onSubmit(effectiveSetId, value[effectiveSetId] || '');
-                setOpenPopover(null);
-                setNewSetId(null);
-              }}
-            >
-              <Textarea
-                ref={textareaRef}
-                value={value[effectiveSetId] || ''}
-                placeholder={placeholder}
-                onChange={(e) => {
-                  setValue(effectiveSetId, e.target.value);
-                  adjustHeight();
-                }}
-                className="min-h-[24px] max-h-[20vh] text-xs resize-vertical"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    onSubmit(effectiveSetId, value[effectiveSetId] || '');
-                    setOpenPopover(null);
-                    setNewSetId(null);
-                  }
-                }}
-              />
-
-              <Button size="sm" type="submit">
-                Save
-              </Button>
-            </form>
-          ) : (
-            <LabelSetMenuItems
-              usedLabelSetIds={usedLabelSetIds}
-              onLabelSetSelect={setNewSetId}
-              schema={schema}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
-    );
-  };
+  const hasLabel = labelValue !== undefined;
 
   return (
     <div className="space-y-2">
@@ -732,18 +584,87 @@ const TextWithCitationsInput = ({
         className="text-xs cursor-pointer group"
         onClick={navigateToAgentRun}
       >
-        <span className="font-semibold shrink-0 group-hover:text-muted-foreground transition-colors">
-          {propertyKey}:{' '}
+        <span className={'font-semibold shrink-0'}>
+          {propertyKey}{' '}
+          <span
+            className={cn(
+              'font-normal',
+              isRequiredWarning ? 'text-red-500' : ''
+            )}
+          >
+            {isRequiredWarning ? '(required)' : ''}
+          </span>
+          :
         </span>{' '}
         <CitationNavigationContext.Provider value={citationNavValue}>
           <TextWithCitations text={resultValue} citations={citations} />
         </CitationNavigationContext.Provider>
       </div>
       <div className="flex items-center gap-1 flex-wrap">
-        {usedLabelSetIds.map((labelSetId) =>
-          AddLabelButton(labelSetId, labelSetId)
-        )}
-        {AddLabelButton(undefined, 'new')}
+        <Popover
+          open={openPopover}
+          onOpenChange={(open) => {
+            setOpenPopover(open);
+            if (!open) setTempLabelSetId(null);
+          }}
+        >
+          <PopoverTrigger asChild>
+            {hasLabel && activeLabelSetId ? (
+              <LabelBadge
+                labeledValue={labelValue}
+                labelSetId={activeLabelSetId}
+                onClear={() => onClearLabel?.(activeLabelSetId)}
+                onEdit={() => setOpenPopover(true)}
+              />
+            ) : (
+              <TagButton />
+            )}
+          </PopoverTrigger>
+          <PopoverContent className="w-96 p-1" align="start">
+            {effectiveLabelSetId ? (
+              <form
+                className="flex flex-col p-1 gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onSubmit(effectiveLabelSetId, value);
+                  setOpenPopover(false);
+                  setTempLabelSetId(null);
+                }}
+              >
+                <Textarea
+                  ref={textareaRef}
+                  value={value}
+                  placeholder={placeholder}
+                  onChange={(e) => {
+                    setValue(e.target.value);
+                    adjustHeight();
+                  }}
+                  className="min-h-[24px] max-h-[20vh] text-xs resize-vertical"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      onSubmit(effectiveLabelSetId, value);
+                      setOpenPopover(false);
+                      setTempLabelSetId(null);
+                    }
+                  }}
+                />
+
+                <Button size="sm" type="submit">
+                  Save
+                </Button>
+              </form>
+            ) : (
+              <LabelSetMenuItems
+                onLabelSetCreated={(id) => {
+                  setTempLabelSetId(id);
+                }}
+                schema={schema}
+              />
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );
@@ -790,6 +711,7 @@ interface JudgeResultCardProps {
   judgeResult: JudgeResultWithCitations;
   labels: Label[];
   agentRunId: string;
+  activeLabelSetId: string | null;
 }
 
 const JudgeResultCard = ({
@@ -797,6 +719,7 @@ const JudgeResultCard = ({
   schema,
   labels,
   agentRunId,
+  activeLabelSetId,
 }: JudgeResultCardProps) => {
   const { collection_id: collectionId } = useParams<{
     collection_id: string;
@@ -821,24 +744,15 @@ const JudgeResultCard = ({
   const [updateLabel] = useUpdateLabelMutation();
   const [deleteLabel] = useDeleteLabelMutation();
 
-  // Helper to get usedLabelSetIds that already have labels for a specific field
-  const getUsedSetIdsForField = (fieldKey: string): string[] => {
-    return labels
-      .filter((label) => fieldKey in label.label_value)
-      .map((label) => label.label_set_id);
+  // Helper to get the label value for a specific field from the active label set
+  const getLabelValue = (key: string) => {
+    if (!activeLabelSetId || !formState[activeLabelSetId]) return undefined;
+    return formState[activeLabelSetId][key];
   };
 
-  // Helper to create a map from usedLabelSetIds to values for a given key
-  const createLabelValues = (key: string) => {
-    return Object.fromEntries(
-      Object.entries(formState).map(([labelSetId, props]) => [
-        labelSetId,
-        props[key],
-      ])
-    );
-  };
-
-  const clearLabelField = async (labelSetId: string, key: string) => {
+  const clearLabelField = async (key: string) => {
+    if (!activeLabelSetId) return;
+    const labelSetId = activeLabelSetId;
     // Find the label for this labelSetId
     const labelForSet = labels.find((l) => l.label_set_id === labelSetId);
     if (!labelForSet || !labelForSet.id || !collectionId) return;
@@ -858,6 +772,7 @@ const JudgeResultCard = ({
         await deleteLabel({
           collectionId,
           labelId: labelForSet.id,
+          agentRunId,
         }).unwrap();
       } else {
         // Otherwise update the label
@@ -865,6 +780,7 @@ const JudgeResultCard = ({
           collectionId,
           labelId: labelForSet.id,
           label_value: currentFields,
+          agentRunId,
         }).unwrap();
       }
     } catch (error: any) {
@@ -877,8 +793,22 @@ const JudgeResultCard = ({
     }
   };
 
-  const save = async (labelSetId: string, key: string, value: any) => {
-    if (!collectionId) return;
+  // Helper to check if labeling has started (any fields are filled for active label set)
+  const hasStartedLabeling = () => {
+    if (!activeLabelSetId || !formState[activeLabelSetId]) return false;
+    return Object.keys(formState[activeLabelSetId]).length > 0;
+  };
+
+  // Helper to check if a field is required and unfilled
+  const isRequiredAndUnfilled = (key: string) => {
+    const isRequired = schema.required?.includes(key);
+    const isFilled = getLabelValue(key) !== undefined;
+    return isRequired && !isFilled && hasStartedLabeling();
+  };
+
+  const save = async (key: string, value: any) => {
+    if (!collectionId || !activeLabelSetId) return;
+    const labelSetId = activeLabelSetId;
 
     // Update local state
     setFormState((prev) => ({
@@ -914,6 +844,7 @@ const JudgeResultCard = ({
           collectionId,
           labelId: existingLabel.id,
           label_value: labelData,
+          agentRunId,
         }).unwrap();
       } else {
         throw new Error('No existing label found');
@@ -942,13 +873,13 @@ const JudgeResultCard = ({
             <TextWithCitationsInput
               key={key}
               judgeResult={judgeResult}
-              labelValues={createLabelValues(key)}
+              labelValue={getLabelValue(key)}
               propertyKey={key}
               placeholder={'Enter an updated explanation.'}
-              usedLabelSetIds={getUsedSetIdsForField(key)}
-              onSubmit={(labelSetId, value) => save(labelSetId, key, value)}
-              onClearLabel={(labelSetId) => clearLabelField(labelSetId, key)}
+              onSubmit={(labelSetId, value) => save(key, value)}
+              onClearLabel={() => clearLabelField(key)}
               schema={schema}
+              isRequiredWarning={isRequiredAndUnfilled(key)}
             />
           );
         }
@@ -960,11 +891,11 @@ const JudgeResultCard = ({
               propertyKey={key}
               options={property.enum}
               resultValue={judgeResult.output[key]}
-              labelValues={createLabelValues(key)}
-              usedLabelSetIds={getUsedSetIdsForField(key)}
-              onSubmit={(labelSetId, value) => save(labelSetId, key, value)}
-              onClearLabel={(labelSetId) => clearLabelField(labelSetId, key)}
+              labelValue={getLabelValue(key)}
+              onSubmit={(labelSetId, value) => save(key, value)}
+              onClearLabel={() => clearLabelField(key)}
               schema={schema}
+              isRequiredWarning={isRequiredAndUnfilled(key)}
             />
           );
         }
@@ -975,11 +906,11 @@ const JudgeResultCard = ({
               key={key}
               propertyKey={key}
               resultValue={judgeResult.output[key] as boolean}
-              labelValues={createLabelValues(key)}
-              usedLabelSetIds={getUsedSetIdsForField(key)}
-              onSubmit={(labelSetId, value) => save(labelSetId, key, value)}
-              onClearLabel={(labelSetId) => clearLabelField(labelSetId, key)}
+              labelValue={getLabelValue(key)}
+              onSubmit={(labelSetId, value) => save(key, value)}
+              onClearLabel={() => clearLabelField(key)}
               schema={schema}
+              isRequiredWarning={isRequiredAndUnfilled(key)}
             />
           );
         }
@@ -994,13 +925,13 @@ const JudgeResultCard = ({
               key={key}
               propertyKey={key}
               resultValue={judgeResult.output[key] as number}
-              labelValues={createLabelValues(key)}
-              usedLabelSetIds={getUsedSetIdsForField(key)}
+              labelValue={getLabelValue(key)}
               maximum={property.maximum}
               minimum={property.minimum}
-              onSubmit={(labelSetId, value) => save(labelSetId, key, value)}
-              onClearLabel={(labelSetId) => clearLabelField(labelSetId, key)}
+              onSubmit={(labelSetId, value) => save(key, value)}
+              onClearLabel={() => clearLabelField(key)}
               schema={schema}
+              isRequiredWarning={isRequiredAndUnfilled(key)}
             />
           );
         }

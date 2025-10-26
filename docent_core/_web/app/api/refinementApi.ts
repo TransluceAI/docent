@@ -116,15 +116,15 @@ export const refinementApi = createApi({
         collectionId: string;
         sessionId: string;
         message: string;
-        labelSetIds: string[];
+        labelSetId: string | null;
       }
     >({
-      query: ({ collectionId, sessionId, message, labelSetIds }) => ({
+      query: ({ collectionId, sessionId, message, labelSetId }) => ({
         url: `/${collectionId}/refinement-session/${sessionId}/message`,
         method: 'POST',
         body: {
           message,
-          label_set_ids: labelSetIds,
+          label_set_id: labelSetId,
         },
       }),
       invalidatesTags: (result, error, arg) => [

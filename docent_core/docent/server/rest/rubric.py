@@ -274,7 +274,7 @@ class RubricRunStateResponse(BaseModel):
 
 class StartFilteredEvalJobRequest(BaseModel):
     max_results: int | None = None
-    label_set_ids: list[str] | None = None
+    label_set_id: str | None = None
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/evaluate")
@@ -299,7 +299,7 @@ async def start_eval_rubric_job(
         f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results}"
     )
     job_id = await rubric_svc.start_or_get_eval_rubric_job(
-        ctx, rubric_id, request.max_results, request.label_set_ids
+        ctx, rubric_id, request.max_results, request.label_set_id
     )
 
     # Check if user has a custom API key (just for analytics purposes)

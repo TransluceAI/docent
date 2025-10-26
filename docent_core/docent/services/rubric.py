@@ -22,7 +22,7 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
     propose_clusters,
 )
 from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet
+from docent_core.docent.db.schemas.label import SQLALabel
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
@@ -194,7 +194,7 @@ class RubricService:
         ctx: ViewContext,
         rubric_id: str,
         max_results: int | None = None,
-        label_set_ids: list[str] | None = None,
+        label_set_id: str | None = None,
     ):
         """Start a job to evaluate the rubric."""
 
@@ -212,7 +212,7 @@ class RubricService:
                 job_json={
                     "rubric_id": rubric_id,
                     "max_results": max_results,
-                    "label_set_ids": label_set_ids,
+                    "label_set_id": label_set_id,
                 },
             )
         )
@@ -263,7 +263,7 @@ class RubricService:
             raise ValueError(f"Rubric {rubric_id} not found")
 
         max_results = job.job_json.get("max_results", None)
-        label_set_ids = job.job_json.get("label_set_ids", None)
+        label_set_id = job.job_json.get("label_set_id", None)
 
         if max_results is not None:
             existing_results = await self.session.execute(
@@ -287,12 +287,12 @@ class RubricService:
         query = select(SQLAAgentRun.id)
 
         # Join to labels (new schema) to prioritize labeled runs
-        # Filter by label_set_ids if provided
-        if label_set_ids:
+        # Filter by label_set_id if provided
+        if label_set_id:
             query = query.outerjoin(
                 SQLALabel,
                 (SQLALabel.agent_run_id == SQLAAgentRun.id)
-                & (SQLALabel.label_set_id.in_(label_set_ids)),
+                & (SQLALabel.label_set_id == label_set_id),
             )
         else:
             query = query.outerjoin(
@@ -886,7 +886,7 @@ class RubricService:
     #################
 
     async def get_judge_run_labels_and_results(
-        self, rubric_id: str, label_set_ids: list[str]
+        self, rubric_id: str, label_set_id: str
     ) -> list[tuple[Label, JudgeResult]]:
         """Get all run labels and results for a rubric."""
         # Use the latest rubric version to avoid mixing versions in context
@@ -896,13 +896,9 @@ class RubricService:
 
         result = await self.session.execute(
             select(SQLALabel, SQLAJudgeResult)
-            .join(
-                SQLALabelSet,
-                SQLALabel.label_set_id == SQLALabelSet.id,
-            )
             .join(SQLAJudgeResult, SQLALabel.agent_run_id == SQLAJudgeResult.agent_run_id)
             .where(
-                SQLALabelSet.id.in_(label_set_ids),
+                SQLALabel.label_set_id == label_set_id,
                 SQLAJudgeResult.rubric_id == rubric_id,
                 SQLAJudgeResult.rubric_version == latest_version,
                 SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,

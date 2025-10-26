@@ -324,7 +324,6 @@ RUN_SUMMARY_TEMPLATE = """
 async def summarize_agent_runs(
     rubric_text: str,
     agent_runs: list[AgentRun],
-    user_id: str,
     llm_svc: LLMService,
     completion_callback: SummaryStreamingCallback,
 ) -> list[LLMOutput]:

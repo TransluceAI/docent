@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/popover';
 
 import { type Rubric } from '@/app/store/rubricSlice';
-
+import JsonEditor from './JsonEditor';
 import {
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
@@ -24,20 +24,8 @@ import {
 } from '@/app/api/rubricApi';
 import { useAppDispatch } from '@/app/store/hooks';
 import { cn } from '@/lib/utils';
-import { EditorView } from '@uiw/react-codemirror';
-import { json as jsonLanguage } from '@codemirror/lang-json';
-import { useTheme } from 'next-themes';
-import CodeMirror from '@uiw/react-codemirror';
 import ModelPicker from '@/components/ModelPicker';
 import { Separator } from '@/components/ui/separator';
-
-// Hardcoded fix for types that should be formatted differently, e.g. enum strings for maybe date strings
-const fixTypePreview = (property: Record<string, any>) => {
-  if (property.type === 'string' && property.enum) {
-    return 'enum';
-  }
-  return property.type;
-};
 
 function DescriptionInlineDiff({
   previous,
@@ -169,30 +157,6 @@ export default function RubricEditor({
 
   const [schemaText, setSchemaText] = useState<string>('');
   const [schemaError, setSchemaError] = useState<string | null>(null);
-  const [schemaOpen, setSchemaOpen] = useState<boolean>(false);
-
-  const { resolvedTheme } = useTheme();
-
-  const extensions = useMemo(
-    () => [jsonLanguage(), EditorView.lineWrapping],
-    []
-  );
-
-  const preview = useMemo(() => {
-    try {
-      const parsed = JSON.parse(schemaText || '{}');
-      const properties = parsed?.properties || {};
-      if (!properties || typeof properties !== 'object') return '';
-      const parts: string[] = [];
-      for (const key of Object.keys(properties)) {
-        const typeStr = fixTypePreview(properties[key]);
-        parts.push(`${key}: ${typeStr}`);
-      }
-      return parts.join('; ');
-    } catch {
-      return '';
-    }
-  }, [schemaText]);
 
   useEffect(() => {
     if (remoteRubric) {
@@ -302,21 +266,6 @@ export default function RubricEditor({
       onSave(updatedRubric, clearLabels);
     }
   };
-
-  // Schema preview
-
-  const schemaPreview = useMemo(() => {
-    return preview.split('; ').map((pair, i) => {
-      const [k, rest] = pair.split(': ');
-      return (
-        <span key={i} className="whitespace-nowrap">
-          <span className="text-blue-text">{k}</span>
-          {`: ${rest}`}
-          {i < preview.split('; ').length - 1 ? '; ' : ''}
-        </span>
-      );
-    });
-  }, [preview]);
 
   // Save with confirmation flow
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -543,90 +492,13 @@ export default function RubricEditor({
         </div>
       </div>
       {/* Output Schema Dropdown */}
-      <div className="space-y-1">
-        <div
-          className={cn(
-            'rounded-md border bg-background',
-            !editable || forceOpenSchema || schemaHasChanges
-              ? ''
-              : 'hover:bg-accent transition-colors duration-200'
-          )}
-        >
-          {/** Effective open state respects collapse: when collapsed, force closed */}
-          {/** Use a computed boolean so arrow, aria-expanded and panel share the same logic */}
-          {(() => {
-            return (
-              <>
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md disabled:opacity-80"
-                  onClick={() => setSchemaOpen(!schemaOpen)}
-                  disabled={forceOpenSchema || schemaHasChanges}
-                  aria-expanded={
-                    schemaOpen || forceOpenSchema || schemaHasChanges
-                      ? true
-                      : false
-                  }
-                  aria-controls="schema-content"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="text-xs font-medium border-r pr-2 text-muted-foreground whitespace-nowrap">
-                      Output Schema
-                    </div>
-                    {preview && (
-                      <span className="text-xs text-muted-foreground truncate">
-                        {/* Color keys differently */}
-                        {schemaPreview}
-                      </span>
-                    )}
-                  </div>
-                  <ChevronLeft
-                    className={
-                      'h-3 w-3 transition-transform ' +
-                      (schemaOpen || forceOpenSchema || schemaHasChanges
-                        ? '-rotate-90'
-                        : '')
-                    }
-                  />
-                </button>
-                {/* Animated schema content: always mounted for smooth close animation */}
-                <div
-                  id="schema-content"
-                  className={cn(
-                    'px-2 pb-2 space-y-2 overflow-hidden transition-all duration-200',
-                    schemaOpen || forceOpenSchema || schemaHasChanges
-                      ? 'max-h-[40vh] opacity-100'
-                      : '!max-h-0 pb-0 opacity-0 pointer-events-none'
-                  )}
-                >
-                  <div className="border rounded-sm max-h-[30vh] overflow-y-auto custom-scrollbar">
-                    <CodeMirror
-                      value={schemaText}
-                      height="auto"
-                      // maxHeight="30vh"
-                      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
-                      extensions={extensions}
-                      onChange={(value) => {
-                        setSchemaText(value);
-                        if (schemaError) setSchemaError(null);
-                      }}
-                      basicSetup={{
-                        lineNumbers: false,
-                        highlightActiveLine: true,
-                        foldGutter: false,
-                      }}
-                      readOnly={!editable}
-                    />
-                  </div>
-                  {schemaError && (
-                    <div className="text-xs text-red-text">{schemaError}</div>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
+      <JsonEditor
+        schemaText={schemaText}
+        setSchemaText={setSchemaText}
+        schemaError={schemaError}
+        editable={editable}
+        forceOpenSchema={forceOpenSchema || schemaHasChanges}
+      />
     </div>
   );
 }

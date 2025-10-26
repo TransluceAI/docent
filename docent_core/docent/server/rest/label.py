@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util.logger import get_logger
@@ -14,7 +15,7 @@ from docent_core.docent.server.dependencies.permissions import (
 )
 from docent_core.docent.server.dependencies.services import get_label_service
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
-from docent_core.docent.services.label import LabelService
+from docent_core.docent.services.label import LabelService, LabelSetWithCount
 
 logger = get_logger(__name__)
 
@@ -44,6 +45,12 @@ class CreateLabelSetRequest(BaseModel):
     label_schema: dict[str, Any]
 
 
+class UpdateLabelSetRequest(BaseModel):
+    name: str
+    description: str | None = None
+    label_schema: dict[str, Any]
+
+
 ################
 # Label CRUD
 ################
@@ -54,10 +61,24 @@ async def create_label(
     collection_id: str,
     request: CreateLabelRequest,
     label_svc: LabelService = Depends(get_label_service),
+    session: AsyncSession = Depends(get_session),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ) -> dict[str, str]:
     """Create a label."""
     await label_svc.create_label(request.label)
+
+    # Flush to surface constraint violations as proper HTTP errors
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        # Unique constraint violation (Postgres SQLSTATE 23505)
+        if getattr(e.orig, "pgcode", None) == "23505":
+            raise HTTPException(
+                status_code=409,
+                detail=f"A label already exists for agent_run_id={request.label.agent_run_id} and label_set_id={request.label.label_set_id}",
+            )
+        raise
+
     return {"message": "Label created successfully"}
 
 
@@ -66,10 +87,24 @@ async def create_labels(
     collection_id: str,
     request: CreateLabelsRequest,
     label_svc: LabelService = Depends(get_label_service),
+    session: AsyncSession = Depends(get_session),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ) -> dict[str, str]:
     """Create multiple labels."""
     await label_svc.create_labels(request.labels)
+
+    # Flush to surface constraint violations as proper HTTP errors
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        # Unique constraint violation (Postgres SQLSTATE 23505)
+        if getattr(e.orig, "pgcode", None) == "23505":
+            raise HTTPException(
+                status_code=409,
+                detail="One or more labels already exist for the given agent_run_id and label_set_id combinations",
+            )
+        raise
+
     return {"message": "Labels created successfully"}
 
 
@@ -126,7 +161,7 @@ async def create_label_set(
 ) -> dict[str, str]:
     """Create a label set."""
     label_set_id = await label_svc.create_label_set(
-        request.name, request.label_schema, description=request.description
+        collection_id, request.name, request.label_schema, description=request.description
     )
     return {"label_set_id": label_set_id}
 
@@ -152,8 +187,33 @@ async def get_all_label_sets(
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> list[LabelSet]:
     """Get all label sets."""
-    label_sets = await label_svc.get_all_label_sets()
+    label_sets = await label_svc.get_all_label_sets(collection_id)
     return [ls.to_pydantic() for ls in label_sets]
+
+
+@label_router.get("/{collection_id}/label_sets_with_counts")
+async def get_label_sets_with_counts(
+    collection_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[LabelSetWithCount]:
+    """Get all label sets with label counts."""
+    return await label_svc.get_label_sets_with_counts(collection_id)
+
+
+@label_router.put("/{collection_id}/label_set/{label_set_id}")
+async def update_label_set(
+    collection_id: str,
+    label_set_id: str,
+    request: UpdateLabelSetRequest,
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+) -> dict[str, str]:
+    """Update a label set."""
+    await label_svc.update_label_set(
+        label_set_id, request.name, request.label_schema, request.description
+    )
+    return {"message": "Label set updated successfully"}
 
 
 @label_router.get("/{collection_id}/label_set/{label_set_id}/labels")
@@ -168,17 +228,6 @@ async def get_labels_in_label_set(
     return await label_svc.get_labels_by_label_set(label_set_id, filter_valid_labels)
 
 
-@label_router.get("/{collection_id}/labels_in_label_sets")
-async def get_labels_in_label_sets(
-    collection_id: str,
-    label_set_ids: list[str] = Query(alias="labelSetIds"),
-    label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
-) -> list[Label]:
-    """Get all labels from multiple label sets."""
-    return await label_svc.get_labels_in_label_sets(label_set_ids)
-
-
 @label_router.delete("/{collection_id}/label_set/{label_set_id}")
 async def delete_label_set(
     collection_id: str,
@@ -190,3 +239,14 @@ async def delete_label_set(
     """Delete a label set."""
     await label_svc.delete_label_set(label_set_id)
     return {"message": "Label set deleted successfully"}
+
+
+@label_router.get("/{collection_id}/agent_run/{agent_run_id}/labels")
+async def get_labels_for_agent_run(
+    collection_id: str,
+    agent_run_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[Label]:
+    """Get all labels for a specific agent run."""
+    return await label_svc.get_labels_by_agent_run(agent_run_id)

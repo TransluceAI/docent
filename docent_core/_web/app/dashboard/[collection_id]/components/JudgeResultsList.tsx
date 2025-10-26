@@ -17,6 +17,7 @@ interface JudgeResultsListProps {
   isClusteringActive?: boolean;
   activeResultId?: string;
   schema: SchemaDefinition;
+  activeLabelSet: any;
 }
 
 export const JudgeResultsList = ({
@@ -27,6 +28,7 @@ export const JudgeResultsList = ({
   isClusteringActive,
   activeResultId,
   schema,
+  activeLabelSet,
 }: JudgeResultsListProps) => {
   if (centroids.length > 0) {
     return (
@@ -38,6 +40,7 @@ export const JudgeResultsList = ({
         schema={schema}
         filteredJudgeResultsList={filteredJudgeResultsList}
         labels={labels}
+        activeLabelSet={activeLabelSet}
       />
     );
   }
@@ -49,6 +52,7 @@ export const JudgeResultsList = ({
       activeResultId={activeResultId}
       schema={schema}
       labels={labels}
+      activeLabelSet={activeLabelSet}
     />
   );
 };
@@ -61,6 +65,7 @@ interface CentroidsListProps {
   schema: SchemaDefinition;
   filteredJudgeResultsList: JudgeResultWithCitations[];
   labels: Label[];
+  activeLabelSet: any;
 }
 
 const CentroidsList = ({
@@ -71,6 +76,7 @@ const CentroidsList = ({
   schema,
   filteredJudgeResultsList,
   labels,
+  activeLabelSet,
 }: CentroidsListProps) => {
   // 1. Compute a result_id -> result map to quickly assign results to centroids
   const judgeResultsMap = useMemo(() => {
@@ -144,6 +150,7 @@ const CentroidsList = ({
           activeResultId={activeResultId}
           schema={schema}
           labels={labels}
+          activeLabelSet={activeLabelSet}
         />
       </div>
     );

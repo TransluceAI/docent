@@ -56,5 +56,5 @@ To customize which models are used for a specific function:
 
 
 
-::: docent_core._llm_util.providers.registry
-::: docent_core._llm_util.providers.preferences
+::: docent._llm_util.providers.provider_registry
+::: docent._llm_util.providers.preference_types

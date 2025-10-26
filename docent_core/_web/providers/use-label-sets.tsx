@@ -1,16 +1,20 @@
-import { LabelSet } from '@/app/api/labelApi';
-import { createContext, useContext, useMemo } from 'react';
+import { LabelSet, useGetLabelSetsQuery } from '@/app/api/labelApi';
+import { createContext, useContext, useMemo, useEffect } from 'react';
 import { useLocalStorage } from 'usehooks-ts';
 
 interface LabelSetsContextValue {
-  labelSets: LabelSet[];
-  setLabelSets: (labelSets: LabelSet[]) => void;
+  activeLabelSet: LabelSet | null;
+  activeLabelSetId: string | null;
+  activeLabelSetName: string | null;
+  setActiveLabelSet: (labelSet: LabelSet | null) => void;
   clearLabelSets: () => void;
 }
 
 const LabelSetsContext = createContext<LabelSetsContextValue>({
-  labelSets: [],
-  setLabelSets: () => {},
+  activeLabelSet: null,
+  activeLabelSetId: null,
+  activeLabelSetName: null,
+  setActiveLabelSet: () => {},
   clearLabelSets: () => {},
 });
 
@@ -25,23 +29,55 @@ export function useLabelSets() {
 export function LabelSetsProvider({
   children,
   rubricId,
+  collectionId,
 }: {
   children: React.ReactNode;
   rubricId: string;
+  collectionId: string;
 }) {
   const [labelSetsByRubric, setLabelSetsByRubric] = useLocalStorage<
-    Record<string, LabelSet[]>
-  >('labelSetsByRubric', {});
+    Record<string, LabelSet | null>
+  >('activeLabelSetByRubric', {});
 
-  const labelSets = useMemo(
-    () => labelSetsByRubric[rubricId] || [],
+  // Fetch all available label sets to validate stored references
+  const { data: availableLabelSets } = useGetLabelSetsQuery({ collectionId });
+
+  const activeLabelSet = useMemo(
+    () => labelSetsByRubric[rubricId] || null,
     [labelSetsByRubric, rubricId]
   );
 
-  const setLabelSets = (newLabelSets: LabelSet[]) => {
+  // Validate and sync label set data with server
+  useEffect(() => {
+    if (!availableLabelSets || !activeLabelSet) return;
+
+    // Find the current version from the server
+    const currentLabelSet = availableLabelSets.find(
+      (ls) => ls.id === activeLabelSet.id
+    );
+
+    if (!currentLabelSet) {
+      // Label set was deleted - clear it from storage
+      setLabelSetsByRubric((prev) => {
+        const { [rubricId]: _, ...rest } = prev;
+        return rest;
+      });
+    } else if (
+      currentLabelSet.name !== activeLabelSet.name ||
+      currentLabelSet.description !== activeLabelSet.description
+    ) {
+      // Label set was updated - sync the new data
+      setLabelSetsByRubric((prev) => ({
+        ...prev,
+        [rubricId]: currentLabelSet,
+      }));
+    }
+  }, [availableLabelSets, activeLabelSet, rubricId, setLabelSetsByRubric]);
+
+  const setActiveLabelSet = (newLabelSet: LabelSet | null) => {
     setLabelSetsByRubric((prev) => ({
       ...prev,
-      [rubricId]: newLabelSets,
+      [rubricId]: newLabelSet,
     }));
   };
 
@@ -53,8 +89,10 @@ export function LabelSetsProvider({
   };
 
   const contextValue: LabelSetsContextValue = {
-    labelSets,
-    setLabelSets,
+    activeLabelSet,
+    activeLabelSetId: activeLabelSet?.id || null,
+    activeLabelSetName: activeLabelSet?.name || null,
+    setActiveLabelSet,
     clearLabelSets,
   };
 

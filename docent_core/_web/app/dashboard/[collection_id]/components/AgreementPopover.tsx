@@ -10,7 +10,6 @@ import { Label } from '@/app/api/labelApi';
 import { cn } from '@/lib/utils';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { useLabelSets } from '@/providers/use-label-sets';
-import { EyeIcon } from 'lucide-react';
 import { SchemaDefinition } from '@/app/types/schema';
 
 interface AgreementPopoverProps {
@@ -24,7 +23,7 @@ export const AgreementPopover = ({
   labels,
   schema,
 }: AgreementPopoverProps) => {
-  const { labelSets } = useLabelSets();
+  const { activeLabelSet } = useLabelSets();
 
   // Filter for properties that can be counted (statistics computed for)
   const countableProperties: string[] = useMemo(() => {
@@ -43,83 +42,70 @@ export const AgreementPopover = ({
     });
   }, [schema]);
 
-  // Track both label set and property for the visible selection
-  const [selected, setSelected] = useState<{
-    labelSetId: string;
-    property: string;
-  } | null>(null);
+  // Track the selected property for the visible selection
+  const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
 
-  // Default to the first label set and property
+  // Default to the first property
   useEffect(() => {
-    if (countableProperties.length > 0 && labelSets.length > 0) {
-      setSelected({
-        labelSetId: labelSets[0].id,
-        property: countableProperties[0],
-      });
+    if (countableProperties.length > 0 && activeLabelSet) {
+      setSelectedProperty(countableProperties[0]);
     }
-  }, [countableProperties, labelSets]);
+  }, [countableProperties, activeLabelSet]);
 
-  // Calculate agreement for each property per label set
+  // Calculate agreement for each property
   const propertyStats = useMemo(() => {
-    if (!filteredJudgeResults) {
+    if (!filteredJudgeResults || !activeLabelSet) {
       return {};
     }
 
-    return calculatePropertyStatsByLabelSet(
+    return calculatePropertyStats(
       filteredJudgeResults,
       labels,
-      countableProperties
+      countableProperties,
+      activeLabelSet.id
     );
-  }, [filteredJudgeResults, labels, countableProperties]);
+  }, [filteredJudgeResults, labels, countableProperties, activeLabelSet]);
 
   const statsContent = () => {
+    if (!activeLabelSet) return null;
+
     return (
-      <div className="space-y-4 max-h-64 overflow-y-auto">
-        {labelSets.map((labelSet) => {
-          const labelSetStats = propertyStats[labelSet.id] || {};
-          const labelSetName = labelSet.name;
-          const isSelected = (property: string) =>
-            selected?.labelSetId === labelSet.id &&
-            selected?.property === property;
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        <div className="text-xs font-semibold text-foreground border-b pb-1">
+          {activeLabelSet.name}
+        </div>
+        {Object.entries(propertyStats).map(([property, { total, matches }]) => {
+          const isSelected = selectedProperty === property;
           return (
-            <div key={labelSet.id} className="space-y-2">
-              <div className="text-xs font-semibold text-foreground border-b pb-1">
-                {labelSetName}
-              </div>
-              {Object.entries(labelSetStats).map(
-                ([property, { total, matches }]) => (
-                  <div
-                    key={`${labelSet.id}-${property}`}
-                    className="flex items-center justify-between text-xs rounded px-2 py-1 cursor-pointer hover:bg-secondary/70 transition-colors"
-                    onClick={() =>
-                      setSelected({ labelSetId: labelSet.id, property })
-                    }
-                  >
-                    <span
-                      className={cn(
-                        'font-mono text-muted-foreground flex items-center gap-1',
-                        isSelected(property) && 'font-bold'
-                      )}
-                    >
-                      {property}
-                      {isSelected(property) && <EyeIcon className="size-3" />}
-                    </span>
-                    <div className={cn('flex items-center gap-2 ')}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className={cn('h-full transition-all bg-blue-500')}
-                            style={{ width: `${(matches / total) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-muted-foreground">
-                          {matches}/{total}
-                        </span>
-                      </div>
-                    </div>
+            <div
+              key={property}
+              className="flex items-center justify-between text-xs rounded px-2 py-1 cursor-pointer hover:bg-secondary/70 transition-colors"
+              onClick={() => setSelectedProperty(property)}
+            >
+              <span
+                className={cn(
+                  'font-mono text-muted-foreground flex items-center gap-1',
+                  isSelected && 'font-bold'
+                )}
+              >
+                {property}
+                {isSelected && (
+                  <div className="!size-1.5 ml-1 bg-blue-500 rounded-full" />
+                )}
+              </span>
+              <div className={cn('flex items-center gap-2 ')}>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full transition-all bg-blue-500')}
+                      style={{ width: `${(matches / total) * 100}%` }}
+                    />
                   </div>
-                )
-              )}
+                  <span className="text-muted-foreground">
+                    {matches}/{total}
+                  </span>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -134,7 +120,13 @@ export const AgreementPopover = ({
           No judge results to compute stats.
         </span>
       );
-    } else if (selected === null) {
+    } else if (!activeLabelSet) {
+      return (
+        <span className="text-xs text-muted-foreground">
+          Select an active label set to compute stats.
+        </span>
+      );
+    } else if (selectedProperty === null) {
       return (
         <span className="text-xs text-muted-foreground">
           Add a countable label to compute stats.
@@ -146,7 +138,7 @@ export const AgreementPopover = ({
           No labels to compute stats.
         </span>
       );
-    } else if (countableProperties.length > 0 && labelSets.length > 0) {
+    } else if (countableProperties.length > 0) {
       return statsContent();
     }
   };
@@ -156,18 +148,18 @@ export const AgreementPopover = ({
       <PopoverTrigger asChild>
         <button className="text-xs h-7 gap-2 text-muted-foreground items-center flex justify-center px-2">
           <span className="font-mono truncate">
-            {selected
-              ? `${labelSets.find((ls) => ls.id === selected.labelSetId)?.name || selected.labelSetId}.${selected.property}`
+            {selectedProperty && activeLabelSet
+              ? `${activeLabelSet.name}.${selectedProperty}`
               : ''}
           </span>
-          {selected ? (
+          {selectedProperty && activeLabelSet ? (
             <span className="whitespace-nowrap">
-              {propertyStats[selected.labelSetId]?.[selected.property]
-                ? propertyStats[selected.labelSetId][selected.property].matches
+              {propertyStats[selectedProperty]
+                ? propertyStats[selectedProperty].matches
                 : '-'}
               /
-              {propertyStats[selected.labelSetId]?.[selected.property]
-                ? propertyStats[selected.labelSetId][selected.property].total
+              {propertyStats[selectedProperty]
+                ? propertyStats[selectedProperty].total
                 : '-'}
             </span>
           ) : (
@@ -187,53 +179,45 @@ export const AgreementPopover = ({
   );
 };
 
-function calculatePropertyStatsByLabelSet(
+function calculatePropertyStats(
   filteredJudgeResults: JudgeResultWithCitations[],
   labels: Label[],
-  countableProperties: string[]
-): Record<string, Record<string, { matches: number; total: number }>> {
-  // Group stats by label set, then by property
-  const statsByLabelSet: Record<
-    string,
-    Record<string, { matches: number; total: number }>
-  > = {};
+  countableProperties: string[],
+  activeLabelSetId: string
+): Record<string, { matches: number; total: number }> {
+  const stats: Record<string, { matches: number; total: number }> = {};
 
-  // Compare each result with all its labels (grouped by label set)
+  // Compare each result with its label from the active label set
   filteredJudgeResults.forEach((result) => {
-    // Find all labels for this agent_run_id
-    const labelsForRun = labels.filter(
-      (label) => label.agent_run_id === result.agent_run_id
+    // Find the label for this agent_run_id from the active label set
+    const label = labels.find(
+      (l) =>
+        l.agent_run_id === result.agent_run_id &&
+        l.label_set_id === activeLabelSetId
     );
 
-    labelsForRun.forEach((label) => {
-      const labelSetId = label.label_set_id;
+    if (!label) return;
 
-      // Initialize label set stats if not exists
-      if (!statsByLabelSet[labelSetId]) {
-        statsByLabelSet[labelSetId] = {};
-      }
+    countableProperties.forEach((key) => {
+      const judgeValue = result.output[key];
+      const labelValue = label.label_value[key];
 
-      countableProperties.forEach((key) => {
-        const judgeValue = result.output[key];
-        const labelValue = label.label_value[key];
-
-        // Only count if both values exist
-        if (judgeValue !== undefined && labelValue !== undefined) {
-          // Initialize property stats if not exists
-          if (!statsByLabelSet[labelSetId][key]) {
-            statsByLabelSet[labelSetId][key] = { matches: 0, total: 0 };
-          }
-
-          statsByLabelSet[labelSetId][key].total++;
-
-          // Check for match
-          if (judgeValue === labelValue) {
-            statsByLabelSet[labelSetId][key].matches++;
-          }
+      // Only count if both values exist
+      if (judgeValue !== undefined && labelValue !== undefined) {
+        // Initialize property stats if not exists
+        if (!stats[key]) {
+          stats[key] = { matches: 0, total: 0 };
         }
-      });
+
+        stats[key].total++;
+
+        // Check for match
+        if (judgeValue === labelValue) {
+          stats[key].matches++;
+        }
+      }
     });
   });
 
-  return statsByLabelSet;
+  return stats;
 }

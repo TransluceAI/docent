@@ -220,7 +220,7 @@ export default function RubricLayout({
             collectionId={collectionId}
             rubricId={rubricId}
           >
-            <LabelSetsProvider rubricId={rubricId}>
+            <LabelSetsProvider rubricId={rubricId} collectionId={collectionId}>
               <TextSelectionProvider>
                 <RubricLayoutBody
                   collectionId={collectionId}

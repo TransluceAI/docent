@@ -255,15 +255,15 @@ export const rubricApi = createApi({
         collectionId: string;
         rubricId: string;
         max_results?: number | null;
-        label_set_ids?: string[];
+        label_set_id?: string | null;
       }
     >({
-      query: ({ collectionId, rubricId, max_results, label_set_ids }) => ({
+      query: ({ collectionId, rubricId, max_results, label_set_id }) => ({
         url: `/${collectionId}/${rubricId}/evaluate`,
         method: 'POST',
         body: {
           max_results: max_results ?? null,
-          label_set_ids: label_set_ids ?? null,
+          label_set_id: label_set_id ?? null,
         },
       }),
       invalidatesTags: (result, error, { rubricId }) => [
