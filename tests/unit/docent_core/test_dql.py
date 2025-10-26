@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from sqlalchemy.sql.elements import TextClause
@@ -10,11 +10,13 @@ from sqlglot import exp
 
 from docent_core.docent.db.dql import (
     DQL_COLLECTION_SETTING_KEY,
+    CollectionPredicateFactory,
     ColumnReference,
     DQLRegistry,
     DQLValidationError,
     JsonFieldInfo,
     SelectedColumn,
+    SqlGlotExpression,
     apply_limit_cap,
     build_collection_sqla_query,
     build_default_registry,
@@ -29,6 +31,16 @@ from docent_core.docent.services.monoservice import MAX_DQL_RESULT_LIMIT, MonoSe
 
 COLLECTION_ID = "test-collection"
 TEST_USER = User(id="user-1", email="user@example.com", organization_ids=[], is_anonymous=False)
+
+
+def _collection_predicate_for(column_name: str) -> CollectionPredicateFactory:
+    def builder(table_alias: str, collection_id: str) -> SqlGlotExpression:
+        return exp.EQ(
+            this=exp.column(column_name, table=table_alias),
+            expression=exp.Literal.string(collection_id),  # type: ignore[reportUnknownMemberType]
+        )
+
+    return builder
 
 
 class DummyMonoService:
@@ -67,7 +79,8 @@ def test_build_sqla_query_basic_select() -> None:
     expected_sql = (
         "SELECT id, created_at FROM agent_runs "
         "WHERE id = :__dql_param_3 AND agent_runs.collection_id = :__dql_param_4 "
-        "ORDER BY created_at DESC LIMIT :__dql_param_1 OFFSET :__dql_param_2"
+        "ORDER BY created_at DESC LIMIT (:__dql_param_1)::integer "
+        "OFFSET (:__dql_param_2)::integer"
     )
     assert query.text == expected_sql
     compiled = query.compile()
@@ -157,9 +170,17 @@ def test_wildcard_selection_rejected() -> None:
 
 def test_where_clause_requires_qualifier() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
+    # Single table queries should allow unqualified columns
+    parse_dql_query(
+        "SELECT id FROM agent_runs WHERE id = 'foo'",
+        registry=registry,
+        collection_id=COLLECTION_ID,
+    )
+
+    # Multi-table queries should require qualified columns
     with pytest.raises(DQLValidationError):
         parse_dql_query(
-            "SELECT id FROM agent_runs WHERE id = 'foo'",
+            "SELECT id FROM agent_runs ar JOIN transcripts t ON t.agent_run_id = ar.id WHERE id = 'foo'",
             registry=registry,
             collection_id=COLLECTION_ID,
         )
@@ -232,7 +253,7 @@ def test_count_without_argument_rewritten_to_literal_one() -> None:
             registry=registry,
         )
     )
-    assert "COUNT(1)" in clause.text
+    assert "COUNT((:__dql_param_1)::integer)" in clause.text
     assert "*" not in clause.text
 
 
@@ -439,7 +460,7 @@ def test_table_alias_registration() -> None:
             "created_at",
             "text_for_search",
         ),
-        collection_predicate_factory=None,
+        collection_predicate_factory=_collection_predicate_for("collection_id"),
         aliases=["agent_run_records"],
         column_aliases={"metadata": "metadata_json"},
     )
@@ -620,8 +641,9 @@ def test_get_query_limit_value_and_apply_limit_cap() -> None:
     expression = parse_dql_query(
         "SELECT id FROM agent_runs LIMIT 3", registry=registry, collection_id=COLLECTION_ID
     )
-    # Cast to Query type for the functions that expect it
-    query_expression = exp.Query(**expression.args)  # type: ignore[reportUnknownMemberType]
+    # The expression should be a Select, not Query
+    assert isinstance(expression, exp.Select)
+    query_expression = cast(exp.Query, expression)
     assert get_query_limit_value(query_expression) == 3
 
     apply_limit_cap(query_expression, 5)
@@ -635,7 +657,8 @@ def test_apply_limit_cap_requires_positive_limit() -> None:
     expression = parse_dql_query(
         "SELECT id FROM agent_runs", registry=registry, collection_id=COLLECTION_ID
     )
-    query_expression = exp.Query(**expression.args)  # type: ignore[reportUnknownMemberType]
+    assert isinstance(expression, exp.Select)
+    query_expression = cast(exp.Query, expression)
     with pytest.raises(ValueError):
         apply_limit_cap(query_expression, 0)
 

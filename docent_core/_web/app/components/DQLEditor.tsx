@@ -3,13 +3,14 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
-  useState,
   useRef,
+  useState,
 } from 'react';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
-import { Play } from 'lucide-react';
+import { Check, Copy, Maximize2, Play } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,15 @@ import {
 import { DqlExecuteResponse } from '@/app/types/dqlTypes';
 import { registerDqlCompletionProvider } from '@/app/utils/dqlCompletions';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { TableContainer } from './TableContainer';
+import { copyToClipboard } from '@/lib/utils';
 
 interface DQLEditorProps {
   collectionId?: string;
@@ -57,6 +66,9 @@ const isFallbackQueryValue = (value: string | null | undefined) => {
   const normalized = normalizeQueryValue(value);
   return normalized.length === 0 || normalized === NORMALIZED_DEFAULT_QUERY;
 };
+
+// Keeps result tables readable by preventing any single column from dominating the viewport.
+const MAX_RESULT_COLUMN_WIDTH_PX = 300;
 
 const formatCellValue = (value: unknown): string => {
   if (value === null || value === undefined) {
@@ -98,6 +110,164 @@ const extractErrorMessage = (error: unknown): string => {
     }
   }
   return String(error);
+};
+
+interface TruncatableCellValueProps {
+  text: string;
+  label: string;
+  maxWidth: number;
+}
+
+const TruncatableCellValue = ({
+  text,
+  label,
+  maxWidth,
+}: TruncatableCellValueProps) => {
+  const contentRef = useRef<HTMLSpanElement | null>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyResetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (
+        copyResetTimeoutRef.current !== null &&
+        typeof window !== 'undefined'
+      ) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node) {
+      setIsTruncated(false);
+      return;
+    }
+
+    const checkOverflow = () => {
+      const clientWidth = node.clientWidth;
+      const scrollWidth = node.scrollWidth;
+      const hasOverflow = clientWidth > 0 && scrollWidth - clientWidth > 1;
+      setIsTruncated((prev) => {
+        if (prev === hasOverflow) {
+          return prev;
+        }
+        return hasOverflow;
+      });
+    };
+
+    checkOverflow();
+
+    let animationFrame: number | null = null;
+    if (typeof window !== 'undefined') {
+      animationFrame = window.requestAnimationFrame(checkOverflow);
+    }
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        checkOverflow();
+      });
+      observer.observe(node);
+    }
+
+    return () => {
+      if (animationFrame !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      observer?.disconnect();
+    };
+  }, [text]);
+
+  const handleCopy = useCallback(async () => {
+    const success = await copyToClipboard(text);
+    if (!success) {
+      return;
+    }
+    setCopied(true);
+    if (copyResetTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+    if (typeof window !== 'undefined') {
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyResetTimeoutRef.current = null;
+      }, 2000);
+    }
+  }, [text]);
+
+  return (
+    <div className="flex items-start gap-1 max-w-full" style={{ maxWidth }}>
+      <span ref={contentRef} className="flex-1 min-w-0 truncate" title={text}>
+        {text}
+      </span>
+      {isTruncated && (
+        <Dialog
+          open={isDialogOpen}
+          onOpenChange={(nextOpen) => {
+            setIsDialogOpen(nextOpen);
+            if (!nextOpen) {
+              setCopied(false);
+              if (
+                copyResetTimeoutRef.current !== null &&
+                typeof window !== 'undefined'
+              ) {
+                window.clearTimeout(copyResetTimeoutRef.current);
+                copyResetTimeoutRef.current = null;
+              }
+            }
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 flex-shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="View full cell value"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 pr-10">
+              <DialogTitle className="text-base font-semibold break-words">
+                {label}
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void handleCopy();
+                }}
+                className="h-7 gap-2 text-xs"
+                aria-label="Copy cell value"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy
+                  </>
+                )}
+              </Button>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-auto rounded border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+              {text || <span className="text-muted-foreground">(empty)</span>}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
 };
 
 const DQLEditor = ({
@@ -486,15 +656,22 @@ const DQLEditor = ({
                 <span>Limit applied: {result.applied_limit}</span>
               </div>
               <TableContainer>
-                <Table className="min-w-full">
+                <Table className="min-w-full table-auto">
                   <TableHeader className="sticky top-0 z-20 bg-secondary">
                     <TableRow className="text-xs">
                       {displayColumns.map((column, index) => (
                         <TableHead
                           key={`${column}-${index}`}
                           className="text-xs font-medium"
+                          style={{ maxWidth: MAX_RESULT_COLUMN_WIDTH_PX }}
                         >
-                          {column}
+                          <span
+                            className="block truncate"
+                            title={column}
+                            style={{ maxWidth: MAX_RESULT_COLUMN_WIDTH_PX }}
+                          >
+                            {column}
+                          </span>
                         </TableHead>
                       ))}
                     </TableRow>
@@ -502,14 +679,26 @@ const DQLEditor = ({
                   <TableBody>
                     {result.rows.map((row, rowIndex) => (
                       <TableRow key={rowIndex} className="text-xs h-10">
-                        {result.columns.map((column, columnIndex) => (
-                          <TableCell
-                            key={`${column}-${columnIndex}`}
-                            className="py-1.5"
-                          >
-                            {formatCellValue(row[columnIndex])}
-                          </TableCell>
-                        ))}
+                        {result.columns.map((column, columnIndex) => {
+                          const cellValue = formatCellValue(row[columnIndex]);
+                          const columnLabel =
+                            displayColumns[columnIndex] ??
+                            result.columns[columnIndex] ??
+                            `Column ${columnIndex + 1}`;
+                          return (
+                            <TableCell
+                              key={`${column}-${columnIndex}`}
+                              className="py-1.5"
+                              style={{ maxWidth: MAX_RESULT_COLUMN_WIDTH_PX }}
+                            >
+                              <TruncatableCellValue
+                                text={cellValue}
+                                label={columnLabel}
+                                maxWidth={MAX_RESULT_COLUMN_WIDTH_PX}
+                              />
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                     {result.rows.length === 0 && (
