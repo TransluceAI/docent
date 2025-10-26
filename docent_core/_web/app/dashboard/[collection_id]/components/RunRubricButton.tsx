@@ -24,8 +24,7 @@ const RunRubricButton = ({
   rubricJobId,
   hasUnsavedChanges,
 }: RunRubricButtonProps) => {
-  const { labelSets } = useLabelSets();
-  const labelSetIds = labelSets.map((labelSet) => labelSet.id);
+  const { activeLabelSet } = useLabelSets();
   const [startEvaluation, { isLoading: isStartingEvaluation }] =
     useStartEvaluationMutation();
   const [cancelEvaluation, { isLoading: isCancellingEvaluation }] =
@@ -39,7 +38,7 @@ const RunRubricButton = ({
     await startEvaluation({
       collectionId,
       rubricId,
-      label_set_ids: labelSetIds,
+      label_set_id: activeLabelSet?.id ?? null,
     });
   };
 

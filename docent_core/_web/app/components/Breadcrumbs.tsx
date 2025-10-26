@@ -8,7 +8,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { useSelector } from 'react-redux';
 
 import { BASE_DOCENT_PATH } from '@/app/constants';
@@ -28,8 +28,12 @@ import {
   toggleAgentRunLeftSidebar,
   toggleJudgeLeftSidebar,
 } from '../store/transcriptSlice';
+import { cn } from '@/lib/utils';
 
 const Breadcrumbs: React.FC = () => {
+  const searchParams = useSearchParams();
+  const disableNavigation = searchParams.get('nav') === 'false';
+
   const params = useParams();
   const pathname = usePathname();
   const dispatch = useAppDispatch();
@@ -87,7 +91,12 @@ const Breadcrumbs: React.FC = () => {
       <div className="flex items-center gap-x-3">
         {/* Go Home button */}
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger
+            asChild
+            className={cn(
+              disableNavigation && 'pointer-events-none opacity-50'
+            )}
+          >
             <Button
               asChild
               size="sm"
@@ -117,7 +126,10 @@ const Breadcrumbs: React.FC = () => {
           ) : (
             <Link
               href={`${BASE_DOCENT_PATH}/${effectiveCollectionId}`}
-              className="text-blue-text hover:underline"
+              className={cn(
+                'text-blue-text hover:underline',
+                disableNavigation && 'hidden'
+              )}
             >
               {collectionBreadcrumbText}
             </Link>
@@ -126,7 +138,10 @@ const Breadcrumbs: React.FC = () => {
           {/* Transcript page */}
           {agentRunId && !isJudgeResultView && (
             <>
-              <ChevronRight size={18} />
+              <ChevronRight
+                size={18}
+                className={cn(disableNavigation && 'hidden')}
+              />
               <span className="text-muted-foreground">
                 Agent run {agentRunId.split('-')[0]}
               </span>

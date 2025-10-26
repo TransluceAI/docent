@@ -14,9 +14,13 @@ import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../components/AgentRunViewer';
 import TranscriptChat from '@/components/TranscriptChat';
+import AgentRunLabels from '../components/AgentRunLabels';
 import { useCitationNavigation } from '../../rubric/[rubric_id]/NavigateToCitationContext';
 
 export default function AgentRunPage() {
+  const searchParams = useSearchParams();
+  const disableAITools = searchParams.get('tools') === 'false';
+
   const dispatch = useAppDispatch();
 
   const collectionId = useAppSelector(
@@ -26,7 +30,9 @@ export default function AgentRunPage() {
     (state) => state.transcript?.rightSidebarOpen
   );
   const selectedTab = useAppSelector(
-    (state) => state.transcript?.agentRunSidebarTab ?? 'chat'
+    (state) =>
+      state.transcript?.agentRunSidebarTab ??
+      (disableAITools ? 'labels' : 'chat')
   );
 
   const params = useParams();
@@ -37,7 +43,6 @@ export default function AgentRunPage() {
   const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
 
   const alreadyScrolledRef = useRef(false);
-  const searchParams = useSearchParams();
   const blockIdxParam = searchParams.get('block_idx');
   const blockIdx = blockIdxParam ? parseInt(blockIdxParam, 10) : undefined;
   const transcriptIdxParam = searchParams.get('transcript_idx');
@@ -88,12 +93,23 @@ export default function AgentRunPage() {
             onValueChange={(value) => dispatch(setAgentRunSidebarTab(value))}
             className="h-full flex flex-col"
           >
-            <TabsList className="grid w-full grid-cols-2 h-8">
-              <TabsTrigger value="agent" className="text-xs">
+            <TabsList className="grid w-full grid-cols-3 h-8">
+              <TabsTrigger
+                value="agent"
+                className="text-xs"
+                disabled={disableAITools}
+              >
                 Summary
               </TabsTrigger>
-              <TabsTrigger value="chat" className="text-xs">
+              <TabsTrigger
+                value="chat"
+                className="text-xs"
+                disabled={disableAITools}
+              >
                 Chat
+              </TabsTrigger>
+              <TabsTrigger value="labels" className="text-xs">
+                Labels
               </TabsTrigger>
             </TabsList>
 
@@ -111,6 +127,17 @@ export default function AgentRunPage() {
                   title="Transcript Chat"
                   className="flex-1 flex flex-col min-w-0 min-h-0"
                 />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="labels" className="flex-1 mt-0 min-h-0">
+              <div className="h-full pt-2 flex flex-col min-h-0">
+                {collectionId && (
+                  <AgentRunLabels
+                    agentRunId={curAgentRunId}
+                    collectionId={collectionId}
+                  />
+                )}
               </div>
             </TabsContent>
           </Tabs>

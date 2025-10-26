@@ -12,6 +12,13 @@ import { JudgeResultsList } from './JudgeResultsList';
 import { useGetRubricQuery } from '../../../api/rubricApi';
 import { Button } from '@/components/ui/button';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import LabelSetsDialog from './LabelSetsDialog';
+import {
   ResultFilterControlsTrigger,
   ResultFilterControlsBadges,
 } from '@/app/components/ResultFilterControls';
@@ -27,8 +34,9 @@ import ShareRubricButton from './ShareRubricButton';
 import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { usePostRubricUpdateToRefinementSessionMutation } from '@/app/api/refinementApi';
 import { toast } from '@/hooks/use-toast';
-import { useGetLabelsInLabelSetsQuery } from '@/app/api/labelApi';
+import { useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
 import { useLabelSets } from '@/providers/use-label-sets';
+import { skipToken } from '@reduxjs/toolkit/query';
 
 interface SingleRubricAreaProps {
   rubricId: string;
@@ -86,14 +94,20 @@ export default function SingleRubricArea({
   });
   const schema = rubric?.output_schema;
 
-  const { labelSets, clearLabelSets } = useLabelSets();
-  const labelSetIds = labelSets.map((labelSet) => labelSet.id);
+  const { activeLabelSet, setActiveLabelSet, clearLabelSets } = useLabelSets();
   const { data: labels = [], isSuccess: isLabelsSuccess } =
-    useGetLabelsInLabelSetsQuery(
-      { collectionId, labelSetIds },
-      { skip: labelSetIds.length === 0 }
+    useGetLabelsInLabelSetQuery(
+      activeLabelSet
+        ? { collectionId, labelSetId: activeLabelSet.id }
+        : skipToken
     );
   const hasLabels = (labels?.length ?? 0) > 0;
+
+  const [isLabelSetsDialogOpen, setIsLabelSetsDialogOpen] = useState(false);
+
+  const handleImportLabelSet = (labelSet: any) => {
+    setActiveLabelSet(labelSet);
+  };
 
   const handleRubricSave = async (
     rubric: Rubric,
@@ -141,20 +155,60 @@ export default function SingleRubricArea({
         {/* Version changer */}
         <div className="flex items-center gap-2">
           {/* Filter controls -- disabled if rubric job is running */}
-          <ResultFilterControlsTrigger />
-          {/* Bookmark filter - show only labeled results */}
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            className={cn('h-7 w-7 text-xs', labeled ? 'bg-blue-bg' : '')}
-            onClick={() => setLabeled(!labeled)}
-            title="Show only labeled results"
-          >
-            <Tags
-              className={labeled ? 'h-3 w-3 stroke-blue-text' : 'h-3 w-3'}
-            />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <ResultFilterControlsTrigger />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Filter results</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Label Sets Button Group */}
+          <TooltipProvider>
+            <div className="flex">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7 text-xs rounded-r-none shadow-l"
+                    onClick={() => setIsLabelSetsDialogOpen(true)}
+                  >
+                    <Tags className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Manage label sets</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={cn(
+                      'h-7 px-2 text-xs rounded-l-none border-l-0',
+                      labeled ? 'bg-blue-bg' : ''
+                    )}
+                    onClick={() => setLabeled(!labeled)}
+                    disabled={!activeLabelSet}
+                  >
+                    {/* <Tags
+                      className={cn('h-3 w-3', labeled && 'stroke-blue-text')}
+                    /> */}
+                    {activeLabelSet ? (
+                      <span>{activeLabelSet.name}</span>
+                    ) : (
+                      <span>Select A Label Set</span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Show only labeled results</TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
 
         <div className="flex items-center gap-2">
@@ -243,6 +297,7 @@ export default function SingleRubricArea({
           isClusteringActive={clusteringJobId !== null}
           activeResultId={resultId}
           schema={schema}
+          activeLabelSet={activeLabelSet}
         />
       )}
     </>
@@ -279,6 +334,15 @@ export default function SingleRubricArea({
       />
 
       {ResultsSection}
+
+      <LabelSetsDialog
+        open={isLabelSetsDialogOpen}
+        onOpenChange={setIsLabelSetsDialogOpen}
+        onImportLabelSet={handleImportLabelSet}
+        onClearActiveLabelSet={() => setActiveLabelSet(null)}
+        currentRubricSchema={schema}
+        activeLabelSetId={activeLabelSet?.id}
+      />
     </div>
   );
 }

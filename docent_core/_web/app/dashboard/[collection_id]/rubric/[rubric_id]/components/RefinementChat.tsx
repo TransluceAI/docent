@@ -25,7 +25,7 @@ import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { RefinementAgentSession } from '@/app/store/refinementSlice';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useRubricVersion } from '@/providers/use-rubric-version';
-import { useGetLabelsInLabelSetsQuery } from '@/app/api/labelApi';
+import { useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
 import { useLabelSets } from '@/providers/use-label-sets';
 
 interface RefinementChatProps {
@@ -43,11 +43,9 @@ export default function RefinementChat({
   const { refinementJobId, setRefinementJobId } = useRefinementTab();
 
   // Judge run labels
-  const { labelSets } = useLabelSets();
-  const labelSetIds = labelSets.map((labelSet) => labelSet.id);
-  const { data: labels = [] } = useGetLabelsInLabelSetsQuery(
-    { collectionId, labelSetIds },
-    { skip: labelSetIds.length === 0 }
+  const { activeLabelSet } = useLabelSets();
+  const { data: labels = [] } = useGetLabelsInLabelSetQuery(
+    activeLabelSet ? { collectionId, labelSetId: activeLabelSet.id } : skipToken
   );
   const hasLabels = labels.length > 0;
   const [_showLabelsInContext, setShowLabelsInContext] = useState(true);
@@ -76,7 +74,8 @@ export default function RefinementChat({
         collectionId,
         sessionId,
         message,
-        labelSetIds: showLabelsInContext ? labelSetIds : [],
+        labelSetId:
+          showLabelsInContext && activeLabelSet ? activeLabelSet.id : null,
       })
         .unwrap()
         .then((res) => {
@@ -88,7 +87,7 @@ export default function RefinementChat({
       collectionId,
       sessionId,
       showLabelsInContext,
-      labelSetIds,
+      activeLabelSet,
       postMessage,
       setRefinementJobId,
     ]

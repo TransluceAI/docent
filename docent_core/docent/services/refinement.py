@@ -227,7 +227,6 @@ class RefinementService:
         outputs = await summarize_agent_runs(
             sq_rubric.rubric_text,
             agent_runs,
-            ctx.user.id,
             self.llm_svc,
             completion_callback,
         )
@@ -256,7 +255,7 @@ class RefinementService:
         self,
         ctx: ViewContext,
         sq_rsession: SQLARefinementAgentSession,
-        label_set_ids: list[str] = [],
+        label_set_id: str | None = None,
     ):
         """This job is responsible for running the refine agent for one turn.
         Uses an advisory lock to avoid races where multiple jobs are started for the same session.
@@ -280,7 +279,7 @@ class RefinementService:
                     type=WorkerFunction.REFINEMENT_AGENT_JOB.value,
                     job_json={
                         "rsession_id": sq_rsession.id,
-                        "label_set_ids": label_set_ids,
+                        "label_set_id": label_set_id,
                     },
                 )
             )
@@ -364,7 +363,7 @@ class RefinementService:
         self,
         ctx: ViewContext,
         sq_rsession: SQLARefinementAgentSession,
-        label_set_ids: list[str],
+        label_set_id: str | None = None,
         sse_callback: RefineAgentEventCallback | None = None,
     ):
         """Run one turn of the refinement agent.
@@ -384,13 +383,13 @@ class RefinementService:
         # Add labels to the user message if toggled on the FE
         last_message = rsession.messages[-1]
         if (
-            len(label_set_ids) > 0
+            label_set_id is not None
             and last_message.role == "user"
             # Don't add labels if they already exist on the user message
             and "labeled_results" not in last_message.content
         ):
             labels_and_results = await self.rubric_svc.get_judge_run_labels_and_results(
-                sq_rsession.rubric_id, label_set_ids
+                sq_rsession.rubric_id, label_set_id
             )
             update_user_message_with_labels(rsession.messages, labels_and_results)
             # Update the user message immediately so labels persist on retry
@@ -557,7 +556,7 @@ class RefinementService:
                                 await self.rubric_svc.start_or_get_eval_rubric_job(
                                     ctx,
                                     updated_rubric.id,
-                                    label_set_ids=label_set_ids,
+                                    label_set_id=label_set_id,
                                 )
                         else:
                             raise ValueError(f"Unsupported tool call: {tc.function}")

@@ -262,6 +262,7 @@ class Docent:
 
     def create_label_set(
         self,
+        collection_id: str,
         name: str,
         label_schema: dict[str, Any],
         description: str | None = None,
@@ -269,6 +270,7 @@ class Docent:
         """Create a new label set with a JSON schema.
 
         Args:
+            collection_id: ID of the collection.
             name: Name of the label set.
             label_schema: JSON schema for validating labels in this set.
             description: Optional description of the label set.
@@ -283,7 +285,7 @@ class Docent:
         """
         validate_judge_result_schema(label_schema)
 
-        url = f"{self._server_url}/label_set"
+        url = f"{self._server_url}/label/{collection_id}/label_set"
         payload = {
             "name": name,
             "label_schema": label_schema,
@@ -291,15 +293,17 @@ class Docent:
         }
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
-        return response.json()
+        return response.json()["label_set_id"]
 
     def add_label(
         self,
+        collection_id: str,
         label: Label,
     ) -> dict[str, str]:
         """Create a label in a label set.
 
         Args:
+            collection_id: ID of the Collection.
             label: A `Label` object that must comply with the label set's schema.
 
         Returns:
@@ -308,7 +312,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails or validation errors occur.
         """
-        url = f"{self._server_url}/label"
+        url = f"{self._server_url}/label/{collection_id}/label"
         payload = {"label": label.model_dump(mode="json")}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -316,11 +320,13 @@ class Docent:
 
     def add_labels(
         self,
+        collection_id: str,
         labels: list[Label],
     ) -> dict[str, Any]:
         """Create multiple labels.
 
         Args:
+            collection_id: ID of the Collection.
             labels: List of `Label` objects.
 
         Returns:
@@ -333,18 +339,19 @@ class Docent:
         if not labels:
             raise ValueError("labels must contain at least one entry")
 
-        url = f"{self._server_url}/labels"
+        url = f"{self._server_url}/label/{collection_id}/labels"
         payload = {"labels": [label.model_dump(mode="json") for label in labels]}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
         return response.json()
 
     def get_labels(
-        self, label_set_id: str, filter_valid_labels: bool = False
+        self, collection_id: str, label_set_id: str, filter_valid_labels: bool = False
     ) -> list[dict[str, Any]]:
         """Retrieve all labels in a label set.
 
         Args:
+            collection_id: ID of the Collection.
             label_set_id: ID of the label set to fetch labels for.
             filter_valid_labels: If True, only return labels that match the label set schema
                 INCLUDING requirements. Default is False (returns all labels).
@@ -355,7 +362,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label_set/{label_set_id}/labels"
+        url = f"{self._server_url}/label/{collection_id}/label_set/{label_set_id}/labels"
         params = {"filter_valid_labels": filter_valid_labels}
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)

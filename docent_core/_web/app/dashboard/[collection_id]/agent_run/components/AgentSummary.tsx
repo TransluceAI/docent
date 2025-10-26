@@ -4,7 +4,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Loader2,
   SmilePlus,
   X,
 } from 'lucide-react';
@@ -608,13 +607,11 @@ const AgentSummary: React.FC<AgentSummaryProps> = ({
     <TooltipProvider>
       <ScrollArea className="h-full" ref={scrollAreaRef}>
         <div className="space-y-2">
-          <div className="flex flex-col">
-            <h4 className="text-sm flex items-center font-semibold">
+          <div className="flex flex-col gap-1">
+            <h4 className="font-semibold text-sm">
               Actions Taken by the Agent
-              {loadingActionsSummaryForTranscriptId === agentRunId && (
-                <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" />
-              )}
             </h4>
+
             <span className="text-xs text-muted-foreground">
               Click on an action to see an analysis of notable moments. Expand
               blocks to see a breakdown.

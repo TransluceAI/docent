@@ -7,6 +7,7 @@ type SchemaProperty =
 type SchemaDefinition = {
   type: 'object';
   properties: Record<string, SchemaProperty>;
+  required?: string[];
 };
 
 export type { SchemaProperty, SchemaDefinition };

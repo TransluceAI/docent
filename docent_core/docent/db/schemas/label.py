@@ -7,13 +7,14 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from docent.data_models.judge import Label
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN
+from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
 
 TABLE_LABEL = "labels"
 TABLE_LABEL_SET = "label_sets"
@@ -24,6 +25,13 @@ class SQLALabel(SQLABase):
     """Labels table - stores individual labels for agent runs."""
 
     __tablename__ = TABLE_LABEL
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_run_id",
+            "label_set_id",
+            name="uq_label_agent_run_label_set",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     label_set_id: Mapped[str] = mapped_column(
@@ -74,6 +82,12 @@ class SQLALabelSet(SQLABase):
     __tablename__ = TABLE_LABEL_SET
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_COLLECTION}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { BASE_URL } from '@/app/constants';
+import { SchemaDefinition } from '@/app/types/schema';
 
 // Types based on the backend models
 export interface Label {
@@ -13,7 +14,15 @@ export interface LabelSet {
   id: string;
   name: string;
   description?: string | null;
+  label_schema: SchemaDefinition;
+}
+
+export interface LabelSetWithCount {
+  id: string;
+  name: string;
+  description: string | null;
   label_schema: Record<string, any>;
+  label_count: number;
 }
 
 export interface CreateLabelRequest {
@@ -25,6 +34,12 @@ export interface UpdateLabelRequest {
 }
 
 export interface CreateLabelSetRequest {
+  name: string;
+  description?: string | null;
+  label_schema: Record<string, any>;
+}
+
+export interface UpdateLabelSetRequest {
   name: string;
   description?: string | null;
   label_schema: Record<string, any>;
@@ -53,7 +68,10 @@ export const labelApi = createApi({
         method: 'POST',
         body: { label },
       }),
-      invalidatesTags: ['Label'],
+      invalidatesTags: (result, error, { label }) => [
+        'Label',
+        { type: 'Label', id: `AGENT_RUN-${label.agent_run_id}` },
+      ],
     }),
     getLabel: build.query<Label, { collectionId: string; labelId: string }>({
       query: ({ collectionId, labelId }) => ({
@@ -69,6 +87,7 @@ export const labelApi = createApi({
         collectionId: string;
         labelId: string;
         label_value: Record<string, any>;
+        agentRunId: string;
       }
     >({
       query: ({ collectionId, labelId, label_value }) => ({
@@ -76,19 +95,22 @@ export const labelApi = createApi({
         method: 'PUT',
         body: { label_value },
       }),
-      invalidatesTags: ['Label'],
+      invalidatesTags: (result, error, { agentRunId, labelId }) => [
+        { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
+        { type: 'Label', id: labelId },
+      ],
     }),
     deleteLabel: build.mutation<
       { message: string },
-      { collectionId: string; labelId: string }
+      { collectionId: string; labelId: string; agentRunId: string }
     >({
       query: ({ collectionId, labelId }) => ({
         url: `/${collectionId}/label/${labelId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: (result, error, { labelId }) => [
+      invalidatesTags: (result, error, { agentRunId, labelId }) => [
+        { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
         { type: 'Label', id: labelId },
-        'Label',
       ],
     }),
 
@@ -115,35 +137,36 @@ export const labelApi = createApi({
       providesTags: (result) =>
         result ? [{ type: 'LabelSet', id: result.id }] : ['LabelSet'],
     }),
-    getLabelsInLabelSets: build.query<
-      Label[],
-      { collectionId: string; labelSetIds: string[] }
-    >({
-      query: ({ collectionId, labelSetIds }) => {
-        const params = new URLSearchParams();
-        labelSetIds.forEach((id) => params.append('labelSetIds', id));
-        return {
-          url: `/${collectionId}/labels_in_label_sets?${params.toString()}`,
-          method: 'GET',
-        };
-      },
-      providesTags: (result) =>
-        result
-          ? [
-              'Label',
-              ...result.map((label) => ({
-                type: 'Label' as const,
-                id: label.id,
-              })),
-            ]
-          : ['Label'],
-    }),
     getLabelSets: build.query<LabelSet[], { collectionId: string }>({
       query: ({ collectionId }) => ({
         url: `/${collectionId}/label_sets`,
         method: 'GET',
       }),
       providesTags: ['LabelSet'],
+    }),
+    getLabelSetsWithCounts: build.query<
+      LabelSetWithCount[],
+      { collectionId: string }
+    >({
+      query: ({ collectionId }) => ({
+        url: `/${collectionId}/label_sets_with_counts`,
+        method: 'GET',
+      }),
+      providesTags: ['LabelSet'],
+    }),
+    updateLabelSet: build.mutation<
+      { message: string },
+      { collectionId: string; labelSetId: string } & UpdateLabelSetRequest
+    >({
+      query: ({ collectionId, labelSetId, ...body }) => ({
+        url: `/${collectionId}/label_set/${labelSetId}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: (result, error, { labelSetId }) => [
+        { type: 'LabelSet', id: labelSetId },
+        'LabelSet',
+      ],
     }),
     getLabelsInLabelSet: build.query<
       Label[],
@@ -178,6 +201,25 @@ export const labelApi = createApi({
         'LabelSet',
       ],
     }),
+    getLabelsForAgentRun: build.query<
+      Label[],
+      { collectionId: string; agentRunId: string }
+    >({
+      query: ({ collectionId, agentRunId }) => ({
+        url: `/${collectionId}/agent_run/${agentRunId}/labels`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, { agentRunId }) =>
+        result
+          ? [
+              { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
+              ...result.map((label) => ({
+                type: 'Label' as const,
+                id: label.id,
+              })),
+            ]
+          : [{ type: 'Label', id: `AGENT_RUN-${agentRunId}` }],
+    }),
   }),
 });
 
@@ -192,7 +234,11 @@ export const {
   useCreateLabelSetMutation,
   useGetLabelSetQuery,
   useGetLabelSetsQuery,
+  useGetLabelSetsWithCountsQuery,
+  useUpdateLabelSetMutation,
   useGetLabelsInLabelSetQuery,
   useDeleteLabelSetMutation,
-  useGetLabelsInLabelSetsQuery,
+
+  // Other
+  useGetLabelsForAgentRunQuery,
 } = labelApi;

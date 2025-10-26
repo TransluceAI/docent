@@ -13,6 +13,7 @@ interface VirtualResultsListProps {
   activeResultId?: string;
   schema: SchemaDefinition;
   labels?: Label[];
+  activeLabelSet: any;
 }
 
 const VirtualResultsList = ({
@@ -20,6 +21,7 @@ const VirtualResultsList = ({
   activeResultId,
   schema,
   labels,
+  activeLabelSet,
 }: VirtualResultsListProps) => {
   // Group the results by agent run id
   const agentRunGroups = useMemo(() => {
@@ -58,10 +60,10 @@ const VirtualResultsList = ({
       // Estimate size based on number of results in the group
       // Each result is roughly 100px, plus header of ~40px
       const resultsCount = agentRunGroups[index]?.results.length || 1;
-      return 40 + resultsCount * 100;
+      return 40 + resultsCount * 200;
     },
     paddingStart: 0,
-    paddingEnd: 30,
+    paddingEnd: 50,
   });
   const items = virtualizer.getVirtualItems();
 
@@ -130,6 +132,7 @@ const VirtualResultsList = ({
                     judgeResult={result}
                     schema={schema}
                     labels={labelsMap?.get(group.agentRunId) || []}
+                    activeLabelSetId={activeLabelSet?.id || null}
                   />
                 ))}
               </div>
