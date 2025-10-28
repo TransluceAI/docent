@@ -361,10 +361,10 @@ const buildMetadataSuggestions = (
     return [];
   }
 
-  const hasOpeningQuoteForCurrentSegment = /->'[A-Za-z0-9_]*$/u.test(match[0]);
+  const hasOpeningQuoteForCurrentSegment = /->'[A-Za-z0-9_]*$/.test(match[0]);
 
   const hasClosingQuoteForCurrentSegment = textAfterCursor.startsWith("'");
-  const hasClosingQuoteBeforeCursor = /''$/u.test(textBeforeCursor);
+  const hasClosingQuoteBeforeCursor = /''$/.test(textBeforeCursor);
 
   const suggestions: DqlCompletionSuggestion[] = [];
   children.forEach((info) => {
@@ -475,7 +475,7 @@ const finalizeSuggestions = (
 
 export const getWordAtPosition = (sql: string, offset: number): string => {
   let index = offset;
-  while (index > 0 && /[A-Za-z0-9_'"]/u.test(sql.charAt(index - 1))) {
+  while (index > 0 && /[A-Za-z0-9_'"]/.test(sql.charAt(index - 1))) {
     index -= 1;
   }
   return sql.slice(index, offset);
@@ -507,13 +507,13 @@ export const computeDqlSuggestions = (
   );
 
   const suggestions: DqlCompletionSuggestion[] = [];
-  const expectTablesOnly = /\b(from|join)\s+$/iu.test(textBeforeCursor);
+  const expectTablesOnly = /\b(from|join)\s+$/i.test(textBeforeCursor);
   const trailingFromJoinMatch = textBeforeCursor.match(
-    /\b(from|join)\s+[A-Za-z_][\w]*(?:\s+(?:as\s+)?([A-Za-z_][\w]*))?\s*$/iu
+    /\b(from|join)\s+[A-Za-z_][\w]*(?:\s+(?:as\s+)?([A-Za-z_][\w]*))?\s*$/i
   );
   const trailingAliasCandidate = trailingFromJoinMatch?.[2];
   const trailingIncludesOn =
-    trailingFromJoinMatch && /\bON\b/iu.test(trailingFromJoinMatch[0]);
+    trailingFromJoinMatch && /\bON\b/i.test(trailingFromJoinMatch[0]);
   const suppressColumnsAfterTable =
     !!trailingFromJoinMatch &&
     !expectTablesOnly &&
@@ -523,12 +523,12 @@ export const computeDqlSuggestions = (
   const preferTablesFirst =
     clause === 'ON' ||
     clause === 'JOIN' ||
-    (clause === 'FROM' && /\(\s*$/u.test(textBeforeCursor)) ||
-    /\bON\s*\($/iu.test(textBeforeCursor) ||
-    /\bON\s*\([^)]*$/iu.test(textBeforeCursor);
+    (clause === 'FROM' && /\(\s*$/.test(textBeforeCursor)) ||
+    /\bON\s*\($/i.test(textBeforeCursor) ||
+    /\bON\s*\([^)]*$/i.test(textBeforeCursor);
 
   const columnMatch = textBeforeCursor.match(
-    /([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)?(?:->'[^']*')*$/u
+    /([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)?(?:->'[^']*')*$/
   );
   if (columnMatch) {
     const qualifier = columnMatch[1];
@@ -643,7 +643,7 @@ export const registerDqlCompletionProvider = (
       });
 
       const prefix = getWordAtPosition(sql, offset);
-      const trailingWordMatch = prefix.match(/([A-Za-z0-9_]+)$/u);
+      const trailingWordMatch = prefix.match(/([A-Za-z0-9_]+)$/);
       const replaceLength = trailingWordMatch ? trailingWordMatch[1].length : 0;
       return {
         suggestions: suggestions.map((item, index) => ({
