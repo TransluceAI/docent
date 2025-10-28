@@ -600,9 +600,9 @@ const DQLEditor = ({
               Documentation
             </a>
           </div>
-          <div className="border rounded-md">
+          <div className="border rounded-md h-48">
             <Editor
-              height="240px"
+              height="100%"
               language="sql"
               value={query}
               onChange={handleEditorChange}
