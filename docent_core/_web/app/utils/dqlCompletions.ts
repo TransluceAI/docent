@@ -324,7 +324,7 @@ const buildMetadataSuggestions = (
   }
 
   const match = textBeforeCursor.match(
-    /(?:\b([A-Za-z_][\w]*)\.)?(?:metadata_json|metadata)((?:->'[^']*')*)->'?([A-Za-z0-9_]*)$/iu
+    /(?:\b([A-Za-z_][\w]*)\.)?(?:metadata_json|metadata)((?:->'[^']*')*)->'?([A-Za-z0-9_]*)$/i
   );
 
   if (!match) {
