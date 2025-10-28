@@ -15,6 +15,7 @@ from docent_core.docent.db.dql import (
     DQLRegistry,
     DQLValidationError,
     JsonFieldInfo,
+    QueryExpression,
     SelectedColumn,
     SqlGlotExpression,
     apply_limit_cap,
@@ -636,6 +637,27 @@ def test_judge_results_query_scoped_via_agent_run_subquery() -> None:
     assert COLLECTION_ID in compiled.params.values()
 
 
+def test_union_query_allowed() -> None:
+    registry = build_default_registry(collection_id=COLLECTION_ID)
+    clause = asyncio.run(
+        build_collection_sqla_query(
+            mono_service=DummyMonoService(True),  # type: ignore[arg-type]
+            user=TEST_USER,
+            collection_id=COLLECTION_ID,
+            dql=(
+                "SELECT id FROM agent_runs WHERE name = 'alpha' "
+                "UNION "
+                "SELECT id FROM agent_runs WHERE name = 'beta'"
+            ),
+            registry=registry,
+        )
+    )
+    sql_text = clause.text
+    assert "UNION" in sql_text
+    # Ensure both branches are collection scoped.
+    assert sql_text.count("collection_id = :__dql_param_") >= 2
+
+
 def test_get_query_limit_value_and_apply_limit_cap() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     expression = parse_dql_query(
@@ -643,7 +665,7 @@ def test_get_query_limit_value_and_apply_limit_cap() -> None:
     )
     # The expression should be a Select, not Query
     assert isinstance(expression, exp.Select)
-    query_expression = cast(exp.Query, expression)
+    query_expression = cast(QueryExpression, expression)
     assert get_query_limit_value(query_expression) == 3
 
     apply_limit_cap(query_expression, 5)
@@ -652,13 +674,27 @@ def test_get_query_limit_value_and_apply_limit_cap() -> None:
     assert rendered_sql.endswith("LIMIT 5")
 
 
+def test_union_limit_cap() -> None:
+    registry = build_default_registry(collection_id=COLLECTION_ID)
+    expression = parse_dql_query(
+        "SELECT id FROM agent_runs UNION SELECT id FROM agent_runs LIMIT 9",
+        registry=registry,
+        collection_id=COLLECTION_ID,
+    )
+    assert isinstance(expression, exp.Union)
+    query_expression = cast(QueryExpression, expression)
+    assert get_query_limit_value(query_expression) == 9
+    apply_limit_cap(query_expression, 4)
+    assert get_query_limit_value(query_expression) == 4
+
+
 def test_apply_limit_cap_requires_positive_limit() -> None:
     registry = build_default_registry(collection_id=COLLECTION_ID)
     expression = parse_dql_query(
         "SELECT id FROM agent_runs", registry=registry, collection_id=COLLECTION_ID
     )
     assert isinstance(expression, exp.Select)
-    query_expression = cast(exp.Query, expression)
+    query_expression = cast(QueryExpression, expression)
     with pytest.raises(ValueError):
         apply_limit_cap(query_expression, 0)
 

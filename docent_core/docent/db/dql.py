@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 SqlGlotExpression = exp.Expression
 SqlGlotColumn = exp.Column
 TExpr = TypeVar("TExpr", bound=SqlGlotExpression)
+QueryExpression = exp.Query | exp.SetOperation
 
 __all__ = [
     "AllowedTable",
@@ -66,6 +67,7 @@ __all__ = [
     "extract_selected_columns",
     "get_selected_columns",
     "parse_dql_query",
+    "QueryExpression",
 ]
 
 
@@ -799,9 +801,10 @@ def parse_dql_query(
 
     expression = statements[0]
     _apply_expression_sugar(expression)
-    if not isinstance(expression, exp.Query):
+    if not isinstance(expression, (exp.Query, exp.SetOperation)):
         raise DQLValidationError("Only SELECT-style queries are permitted.")
 
+    query_expression: QueryExpression = expression
     _ensure_select_only(expression)
     _ensure_allowed_expressions(expression)
     _validate_query_expression(expression, registry, collection_id)
@@ -810,7 +813,7 @@ def parse_dql_query(
         "Validated DQL query for collection_id=%s tables=%s limit=%s",
         collection_id,
         table_names,
-        get_query_limit_value(expression),
+        get_query_limit_value(query_expression),
     )
     return expression
 
@@ -1113,7 +1116,7 @@ def _literal_to_int(expression: SqlGlotExpression | None) -> int | None:
     return None
 
 
-def get_query_limit_value(expression: exp.Query) -> int | None:
+def get_query_limit_value(expression: QueryExpression) -> int | None:
     """Expose the LIMIT value so callers can apply overrides or defaults before execution."""
 
     limit_expr = cast(exp.Limit | None, expression.args.get("limit"))
@@ -1122,7 +1125,7 @@ def get_query_limit_value(expression: exp.Query) -> int | None:
     return _literal_to_int(limit_expr.expression)
 
 
-def apply_limit_cap(expression: exp.Query, limit_value: int) -> None:
+def apply_limit_cap(expression: QueryExpression, limit_value: int) -> None:
     """Override the LIMIT clause with a cap so callers can enforce result bounds."""
 
     if limit_value <= 0:

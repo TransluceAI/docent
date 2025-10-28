@@ -17,7 +17,6 @@ from typing import (
 )
 from uuid import uuid4
 
-import sqlglot.expressions as exp
 from passlib.context import CryptContext
 from sqlalchemy import (
     ColumnElement,
@@ -51,6 +50,7 @@ from docent_core.docent.db.dql import (
     DQL_COLLECTION_SETTING_KEY,
     DQLExecutionError,
     JsonFieldInfo,
+    QueryExpression,
     SelectedColumn,
     apply_limit_cap,
     build_default_registry,
@@ -866,7 +866,8 @@ class MonoService:
             collection_id=collection_id,
         )
         selected_columns = extract_selected_columns(expression)
-        requested_limit = get_query_limit_value(cast(exp.Query, expression))
+        query_expression = cast(QueryExpression, expression)
+        requested_limit = get_query_limit_value(query_expression)
         server_cap = MAX_DQL_RESULT_LIMIT
         applied_limit = server_cap if requested_limit is None else min(requested_limit, server_cap)
 
@@ -875,7 +876,7 @@ class MonoService:
         else:
             fetch_limit = requested_limit + 1
 
-        apply_limit_cap(cast(exp.Query, expression), fetch_limit)
+        apply_limit_cap(query_expression, fetch_limit)
         compiled_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
         parameterized_sql, parameters = parameterize_expression(expression, "postgres")
         statement = text(parameterized_sql)
