@@ -129,6 +129,8 @@ class DocentTracer:
             lambda: itertools.count(0)
         )
         self._transcript_counter_lock = threading.Lock()
+        self._transcript_group_states: dict[str, dict[str, Optional[str]]] = {}
+        self._transcript_group_state_lock = threading.Lock()
         self._flush_lock = threading.Lock()
 
     def get_current_agent_run_id(self) -> Optional[str]:
@@ -888,6 +890,27 @@ class DocentTracer:
             )
             return
 
+        with self._transcript_group_state_lock:
+            state: dict[str, Optional[str]] = self._transcript_group_states.setdefault(
+                transcript_group_id, {}
+            )
+            final_name: Optional[str] = name if name is not None else state.get("name")
+            final_description: Optional[str] = (
+                description if description is not None else state.get("description")
+            )
+            final_parent_transcript_group_id: Optional[str] = (
+                parent_transcript_group_id
+                if parent_transcript_group_id is not None
+                else state.get("parent_transcript_group_id")
+            )
+
+            if final_name is not None:
+                state["name"] = final_name
+            if final_description is not None:
+                state["description"] = final_description
+            if final_parent_transcript_group_id is not None:
+                state["parent_transcript_group_id"] = final_parent_transcript_group_id
+
         payload: Dict[str, Any] = {
             "collection_id": collection_id,
             "transcript_group_id": transcript_group_id,
@@ -895,12 +918,12 @@ class DocentTracer:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        if name is not None:
-            payload["name"] = name
-        if description is not None:
-            payload["description"] = description
-        if parent_transcript_group_id is not None:
-            payload["parent_transcript_group_id"] = parent_transcript_group_id
+        if final_name is not None:
+            payload["name"] = final_name
+        if final_description is not None:
+            payload["description"] = final_description
+        if final_parent_transcript_group_id is not None:
+            payload["parent_transcript_group_id"] = final_parent_transcript_group_id
         if metadata is not None:
             payload["metadata"] = metadata
 
