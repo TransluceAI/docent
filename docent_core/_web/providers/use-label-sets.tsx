@@ -40,7 +40,9 @@ export function LabelSetsProvider({
   >('activeLabelSetByRubric', {});
 
   // Fetch all available label sets to validate stored references
-  const { data: availableLabelSets } = useGetLabelSetsQuery({ collectionId });
+  const { data: availableLabelSets, isFetching } = useGetLabelSetsQuery({
+    collectionId,
+  });
 
   const activeLabelSet = useMemo(
     () => labelSetsByRubric[rubricId] || null,
@@ -49,7 +51,7 @@ export function LabelSetsProvider({
 
   // Validate and sync label set data with server
   useEffect(() => {
-    if (!availableLabelSets || !activeLabelSet) return;
+    if (!availableLabelSets || !activeLabelSet || isFetching) return;
 
     // Find the current version from the server
     const currentLabelSet = availableLabelSets.find(
@@ -72,7 +74,13 @@ export function LabelSetsProvider({
         [rubricId]: currentLabelSet,
       }));
     }
-  }, [availableLabelSets, activeLabelSet, rubricId, setLabelSetsByRubric]);
+  }, [
+    availableLabelSets,
+    activeLabelSet,
+    rubricId,
+    setLabelSetsByRubric,
+    isFetching,
+  ]);
 
   const setActiveLabelSet = (newLabelSet: LabelSet | null) => {
     setLabelSetsByRubric((prev) => ({

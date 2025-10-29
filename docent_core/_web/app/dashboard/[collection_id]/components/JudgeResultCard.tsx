@@ -69,6 +69,7 @@ const LabelSetMenuItems = ({
         const newLabelSet = {
           id: result.label_set_id,
           name: trimmed,
+          description: undefined,
           label_schema: schema,
         };
         setActiveLabelSet(newLabelSet);

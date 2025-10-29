@@ -95,7 +95,7 @@ export default function SingleRubricArea({
   const schema = rubric?.output_schema;
 
   const { activeLabelSet, setActiveLabelSet, clearLabelSets } = useLabelSets();
-  const { data: labels = [], isSuccess: isLabelsSuccess } =
+  const { data: labels = [], isLoading: isLabelsLoading } =
     useGetLabelsInLabelSetQuery(
       activeLabelSet
         ? { collectionId, labelSetId: activeLabelSet.id }
@@ -329,7 +329,7 @@ export default function SingleRubricArea({
           !rubricJobId &&
           hasWritePermission &&
           !clusteringJobId &&
-          isLabelsSuccess
+          !isLabelsLoading
         }
       />
 
