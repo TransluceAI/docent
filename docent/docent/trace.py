@@ -1270,6 +1270,41 @@ def transcript_metadata(
         logger.error(f"Failed to send transcript metadata: {e}")
 
 
+def transcript_group_metadata(
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parent_transcript_group_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Send transcript group metadata directly to the backend for the current transcript group.
+
+    Args:
+        name: Optional transcript group name
+        description: Optional transcript group description
+        parent_transcript_group_id: Optional parent transcript group ID
+        metadata: Optional metadata to send
+
+    Example:
+        transcript_group_metadata(name="pipeline", description="Main processing pipeline")
+        transcript_group_metadata(metadata={"team": "search", "env": "prod"})
+    """
+    try:
+        tracer = get_tracer()
+        if tracer.is_disabled():
+            return
+        transcript_group_id = tracer.get_current_transcript_group_id()
+        if not transcript_group_id:
+            logger.warning("No active transcript group context. Metadata will not be sent.")
+            return
+
+        tracer.send_transcript_group_metadata(
+            transcript_group_id, name, description, parent_transcript_group_id, metadata
+        )
+    except Exception as e:
+        logger.error(f"Failed to send transcript group metadata: {e}")
+
+
 class AgentRunContext:
     """Context manager that works in both sync and async contexts."""
 
