@@ -125,6 +125,7 @@ class AgentRun(BaseModel):
         #     )
 
         # Append the text field
+        result.append({"name": "agent_run_id", "type": "str"})
         result.append({"name": "text", "type": "str"})
 
         return result

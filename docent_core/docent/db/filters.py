@@ -123,6 +123,8 @@ class PrimitiveFilter(BaseCollectionFilter):
             sqla_value = table.text_for_search  # type: ignore
         elif mode == "created_at":
             sqla_value = cast(table.created_at, String)  # type: ignore
+        elif mode == "agent_run_id":
+            sqla_value = cast(table.id, String)  # type: ignore
         elif mode == "metadata":
             sqla_value = table.metadata_json  # type: ignore
             json_keys = self.key_path[1:]
