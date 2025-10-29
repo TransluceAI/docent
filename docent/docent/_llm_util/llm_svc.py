@@ -176,7 +176,7 @@ async def _parallelize_calls(
                         )
                         if retry_count >= MAX_VALIDATION_ATTEMPTS:
                             logger.error(
-                                f"Validation failed for {model_name} after {MAX_VALIDATION_ATTEMPTS} attempts: {e}"
+                                f"Validation failed for {model_name} after {retry_count} attempts. Original output: {e.failed_output}"
                             )
                             result = LLMOutput(
                                 model=model_name,
@@ -195,8 +195,8 @@ async def _parallelize_calls(
                         break
                     except Exception as e:
                         if not isinstance(e, LLMException):
-                            logger.warning(
-                                f"LLM call raised an exception that is not an LLMException: {e}"
+                            logger.error(
+                                f"LLM call raised an exception that is not an LLMException: {e}. Failure traceback:\n{traceback.format_exc()}"
                             )
                             llm_exception = LLMException(e)
                             llm_exception.__cause__ = e

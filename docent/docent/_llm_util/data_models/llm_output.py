@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from docent._llm_util.data_models.exceptions import (
     LLM_ERROR_TYPES,
     CompletionTooLongException,
+    ContextWindowException,
     LLMException,
 )
 from docent._log_util import get_logger
@@ -148,6 +149,13 @@ class LLMOutput:
     def from_dict(cls, data: dict[str, Any]) -> "LLMOutput":
         error_type_map = {e.error_type_id: e for e in LLM_ERROR_TYPES}
         errors = data.get("errors", [])
+        error_types_to_not_log: list[str] = [
+            CompletionTooLongException.error_type_id,
+            ContextWindowException.error_type_id,
+        ]
+        errors_to_log = [e for e in errors if e not in error_types_to_not_log]
+        if errors_to_log:
+            logger.error(f"Loading LLM output with errors: {errors}")
         errors = [error_type_map.get(e, LLMException)() for e in errors]
 
         completions = data.get("completions", [])
