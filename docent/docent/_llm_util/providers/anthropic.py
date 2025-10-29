@@ -178,7 +178,7 @@ def _parse_tool_choice(tool_choice: Literal["auto", "required"] | None) -> ToolC
 
 def _convert_anthropic_error(e: Exception):
     if isinstance(e, BadRequestError):
-        if "context limit" in e.message.lower():
+        if "context limit" in e.message.lower() or "prompt is too long" in e.message.lower():
             return ContextWindowException()
     if isinstance(e, RateLimitError):
         return RateLimitException(e)
