@@ -132,39 +132,3 @@ export interface SolutionSummary {
   summary: string;
   parts: string[];
 }
-
-export interface ActionsSummary {
-  agent_run_id: string;
-  low_level: LowLevelAction[];
-  high_level: HighLevelAction[];
-  observations: ObservationType[];
-}
-
-export interface LowLevelAction {
-  action_unit_idx: number;
-  title: string;
-  summary: string;
-  citations: Citation[];
-}
-
-export interface HighLevelAction {
-  step_idx: number;
-  title: string;
-  summary: string;
-  action_unit_indices: number[];
-  first_block_idx: number | null;
-  citations: Citation[];
-}
-
-export type ObservationCategory =
-  | 'mistake'
-  | 'critical_insight'
-  | 'near_miss'
-  | 'weird_behavior'
-  | 'cheating';
-
-export interface ObservationType {
-  category: ObservationCategory;
-  description: string;
-  action_unit_idx: number;
-}

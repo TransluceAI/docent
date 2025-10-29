@@ -4,6 +4,7 @@ import React from 'react';
 import { useCitationHighlight } from '@/lib/citationUtils';
 import posthog from 'posthog-js';
 import { NavigateToCitation } from '@/components/CitationRenderer';
+import { useParams } from 'next/navigation';
 
 interface CitationNavigationContextValue {
   registerHandler: (handler: NavigateToCitation | null) => void;
@@ -22,6 +23,10 @@ export function useCitationNavigation(): CitationNavigationContextValue | null {
 export const CitationNavigationProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
+  const { collection_id: collectionId } = useParams<{
+    collection_id: string;
+  }>();
+
   const handlerRef = React.useRef<NavigateToCitation | null>(null);
   const pendingRef = React.useRef<{
     args: Parameters<NavigateToCitation>[0];
@@ -50,6 +55,7 @@ export const CitationNavigationProvider: React.FC<{
       if (citation) {
         highlightCitation(citation);
         posthog.capture('citation_clicked', {
+          collection_id: collectionId ?? 'unknown',
           source: source || 'generic',
           transcript_idx: citation.transcript_idx,
           block_idx: citation.block_idx,
@@ -64,7 +70,7 @@ export const CitationNavigationProvider: React.FC<{
       // Store pending until a handler registers (e.g., after route change)
       pendingRef.current = { args: { citation, source } };
     },
-    [highlightCitation]
+    [highlightCitation, collectionId]
   );
 
   const value = React.useMemo(

@@ -1,12 +1,9 @@
-import hashlib
 import itertools
-import json
 import os
 import tempfile
 import time
 import zipfile
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -36,14 +33,6 @@ from docent_core._server._auth.session import (
     invalidate_user_session,
 )
 from docent_core._server.util import sse_stream
-from docent_core.docent.ai_tools.assistant.summarizer import (
-    HighLevelAction,
-    LowLevelAction,
-    ObservationType,
-    group_actions_into_high_level_steps,
-    interesting_agent_observations,
-    summarize_agent_actions,
-)
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.filters import (
     ComplexFilter,
@@ -1236,107 +1225,3 @@ async def compute_embeddings(
 ):
     return
     await mono_svc.add_and_enqueue_embedding_job(ctx)
-
-
-#######################
-# Agent run summaries #
-#######################
-
-
-@user_router.get("/{collection_id}/actions_summary")
-async def get_actions_summary(
-    agent_run_id: str,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-):
-
-    agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
-    if not agent_run:
-        raise HTTPException(status_code=404, detail=f"AgentRun {agent_run_id} not found")
-    # Get first transcript TODO(mengk): generalize to multi-agent setting
-    if len(agent_run.transcripts) == 0:
-        raise HTTPException(status_code=404, detail=f"AgentRun {agent_run_id} has no transcripts")
-    transcript = agent_run.transcripts[0]
-
-    # Result variables; hashes prevent updating with identical content multiple times
-    low_level_actions: list[LowLevelAction] = []
-    high_level_actions: list[HighLevelAction] = []
-    agent_observations: list[ObservationType] = []
-    prev_hash: str | None = None
-
-    # AnyIO queue that we can write intermediate results to
-    send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
-        max_buffer_size=100_000
-    )
-    lock = anyio.Lock()  # Only one payload can be sent at a time
-
-    def _get_payload():
-        nonlocal low_level_actions, high_level_actions, agent_observations, agent_run_id
-
-        payload = {
-            "low_level": low_level_actions,
-            "high_level": high_level_actions,
-            "observations": agent_observations,
-            "agent_run_id": agent_run_id,
-        }
-        payload_hash = hashlib.sha256(
-            json.dumps(to_jsonable_python(payload), sort_keys=True).encode()
-        ).hexdigest()
-        return payload, payload_hash
-
-    async def _send_payload_if_new():
-        nonlocal prev_hash
-        async with lock:
-            payload, payload_hash = _get_payload()
-
-            # Only send if hash is different from previous hash
-            if payload_hash != prev_hash:
-                await send_stream.send(payload)
-                prev_hash = payload_hash
-
-    async def _actions_callback(actions: list[LowLevelAction]):
-        nonlocal low_level_actions
-        low_level_actions = actions
-        await _send_payload_if_new()  # TODO: does this slow things down? should be run in the background, i think
-
-    async def _high_level_actions_callback(actions: list[HighLevelAction]):
-        nonlocal high_level_actions
-        high_level_actions = actions
-        await _send_payload_if_new()
-
-    async def _observations_callback(observations: list[ObservationType]):
-        nonlocal agent_observations
-        agent_observations = observations
-        await _send_payload_if_new()
-
-    # Run agent observations concurrently with the other tasks
-    async def _execute():
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(
-                partial(
-                    interesting_agent_observations,
-                    transcript,
-                    streaming_callback=_observations_callback,
-                )
-            )
-
-            # Concurrently, get the low-level actions
-            low_level_actions = await summarize_agent_actions(
-                transcript,
-                streaming_callback=_actions_callback,
-            )
-            # Wait for low-level actions, then group them into high-level steps
-            if low_level_actions:
-                await group_actions_into_high_level_steps(
-                    low_level_actions,
-                    transcript,
-                    streaming_callback=_high_level_actions_callback,
-                )
-
-        # At the very end, close the recv_stream
-        await send_stream.aclose()
-
-    return StreamingResponse(
-        sse_stream(_execute, send_stream, recv_stream), media_type="text/event-stream"
-    )

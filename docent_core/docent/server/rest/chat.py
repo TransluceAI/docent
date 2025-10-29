@@ -16,6 +16,10 @@ from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import AsyncSession, get_session
+from docent_core.docent.server.dependencies.permissions import (
+    Permission,
+    require_collection_permission,
+)
 from docent_core.docent.server.dependencies.services import (
     get_chat_service,
     get_mono_svc,
@@ -175,3 +179,14 @@ async def get_chat_models(
         byok=PROVIDER_PREFERENCES.byok_chat_models,
         api_keys=await mono_svc.get_api_key_overrides(user),
     )
+
+
+@chat_router.get("/{collection_id}/{agent_run_id}/sessions")
+async def get_chat_sessions_for_run(
+    collection_id: str,
+    agent_run_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[ChatSession]:
+    """Get all chat sessions for an agent run, excluding judge result sessions."""
+    return await chat_svc.get_chat_sessions_for_run(collection_id, agent_run_id)

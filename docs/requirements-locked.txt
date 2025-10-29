@@ -3,11 +3,17 @@
 .
 ./docent
     # via docent-core
-aiobotocore==2.23.0
-    # via s3fs
+aioboto3==15.1.0
+    # via inspect-ai
+aiobotocore==2.24.0
+    # via
+    #   aioboto3
+    #   s3fs
+aiofiles==24.1.0
+    # via aioboto3
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.12.13
+aiohttp==3.12.15
     # via
     #   aiobotocore
     #   fsspec
@@ -15,17 +21,17 @@ aiohttp==3.12.13
     #   s3fs
 aioitertools==0.12.0
     # via aiobotocore
-aiosignal==1.3.2
+aiosignal==1.4.0
     # via aiohttp
-alembic==1.16.4
+alembic==1.16.5
     # via docent-core
 annotated-types==0.7.0
     # via pydantic
-anthropic==0.55.0
+anthropic==0.68.0
     # via
-    #   docent-core
+    #   docent-python
     #   opentelemetry-instrumentation-bedrock
-anyio==4.9.0
+anyio==4.10.0
     # via
     #   anthropic
     #   google-genai
@@ -41,7 +47,7 @@ argon2-cffi==25.1.0
     # via
     #   jupyter-server
     #   passlib
-argon2-cffi-bindings==21.2.0
+argon2-cffi-bindings==25.1.0
     # via argon2-cffi
 arq==0.26.3
     # via docent-core
@@ -67,46 +73,49 @@ babel==2.17.0
     #   mkdocs-material
 backoff==2.2.1
     # via
-    #   docent-core
+    #   docent-python
     #   posthog
 backrefs==5.9
     # via mkdocs-material
 beaupy==3.10.1
     # via docent-core
-beautifulsoup4==4.13.4
+beautifulsoup4==4.13.5
     # via
     #   inspect-ai
     #   nbconvert
 bleach==6.2.0
     # via nbconvert
-boto3==1.38.27
-    # via docent-core
-botocore==1.38.27
+boto3==1.39.11
+    # via
+    #   aiobotocore
+    #   docent-core
+botocore==1.39.11
     # via
     #   aiobotocore
     #   boto3
     #   s3transfer
 cachetools==5.5.2
     # via google-auth
-certifi==2025.6.15
+certifi==2025.8.3
     # via
     #   httpcore
     #   httpx
     #   requests
     #   sentry-sdk
-cffi==1.17.1
+cffi==2.0.0
     # via
     #   argon2-cffi-bindings
     #   pyzmq
 cfgv==3.4.0
     # via pre-commit
-charset-normalizer==3.4.2
+charset-normalizer==3.4.3
     # via requests
-click==8.1.8
+click==8.2.1
     # via
     #   arq
     #   inspect-ai
     #   mkdocs
+    #   mkdocs-material
     #   typer
     #   uvicorn
 colorama==0.4.6
@@ -119,17 +128,17 @@ colorama==0.4.6
     #   pytest
     #   tqdm
     #   uvicorn
-comm==0.2.2
+comm==0.2.3
     # via
     #   ipykernel
     #   ipywidgets
-contourpy==1.3.2
+contourpy==1.3.3
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-datasets==4.0.0
+datasets==4.1.1
     # via docent-core
-debugpy==1.8.14
+debugpy==1.8.17
     # via
     #   inspect-ai
     #   ipykernel
@@ -137,33 +146,35 @@ decorator==5.2.1
     # via ipython
 defusedxml==0.7.1
     # via nbconvert
-dill==0.3.8
+dill==0.4.0
     # via
     #   datasets
     #   multiprocess
-distlib==0.3.9
+distlib==0.4.0
     # via virtualenv
 distro==1.9.0
     # via
     #   anthropic
     #   openai
     #   posthog
-docstring-parser==0.16
-    # via inspect-ai
+docstring-parser==0.17.0
+    # via
+    #   anthropic
+    #   inspect-ai
 emoji==2.14.1
     # via beaupy
-executing==2.2.0
+executing==2.2.1
     # via stack-data
-fastapi==0.115.14
+fastapi==0.116.2
     # via docent-core
-fastjsonschema==2.21.1
+fastjsonschema==2.21.2
     # via nbformat
-filelock==3.18.0
+filelock==3.19.1
     # via
     #   datasets
     #   huggingface-hub
     #   virtualenv
-fonttools==4.58.4
+fonttools==4.60.0
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
@@ -181,25 +192,25 @@ ghp-import==2.1.0
     # via mkdocs
 google-auth==2.40.3
     # via google-genai
-google-genai==1.23.0
-    # via docent-core
+google-genai==1.38.0
+    # via docent-python
 googleapis-common-protos==1.70.0
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-greenlet==3.2.3
+greenlet==3.2.4
     # via
     #   docent-core
     #   sqlalchemy
-griffe==1.7.3
+griffe==1.14.0
     # via mkdocstrings-python
-grpcio==1.74.0
+grpcio==1.75.0
     # via opentelemetry-exporter-otlp-proto-grpc
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-hf-xet==1.1.5 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.1.10 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
 hiredis==3.2.1
     # via redis
@@ -214,11 +225,11 @@ httpx==0.28.1
     #   inspect-ai
     #   jupyterlab
     #   openai
-huggingface-hub==0.34.3
+huggingface-hub==0.35.0
     # via
     #   datasets
     #   tokenizers
-identify==2.6.12
+identify==2.6.14
     # via pre-commit
 idna==3.10
     # via
@@ -233,14 +244,16 @@ importlib-metadata==8.7.0
     # via opentelemetry-api
 iniconfig==2.1.0
     # via pytest
-inspect-ai==0.3.109
-    # via docent-core
-ipykernel==6.29.5
+inspect-ai==0.3.132
+    # via
+    #   docent-core
+    #   docent-python
+ipykernel==6.30.1
     # via
     #   jupyter
     #   jupyter-console
     #   jupyterlab
-ipython==9.3.0
+ipython==9.5.0
     # via
     #   ipykernel
     #   ipywidgets
@@ -262,7 +275,7 @@ jinja2==3.1.6
     #   mkdocs-material
     #   mkdocstrings
     #   nbconvert
-jiter==0.10.0
+jiter==0.11.0
     # via
     #   anthropic
     #   openai
@@ -271,7 +284,7 @@ jmespath==1.0.1
     #   aiobotocore
     #   boto3
     #   botocore
-json5==0.12.0
+json5==0.12.1
     # via jupyterlab-server
 jsonlines==4.0.0
     # via inspect-ai
@@ -285,13 +298,14 @@ jsonpointer==3.0.0
     #   jsonschema
 jsonref==1.1.0
     # via inspect-ai
-jsonschema==4.24.0
+jsonschema==4.25.1
     # via
+    #   docent-python
     #   inspect-ai
     #   jupyter-events
     #   jupyterlab-server
     #   nbformat
-jsonschema-specifications==2025.4.1
+jsonschema-specifications==2025.9.1
     # via jsonschema
 jupyter==1.1.1
     # via docent-core
@@ -315,9 +329,9 @@ jupyter-core==5.8.1
     #   nbformat
 jupyter-events==0.12.0
     # via jupyter-server
-jupyter-lsp==2.2.5
+jupyter-lsp==2.3.0
     # via jupyterlab
-jupyter-server==2.16.0
+jupyter-server==2.17.0
     # via
     #   jupyter-lsp
     #   jupyterlab
@@ -326,7 +340,7 @@ jupyter-server==2.16.0
     #   notebook-shim
 jupyter-server-terminals==0.5.3
     # via jupyter-server
-jupyterlab==4.4.3
+jupyterlab==4.4.7
     # via
     #   jupyter
     #   notebook
@@ -338,20 +352,22 @@ jupyterlab-server==2.27.3
     #   notebook
 jupyterlab-widgets==3.0.15
     # via ipywidgets
-kiwisolver==1.4.8
+kiwisolver==1.4.9
     # via matplotlib
+lark==1.2.2
+    # via rfc3987-syntax
 linkify-it-py==2.0.3
     # via markdown-it-py
 mako==1.3.10
     # via alembic
-markdown==3.8.2
+markdown==3.9
     # via
     #   mkdocs
     #   mkdocs-autorefs
     #   mkdocs-material
     #   mkdocstrings
     #   pymdown-extensions
-markdown-it-py==3.0.0
+markdown-it-py==4.0.0
     # via
     #   mdit-py-plugins
     #   rich
@@ -364,13 +380,13 @@ markupsafe==3.0.2
     #   mkdocs-autorefs
     #   mkdocstrings
     #   nbconvert
-matplotlib==3.10.3
+matplotlib==3.10.6
     # via docent-core
 matplotlib-inline==0.1.7
     # via
     #   ipykernel
     #   ipython
-mdit-py-plugins==0.4.2
+mdit-py-plugins==0.5.0
     # via markdown-it-py
 mdurl==0.1.2
     # via markdown-it-py
@@ -378,7 +394,7 @@ mergedeep==1.3.4
     # via
     #   mkdocs
     #   mkdocs-get-deps
-mistune==3.1.3
+mistune==3.1.4
     # via nbconvert
 mkdocs==1.6.1
     # via
@@ -386,23 +402,23 @@ mkdocs==1.6.1
     #   mkdocs-autorefs
     #   mkdocs-material
     #   mkdocstrings
-mkdocs-autorefs==1.4.2
+mkdocs-autorefs==1.4.3
     # via
     #   mkdocstrings
     #   mkdocstrings-python
 mkdocs-get-deps==0.2.0
     # via mkdocs
-mkdocs-material==9.6.14
+mkdocs-material==9.6.20
     # via docent-core
 mkdocs-material-extensions==1.3.1
     # via mkdocs-material
-mkdocstrings==0.29.1
+mkdocstrings==0.30.1
     # via mkdocstrings-python
-mkdocstrings-python==1.16.12
+mkdocstrings-python==1.18.2
     # via docent-core
-mmh3==5.1.0
+mmh3==5.2.0
     # via inspect-ai
-multidict==6.6.0
+multidict==6.6.4
     # via
     #   aiobotocore
     #   aiohttp
@@ -428,13 +444,13 @@ nodeenv==1.9.1
     # via
     #   pre-commit
     #   pyright
-notebook==7.4.3
+notebook==7.4.5
     # via jupyter
 notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.3.1
+numpy==2.3.3
     # via
     #   contourpy
     #   datasets
@@ -442,9 +458,10 @@ numpy==2.3.1
     #   matplotlib
     #   pandas
     #   pgvector
-openai==1.93.0
-    # via docent-core
-opentelemetry-api==1.34.1
+    #   scipy
+openai==1.108.1
+    # via docent-python
+opentelemetry-api==1.37.0
     # via
     #   docent-core
     #   docent-python
@@ -453,62 +470,70 @@ opentelemetry-api==1.34.1
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
+    #   opentelemetry-instrumentation-google-generativeai
     #   opentelemetry-instrumentation-langchain
     #   opentelemetry-instrumentation-openai
     #   opentelemetry-instrumentation-threading
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-exporter-otlp-proto-common==1.34.1
+opentelemetry-exporter-otlp-proto-common==1.37.0
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.34.1
+opentelemetry-exporter-otlp-proto-grpc==1.37.0
     # via docent-python
-opentelemetry-exporter-otlp-proto-http==1.34.1
+opentelemetry-exporter-otlp-proto-http==1.37.0
     # via docent-python
-opentelemetry-instrumentation==0.55b1
+opentelemetry-instrumentation==0.58b0
     # via
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
+    #   opentelemetry-instrumentation-google-generativeai
     #   opentelemetry-instrumentation-langchain
     #   opentelemetry-instrumentation-openai
     #   opentelemetry-instrumentation-threading
-opentelemetry-instrumentation-anthropic==0.44.1
+opentelemetry-instrumentation-anthropic==0.47.2
     # via docent-python
-opentelemetry-instrumentation-bedrock==0.44.1
+opentelemetry-instrumentation-bedrock==0.47.2
     # via docent-python
-opentelemetry-instrumentation-langchain==0.44.1
+opentelemetry-instrumentation-google-generativeai==0.47.3
     # via docent-python
-opentelemetry-instrumentation-openai==0.44.1
+opentelemetry-instrumentation-langchain==0.47.2
     # via docent-python
-opentelemetry-instrumentation-threading==0.55b1
+opentelemetry-instrumentation-openai==0.47.2
     # via docent-python
-opentelemetry-proto==1.34.1
+opentelemetry-instrumentation-threading==0.58b0
+    # via docent-python
+opentelemetry-proto==1.37.0
     # via
     #   docent-core
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.34.1
+opentelemetry-sdk==1.37.0
     # via
     #   docent-python
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.55b1
+opentelemetry-semantic-conventions==0.58b0
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
+    #   opentelemetry-instrumentation-google-generativeai
     #   opentelemetry-instrumentation-langchain
     #   opentelemetry-instrumentation-openai
     #   opentelemetry-sdk
-opentelemetry-semantic-conventions-ai==0.4.11
+opentelemetry-semantic-conventions-ai==0.4.13
     # via
     #   opentelemetry-instrumentation-anthropic
     #   opentelemetry-instrumentation-bedrock
+    #   opentelemetry-instrumentation-google-generativeai
     #   opentelemetry-instrumentation-langchain
     #   opentelemetry-instrumentation-openai
-overrides==7.7.0
+orjson==3.11.3
+    # via docent-python
+overrides==7.7.0 ; python_full_version < '3.12'
     # via jupyter-server
 packaging==25.0
     # via
@@ -526,11 +551,11 @@ packaging==25.0
     #   pytest
 paginate==0.5.7
     # via mkdocs-material
-pandas==2.3.1
+pandas==2.3.2
     # via datasets
 pandocfilters==1.5.1
     # via nbconvert
-parso==0.8.4
+parso==0.8.5
     # via jedi
 passlib==1.7.4
     # via docent-core
@@ -540,9 +565,9 @@ pexpect==4.9.0 ; sys_platform != 'emscripten' and sys_platform != 'win32'
     # via ipython
 pgvector==0.4.1
     # via docent-core
-pillow==11.2.1
+pillow==11.3.0
     # via matplotlib
-platformdirs==4.3.8
+platformdirs==4.4.0
     # via
     #   inspect-ai
     #   jupyter-core
@@ -553,13 +578,13 @@ pluggy==1.6.0
     # via pytest
 ply==3.11
     # via jsonpath-ng
-posthog==6.3.1
+posthog==6.7.5
     # via docent-core
-pre-commit==4.2.0
+pre-commit==4.3.0
     # via docent-core
-prometheus-client==0.22.1
+prometheus-client==0.23.1
     # via jupyter-server
-prompt-toolkit==3.0.51
+prompt-toolkit==3.0.52
     # via
     #   ipython
     #   jupyter-console
@@ -567,12 +592,12 @@ propcache==0.3.2
     # via
     #   aiohttp
     #   yarl
-protobuf==5.29.5
+protobuf==6.32.1
     # via
     #   docent-core
     #   googleapis-common-protos
     #   opentelemetry-proto
-psutil==7.0.0
+psutil==7.1.0
     # via
     #   inspect-ai
     #   ipykernel
@@ -592,9 +617,9 @@ pyasn1==0.6.1
     #   rsa
 pyasn1-modules==0.4.2
     # via google-auth
-pycparser==2.22
+pycparser==2.23 ; implementation_name != 'PyPy'
     # via cffi
-pydantic==2.11.7
+pydantic==2.11.9
     # via
     #   anthropic
     #   docent-python
@@ -613,21 +638,21 @@ pygments==2.19.2
     #   nbconvert
     #   pytest
     #   rich
-pyjwt==2.9.0
+pyjwt==2.10.1
     # via redis
-pymdown-extensions==10.16
+pymdown-extensions==10.16.1
     # via
     #   mkdocs-material
     #   mkdocstrings
-pyparsing==3.2.3
+pyparsing==3.2.4
     # via matplotlib
-pyright==1.1.402
+pyright==1.1.405
     # via docent-core
-pytest==8.4.1
+pytest==8.4.2
     # via
     #   docent-core
     #   pytest-asyncio
-pytest-asyncio==1.0.0
+pytest-asyncio==1.2.0
     # via docent-core
 python-dateutil==2.9.0.post0
     # via
@@ -654,9 +679,9 @@ python-yakh==0.4.1
     #   questo
 pytz==2025.2
     # via pandas
-pywin32==310 ; platform_python_implementation != 'PyPy' and sys_platform == 'win32'
+pywin32==311 ; platform_python_implementation != 'PyPy' and sys_platform == 'win32'
     # via jupyter-core
-pywinpty==2.0.15 ; os_name == 'nt'
+pywinpty==3.0.0 ; os_name == 'nt' and sys_platform != 'linux'
     # via
     #   jupyter-server
     #   jupyter-server-terminals
@@ -676,7 +701,7 @@ pyyaml==6.0.2
     #   uvicorn
 pyyaml-env-tag==1.1
     # via mkdocs
-pyzmq==27.0.0
+pyzmq==27.1.0
     # via
     #   ipykernel
     #   jupyter-client
@@ -684,7 +709,7 @@ pyzmq==27.0.0
     #   jupyter-server
 questo==0.4.1
     # via beaupy
-redis==5.3.0
+redis==5.3.1
     # via
     #   arq
     #   docent-core
@@ -693,9 +718,9 @@ referencing==0.36.2
     #   jsonschema
     #   jsonschema-specifications
     #   jupyter-events
-regex==2024.11.6
+regex==2025.9.18
     # via tiktoken
-requests==2.32.4
+requests==2.32.5
     # via
     #   datasets
     #   google-genai
@@ -713,6 +738,8 @@ rfc3986-validator==0.1.1
     # via
     #   jsonschema
     #   jupyter-events
+rfc3987-syntax==1.1.0
+    # via jsonschema
 rich==13.9.4
     # via
     #   beaupy
@@ -721,7 +748,7 @@ rich==13.9.4
     #   questo
     #   textual
     #   typer
-rpds-py==0.25.1
+rpds-py==0.27.1
     # via
     #   jsonschema
     #   referencing
@@ -731,11 +758,13 @@ s3fs==2025.3.0
     # via inspect-ai
 s3transfer==0.13.1
     # via boto3
+scipy==1.16.2
+    # via docent-core
 semver==3.0.4
     # via inspect-ai
 send2trash==1.8.3
     # via jupyter-server
-sentry-sdk==2.32.0
+sentry-sdk==2.38.0
     # via docent-core
 setuptools==80.9.0
     # via jupyterlab
@@ -754,17 +783,17 @@ sniffio==1.3.1
     #   anyio
     #   inspect-ai
     #   openai
-soupsieve==2.7
+soupsieve==2.8
     # via beautifulsoup4
-sqlalchemy==2.0.41
+sqlalchemy==2.0.43
     # via
     #   alembic
     #   docent-core
 stack-data==0.6.3
     # via ipython
-starlette==0.46.2
+starlette==0.48.0
     # via fastapi
-tenacity==8.5.0
+tenacity==9.1.2
     # via
     #   google-genai
     #   inspect-ai
@@ -774,13 +803,13 @@ terminado==0.18.1
     #   jupyter-server-terminals
 textual==2.1.2
     # via inspect-ai
-tiktoken==0.9.0
+tiktoken==0.11.0
     # via docent-python
 tinycss2==1.4.0
     # via bleach
-tokenizers==0.21.4
+tokenizers==0.22.1
     # via opentelemetry-instrumentation-bedrock
-tornado==6.5.1
+tornado==6.5.2
     # via
     #   ipykernel
     #   jupyter-client
@@ -796,7 +825,6 @@ tqdm==4.67.1
     #   openai
 traitlets==5.14.3
     # via
-    #   comm
     #   ipykernel
     #   ipython
     #   ipywidgets
@@ -810,18 +838,20 @@ traitlets==5.14.3
     #   nbclient
     #   nbconvert
     #   nbformat
-typer==0.16.0
+typer==0.18.0
     # via docent-core
-types-python-dateutil==2.9.0.20250516
+types-python-dateutil==2.9.0.20250822
     # via arrow
-typing-extensions==4.14.0
+typing-extensions==4.15.0
     # via
+    #   aiosignal
     #   alembic
     #   anthropic
     #   anyio
     #   beautifulsoup4
     #   fastapi
     #   google-genai
+    #   grpcio
     #   huggingface-hub
     #   inspect-ai
     #   ipython
@@ -835,8 +865,10 @@ typing-extensions==4.14.0
     #   pydantic
     #   pydantic-core
     #   pyright
+    #   pytest-asyncio
     #   referencing
     #   sqlalchemy
+    #   starlette
     #   textual
     #   typer
     #   typing-inspection
@@ -853,11 +885,11 @@ urllib3==2.5.0
     #   botocore
     #   requests
     #   sentry-sdk
-uvicorn==0.34.3
+uvicorn==0.36.0
     # via docent-core
 uvloop==0.21.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
     # via uvicorn
-virtualenv==20.31.2
+virtualenv==20.34.0
     # via pre-commit
 watchdog==6.0.0
     # via
@@ -881,7 +913,7 @@ websockets==15.0.1
     #   uvicorn
 widgetsnbextension==4.0.14
     # via ipywidgets
-wrapt==1.17.2
+wrapt==1.17.3
     # via
     #   aiobotocore
     #   opentelemetry-instrumentation

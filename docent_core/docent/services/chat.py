@@ -33,7 +33,7 @@ from docent_core.docent.ai_tools.assistant.chat import (
 )
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
-from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
+from docent_core.docent.db.schemas.tables import JobStatus, SQLAAgentRun, SQLAJob
 from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
@@ -237,6 +237,19 @@ class ChatService:
             total_tokens += 10  # Add a small buffer for message formatting overhead
 
         return total_tokens
+
+    async def get_chat_sessions_for_run(
+        self, collection_id: str, agent_run_id: str
+    ) -> list[ChatSession]:
+        result = await self.session.execute(
+            select(SQLAChatSession)
+            .join(SQLAAgentRun, SQLAChatSession.agent_run_id == SQLAAgentRun.id)
+            .where(SQLAAgentRun.collection_id == collection_id)
+            .where(SQLAChatSession.agent_run_id == agent_run_id)
+            .where(SQLAChatSession.judge_result_id.is_(None))
+            .order_by(SQLAChatSession.updated_at.desc())
+        )
+        return [sqla_session.to_pydantic() for sqla_session in result.scalars().all()]
 
     async def get_current_state(
         self, ctx: ViewContext, sqla_session: SQLAChatSession

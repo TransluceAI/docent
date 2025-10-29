@@ -12,11 +12,7 @@ import {
 import { apiRestClient } from '../services/apiService';
 import sseService from '../services/sseService';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  ActionsSummary,
-  AgentRun,
-  SolutionSummary,
-} from '../types/transcriptTypes';
+import { AgentRun, SolutionSummary } from '../types/transcriptTypes';
 import { Citation } from '../types/experimentViewerTypes';
 
 import { RootState } from './store';
@@ -36,10 +32,6 @@ export interface TranscriptState {
   dashboardHasRunPreview?: boolean;
   dashboardScrollToBlockIdx?: number;
   dashboardScrollToTranscriptIdx?: number;
-  // Actions summary
-  actionsSummary?: ActionsSummary;
-  loadingActionsSummaryForTranscriptId?: string;
-  actionsSummaryTaskId?: string;
   // Solution summary
   solutionSummary?: SolutionSummary;
   loadingSolutionSummaryForTranscriptId?: string;
@@ -63,76 +55,6 @@ const initialState: TranscriptState = {
   allCitations: {},
   highlightedCitationId: null,
 };
-
-export const getActionsSummary = createAsyncThunk(
-  'transcript/getActionsSummary',
-  async (agentRunId: string, { dispatch, getState }) => {
-    const state = getState() as RootState;
-    const collectionId = state.collection.collectionId;
-
-    // Cancel existing request
-    const { actionsSummaryTaskId } = state.transcript;
-    if (actionsSummaryTaskId && cancelFunctionsMap[actionsSummaryTaskId]) {
-      cancelFunctionsMap[actionsSummaryTaskId]();
-      delete cancelFunctionsMap[actionsSummaryTaskId];
-    }
-
-    // Set UI state
-    dispatch(setActionsSummary(undefined));
-    dispatch(setLoadingActionsSummaryForTranscriptId(agentRunId));
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      dispatch(onFinishLoadingActionsSummary());
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      // Generate a task ID for cancellation
-      const taskId = uuidv4();
-      dispatch(setActionsSummaryTaskId(taskId));
-
-      // Create SSE connection using the service
-      const { onCancel } = sseService.createEventSource(
-        `/rest/${collectionId}/actions_summary?agent_run_id=${agentRunId}`,
-        (data) => {
-          // Update actions summary with streamed data
-          dispatch(
-            setActionsSummary({
-              agent_run_id: data.agent_run_id,
-              low_level: data.low_level,
-              high_level: data.high_level,
-              observations: data.observations,
-            })
-          );
-        },
-        () => {
-          dispatch(onFinishLoadingActionsSummary());
-        },
-        dispatch // Pass dispatch function to handle errors
-      );
-
-      // Store the cancel function for potential cleanup
-      cancelFunctionsMap[taskId] = onCancel;
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error getting actions summary',
-          description: 'Failed to retrieve actions summary',
-          variant: 'destructive',
-        })
-      );
-      dispatch(onFinishLoadingActionsSummary());
-      throw error;
-    }
-  }
-);
 
 export const getSolutionSummary = createAsyncThunk(
   'transcript/getSolutionSummary',
@@ -200,14 +122,6 @@ export const getSolutionSummary = createAsyncThunk(
       dispatch(onFinishLoadingSolutionSummary());
       throw error;
     }
-  }
-);
-
-export const clearActionsSummary = createAsyncThunk(
-  'transcript/clearActionsSummary',
-  async (_, { dispatch }) => {
-    dispatch(setActionsSummary(undefined));
-    dispatch(setLoadingActionsSummaryForTranscriptId(undefined));
   }
 );
 
@@ -285,28 +199,6 @@ export const transcriptSlice = createSlice({
   reducers: {
     setCurAgentRun: (state, action: PayloadAction<AgentRun | undefined>) => {
       state.curAgentRun = action.payload;
-    },
-    setActionsSummary: (
-      state,
-      action: PayloadAction<ActionsSummary | undefined>
-    ) => {
-      state.actionsSummary = action.payload;
-    },
-    setLoadingActionsSummaryForTranscriptId: (
-      state,
-      action: PayloadAction<string | undefined>
-    ) => {
-      state.loadingActionsSummaryForTranscriptId = action.payload;
-    },
-    setActionsSummaryTaskId: (
-      state,
-      action: PayloadAction<string | undefined>
-    ) => {
-      state.actionsSummaryTaskId = action.payload;
-    },
-    onFinishLoadingActionsSummary: (state) => {
-      state.loadingActionsSummaryForTranscriptId = undefined;
-      state.actionsSummaryTaskId = undefined;
     },
     setSolutionSummary: (
       state,
@@ -388,10 +280,6 @@ export const transcriptSlice = createSlice({
 
 export const {
   setCurAgentRun,
-  setActionsSummary,
-  setLoadingActionsSummaryForTranscriptId,
-  setActionsSummaryTaskId,
-  onFinishLoadingActionsSummary,
   setSolutionSummary,
   setLoadingSolutionSummaryForTranscriptId,
   setSolutionSummaryTaskId,

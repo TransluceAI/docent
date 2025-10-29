@@ -129,6 +129,8 @@ class DocentTracer:
             lambda: itertools.count(0)
         )
         self._transcript_counter_lock = threading.Lock()
+        self._transcript_group_states: dict[str, dict[str, Optional[str]]] = {}
+        self._transcript_group_state_lock = threading.Lock()
         self._flush_lock = threading.Lock()
 
     def get_current_agent_run_id(self) -> Optional[str]:
@@ -888,6 +890,27 @@ class DocentTracer:
             )
             return
 
+        with self._transcript_group_state_lock:
+            state: dict[str, Optional[str]] = self._transcript_group_states.setdefault(
+                transcript_group_id, {}
+            )
+            final_name: Optional[str] = name if name is not None else state.get("name")
+            final_description: Optional[str] = (
+                description if description is not None else state.get("description")
+            )
+            final_parent_transcript_group_id: Optional[str] = (
+                parent_transcript_group_id
+                if parent_transcript_group_id is not None
+                else state.get("parent_transcript_group_id")
+            )
+
+            if final_name is not None:
+                state["name"] = final_name
+            if final_description is not None:
+                state["description"] = final_description
+            if final_parent_transcript_group_id is not None:
+                state["parent_transcript_group_id"] = final_parent_transcript_group_id
+
         payload: Dict[str, Any] = {
             "collection_id": collection_id,
             "transcript_group_id": transcript_group_id,
@@ -895,12 +918,12 @@ class DocentTracer:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        if name is not None:
-            payload["name"] = name
-        if description is not None:
-            payload["description"] = description
-        if parent_transcript_group_id is not None:
-            payload["parent_transcript_group_id"] = parent_transcript_group_id
+        if final_name is not None:
+            payload["name"] = final_name
+        if final_description is not None:
+            payload["description"] = final_description
+        if final_parent_transcript_group_id is not None:
+            payload["parent_transcript_group_id"] = final_parent_transcript_group_id
         if metadata is not None:
             payload["metadata"] = metadata
 
@@ -1268,6 +1291,41 @@ def transcript_metadata(
         )
     except Exception as e:
         logger.error(f"Failed to send transcript metadata: {e}")
+
+
+def transcript_group_metadata(
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parent_transcript_group_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Send transcript group metadata directly to the backend for the current transcript group.
+
+    Args:
+        name: Optional transcript group name
+        description: Optional transcript group description
+        parent_transcript_group_id: Optional parent transcript group ID
+        metadata: Optional metadata to send
+
+    Example:
+        transcript_group_metadata(name="pipeline", description="Main processing pipeline")
+        transcript_group_metadata(metadata={"team": "search", "env": "prod"})
+    """
+    try:
+        tracer = get_tracer()
+        if tracer.is_disabled():
+            return
+        transcript_group_id = tracer.get_current_transcript_group_id()
+        if not transcript_group_id:
+            logger.warning("No active transcript group context. Metadata will not be sent.")
+            return
+
+        tracer.send_transcript_group_metadata(
+            transcript_group_id, name, description, parent_transcript_group_id, metadata
+        )
+    except Exception as e:
+        logger.error(f"Failed to send transcript group metadata: {e}")
 
 
 class AgentRunContext:

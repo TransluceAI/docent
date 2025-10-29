@@ -391,6 +391,24 @@ class Docent:
             # TODO(mengk): kinda hacky
             return AgentRun.model_validate(response.json())
 
+    def get_chat_sessions(self, collection_id: str, agent_run_id: str) -> list[dict[str, Any]]:
+        """Get all chat sessions for an agent run, excluding judge result sessions.
+
+        Args:
+            collection_id: ID of the Collection.
+            agent_run_id: The ID of the agent run to retrieve chat sessions for.
+
+        Returns:
+            list: List of chat session dictionaries.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/chat/{collection_id}/{agent_run_id}/sessions"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
     def make_collection_public(self, collection_id: str) -> dict[str, Any]:
         """Make a collection publicly accessible to anyone with the link.
 

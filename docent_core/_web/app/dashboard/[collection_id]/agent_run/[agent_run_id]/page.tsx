@@ -6,10 +6,8 @@ import React, { Suspense, useCallback, useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
 import { Card } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-import AgentSummary from '../components/AgentSummary';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../components/AgentRunViewer';
@@ -93,14 +91,7 @@ export default function AgentRunPage() {
             onValueChange={(value) => dispatch(setAgentRunSidebarTab(value))}
             className="h-full flex flex-col"
           >
-            <TabsList className="grid w-full grid-cols-3 h-8">
-              <TabsTrigger
-                value="agent"
-                className="text-xs"
-                disabled={disableAITools}
-              >
-                Summary
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 h-8">
               <TabsTrigger
                 value="chat"
                 className="text-xs"
@@ -112,12 +103,6 @@ export default function AgentRunPage() {
                 Labels
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="agent" className="flex-1 mt-0 min-h-0">
-              <ScrollArea className="h-full pt-2">
-                <AgentSummary agentRunId={curAgentRunId} />
-              </ScrollArea>
-            </TabsContent>
 
             <TabsContent value="chat" className="flex-1 mt-0 min-h-0">
               <div className="h-full pt-2 flex flex-col min-h-0">
