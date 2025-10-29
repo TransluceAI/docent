@@ -1,12 +1,15 @@
+import asyncio
 import atexit
 import contextvars
 import itertools
+import json
 import logging
 import os
 import sys
 import threading
 import uuid
 from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
@@ -132,6 +135,10 @@ class DocentTracer:
         self._transcript_group_states: dict[str, dict[str, Optional[str]]] = {}
         self._transcript_group_state_lock = threading.Lock()
         self._flush_lock = threading.Lock()
+        self._http_executor: Optional[ThreadPoolExecutor] = None
+        self._http_executor_lock = threading.Lock()
+        self._pending_http_futures: Set[Future[Any]] = set()
+        self._pending_http_lock = threading.Lock()
 
     def get_current_agent_run_id(self) -> Optional[str]:
         """
@@ -441,6 +448,12 @@ class DocentTracer:
         try:
             self.flush()
 
+            if self._http_executor:
+                self._http_executor.shutdown(wait=True)
+                self._http_executor = None
+            with self._pending_http_lock:
+                self._pending_http_futures.clear()
+
             if self._tracer_provider:
                 self._tracer_provider.shutdown()
                 self._tracer_provider = None
@@ -471,6 +484,7 @@ class DocentTracer:
                 if hasattr(processor, "force_flush"):
                     logger.debug(f"Flushing span processor {i}")
                     processor.force_flush(timeout_millis=50)
+            self._wait_for_http_requests()
             logger.debug("Span flush completed")
         except Exception as e:
             logger.error(f"Error during flush: {e}")
@@ -617,7 +631,66 @@ class DocentTracer:
 
         return headers
 
-    def _post_json(self, path: str, data: Dict[str, Any]) -> None:
+    def _get_http_executor(self) -> ThreadPoolExecutor:
+        with self._http_executor_lock:
+            if self._http_executor is None:
+                self._http_executor = ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="docent-http"
+                )
+            return self._http_executor
+
+    def _should_run_http_in_background(self) -> bool:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+        return loop.is_running()
+
+    def _on_http_future_done(self, future: Future[Any]) -> None:
+        with self._pending_http_lock:
+            self._pending_http_futures.discard(future)
+        try:
+            future.result()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(f"Background HTTP request failed: {exc}")
+
+    def _schedule_background_post(self, task: Callable[[], None]) -> None:
+        executor = self._get_http_executor()
+        future = executor.submit(task)
+        with self._pending_http_lock:
+            self._pending_http_futures.add(future)
+        future.add_done_callback(self._on_http_future_done)
+
+    def _wait_for_http_requests(self) -> None:
+        while True:
+            with self._pending_http_lock:
+                pending = list(self._pending_http_futures)
+            if not pending:
+                break
+            for future in pending:
+                try:
+                    future.result()
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.error(f"Background HTTP request failed: {exc}")
+
+    def _ensure_json_serializable_metadata(self, metadata: Dict[str, Any], context: str) -> None:
+        """
+        Validate that metadata can be serialized to JSON before sending it to the backend.
+        """
+        try:
+            json.dumps(metadata)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{context} metadata must be JSON serializable") from exc
+
+    def _post_json(
+        self, path: str, data: Dict[str, Any], *, allow_background: bool = False
+    ) -> None:
+        if allow_background and self._should_run_http_in_background():
+            self._schedule_background_post(lambda: self._post_json_sync(path, data))
+            return
+        self._post_json_sync(path, data)
+
+    def _post_json_sync(self, path: str, data: Dict[str, Any]) -> None:
         if not self._api_endpoint_base:
             raise RuntimeError("API endpoint base is not configured")
         url = f"{self._api_endpoint_base}{path}"
@@ -662,6 +735,8 @@ class DocentTracer:
         if self._disabled:
             return
 
+        self._ensure_json_serializable_metadata(metadata, "Agent run")
+
         collection_id = self.collection_id
         payload: Dict[str, Any] = {
             "collection_id": collection_id,
@@ -669,7 +744,7 @@ class DocentTracer:
             "metadata": metadata,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        self._post_json("/v1/agent-run-metadata", payload)
+        self._post_json("/v1/agent-run-metadata", payload, allow_background=True)
 
     def send_transcript_metadata(
         self,
@@ -707,6 +782,7 @@ class DocentTracer:
         if transcript_group_id is not None:
             payload["transcript_group_id"] = transcript_group_id
         if metadata is not None:
+            self._ensure_json_serializable_metadata(metadata, "Transcript")
             payload["metadata"] = metadata
 
         self._post_json("/v1/transcript-metadata", payload)
@@ -925,6 +1001,7 @@ class DocentTracer:
         if final_parent_transcript_group_id is not None:
             payload["parent_transcript_group_id"] = final_parent_transcript_group_id
         if metadata is not None:
+            self._ensure_json_serializable_metadata(metadata, "Transcript group")
             payload["metadata"] = metadata
 
         self._post_json("/v1/transcript-group-metadata", payload)
