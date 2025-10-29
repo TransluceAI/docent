@@ -652,8 +652,17 @@ def parameterize_expression(
     cast_hints: dict[str, str] = {}
 
     literals: list[exp.Literal] = list(cloned.find_all(exp.Literal))
-    for index, literal in enumerate(literals, start=1):
-        param_name = f"__dql_param_{index}"
+    param_index = 0
+    for literal in literals:
+        if literal.find_ancestor(exp.Interval) is not None:
+            # sqlglot renders interval values with embedded quoting, so replacing the
+            # literal with a bind parameter would produce invalid syntax like
+            # INTERVAL '__dql_param_1 DAY'. Leaving interval literals in place keeps
+            # the generated SQL valid while the surrounding AST validation enforces
+            # allowed constructs.
+            continue
+        param_index += 1
+        param_name = f"__dql_param_{param_index}"
         binding = _literal_to_binding(literal)
         params[param_name] = binding.value
         if binding.pg_type is not None:
