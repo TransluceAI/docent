@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.judge import Label
 from docent.judges import JudgeResult, ResultType, Rubric
 from docent.judges.runner import run_rubric
@@ -339,20 +340,20 @@ class RubricService:
             return
 
         # Build mapping of agent_run_id -> existing result count
-        agent_run_ids_selected = [row[0] for row in rows]
+        # NOTE(mengk, cadentj): this is incorrect if you have multiple labels per agent run.
+        #   but we have a schema constraint that prevents this.
+        ar_ids_selected = [row[0] for row in rows]
         existing_counts = {row[0]: row[1] or 0 for row in rows}
-
-        # Fetch all selected agent runs
-        agent_runs = await self.service.get_agent_runs(ctx, agent_run_ids=agent_run_ids_selected)
 
         # Calculate rollouts needed per agent run (may be 0 for already-complete runs)
         rollouts_needed_per_run = [
-            max(0, n_rollouts_per_input - existing_counts.get(ar.id, 0)) for ar in agent_runs
+            max(0, n_rollouts_per_input - existing_counts.get(ar_id, 0))
+            for ar_id in ar_ids_selected
         ]
         total_rollouts_to_generate = sum(rollouts_needed_per_run)
 
         logger.info(
-            f"Selected {len(agent_runs)} agent runs; "
+            f"Selected {len(ar_ids_selected)} agent runs; "
             f"{sum(1 for n in rollouts_needed_per_run if n > 0)} need additional rollouts "
             f"({total_rollouts_to_generate} total rollouts to generate)"
         )
@@ -362,10 +363,21 @@ class RubricService:
             job.id,
             job.job_json
             | {
-                "total_agent_runs": len(agent_runs),
-                "agent_run_ids_being_processed": [ar.id for ar in agent_runs],
+                "total_agent_runs": len(ar_ids_selected),
+                "agent_run_ids_being_processed": ar_ids_selected,
             },
         )
+
+        def _make_ar_resolver(agent_run_id: str):
+            async def _resolver() -> AgentRun | None:
+                """Resolves an agent run by grabbing it from the database.
+                The AgentRun may not be found, in which case this returns None.
+                """
+                return await self.service.get_agent_run(ctx, agent_run_id)
+
+            return _resolver
+
+        ar_resolvers = [_make_ar_resolver(agent_run_id) for agent_run_id in ar_ids_selected]
 
         async with BatchedWriter(self.session_cm_factory) as writer:
             async with anyio.create_task_group() as tg:
@@ -394,7 +406,7 @@ class RubricService:
 
                 # Run the judge, saving data to the database as we go
                 await run_rubric(
-                    agent_runs,
+                    ar_resolvers,
                     rubric.to_pydantic(),
                     llm_svc=self.llm_svc,
                     callback=_callback,

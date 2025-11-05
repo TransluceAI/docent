@@ -210,20 +210,13 @@ class RefinementService:
     ) -> str:
         """Summarize max 10 agent runs as initial context for the refinement agent."""
 
-        # Get 10 random agent runs
-        agent_runs = await self.mono_svc.get_agent_runs(ctx)
-
+        # Get some arbitrary agent runs
         N_SAMPLE_AGENT_RUNS = 10
-        if len(agent_runs) > N_SAMPLE_AGENT_RUNS:
-            import random
-
-            random.seed(0)
-            agent_runs = random.sample(agent_runs, N_SAMPLE_AGENT_RUNS)
-
-        if ctx.user is None:
-            raise ValueError("User is required to summarize agent runs")
+        agent_runs = await self.mono_svc.get_agent_runs(ctx, limit=N_SAMPLE_AGENT_RUNS)
 
         # Get summaries for max 10 agent runs
+        if ctx.user is None:
+            raise ValueError("User is required to summarize agent runs")
         outputs = await summarize_agent_runs(
             sq_rubric.rubric_text,
             agent_runs,

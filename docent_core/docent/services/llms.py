@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Any, AsyncContextManager, Callable, Literal
+from typing import Any, AsyncContextManager, Callable, Literal, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -163,7 +163,7 @@ class LLMService(BaseLLMService):
     async def get_completions(
         self,
         *,
-        inputs: list[MessagesInput],
+        inputs: Sequence[MessagesInput],
         model_options: list[ModelOption],
         tools: list[ToolInfo] | None = None,
         tool_choice: Literal["auto", "required"] | None = None,

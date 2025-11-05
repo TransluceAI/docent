@@ -1,3 +1,5 @@
+from typing import Protocol, Sequence, runtime_checkable
+
 import anyio
 from tqdm.auto import tqdm
 
@@ -14,8 +16,23 @@ from docent.judges.impl import build_judge
 logger = get_logger(__name__)
 
 
+@runtime_checkable
+class AgentRunResolver(Protocol):
+    async def __call__(self) -> AgentRun | None: ...
+
+
+AgentRunInput = AgentRun | AgentRunResolver
+
+
+async def _resolve_agent_run(agent_run_input: AgentRunInput) -> AgentRun | None:
+    if isinstance(agent_run_input, AgentRun):
+        return agent_run_input
+    else:
+        return await agent_run_input()
+
+
 async def run_rubric(
-    agent_runs: list[AgentRun],
+    agent_runs: Sequence[AgentRunInput],
     rubric: Rubric,
     llm_svc: BaseLLMService,
     callback: JudgeResultCompletionCallback | None = None,
@@ -58,19 +75,40 @@ async def run_rubric(
         disable=not show_progress,
     )
 
-    async def _run_single_judge(index: int, agent_run: AgentRun):
-        rollout_results: list[JudgeResult | None] = []
-        for _ in range(rollouts_per_run[index]):
-            result = await judge(agent_run)
-            rollout_results.append(result)
-            progress_bar.update()
+    # NOTE(mengk): using a (2 * llm max concurrency) semaphore is a hack to avoid
+    #   hammering _resolve_agent_run, which makes expensive DB calls, when they aren't going to be
+    #   immediately processed by the LLMService anyways.
+    # TODO(mengk): We should eventually implement a more idiomatic solution to this.
+    #   It's related to the idea of a global concurrency limiter.
+    run_judge_semaphore = anyio.Semaphore(llm_svc.max_concurrency * 2)
 
-        agent_results[index] = rollout_results
+    async def _run_single_judge(index: int, agent_run_input: AgentRunInput):
+        async with run_judge_semaphore:
+            rollout_results: list[JudgeResult | None] = []
 
-        if callback is not None:
-            # Filter out None results for the callback
-            valid_results = [r for r in rollout_results if r is not None]
-            await callback(index, valid_results if valid_results else None)
+            if rollouts_per_run[index] == 0:
+                agent_results[index] = []
+                if callback is not None:
+                    await callback(index, None)
+                return
+
+            agent_run = await _resolve_agent_run(agent_run_input)
+            if agent_run is None:
+                if callback is not None:
+                    await callback(index, None)
+                return
+
+            for _ in range(rollouts_per_run[index]):
+                result = await judge(agent_run)
+                rollout_results.append(result)
+                progress_bar.update()
+
+            agent_results[index] = rollout_results
+
+            if callback is not None:
+                # Filter out None results for the callback
+                valid_results = [r for r in rollout_results if r is not None]
+                await callback(index, valid_results if valid_results else None)
 
     try:
         async with anyio.create_task_group() as tg:

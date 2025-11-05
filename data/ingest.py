@@ -133,26 +133,6 @@ async def ingest_file(filename: str, importer_override: str | None = None) -> No
     console.print(f"  Collection: {collection_name}")
     console.print(f"  Importer: {importer_name}")
 
-    # Get the appropriate importer
-    try:
-        importer_func = get_importer(importer_name)
-    except ValueError as e:
-        log_error(str(e))
-        raise
-
-    # Process the file to get agent runs
-    with simple_progress("Processing file..."):
-        try:
-            agent_runs, file_info = await importer_func(local_path)
-
-            log_success(
-                f"Processed {len(agent_runs)} agent runs from {file_info.get('filename', filename)}"
-            )
-
-        except Exception as e:
-            log_error(f"Failed to process file '{filename}'", e)
-            raise
-
     server_url = get_server_host()
 
     log_info(f"Using Docent server at: {server_url}")
@@ -172,15 +152,36 @@ async def ingest_file(filename: str, importer_override: str | None = None) -> No
             log_error("Failed to create collection", e)
             raise
 
-    # Upload agent runs
-    log_info(f"Uploading {len(agent_runs)} agent runs...")
+    for _ in range(1):  # NOTE(mengk): added this to enable simulation of "very large" collections.
+        # Get the appropriate importer
+        try:
+            importer_func = get_importer(importer_name)
+        except ValueError as e:
+            log_error(str(e))
+            raise
 
-    try:
-        client.add_agent_runs(collection_id, agent_runs, batch_size=250)
-        log_success(
-            f"Successfully uploaded {len(agent_runs)} agent runs to collection '{collection_name}'"
-        )
+        # Process the file to get agent runs
+        with simple_progress("Processing file..."):
+            try:
+                agent_runs, file_info = await importer_func(local_path)
 
-    except Exception as e:
-        log_error("Failed to upload agent runs", e)
-        raise
+                log_success(
+                    f"Processed {len(agent_runs)} agent runs from {file_info.get('filename', filename)}"
+                )
+
+            except Exception as e:
+                log_error(f"Failed to process file '{filename}'", e)
+                raise
+
+        # Upload agent runs
+        log_info(f"Uploading {len(agent_runs)} agent runs...")
+
+        try:
+            client.add_agent_runs(collection_id, agent_runs, batch_size=250)
+            log_success(
+                f"Successfully uploaded {len(agent_runs)} agent runs to collection '{collection_name}'"
+            )
+
+        except Exception as e:
+            log_error("Failed to upload agent runs", e)
+            raise
