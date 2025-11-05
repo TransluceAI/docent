@@ -10,14 +10,14 @@ license-files = ["LICENSE.md"]
 
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.12",
+    "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
     "tqdm>=4.67.1",
     "inspect-ai>=0.3.132",
     "orjson>=3.11.3",
     "jsonschema>=4.24.0",
     # LLM
-    "tiktoken>=0.12.0",
+    "tiktoken>=0.7.0",
     "openai>=1.68.0",
     "anthropic>=0.47.0",
     "google-genai>=1.16.1",
