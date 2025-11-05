@@ -75,7 +75,7 @@ async def _parallelize_calls(
     completion_callback: AsyncLLMOutputStreamingCallback | None,
     # Arguments for the individual completion getter
     client: Any,
-    inputs: list[MessagesInput],
+    inputs: Sequence[MessagesInput],
     model_name: str,
     tools: list[ToolInfo] | None,
     tool_choice: Literal["auto", "required"] | None,
@@ -306,7 +306,7 @@ async def _parallelize_calls(
 
 class BaseLLMService:
     def __init__(self, max_concurrency: int = DEFAULT_SVC_MAX_CONCURRENCY):
-        self._semaphore = Semaphore(max_concurrency)
+        self.max_concurrency, self._semaphore = max_concurrency, Semaphore(max_concurrency)
         self._client_cache: dict[tuple[str, str | None], Any] = {}  # (provider, api_key) -> client
         self._client_cache_lock = Lock()
 
@@ -326,7 +326,7 @@ class BaseLLMService:
     async def get_completions(
         self,
         *,
-        inputs: list[MessagesInput],
+        inputs: Sequence[MessagesInput],
         model_options: list[ModelOption],
         tools: list[ToolInfo] | None = None,
         tool_choice: Literal["auto", "required"] | None = None,

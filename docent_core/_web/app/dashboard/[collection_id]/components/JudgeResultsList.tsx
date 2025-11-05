@@ -1,10 +1,9 @@
 'use client';
 
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { useMemo, useState } from 'react';
 import { Loader2, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { RubricCentroid } from '@/app/api/rubricApi';
+import { AgentRunJudgeResults, RubricCentroid } from '@/app/api/rubricApi';
 import VirtualResultsList from './VirtualResultsList';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
@@ -12,7 +11,7 @@ import { Label } from '@/app/api/labelApi';
 interface JudgeResultsListProps {
   centroids: RubricCentroid[];
   assignments: Record<string, string[]>;
-  filteredJudgeResultsList: JudgeResultWithCitations[];
+  agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   isClusteringActive?: boolean;
   activeResultId?: string;
@@ -23,7 +22,7 @@ interface JudgeResultsListProps {
 export const JudgeResultsList = ({
   centroids,
   assignments,
-  filteredJudgeResultsList,
+  agentRunResults,
   labels,
   isClusteringActive,
   activeResultId,
@@ -38,7 +37,7 @@ export const JudgeResultsList = ({
         isClusteringActive={isClusteringActive}
         activeResultId={activeResultId}
         schema={schema}
-        filteredJudgeResultsList={filteredJudgeResultsList}
+        agentRunResults={agentRunResults}
         labels={labels}
         activeLabelSet={activeLabelSet}
       />
@@ -48,7 +47,7 @@ export const JudgeResultsList = ({
   // Default: flat list grouped by agent run
   return (
     <VirtualResultsList
-      filteredJudgeResultsList={filteredJudgeResultsList}
+      agentRunResults={agentRunResults}
       activeResultId={activeResultId}
       schema={schema}
       labels={labels}
@@ -63,7 +62,7 @@ interface CentroidsListProps {
   isClusteringActive?: boolean;
   activeResultId?: string;
   schema: SchemaDefinition;
-  filteredJudgeResultsList: JudgeResultWithCitations[];
+  agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   activeLabelSet: any;
 }
@@ -74,47 +73,57 @@ const CentroidsList = ({
   isClusteringActive,
   activeResultId,
   schema,
-  filteredJudgeResultsList,
+  agentRunResults,
   labels,
   activeLabelSet,
 }: CentroidsListProps) => {
-  // 1. Compute a result_id -> result map to quickly assign results to centroids
-  const judgeResultsMap = useMemo(() => {
-    const map = new Map<string, JudgeResultWithCitations>();
-    for (const result of filteredJudgeResultsList) {
-      map.set(result.id, result);
-    }
-    return map;
-  }, [filteredJudgeResultsList]);
+  // Keep track of which IDs have been assigned (to later compute resids)
+  const assignedResultIdsSet = useMemo(() => {
+    const allAssigned = Object.values(assignments).flat();
+    return new Set(allAssigned);
+  }, [assignments]);
 
-  // 2. Create the centroid sections by assigning results to centroids
+  // Create centroid sections
+  // Only show the first result per agent run (matching what was clustered)
   const centroidSections = useMemo(() => {
     return centroids.map((centroid) => {
       const resultIds = assignments[centroid.id] || [];
-      const results = resultIds
-        .map((rid) => judgeResultsMap.get(rid))
-        .filter(Boolean) as JudgeResultWithCitations[];
+      // Filter to only agent runs with results in this centroid, and take only the first result
+      const agentRunsInCentroid = agentRunResults
+        .map((arr) => ({
+          ...arr,
+          results: arr.results
+            .filter((r) => resultIds.includes(r.id))
+            .slice(0, 1),
+        }))
+        .filter((arr) => arr.results.length > 0);
+
       return {
         id: centroid.id,
         title: centroid.centroid || `Cluster ${centroid.id.slice(0, 8)}`,
-        resultsByAgentRun: results,
+        agentRunResults: agentRunsInCentroid,
       };
     });
-  }, [centroids, assignments, judgeResultsMap]);
+  }, [centroids, assignments, agentRunResults]);
 
-  // 3. Compute residuals by filtering out assigned results
+  // Compute residuals by filtering out assigned results
+  // Only show the first result per agent run (matching what was clustered)
   const residualSection = useMemo(() => {
-    const allAssigned = Object.values(assignments).flat();
-    const assignedResultIdsSet = new Set(allAssigned);
-    const residualResults = filteredJudgeResultsList.filter(
-      (r) => !assignedResultIdsSet.has(r.id)
-    );
+    const residualAgentRuns = agentRunResults
+      .map((arr) => ({
+        ...arr,
+        results: arr.results
+          .filter((r) => !assignedResultIdsSet.has(r.id))
+          .slice(0, 1),
+      }))
+      .filter((arr) => arr.results.length > 0);
+
     return {
       id: 'residuals',
       title: centroids.length > 0 ? 'Residuals' : 'Results',
-      resultsByAgentRun: residualResults,
+      agentRunResults: residualAgentRuns,
     };
-  }, [filteredJudgeResultsList, centroids.length, assignments]);
+  }, [agentRunResults, centroids.length, assignedResultIdsSet]);
 
   // Keep track of the currently viewed centroid
   const [selectedCentroidId, setSelectedCentroidId] = useState<string | null>(
@@ -123,8 +132,13 @@ const CentroidsList = ({
 
   // Display the centroid section if one is selected
   if (selectedCentroidId) {
-    const selected = centroidSections.find((s) => s.id === selectedCentroidId);
-    if (!selected) return null; // This should never happen
+    const selected =
+      selectedCentroidId === 'residuals'
+        ? residualSection
+        : centroidSections.find((s) => s.id === selectedCentroidId);
+    if (!selected) {
+      return null; // This should never happen
+    }
 
     return (
       <div className="flex flex-col min-h-0 grow gap-2">
@@ -135,7 +149,7 @@ const CentroidsList = ({
         >
           <div className="flex-1 text-xs text-primary ml-1 break-words">
             <span className="text-xs mr-2 px-1 inline-flex rounded-sm bg-secondary border text-muted-foreground flex">
-              {`${selected.resultsByAgentRun.length} matches`}
+              {`${selected.agentRunResults.length} matches`}
               {isClusteringActive && (
                 <Loader2 className="size-3 animate-spin ml-1" />
               )}
@@ -146,7 +160,7 @@ const CentroidsList = ({
         </button>
 
         <VirtualResultsList
-          filteredJudgeResultsList={selected.resultsByAgentRun}
+          agentRunResults={selected.agentRunResults}
           activeResultId={activeResultId}
           schema={schema}
           labels={labels}
@@ -160,7 +174,7 @@ const CentroidsList = ({
   return (
     <div className="space-y-2 grow overflow-y-auto custom-scrollbar min-h-0">
       {[...centroidSections, residualSection].map((section) => {
-        const isDisabled = section.resultsByAgentRun.length === 0;
+        const isDisabled = section.agentRunResults.length === 0;
         return (
           <button
             key={section.id}
@@ -178,7 +192,7 @@ const CentroidsList = ({
           >
             <div className="flex-1 text-xs text-primary ml-1 break-words">
               <span className="text-xs mr-2 px-1 inline-flex rounded-sm bg-secondary border text-muted-foreground flex">
-                {`${section.resultsByAgentRun.length} matches`}
+                {`${section.agentRunResults.length} matches`}
                 {isClusteringActive && (
                   <Loader2 className="size-3 animate-spin ml-1" />
                 )}

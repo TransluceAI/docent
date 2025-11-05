@@ -268,8 +268,7 @@ export function ResultFilterControlsTrigger() {
 }
 
 export function ResultFilterControlsBadges() {
-  const { filters, setFilters, labeled, setLabeled } =
-    useResultFilterControls();
+  const { filters, setFilters } = useResultFilterControls();
 
   const removeFilter = (idx: number) => {
     setFilters(filters.filter((_, i) => i !== idx));
@@ -309,23 +308,10 @@ export function ResultFilterControlsBadges() {
             </button>
           </div>
         ))}
-      {labeled && (
-        <div className="inline-flex items-center gap-x-1 text-xs bg-indigo-50 dark:bg-indigo-950/30 text-primary border border-indigo-200 dark:border-indigo-800 pl-1.5 pr-1 py-0.5 rounded-md">
-          <span className="font-mono">Show labeled</span>
-          <button
-            onClick={() => setLabeled(false)}
-            className="p-0.5 text-primary hover:text-primary/50 transition-colors"
-            title="Remove filter"
-          >
-            <X size={10} />
-          </button>
-        </div>
-      )}
-      {(showFilters || labeled) && (
+      {showFilters && (
         <button
           onClick={() => {
             clearAll();
-            setLabeled(false);
           }}
           className="inline-flex items-center gap-x-1 text-xs bg-red-50 dark:bg-red-950/30 text-primary border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded-md hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
         >

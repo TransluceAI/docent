@@ -5,13 +5,13 @@ import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
 import { useParams } from 'next/navigation';
-import { useGetResultByAgentRunQuery } from '@/app/api/rubricApi';
+import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
 import { useCitationNavigation } from '../../NavigateToCitationContext';
 import { useRubricVersion } from '@/providers/use-rubric-version';
-import { skipToken } from '@reduxjs/toolkit/query';
+import { useLabelSets } from '@/providers/use-label-sets';
 
 export default function JudgeResultPage() {
   const {
@@ -29,25 +29,26 @@ export default function JudgeResultPage() {
   const dispatch = useAppDispatch();
   const citationNav = useCitationNavigation();
   const { version } = useRubricVersion();
+  const { activeLabelSet } = useLabelSets(rubricId);
   const isResultRoute = !!resultId;
 
-  const {
-    data: result,
-    isLoading: isLoadingResult,
-    isError: isErrorResult,
-  } = useGetResultByAgentRunQuery(
-    version && isResultRoute
-      ? {
-          collectionId,
-          rubricId,
-          agentRunId,
-          version,
-        }
-      : skipToken,
+  // Get all results from rubric run state
+  const { data: rubricRunState } = useGetRubricRunStateQuery(
     {
-      refetchOnMountOrArgChange: true,
-    }
+      collectionId,
+      rubricId,
+      version: version ?? null,
+      labelSetId: activeLabelSet?.id ?? null,
+    },
+    { skip: !isResultRoute }
   );
+
+  // Find the current result by resultId
+  const currentAgentRunGroup = rubricRunState?.results?.find((arr) =>
+    arr.results.some((r) => r.id === resultId)
+  );
+  const result = currentAgentRunGroup?.results.find((r) => r.id === resultId);
+
   const citations = result?.output?.explanation?.citations;
 
   const agentRunViewerRef = useRef<AgentRunViewerHandle>(null);
@@ -60,20 +61,20 @@ export default function JudgeResultPage() {
   const alreadyScrolledRef = useRef(false);
 
   useEffect(() => {
-    if (agentRunId) {
+    if (agentRunId && result) {
       dispatch(
         setRunCitations({
           [agentRunId]: citations || [],
         })
       );
     }
-  }, [result, agentRunId, dispatch]);
+  }, [result, agentRunId, citations, dispatch]);
 
   // Reset the gate whenever the selected result changes so the next result can
   // perform its own one-time initial scroll.
   useEffect(() => {
     alreadyScrolledRef.current = false;
-  }, [agentRunId]);
+  }, [agentRunId, resultId]);
 
   // Perform the initial one-time scroll to the first citation once both the
   // agent run and the result are available. Skip if we've already scrolled for
@@ -88,7 +89,7 @@ export default function JudgeResultPage() {
 
     agentRunViewerRef.current?.focusCitation(citation);
     alreadyScrolledRef.current = true;
-  }, [agentRunId, result]);
+  }, [agentRunId, result, citations]);
 
   // Register the handler with the route-scoped provider so other components can invoke it
   // Only register when agentRun is loaded so AgentRunViewer is ready
@@ -107,25 +108,14 @@ export default function JudgeResultPage() {
     };
   }, [citationNav, agentRunId]);
 
-  if (isErrorResult) {
-    return (
-      <div className="flex-1 flex items-center text-xs text-muted-foreground justify-center min-h-0 h-full">
-        Failed to load rubric run state.
-      </div>
-    );
-  }
-
   let agentRunViewerContent = null;
   if (agentRunId) {
-    if (isLoadingResult && isResultRoute) {
-      agentRunViewerContent = <div>Loading agent run...</div>;
-    } else {
-      agentRunViewerContent = (
-        <div className="h-full border rounded-xl p-3 overflow-hidden flex flex-col space-y-2">
-          <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
-        </div>
-      );
-    }
+    agentRunViewerContent = (
+      <div className="h-full border rounded-xl p-3 overflow-hidden flex flex-col space-y-2">
+        <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
+      </div>
+    );
+    // }
   }
 
   return <Suspense>{agentRunViewerContent}</Suspense>;

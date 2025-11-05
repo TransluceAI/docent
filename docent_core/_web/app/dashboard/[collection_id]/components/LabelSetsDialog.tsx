@@ -19,6 +19,8 @@ import LabelSetEditor from './LabelSetEditor';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
 import { SchemaDefinition } from '@/app/types/schema';
+import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
 
 interface LabelSetsDialogProps {
   open: boolean;
@@ -27,11 +29,6 @@ interface LabelSetsDialogProps {
   onClearActiveLabelSet?: () => void;
   currentRubricSchema?: Record<string, any>;
   activeLabelSetId?: string;
-  existingLabelSetIds?: string[];
-  tooltipText?: {
-    active: string;
-    inactive: string;
-  };
 }
 
 export default function LabelSetsDialog({
@@ -41,8 +38,6 @@ export default function LabelSetsDialog({
   onClearActiveLabelSet,
   currentRubricSchema,
   activeLabelSetId,
-  existingLabelSetIds = [],
-  tooltipText,
 }: LabelSetsDialogProps) {
   const { collection_id: collectionId } = useParams<{
     collection_id: string;
@@ -120,12 +115,9 @@ export default function LabelSetsDialog({
   const handleImportLabelSet = (labelSet: LabelSet) => {
     if (onImportLabelSet) {
       onImportLabelSet(labelSet);
-      const description = currentRubricSchema
-        ? `"${labelSet.name}" is now the active label set.`
-        : `Added label for set: "${labelSet.name}".`;
       toast({
         title: 'Label set activated',
-        description: description,
+        description: `"${labelSet.name}" is now the active label set.`,
       });
     }
   };
@@ -137,15 +129,6 @@ export default function LabelSetsDialog({
     );
   };
 
-  const hasExistingLabel = (row: LabelSetTableRow) => {
-    return !existingLabelSetIds.includes(row.id);
-  };
-
-  // Determine incompatibility message based on context
-  const incompatibleHeaderText = currentRubricSchema
-    ? "Incompatible Schema: These label sets don't match the rubric's output schema"
-    : 'Already Added: These label sets already have labels for this agent run';
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[90vw] h-[85vh] flex flex-col">
@@ -154,23 +137,31 @@ export default function LabelSetsDialog({
         </DialogHeader>
         <div className="flex-1 flex space-x-4 min-h-0">
           {/* Left Side - Table */}
-          <div className="w-1/2 min-h-0">
+          <div className="w-1/2 flex flex-col h-full min-h-0 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-medium">
+                Select a label set to add labels to.
+              </span>
+              <Button
+                size="sm"
+                onClick={handleCreateNewLabelSet}
+                className="gap-1.5 h-7 text-xs"
+              >
+                <Plus className="h-3 w-3" />
+                Create New
+              </Button>
+            </div>
             <LabelSetsTable
               labelSets={labelSetRows}
               selectedLabelSetId={selectedLabelSetId}
               onSelectLabelSet={handleSelectLabelSet}
-              onCreateNewLabelSet={handleCreateNewLabelSet}
               onImportLabelSet={
                 onImportLabelSet ? handleImportLabelSet : undefined
               }
               onDeleteLabelSet={handleDeleteLabelSet}
-              isValidRow={
-                currentRubricSchema ? isSchemaCompatible : hasExistingLabel
-              }
+              isValidRow={currentRubricSchema ? isSchemaCompatible : undefined}
               activeLabelSetId={activeLabelSetId}
               isLoading={isLoading}
-              tooltipText={tooltipText}
-              incompatibleHeaderText={incompatibleHeaderText}
             />
           </div>
 
@@ -184,7 +175,6 @@ export default function LabelSetsDialog({
             <LabelSetEditor
               labelSetId={selectedLabelSetId}
               isCreateMode={isCreateMode}
-              collectionId={collectionId}
               onCreateSuccess={handleCreateSuccess}
               prefillSchema={currentRubricSchema}
             />

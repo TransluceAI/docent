@@ -1,99 +1,128 @@
+'use client';
+
 import { LabelSet, useGetLabelSetsQuery } from '@/app/api/labelApi';
-import { createContext, useContext, useMemo, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useEffect,
+  useCallback,
+} from 'react';
 import { useLocalStorage } from 'usehooks-ts';
 
 interface LabelSetsContextValue {
-  activeLabelSet: LabelSet | null;
-  activeLabelSetId: string | null;
-  activeLabelSetName: string | null;
-  setActiveLabelSet: (labelSet: LabelSet | null) => void;
-  clearLabelSets: () => void;
+  getLabelSet: (objectKey: string) => LabelSet | null;
+  setLabelSet: (objectKey: string, labelSet: LabelSet | null) => void;
 }
 
 const LabelSetsContext = createContext<LabelSetsContextValue>({
-  activeLabelSet: null,
-  activeLabelSetId: null,
-  activeLabelSetName: null,
-  setActiveLabelSet: () => {},
-  clearLabelSets: () => {},
+  getLabelSet: () => null,
+  setLabelSet: () => {},
 });
 
-export function useLabelSets() {
+export function useLabelSets(objectKey: string) {
   const ctx = useContext(LabelSetsContext);
   if (!ctx) {
     throw new Error('useLabelSets must be used within a LabelSetsProvider');
   }
-  return ctx;
+
+  const { getLabelSet, setLabelSet: setLabelSetFn } = ctx;
+
+  const activeLabelSet = useMemo(() => {
+    return getLabelSet(objectKey);
+  }, [objectKey, getLabelSet]);
+
+  const setLabelSet = useCallback(
+    (labelSet: LabelSet | null) => {
+      setLabelSetFn(objectKey, labelSet);
+    },
+    [objectKey, setLabelSetFn]
+  );
+
+  return { activeLabelSet, setLabelSet };
 }
 
 export function LabelSetsProvider({
   children,
-  rubricId,
   collectionId,
 }: {
   children: React.ReactNode;
-  rubricId: string;
   collectionId: string;
 }) {
-  const [labelSetsByRubric, setLabelSetsByRubric] = useLocalStorage<
+  const [labelSetsByKey, setLabelSetsByKey] = useLocalStorage<
     Record<string, LabelSet | null>
-  >('activeLabelSetByRubric', {});
+  >('labelSets', {});
 
-  // Fetch all available label sets to validate stored references
-  const { data: availableLabelSets } = useGetLabelSetsQuery({ collectionId });
+  // Fetch the available label sets from the API
+  const { data: availableLabelSets, isFetching } = useGetLabelSetsQuery({
+    collectionId,
+  });
 
-  const activeLabelSet = useMemo(
-    () => labelSetsByRubric[rubricId] || null,
-    [labelSetsByRubric, rubricId]
+  // Create a map from label set id to label set
+  const labelIdToRemoteLabelSet = useMemo(() => {
+    return availableLabelSets?.reduce(
+      (acc, labelSet) => {
+        acc[labelSet.id] = labelSet;
+        return acc;
+      },
+      {} as Record<string, LabelSet>
+    );
+  }, [availableLabelSets]);
+
+  const getLabelSet = useMemo(() => {
+    return (objectKey: string) => {
+      return labelSetsByKey[objectKey];
+    };
+  }, [labelSetsByKey]);
+
+  // Function to set the active label set for a given object key
+  const setLabelSet = useCallback(
+    (objectKey: string, labelSet: LabelSet | null) => {
+      setLabelSetsByKey((prev) => ({
+        ...prev,
+        [objectKey]: labelSet,
+      }));
+    },
+    [setLabelSetsByKey]
   );
 
-  // Validate and sync label set data with server
+  // Make sure local label sets are in sync when the remote label sets change
   useEffect(() => {
-    if (!availableLabelSets || !activeLabelSet) return;
+    if (!labelIdToRemoteLabelSet || isFetching) return;
 
-    // Find the current version from the server
-    const currentLabelSet = availableLabelSets.find(
-      (ls) => ls.id === activeLabelSet.id
-    );
+    const updates: Record<string, LabelSet | null> = {};
+    let hasUpdates = false;
 
-    if (!currentLabelSet) {
-      // Label set was deleted - clear it from storage
-      setLabelSetsByRubric((prev) => {
-        const { [rubricId]: _, ...rest } = prev;
-        return rest;
-      });
-    } else if (
-      currentLabelSet.name !== activeLabelSet.name ||
-      currentLabelSet.description !== activeLabelSet.description
-    ) {
-      // Label set was updated - sync the new data
-      setLabelSetsByRubric((prev) => ({
-        ...prev,
-        [rubricId]: currentLabelSet,
-      }));
-    }
-  }, [availableLabelSets, activeLabelSet, rubricId, setLabelSetsByRubric]);
+    Object.entries(labelSetsByKey).forEach(([key, labelSet]) => {
+      if (!labelSet) return;
 
-  const setActiveLabelSet = (newLabelSet: LabelSet | null) => {
-    setLabelSetsByRubric((prev) => ({
-      ...prev,
-      [rubricId]: newLabelSet,
-    }));
-  };
+      const remoteLabelSet = labelIdToRemoteLabelSet[labelSet.id];
 
-  const clearLabelSets = () => {
-    setLabelSetsByRubric((prev) => {
-      const { [rubricId]: _, ...rest } = prev;
-      return rest;
+      // Clear deleted label sets
+      if (!remoteLabelSet) {
+        updates[key] = null;
+        hasUpdates = true;
+        return;
+      }
+
+      // Sync updated label sets
+      if (
+        remoteLabelSet.name !== labelSet.name ||
+        remoteLabelSet.description !== labelSet.description
+      ) {
+        updates[key] = remoteLabelSet;
+        hasUpdates = true;
+      }
     });
-  };
+
+    if (hasUpdates) {
+      setLabelSetsByKey((prev) => ({ ...prev, ...updates }));
+    }
+  }, [labelIdToRemoteLabelSet, labelSetsByKey]);
 
   const contextValue: LabelSetsContextValue = {
-    activeLabelSet,
-    activeLabelSetId: activeLabelSet?.id || null,
-    activeLabelSetName: activeLabelSet?.name || null,
-    setActiveLabelSet,
-    clearLabelSets,
+    getLabelSet,
+    setLabelSet,
   };
 
   return (

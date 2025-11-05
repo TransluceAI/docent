@@ -1,15 +1,26 @@
 'use client';
 
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
-import { useMemo, useRef, useEffect } from 'react';
-import { cn } from '@/lib/utils';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import JudgeResultCard from './JudgeResultCard';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
+import { AgentRunJudgeResults } from '@/app/api/rubricApi';
+import { applyViewModeResults } from '../utils/viewModeResults';
+import {
+  useResultFilterControls,
+  ViewMode,
+} from '@/providers/use-result-filters';
+import { cn } from '@/lib/utils';
+
+interface ViewSnapshot {
+  viewMode: ViewMode;
+  visibilitySet?: Set<string>;
+  sortOrder?: string[];
+}
 
 interface VirtualResultsListProps {
-  filteredJudgeResultsList: JudgeResultWithCitations[];
+  agentRunResults: AgentRunJudgeResults[];
   activeResultId?: string;
   schema: SchemaDefinition;
   labels?: Label[];
@@ -17,27 +28,137 @@ interface VirtualResultsListProps {
 }
 
 const VirtualResultsList = ({
-  filteredJudgeResultsList,
+  agentRunResults,
   activeResultId,
   schema,
   labels,
   activeLabelSet,
 }: VirtualResultsListProps) => {
-  // Group the results by agent run id
-  const agentRunGroups = useMemo(() => {
-    const grouped: Record<string, JudgeResultWithCitations[]> = {};
-    for (const result of filteredJudgeResultsList) {
-      if (!grouped[result.agent_run_id]) {
-        grouped[result.agent_run_id] = [];
-      }
-      grouped[result.agent_run_id].push(result);
-    }
-    return Object.entries(grouped).map(([agentRunId, results]) => ({
-      agentRunId,
-      results,
-    }));
-  }, [filteredJudgeResultsList]);
+  const { filters, viewMode } = useResultFilterControls();
 
+  const [viewSnapshot, setViewSnapshot] = useState<ViewSnapshot | null>(null);
+
+  // Snapshot Management
+  // Purpose: Stabilize the view during label editing to prevent:
+  //   1. Items disappearing when labeled (missing_labels view)
+  //   2. Items reordering when labels change scores (labeled_disagreement, incomplete_labels)
+  //
+  // Behavior:
+  // - On view/filter change: Create new snapshot for current view
+  // - During editing: Use snapshot to maintain stable visibility/ordering
+  // - On data changes: Merge newly-appeared items (missing_labels only)
+  // - On view exit: Clear snapshot
+  //
+  // Why two effects: Separating reset logic (view/filter) from merge logic (data)
+  // keeps the behavior predictable and prevents infinite update loops.
+
+  // Effect 1: Create/reset snapshot on view entry or filter changes
+  useEffect(() => {
+    const baseFiltered = applyViewModeResults(
+      agentRunResults,
+      labels ?? [],
+      viewMode,
+      filters,
+      null
+    );
+
+    if (viewMode === 'missing_labels') {
+      setViewSnapshot({
+        viewMode,
+        visibilitySet: new Set(baseFiltered.map((run) => run.agent_run_id)),
+      });
+    } else if (
+      viewMode === 'labeled_disagreement' ||
+      viewMode === 'incomplete_labels'
+    ) {
+      setViewSnapshot({
+        viewMode,
+        sortOrder: baseFiltered.map((run) => run.agent_run_id),
+      });
+    } else {
+      setViewSnapshot(null);
+    }
+    // Intentionally exclude agentRunResults/labels - we want a stable snapshot
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, filters]);
+
+  // Effect 2: Merge newly-appeared unlabeled runs into existing snapshot
+  useEffect(() => {
+    if (
+      viewMode === 'missing_labels' &&
+      viewSnapshot?.viewMode === 'missing_labels' &&
+      viewSnapshot.visibilitySet
+    ) {
+      const baseFiltered = applyViewModeResults(
+        agentRunResults,
+        labels ?? [],
+        viewMode,
+        filters,
+        null
+      );
+      const currentUnlabeledIds = new Set(
+        baseFiltered.map((run) => run.agent_run_id)
+      );
+
+      const hasNewIds = Array.from(currentUnlabeledIds).some(
+        (id) => !viewSnapshot.visibilitySet!.has(id)
+      );
+
+      if (hasNewIds) {
+        const mergedVisibilitySet = new Set([
+          ...Array.from(viewSnapshot.visibilitySet),
+          ...Array.from(currentUnlabeledIds),
+        ]);
+        setViewSnapshot({
+          ...viewSnapshot,
+          visibilitySet: mergedVisibilitySet,
+        });
+      }
+    }
+    // React to data changes to detect newly-appeared runs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentRunResults, labels]);
+
+  const sortedJudgeResultsList: AgentRunJudgeResults[] = useMemo(() => {
+    const filtered = applyViewModeResults(
+      agentRunResults,
+      labels ?? [],
+      viewMode,
+      filters,
+      viewSnapshot?.visibilitySet ?? null
+    );
+
+    // If we have a sort order snapshot, apply it to maintain stable ordering
+    if (viewSnapshot?.sortOrder && viewSnapshot.sortOrder.length > 0) {
+      const orderMap = new Map(
+        viewSnapshot.sortOrder.map((id, index) => [id, index])
+      );
+
+      // Separate items in snapshot from new items not in snapshot
+      const inSnapshot: AgentRunJudgeResults[] = [];
+      const notInSnapshot: AgentRunJudgeResults[] = [];
+
+      filtered.forEach((run) => {
+        if (orderMap.has(run.agent_run_id)) {
+          inSnapshot.push(run);
+        } else {
+          notInSnapshot.push(run);
+        }
+      });
+
+      // Sort items that are in the snapshot according to the snapshot order
+      inSnapshot.sort(
+        (a, b) =>
+          (orderMap.get(a.agent_run_id) ?? 0) -
+          (orderMap.get(b.agent_run_id) ?? 0)
+      );
+
+      // Append new items at the end (they keep their relative order from filtering)
+      return [...inSnapshot, ...notInSnapshot];
+    }
+
+    return filtered;
+  }, [agentRunResults, labels, viewMode, filters, viewSnapshot]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Create agent_run_id -> label map
@@ -54,12 +175,12 @@ const VirtualResultsList = ({
 
   // Create the virtualizer
   const virtualizer = useVirtualizer({
-    count: agentRunGroups.length,
+    count: sortedJudgeResultsList.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
       // Estimate size based on number of results in the group
       // Each result is roughly 100px, plus header of ~40px
-      const resultsCount = agentRunGroups[index]?.results.length || 1;
+      const resultsCount = sortedJudgeResultsList[index].results.length;
       return 40 + resultsCount * 200;
     },
     paddingStart: 0,
@@ -69,11 +190,11 @@ const VirtualResultsList = ({
 
   // Scroll to the active result group if it exists on load
   useEffect(() => {
-    const activeResultGroupIdx = agentRunGroups.findIndex((group) =>
+    const activeResultResultIdx = agentRunResults.findIndex((group) =>
       group.results.some((result) => result.id === activeResultId)
     );
-    if (activeResultGroupIdx !== -1) {
-      virtualizer.scrollToIndex(activeResultGroupIdx, { align: 'start' });
+    if (activeResultResultIdx !== -1) {
+      virtualizer.scrollToIndex(activeResultResultIdx, { align: 'start' });
     }
   }, []);
 
@@ -105,11 +226,10 @@ const VirtualResultsList = ({
           }}
         >
           {items.map((virtualRow) => {
-            const group = agentRunGroups[virtualRow.index];
+            const group = sortedJudgeResultsList[virtualRow.index];
             const hasActiveResult = group.results.some(
               (result) => result.id === activeResultId
             );
-
             return (
               <div
                 key={virtualRow.key}
@@ -123,18 +243,15 @@ const VirtualResultsList = ({
                     virtualRow.index === 0 && 'mt-0'
                   )}
                 >
-                  <span>Agent Run {group.agentRunId.slice(0, 8)}</span>
+                  <span>Agent Run {group.agent_run_id.slice(0, 8)}</span>
                 </div>
-                {group.results.map((result) => (
-                  <JudgeResultCard
-                    key={result.id}
-                    agentRunId={group.agentRunId}
-                    judgeResult={result}
-                    schema={schema}
-                    labels={labelsMap?.get(group.agentRunId) || []}
-                    activeLabelSetId={activeLabelSet?.id || null}
-                  />
-                ))}
+                <JudgeResultCard
+                  key={group.agent_run_id}
+                  agentRunResult={group}
+                  schema={schema}
+                  labels={labelsMap?.get(group.agent_run_id) || []}
+                  activeLabelSetId={activeLabelSet?.id || null}
+                />
               </div>
             );
           })}

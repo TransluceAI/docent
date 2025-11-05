@@ -793,6 +793,7 @@ class MonoService:
         ctx: ViewContext,
         sort_field: str | None = None,
         sort_direction: Literal["asc", "desc"] = "asc",
+        limit: int | None = None,
     ) -> list[str]:
         """
         Get agent run IDs for a given Collection ID without fetching transcripts.
@@ -831,6 +832,10 @@ class MonoService:
                     query = query.order_by(sort_expr.desc())
                 else:
                     query = query.order_by(sort_expr.asc())
+
+            # Apply limit if specified
+            if limit is not None:
+                query = query.limit(limit)
 
             result = await session.execute(query)
             agent_run_ids = result.scalars().all()
@@ -945,82 +950,57 @@ class MonoService:
         # ctx: ViewContext | None = None,
         ctx: ViewContext,
         agent_run_ids: list[str] | None = None,
-        _where_clause: ColumnElement[bool] | None = None,
-        _limit: int | None = None,
+        limit: int | None = None,
         apply_base_where_clause: bool = True,
+        batch_size: int = 10_000,
     ) -> list[AgentRun]:
         """
         Get all agent runs for a given Collection ID.
         """
         async with self.db.session() as session:
-            if agent_run_ids is not None and len(agent_run_ids) > 10_000:
-                agent_runs_raw: list[SQLAAgentRun] = []
-                batch_size = 10_000
+            # If we don't have the agent run ids, get them first
+            if agent_run_ids is None:
+                agent_run_ids = await self.get_agent_run_ids(ctx, limit=limit)
 
-                for i in range(0, len(agent_run_ids), batch_size):
-                    batch_ids = agent_run_ids[i : i + batch_size]
-                    query = select(SQLAAgentRun).where(SQLAAgentRun.id.in_(batch_ids))
-                    if apply_base_where_clause:
-                        query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
-                    if _where_clause is not None:
-                        query = query.where(_where_clause)
-                    if _limit is not None:
-                        # Apply limit to the entire result set, not per batch
-                        remaining_limit = _limit - len(agent_runs_raw)
-                        if remaining_limit <= 0:
-                            break
-                        query = query.limit(remaining_limit)
+            # Limit the agent_run_ids to the limit
+            if limit is not None:
+                agent_run_ids = agent_run_ids[:limit]
 
-                    result = await session.execute(query)
-                    batch_agent_runs = result.scalars().all()
-                    agent_runs_raw.extend(batch_agent_runs)
+            if not agent_run_ids:
+                return []
 
-            else:
-                query = select(SQLAAgentRun)
+            # Gather agent runs in batches
+            agent_runs_raw: list[SQLAAgentRun] = []
+            for i in range(0, len(agent_run_ids), batch_size):
+                batch_ids = agent_run_ids[i : i + batch_size]
+
+                query = select(SQLAAgentRun).where(SQLAAgentRun.id.in_(batch_ids))
                 if apply_base_where_clause:
                     query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
-                if agent_run_ids is not None:
-                    query = query.where(SQLAAgentRun.id.in_(agent_run_ids))
-                if _where_clause is not None:
-                    query = query.where(_where_clause)
-                if _limit is not None:
-                    query = query.limit(_limit)
 
                 result = await session.execute(query)
-                agent_runs_raw = list(result.scalars().all())
+                agent_runs_raw.extend(result.scalars().all())
 
-            # Get transcripts for those runs
-            agent_run_ids = [ar.id for ar in agent_runs_raw]
-            if agent_run_ids:
-                # Use batch processing to avoid PostgreSQL parameter limits
-                transcripts_raw: list[SQLATranscript] = []
-                batch_size = 10_000
+            # Gather transcripts in batches
+            transcripts_raw: list[SQLATranscript] = []
+            for i in range(0, len(agent_run_ids), batch_size):
+                batch_ids = agent_run_ids[i : i + batch_size]
+                result = await session.execute(
+                    select(SQLATranscript).where(SQLATranscript.agent_run_id.in_(batch_ids))
+                )
+                transcripts_raw.extend(result.scalars().all())
 
-                for i in range(0, len(agent_run_ids), batch_size):
-                    batch_ids = agent_run_ids[i : i + batch_size]
-                    result = await session.execute(
-                        select(SQLATranscript).where(SQLATranscript.agent_run_id.in_(batch_ids))
-                    )
-                    batch_transcripts = result.scalars().all()
-                    transcripts_raw.extend(batch_transcripts)
-            else:
-                transcripts_raw = []
-
-            # Get transcript groups for the agent runs
+            # Gather transcript groups in batches
             transcript_groups_raw: list[SQLATranscriptGroup] = []
-            if agent_run_ids:
-                # Use batch processing to avoid PostgreSQL parameter limits
-                batch_size = 10_000
-
-                for i in range(0, len(agent_run_ids), batch_size):
-                    batch_ids = agent_run_ids[i : i + batch_size]
-                    result = await session.execute(
-                        select(SQLATranscriptGroup).where(
-                            SQLATranscriptGroup.agent_run_id.in_(batch_ids)
-                        )
+            for i in range(0, len(agent_run_ids), batch_size):
+                batch_ids = agent_run_ids[i : i + batch_size]
+                result = await session.execute(
+                    select(SQLATranscriptGroup).where(
+                        SQLATranscriptGroup.agent_run_id.in_(batch_ids)
                     )
-                    batch_transcript_groups = result.scalars().all()
-                    transcript_groups_raw.extend(batch_transcript_groups)
+                )
+                batch_transcript_groups = result.scalars().all()
+                transcript_groups_raw.extend(batch_transcript_groups)
 
         # Collate run_id -> transcripts
         agent_run_transcripts: dict[str, list[Transcript]] = {}
@@ -1167,9 +1147,7 @@ class MonoService:
             The agent run.
         """
         agent_runs = await self.get_agent_runs(
-            ctx,
-            _where_clause=SQLAAgentRun.id.in_([agent_run_id]),
-            apply_base_where_clause=apply_base_where_clause,
+            ctx, agent_run_ids=[agent_run_id], apply_base_where_clause=apply_base_where_clause
         )
         assert len(agent_runs) <= 1, f"Found {len(agent_runs)} AgentRuns with ID {agent_run_id}"
         return agent_runs[0] if agent_runs else None

@@ -15,7 +15,7 @@ class BatchedWriter:
         self,
         session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]],
         batch_size: int = 50,
-        commit_interval_seconds: float = 5.0,
+        commit_interval_seconds: float = 1.0,
     ) -> None:
         """
         A batched writer that manages committing SQLAlchemy objects in batches.

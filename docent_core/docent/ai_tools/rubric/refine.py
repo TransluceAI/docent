@@ -204,7 +204,7 @@ def execute_set_rubric(
     except (jsonschema.ValidationError, jsonschema.SchemaError) as e:
         return None, ToolMessage(
             content=f"Invalid output schema: {e}",
-            error={"detail": e},
+            error={"detail": str(e)},
             tool_call_id=tool_call.id,
             function=tool_call.function,
         )

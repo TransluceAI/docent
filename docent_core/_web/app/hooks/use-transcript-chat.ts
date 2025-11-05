@@ -14,13 +14,13 @@ import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
 import { ChatMessage } from '../types/transcriptTypes';
 
 export interface UseTranscriptChatOptions {
-  runId: string;
+  agentRunId: string;
   collectionId: string;
   judgeResult?: JudgeResultWithCitations | null;
 }
 
 export function useTranscriptChat({
-  runId,
+  agentRunId: agentRunId,
   collectionId,
   judgeResult,
 }: UseTranscriptChatOptions) {
@@ -32,12 +32,12 @@ export function useTranscriptChat({
 
   // Get current chat state when session is available (for initial load)
   const { data: chatState } = useGetChatStateQuery(
-    sessionId ? { collectionId, runId, sessionId } : skipToken
+    sessionId ? { collectionId, runId: agentRunId, sessionId } : skipToken
   );
 
   // Check if there is an active job for this session (to resume SSE after refresh)
   const { data: activeJobData } = useGetActiveChatJobQuery(
-    sessionId ? { collectionId, runId, sessionId } : skipToken
+    sessionId ? { collectionId, runId: agentRunId, sessionId } : skipToken
   );
   useEffect(() => {
     setJobId(activeJobData?.job_id || null);
@@ -53,7 +53,9 @@ export function useTranscriptChat({
   const [getOrCreateChatSession] = useGetOrCreateChatSessionMutation();
 
   const jobQueryParams =
-    jobId && collectionId ? { collectionId, runId, jobId } : skipToken;
+    jobId && collectionId
+      ? { collectionId, runId: agentRunId, jobId }
+      : skipToken;
   // Start listening to the job state via SSE when we have a jobId
   const jobQuery = useListenToChatJobQuery(jobQueryParams);
   const sse = jobId ? jobQuery.currentData : undefined;
@@ -85,11 +87,11 @@ export function useTranscriptChat({
 
   // Start the session
   useEffect(() => {
-    if (!collectionId || !runId) return;
+    if (!collectionId || !agentRunId) return;
 
     getOrCreateChatSession({
       collectionId,
-      runId,
+      runId: agentRunId,
       resultId: judgeResult?.id || null,
     })
       .unwrap()
@@ -102,7 +104,7 @@ export function useTranscriptChat({
           error
         );
       });
-  }, [collectionId, runId, judgeResult?.id, getOrCreateChatSession]);
+  }, [collectionId, agentRunId, judgeResult?.id, getOrCreateChatSession]);
 
   // Auto-populate citations from chat messages to enable transcript highlighting
   useEffect(() => {
@@ -126,7 +128,7 @@ export function useTranscriptChat({
 
       // Only update if we have citations to avoid unnecessary dispatches
       if (allCitationsArray.length > 0) {
-        dispatch(setRunCitations({ [runId]: allCitationsArray }));
+        dispatch(setRunCitations({ [agentRunId]: allCitationsArray }));
       }
     }
   }, [messages, judgeResultCitations, dispatch]);
@@ -136,7 +138,13 @@ export function useTranscriptChat({
   const sendMessage = useCallback(
     (message: string, chatModel?: ModelOption) => {
       if (!sessionId) return;
-      postMessage({ collectionId, runId, sessionId, message, chatModel })
+      postMessage({
+        collectionId,
+        runId: agentRunId,
+        sessionId,
+        message,
+        chatModel,
+      })
         .unwrap()
         .then((res) => {
           if (res?.job_id) setJobId(res.job_id);
@@ -145,14 +153,14 @@ export function useTranscriptChat({
           console.error('Failed to post transcript chat message:', error);
         });
     },
-    [collectionId, runId, sessionId, postMessage]
+    [collectionId, agentRunId, sessionId, postMessage]
   );
 
   // Handle reset chat
   const resetChat = useCallback(() => {
     if (!sessionId) return;
 
-    dispatch(setRunCitations({ [runId]: judgeResultCitations || [] }));
+    dispatch(setRunCitations({ [agentRunId]: judgeResultCitations || [] }));
 
     // Clear current session's cache before creating new one
     dispatch(
@@ -162,7 +170,7 @@ export function useTranscriptChat({
     // Create a new session with force_create=true
     getOrCreateChatSession({
       collectionId,
-      runId,
+      runId: agentRunId,
       resultId: judgeResult?.id || null,
       forceCreate: true,
     })
@@ -177,7 +185,7 @@ export function useTranscriptChat({
   }, [
     dispatch,
     collectionId,
-    runId,
+    agentRunId,
     sessionId,
     judgeResult?.id,
     getOrCreateChatSession,

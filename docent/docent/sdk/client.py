@@ -200,7 +200,7 @@ class Docent:
             version: The version of the rubric to get run state for. If None, the latest version is used.
 
         Returns:
-            dict: Dictionary containing rubric run state with results, job_id, and total_agent_runs.
+            dict: Dictionary containing rubric run state with results, job_id, and total_results_needed.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.

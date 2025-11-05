@@ -11,19 +11,27 @@ import { cn } from '@/lib/utils';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { SchemaDefinition } from '@/app/types/schema';
+import { AgentRunJudgeResults } from '@/app/api/rubricApi';
+import { applyGeneralFilters } from '../utils/viewModeResults';
+import { useResultFilterControls } from '@/providers/use-result-filters';
+import { useParams } from 'next/navigation';
 
 interface AgreementPopoverProps {
-  filteredJudgeResults: JudgeResultWithCitations[];
+  agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   schema?: SchemaDefinition;
 }
 
 export const AgreementPopover = ({
-  filteredJudgeResults,
+  agentRunResults,
   labels,
   schema,
 }: AgreementPopoverProps) => {
-  const { activeLabelSet } = useLabelSets();
+  const { rubric_id: rubricId } = useParams<{
+    rubric_id: string;
+  }>();
+
+  const { activeLabelSet } = useLabelSets(rubricId);
 
   // Filter for properties that can be counted (statistics computed for)
   const countableProperties: string[] = useMemo(() => {
@@ -42,6 +50,18 @@ export const AgreementPopover = ({
     });
   }, [schema]);
 
+  // Get first results per agent run for filtering
+  const firstResults = useMemo(
+    () => agentRunResults.map((arr) => arr.results[0]).filter(Boolean),
+    [agentRunResults]
+  );
+
+  // Apply the filters to the runs
+  const { filters } = useResultFilterControls();
+  const filteredFirstResults = useMemo(
+    () => firstResults.filter((result) => applyGeneralFilters(result, filters)),
+    [firstResults, filters]
+  );
   // Track the selected property for the visible selection
   const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
 
@@ -54,17 +74,17 @@ export const AgreementPopover = ({
 
   // Calculate agreement for each property
   const propertyStats = useMemo(() => {
-    if (!filteredJudgeResults || !activeLabelSet) {
+    if (!filteredFirstResults || !activeLabelSet) {
       return {};
     }
 
     return calculatePropertyStats(
-      filteredJudgeResults,
+      filteredFirstResults,
       labels,
       countableProperties,
       activeLabelSet.id
     );
-  }, [filteredJudgeResults, labels, countableProperties, activeLabelSet]);
+  }, [filteredFirstResults, labels, countableProperties, activeLabelSet]);
 
   const statsContent = () => {
     if (!activeLabelSet) return null;
@@ -114,7 +134,7 @@ export const AgreementPopover = ({
   };
 
   const content = () => {
-    if (filteredJudgeResults.length === 0) {
+    if (filteredFirstResults.length === 0) {
       return (
         <span className="text-xs text-muted-foreground">
           No judge results to compute stats.

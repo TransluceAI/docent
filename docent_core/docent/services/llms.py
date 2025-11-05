@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Any, AsyncContextManager, Callable, Literal
+from typing import Any, AsyncContextManager, Callable, Literal, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -163,7 +163,7 @@ class LLMService(BaseLLMService):
     async def get_completions(
         self,
         *,
-        inputs: list[MessagesInput],
+        inputs: Sequence[MessagesInput],
         model_options: list[ModelOption],
         tools: list[ToolInfo] | None = None,
         tool_choice: Literal["auto", "required"] | None = None,
@@ -369,6 +369,20 @@ class ProviderPreferences(PublicProviderPreferences):
                 model_name="gemini-2.5-flash",
                 reasoning_effort="medium",
             )
+        ]
+
+    @cached_property
+    def judge_reflection(self) -> list[ModelOption]:
+        """Get model options for the reflection agent
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(provider="openai", model_name="gpt-5", reasoning_effort="low"),
+            ModelOption(provider="google", model_name="gemini-2.5-flash", reasoning_effort="low"),
+            ModelOption(
+                provider="anthropic", model_name="claude-haiku-4-5", reasoning_effort="low"
+            ),
         ]
 
 

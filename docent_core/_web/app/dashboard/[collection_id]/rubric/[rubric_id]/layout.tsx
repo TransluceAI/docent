@@ -20,8 +20,7 @@ import {
 } from '@/providers/use-refinement-tab';
 import { TextSelectionProvider } from '@/providers/use-text-selection';
 import { useAppSelector } from '@/app/store/hooks';
-import { useRouteGuard } from '@/hooks/use-route-guard';
-import { LabelSetsProvider } from '@/providers/use-label-sets';
+import { useLabelSets } from '@/providers/use-label-sets';
 
 interface RubricLayoutBodyProps {
   collectionId: string;
@@ -41,17 +40,20 @@ function RubricLayoutBody({
   const isOnResultRoute = !!resultId || !!agentRunId;
 
   const { version } = useRubricVersion();
-  useRouteGuard({ version });
+  const { activeLabelSet } = useLabelSets(rubricId);
   const { data: rubricRunState } = useGetRubricRunStateQuery(
     {
       collectionId,
       rubricId,
       version: version ?? null,
+      labelSetId: activeLabelSet?.id ?? null,
     },
     { skip: !isOnResultRoute }
   );
-  const currentResult = isOnResultRoute
-    ? rubricRunState?.results?.find((r) => r.id === resultId)
+
+  // Find the agent_run group that contains the current result
+  const currentAgentRunGroup = isOnResultRoute
+    ? rubricRunState?.results?.find((arr) => arr.agent_run_id === agentRunId)
     : null;
 
   const { activeTab, setActiveTab } = useRefinementTab();
@@ -177,7 +179,6 @@ function RubricLayoutBody({
 
               <TabsContent value="refine" className="flex-1 min-h-0">
                 <RefinementChat
-                  collectionId={collectionId}
                   sessionId={sessionId}
                   isOnResultRoute={isOnResultRoute}
                 />
@@ -186,10 +187,11 @@ function RubricLayoutBody({
               <TabsContent value="analyze" className="flex-1 min-h-0">
                 {isOnResultRoute && agentRunId && (
                   <TranscriptChat
-                    runId={agentRunId}
+                    agentRunId={agentRunId}
                     collectionId={collectionId}
-                    judgeResult={currentResult}
-                    showEmptyResultMessage={!currentResult}
+                    agentRunResults={currentAgentRunGroup}
+                    selectedResultId={resultId}
+                    showEmptyResultMessage={!currentAgentRunGroup}
                     className="flex flex-col min-w-0 h-full"
                   />
                 )}
@@ -220,16 +222,11 @@ export default function RubricLayout({
             collectionId={collectionId}
             rubricId={rubricId}
           >
-            <LabelSetsProvider rubricId={rubricId} collectionId={collectionId}>
-              <TextSelectionProvider>
-                <RubricLayoutBody
-                  collectionId={collectionId}
-                  rubricId={rubricId}
-                >
-                  {children}
-                </RubricLayoutBody>
-              </TextSelectionProvider>
-            </LabelSetsProvider>
+            <TextSelectionProvider>
+              <RubricLayoutBody collectionId={collectionId} rubricId={rubricId}>
+                {children}
+              </RubricLayoutBody>
+            </TextSelectionProvider>
           </RefinementTabProvider>
         </RubricVersionProvider>
       </CitationNavigationProvider>

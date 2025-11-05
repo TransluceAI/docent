@@ -6,6 +6,7 @@ from docent._llm_util.providers.preference_types import merge_models_with_byok
 from docent._log_util.logger import get_logger
 from docent.judges import JudgeResultWithCitations, Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
+from docent_core.docent.ai_tools.rubric.reflect import JudgeReflection
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.rubric import SQLARubric
@@ -211,6 +212,59 @@ async def get_result_by_agent_run(
     return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
 
 
+@rubric_router.get("/{collection_id}/rubric/{rubric_id}/agent_run/{agent_run_id}/reflection")
+async def get_agent_run_reflection(
+    collection_id: str,
+    rubric_id: str,
+    agent_run_id: str,
+    version: int,
+    label_set_id: str | None = None,
+    force_recompute: bool = False,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> JudgeReflection:
+    """Get the reflection analysis for an agent_run's multi-rollout judge results.
+
+    Returns structured summaries and the independent rollouts that were reflected on.
+    If reflection exists in DB: returns it directly (200 OK)
+    If not exists: starts background job and waits for completion (blocks until ready)
+    Returns 404 if the agent_run has no multi-rollout results.
+
+    Args:
+        collection_id: The collection ID
+        rubric_id: The rubric ID
+        agent_run_id: The agent run ID
+        version: The rubric version
+        label_set_id: Optional label set ID to filter labels by
+        force_recompute: If true, recompute the reflection even if it exists in DB
+    """
+    # Try to get the reflection from DB if not forcing recompute
+    if not force_recompute:
+        results = await rubric_svc.get_reflections_for_agent_runs(
+            [agent_run_id], rubric_id, version, label_set_id=label_set_id
+        )
+        reflection = results.get(agent_run_id)
+        if reflection is not None:
+            # Reflection exists - return it directly
+            return reflection
+
+    # Start or get existing reflection job (force new if recomputing)
+    job_id = await rubric_svc.start_or_get_reflection_job(
+        ctx, agent_run_id, rubric_id, version, label_set_id=label_set_id, force_new=force_recompute
+    )
+
+    # Wait for reflection to complete and return it
+    reflection = await rubric_svc.wait_for_reflection_result(
+        job_id, agent_run_id, rubric_id, version, label_set_id=label_set_id
+    )
+
+    if reflection is None:
+        raise HTTPException(status_code=500, detail="Reflection computation failed or timed out")
+
+    return reflection
+
+
 @rubric_router.delete("/{collection_id}/rubric/{rubric_id}")
 async def delete_rubric_all_versions(
     collection_id: str,
@@ -266,14 +320,24 @@ class StartClusteringJobRequest(BaseModel):
     recluster: bool
 
 
-class RubricRunStateResponse(BaseModel):
+class AgentRunJudgeResults(BaseModel):
+    agent_run_id: str
+    rubric_id: str
+    rubric_version: int
     results: list[JudgeResultWithCitations]
+    reflection: JudgeReflection | None
+
+
+class RubricRunStateResponse(BaseModel):
+    results: list[AgentRunJudgeResults]
     job_id: str | None
-    total_agent_runs: int | None
+    total_results_needed: int | None
+    current_results_count: int | None
 
 
 class StartFilteredEvalJobRequest(BaseModel):
-    max_results: int | None = None
+    max_agent_runs: int | None = None
+    n_rollouts_per_input: int = 1
     label_set_id: str | None = None
 
 
@@ -296,10 +360,11 @@ async def start_eval_rubric_job(
         raise HTTPException(status_code=404, detail=f"Rubric {rubric_id} not found")
 
     logger.info(
-        f"Starting evaluation job for rubric {rubric_id} with max results {request.max_results}"
+        f"Starting evaluation job for rubric {rubric_id} with max results {request.max_agent_runs} "
+        f"and {request.n_rollouts_per_input} rollouts per input"
     )
     job_id = await rubric_svc.start_or_get_eval_rubric_job(
-        ctx, rubric_id, request.max_results, request.label_set_id
+        ctx, rubric_id, request.max_agent_runs, request.n_rollouts_per_input, request.label_set_id
     )
 
     # Check if user has a custom API key (just for analytics purposes)
@@ -329,6 +394,7 @@ async def get_rubric_run_state(
     collection_id: str,
     rubric_id: str,
     version: int | None = None,
+    label_set_id: str | None = None,
     sqla_rubric_latest: SQLARubric = Depends(get_rubric),
     rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.READ)),
@@ -337,17 +403,27 @@ async def get_rubric_run_state(
         sqla_rubric_for_schema = await rubric_svc.get_rubric(rubric_id, version)
         if sqla_rubric_for_schema is None:
             # If requested version doesn't exist, behave like empty results
-            return RubricRunStateResponse(results=[], job_id=None, total_agent_runs=None)
+            return RubricRunStateResponse(
+                results=[],
+                job_id=None,
+                total_results_needed=None,
+                current_results_count=None,
+            )
     else:
         sqla_rubric_for_schema = sqla_rubric_latest
 
     # What's the ID of the job that's currently running, if any?
     cur_job = None
-    total_agent_runs = None
+    total_results_needed = None
+    current_results_count = None
+    agent_run_ids_being_processed: list[str] = []
     # Make sure that we're not pushing job status for versions other than the latest
     if version is None or version == sqla_rubric_latest.version:
         cur_job = await rubric_svc.get_active_job_for_rubric(rubric_id)
-        total_agent_runs = cur_job.job_json.get("total_agent_runs") if cur_job else None
+        if cur_job:
+            agent_run_ids_being_processed = cur_job.job_json.get(
+                "agent_run_ids_being_processed", []
+            )
 
     # Get current results for the specified version (defaults to latest inside service)
     results = await rubric_svc.get_rubric_results(rubric_id, version)
@@ -357,10 +433,49 @@ async def get_rubric_run_state(
         for result in results
     ]
 
+    # Group results by agent_run_id
+    from collections import defaultdict
+
+    grouped_results: dict[str, list[JudgeResultWithCitations]] = defaultdict(list)
+    for result in results_parsed:
+        grouped_results[result.agent_run_id].append(result)
+
+    # Batch fetch all reflections at once
+    agent_run_ids = list(grouped_results.keys())
+    reflections_map = await rubric_svc.get_reflections_for_agent_runs(
+        agent_run_ids, rubric_id, version or sqla_rubric_latest.version, label_set_id
+    )
+
+    # Build agent run results
+    agent_run_results: list[AgentRunJudgeResults] = []
+    for agent_run_id, agent_results in grouped_results.items():
+        reflection = reflections_map.get(agent_run_id)
+        agent_run_results.append(
+            AgentRunJudgeResults(
+                agent_run_id=agent_run_id,
+                rubric_id=rubric_id,
+                rubric_version=version or sqla_rubric_latest.version,
+                results=agent_results,
+                reflection=reflection,
+            )
+        )
+
+    # Calculate current results count for agent runs being processed by the job
+    if cur_job and agent_run_ids_being_processed:
+        n_rollouts = cur_job.job_json.get("n_rollouts_per_input", 1)
+        agent_run_ids_set = set(agent_run_ids_being_processed)
+        current_results_count = sum(
+            min(len(results), n_rollouts)
+            for agent_run_id, results in grouped_results.items()
+            if agent_run_id in agent_run_ids_set
+        )
+        total_results_needed = len(agent_run_ids_being_processed) * n_rollouts
+
     return RubricRunStateResponse(
-        results=results_parsed,
+        results=agent_run_results,
         job_id=cur_job.id if cur_job else None,
-        total_agent_runs=total_agent_runs,
+        total_results_needed=total_results_needed,
+        current_results_count=current_results_count,
     )
 
 

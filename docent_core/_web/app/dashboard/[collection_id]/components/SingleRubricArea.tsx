@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Tags, Loader2, Minimize2, Maximize2 } from 'lucide-react';
+import { Loader2, Minimize2, Maximize2, Tags } from 'lucide-react';
 import RubricEditor from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
 import { useGetRubricQuery } from '../../../api/rubricApi';
@@ -27,13 +27,13 @@ import { AgreementPopover } from './AgreementPopover';
 import ClusterButton from './ClusterButton';
 import useJobStatus from '@/app/hooks/use-job-status';
 import { ProgressBar } from '@/app/components/ProgressBar';
-import { cn } from '@/lib/utils';
-import { useResultFilterControls } from '@/providers/use-result-filters';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import ShareRubricButton from './ShareRubricButton';
 import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { usePostRubricUpdateToRefinementSessionMutation } from '@/app/api/refinementApi';
 import { toast } from '@/hooks/use-toast';
+import RubricRunDialog from './RubricRunDialog';
+import ViewModeDropdown from './ViewModeDropdown';
 import { useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { skipToken } from '@reduxjs/toolkit/query';
@@ -58,20 +58,24 @@ export default function SingleRubricArea({
   ] = usePostRubricUpdateToRefinementSessionMutation();
   const hasWritePermission = useHasCollectionWritePermission();
 
+  const { activeLabelSet, setLabelSet: setActiveLabelSet } =
+    useLabelSets(rubricId);
+  const activeLabelSetId = activeLabelSet?.id;
+
   // Unsaved changes from the editor
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
   const { version, setVersion } = useRubricVersion();
-  const { labeled, setLabeled } = useResultFilterControls();
   const { setRefinementJobId } = useRefinementTab();
 
   const {
     // Rubric job status
     rubricJobId,
-    totalAgentRuns,
-    currentAgentRuns,
+    totalResultsNeeded,
+    currentResultsCount,
 
     // Rubric run results
-    judgeResults,
+    agentRunResults,
 
     // Clustering job status
     clusteringJobId,
@@ -84,6 +88,7 @@ export default function SingleRubricArea({
   } = useJobStatus({
     collectionId,
     rubricId,
+    labelSetId: activeLabelSetId ?? null,
   });
 
   // Get the remote rubric
@@ -94,8 +99,7 @@ export default function SingleRubricArea({
   });
   const schema = rubric?.output_schema;
 
-  const { activeLabelSet, setActiveLabelSet, clearLabelSets } = useLabelSets();
-  const { data: labels = [], isSuccess: isLabelsSuccess } =
+  const { data: labels = [], isLoading: isLabelsLoading } =
     useGetLabelsInLabelSetQuery(
       activeLabelSet
         ? { collectionId, labelSetId: activeLabelSet.id }
@@ -115,7 +119,7 @@ export default function SingleRubricArea({
   ) => {
     // Just unlink the labels from the current rubric.
     if (hasLabels && clearLabels) {
-      clearLabelSets();
+      setActiveLabelSet(null);
     }
 
     if (sessionId) {
@@ -139,13 +143,7 @@ export default function SingleRubricArea({
   };
 
   const [showDiff, setShowDiff] = useState(false);
-  const { applyFilters } = useResultFilterControls();
-  const filteredJudgeResultsList = useMemo(
-    () => applyFilters(judgeResults, labels ?? []),
-    [applyFilters, judgeResults, labels]
-  );
-
-  const noJudgeResults = judgeResults.length == 0;
+  const noJudgeResults = agentRunResults.length == 0;
   const [isExpanded, setIsExpanded] = useState(false);
 
   const ResultsSection = (
@@ -154,7 +152,11 @@ export default function SingleRubricArea({
       <div className="flex flex-wrap items-center justify-between">
         {/* Version changer */}
         <div className="flex items-center gap-2">
-          {/* Filter controls -- disabled if rubric job is running */}
+          {/* View mode dropdown */}
+          <ViewModeDropdown
+            agentRunResults={agentRunResults}
+            labels={labels ?? []}
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -173,39 +175,23 @@ export default function SingleRubricArea({
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    size="icon"
                     variant="outline"
-                    className="h-7 w-7 text-xs rounded-r-none shadow-l"
+                    className="h-7 text-xs shadow-l gap-1"
                     onClick={() => setIsLabelSetsDialogOpen(true)}
                   >
                     <Tags className="h-3 w-3" />
+                    {activeLabelSet ? (
+                      <span className="hidden xl:inline">
+                        {activeLabelSet.name}
+                      </span>
+                    ) : (
+                      <span className="hidden xl:inline">
+                        Select A Label Set
+                      </span>
+                    )}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Manage label sets</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      'h-7 px-2 text-xs rounded-l-none border-l-0',
-                      labeled ? 'bg-blue-bg' : ''
-                    )}
-                    onClick={() => setLabeled(!labeled)}
-                    disabled={!activeLabelSet}
-                  >
-                    {/* <Tags
-                      className={cn('h-3 w-3', labeled && 'stroke-blue-text')}
-                    /> */}
-                    {activeLabelSet ? (
-                      <span>{activeLabelSet.name}</span>
-                    ) : (
-                      <span>Select A Label Set</span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Show only labeled results</TooltipContent>
               </Tooltip>
             </div>
           </TooltipProvider>
@@ -246,27 +232,24 @@ export default function SingleRubricArea({
               rubricId={rubricId}
               rubricJobId={rubricJobId}
               hasUnsavedChanges={hasUnsavedChanges}
+              onClick={() => setIsRunDialogOpen(true)}
             />
           )}
         </div>
       </div>
-      <div className="flex items-start gap-2 px-0.5 justify-between">
-        <div className="flex-1 min-w-0">
-          <ResultFilterControlsBadges />
-        </div>
-        <div className="flex-shrink-0">
-          <AgreementPopover
-            filteredJudgeResults={filteredJudgeResultsList}
-            labels={labels ?? []}
-            schema={schema}
-          />
-        </div>
+      <div className="flex items-center gap-2 px-0.5 justify-between">
+        <ResultFilterControlsBadges />
+        <AgreementPopover
+          agentRunResults={agentRunResults}
+          schema={schema}
+          labels={labels ?? []}
+        />
       </div>
 
       {rubricJobId && (
         <ProgressBar
-          current={currentAgentRuns}
-          total={totalAgentRuns}
+          current={currentResultsCount}
+          total={totalResultsNeeded}
           paused={false}
         />
       )}
@@ -284,7 +267,7 @@ export default function SingleRubricArea({
         <div className="flex items-center justify-center">
           <Loader2 size={16} className="animate-spin text-muted-foreground" />
         </div>
-      ) : !rubricJobId && judgeResults.length === 0 && !labeled ? (
+      ) : !rubricJobId && agentRunResults.length === 0 ? (
         <div className="text-xs text-muted-foreground text-center">
           No results yet
         </div>
@@ -293,45 +276,46 @@ export default function SingleRubricArea({
           labels={labels ?? []}
           centroids={centroids}
           assignments={assignments}
-          filteredJudgeResultsList={filteredJudgeResultsList}
+          agentRunResults={agentRunResults}
           isClusteringActive={clusteringJobId !== null}
           activeResultId={resultId}
           schema={schema}
           activeLabelSet={activeLabelSet}
         />
       )}
+
+      <RubricRunDialog
+        isOpen={isRunDialogOpen}
+        onClose={() => setIsRunDialogOpen(false)}
+        collectionId={collectionId}
+        rubricId={rubricId}
+      />
     </>
   );
 
-  if (isExpanded) {
-    return (
-      <div className="space-y-2 flex flex-col flex-1 min-w-0">
-        {ResultsSection}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-2 flex flex-col flex-1 min-w-0">
-      <RubricEditor
-        collectionId={collectionId}
-        rubricId={rubricId}
-        rubricVersion={version}
-        setRubricVersion={setVersion}
-        showDiff={showDiff}
-        setShowDiff={setShowDiff}
-        forceOpenSchema={false}
-        onSave={handleRubricSave}
-        onCloseWithoutSave={() => {}}
-        shouldConfirmOnSave={hasLabels}
-        onHasUnsavedChangesUpdated={setHasUnsavedChanges}
-        editable={
-          !rubricJobId &&
-          hasWritePermission &&
-          !clusteringJobId &&
-          isLabelsSuccess
-        }
-      />
+      {!isExpanded && (
+        <RubricEditor
+          collectionId={collectionId}
+          rubricId={rubricId}
+          rubricVersion={version}
+          setRubricVersion={setVersion}
+          showDiff={showDiff}
+          setShowDiff={setShowDiff}
+          forceOpenSchema={false}
+          onSave={handleRubricSave}
+          onCloseWithoutSave={() => {}}
+          shouldConfirmOnSave={hasLabels}
+          onHasUnsavedChangesUpdated={setHasUnsavedChanges}
+          editable={
+            !rubricJobId &&
+            hasWritePermission &&
+            !clusteringJobId &&
+            !isLabelsLoading
+          }
+        />
+      )}
 
       {ResultsSection}
 

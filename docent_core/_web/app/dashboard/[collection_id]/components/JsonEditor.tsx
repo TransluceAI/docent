@@ -40,12 +40,12 @@ export default function JsonEditor({
   }, [schemaText]);
 
   return (
-    <div className="rounded-md border bg-background shadow-sm">
+    <div className="rounded-md flex flex-col border bg-background shadow-sm">
       {/* Dropdown button */}
       <button
         type="button"
         className={cn(
-          'w-full flex items-center justify-between transition-colors duration-200 rounded-md h-9 px-2 py-1.5 disabled:opacity-80',
+          'flex items-center justify-between transition-colors duration-200 rounded-md h-9 px-2 py-1.5 disabled:opacity-80',
           !editable || forceOpenSchema ? '' : 'hover:bg-accent',
           schemaOpen ? 'rounded-b-none' : ''
         )}
@@ -54,21 +54,21 @@ export default function JsonEditor({
         aria-expanded={schemaOpen || forceOpenSchema ? true : false}
         aria-controls="schema-content"
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="grow flex gap-2">
           {showPreview &&
             (preview ? (
-              <span className="text-xs text-muted-foreground truncate">
+              <span className="text-xs w-96 text-start truncate text-muted-foreground">
                 {preview}
               </span>
             ) : (
-              <span className="text-xs text-muted-foreground truncate">
+              <span className="text-xs text-muted-foreground">
                 No preview available
               </span>
             ))}
         </div>
         <ChevronLeft
           className={
-            'h-3 w-3 transition-transform ' +
+            'h-3 w-3 transition-transform' +
             (schemaOpen || forceOpenSchema ? '-rotate-90' : '')
           }
         />
@@ -78,13 +78,13 @@ export default function JsonEditor({
       <div
         id="schema-content"
         className={cn(
-          'px-0 space-y-2 overflow-hidden transition-all duration-200',
+          'px-0 overflow-hidden transition-all duration-200',
           schemaOpen || forceOpenSchema
             ? 'max-h-[40vh] opacity-100'
             : '!max-h-0  opacity-0 pointer-events-none'
         )}
       >
-        <div className=" rounded-b max-h-[30vh] overflow-y-auto custom-scrollbar">
+        <div className="max-h-[30vh] overflow-y-auto custom-scrollbar">
           <CodeMirror
             value={schemaText}
             height="auto"
@@ -101,7 +101,7 @@ export default function JsonEditor({
           />
         </div>
         {schemaError && (
-          <div className="text-xs text-red-text">{schemaError}</div>
+          <div className="text-xs p-2 text-red-text">{schemaError}</div>
         )}
       </div>
     </div>

@@ -1,18 +1,25 @@
 import asyncio
 import json
+import traceback
 from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRun
 from docent.data_models.judge import Label
 from docent.judges import JudgeResult, ResultType, Rubric
 from docent.judges.runner import run_rubric
 from docent_core._db_service.batched_writer import BatchedWriter
-from docent_core._server._broker.redis_client import enqueue_job
+from docent_core._server._broker.redis_client import (
+    STREAM_KEY_FORMAT,
+    enqueue_job,
+    get_redis_client,
+)
 from docent_core._worker.constants import WorkerFunction
 from docent_core.docent.ai_tools.clustering.cluster_assigner import (
     assign,
@@ -21,9 +28,14 @@ from docent_core.docent.ai_tools.clustering.cluster_generator import (
     ClusterFeedback,
     propose_clusters,
 )
+from docent_core.docent.ai_tools.rubric.reflect import (
+    JudgeReflection,
+    run_reflection,
+)
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.label import SQLALabel
 from docent_core.docent.db.schemas.rubric import (
+    SQLAJudgeReflection,
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
     SQLARubric,
@@ -193,7 +205,8 @@ class RubricService:
         self,
         ctx: ViewContext,
         rubric_id: str,
-        max_results: int | None = None,
+        max_agent_runs: int | None = None,
+        n_rollouts_per_input: int = 1,
         label_set_id: str | None = None,
     ):
         """Start a job to evaluate the rubric."""
@@ -211,7 +224,8 @@ class RubricService:
                 type=WorkerFunction.RUBRIC_JOB.value,
                 job_json={
                     "rubric_id": rubric_id,
-                    "max_results": max_results,
+                    "max_agent_runs": max_agent_runs,
+                    "n_rollouts_per_input": n_rollouts_per_input,
                     "label_set_id": label_set_id,
                 },
             )
@@ -251,43 +265,52 @@ class RubricService:
         return result.scalars().all()
 
     async def run_rubric_job(self, ctx: ViewContext, job: SQLAJob):
-        """Run a rubric job. Should only be called by the worker."""
+        """Run a rubric job. Should only be called by the worker.
+
+        Logic:
+        1. Select first N agent runs (by labeled_first, then UUID) where N = max_agent_runs
+        2. From those N, identify which need more rollouts
+        3. Generate only the needed rollouts for incomplete runs
+        """
 
         if ctx.user is None:
             raise ValueError("User is required to run a rubric job")
 
-        # Get the rubric
         rubric_id = job.job_json["rubric_id"]
         rubric = await self.get_rubric(rubric_id, version=None)
         if rubric is None:
             raise ValueError(f"Rubric {rubric_id} not found")
 
-        max_results = job.job_json.get("max_results", None)
+        max_agent_runs = job.job_json.get("max_agent_runs", None)
+        n_rollouts_per_input = job.job_json.get("n_rollouts_per_input", 1)
         label_set_id = job.job_json.get("label_set_id", None)
 
-        if max_results is not None:
-            existing_results = await self.session.execute(
-                select(func.count())
-                .select_from(SQLAJudgeResult)
-                .where(
-                    SQLAJudgeResult.rubric_id == rubric_id,
-                    SQLAJudgeResult.rubric_version == rubric.version,
-                    SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
-                )
+        # Subquery to count existing results per agent run for this rubric/version
+        result_counts_subquery = (
+            select(
+                SQLAJudgeResult.agent_run_id,
+                func.count(SQLAJudgeResult.id).label("result_count"),
             )
-            num_existing_results = existing_results.scalar_one()
-            if num_existing_results >= max_results:
-                logger.info(
-                    f"Skipping rubric evaluation because {num_existing_results} results already exist"
-                )
-                return
-            max_results -= num_existing_results
+            .where(
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == rubric.version,
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
+            )
+            .group_by(SQLAJudgeResult.agent_run_id)
+            .subquery()
+        )
 
-        # Build the query to prioritize labeled runs
-        query = select(SQLAAgentRun.id)
+        # Select agent runs with their result counts, ordered by: labeled first, then UUID
+        query = (
+            select(SQLAAgentRun.id, result_counts_subquery.c.result_count)
+            .where(ctx.get_base_where_clause(SQLAAgentRun))
+            .outerjoin(
+                result_counts_subquery,
+                SQLAAgentRun.id == result_counts_subquery.c.agent_run_id,
+            )
+        )
 
-        # Join to labels (new schema) to prioritize labeled runs
-        # Filter by label_set_id if provided
+        # Join to labels to prioritize labeled runs
         if label_set_id:
             query = query.outerjoin(
                 SQLALabel,
@@ -300,58 +323,68 @@ class RubricService:
                 SQLALabel.agent_run_id == SQLAAgentRun.id,
             )
 
-        # Runs without existing results
-        query = (
-            query.where(
-                SQLAAgentRun.collection_id == ctx.collection_id,
-                ~exists().where(
-                    SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-                    SQLAJudgeResult.rubric_id == rubric_id,
-                    SQLAJudgeResult.rubric_version == rubric.version,
-                    SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
-                ),
-            )
-            .group_by(SQLAAgentRun.id)
-            .order_by(func.count(SQLALabel.id).desc())
+        query = query.order_by(
+            SQLALabel.id.is_(None).asc(),  # Labeled runs first
+            SQLAAgentRun.id.asc(),  # Deterministic ordering
         )
 
-        # Apply base filter if present
-        if ctx.base_filter is not None:
-            base_clause = ctx.base_filter.to_sqla_where_clause(SQLAAgentRun)
-            if base_clause is not None:
-                query = query.where(base_clause)
+        # Apply limit if max_agent_runs specified
+        if max_agent_runs is not None:
+            query = query.limit(max_agent_runs)
 
         result = await self.session.execute(query)
-        agent_run_ids = cast(list[str], result.scalars().all())
+        rows = result.all()
 
-        # Update the job with the actual total number of agent runs to process
-        await self.service.set_job_json(
-            job.id, job.job_json | {"total_agent_runs": len(agent_run_ids)}
-        )
-
-        # Preserve ordering: labeled runs first
-        if len(agent_run_ids) == 0:
-            logger.info("Skipping rubric evaluation because no agent runs are missing results")
+        if len(rows) == 0:
+            logger.info("Skipping rubric evaluation because no agent runs found in collection")
             return
 
-        logger.info(f"Evaluating rubrics for {len(agent_run_ids)} agent runs missing results")
-        agent_runs = await self.service.get_agent_runs(ctx, agent_run_ids=agent_run_ids)
-        # Preserve the label-first ordering from agent_run_ids
-        order_index = {rid: i for i, rid in enumerate(agent_run_ids)}
-        agent_runs.sort(key=lambda ar: order_index.get(ar.id, len(order_index)))
+        # Build mapping of agent_run_id -> existing result count
+        # NOTE(mengk, cadentj): this is incorrect if you have multiple labels per agent run.
+        #   but we have a schema constraint that prevents this.
+        ar_ids_selected = [row[0] for row in rows]
+        existing_counts = {row[0]: row[1] or 0 for row in rows}
 
-        num_results = 0
+        # Calculate rollouts needed per agent run (may be 0 for already-complete runs)
+        rollouts_needed_per_run = [
+            max(0, n_rollouts_per_input - existing_counts.get(ar_id, 0))
+            for ar_id in ar_ids_selected
+        ]
+        total_rollouts_to_generate = sum(rollouts_needed_per_run)
+
+        logger.info(
+            f"Selected {len(ar_ids_selected)} agent runs; "
+            f"{sum(1 for n in rollouts_needed_per_run if n > 0)} need additional rollouts "
+            f"({total_rollouts_to_generate} total rollouts to generate)"
+        )
+
+        # Update job metadata for progress tracking
+        await self.service.set_job_json(
+            job.id,
+            job.job_json
+            | {
+                "total_agent_runs": len(ar_ids_selected),
+                "agent_run_ids_being_processed": ar_ids_selected,
+            },
+        )
+
+        def _make_ar_resolver(agent_run_id: str):
+            async def _resolver() -> AgentRun | None:
+                """Resolves an agent run by grabbing it from the database.
+                The AgentRun may not be found, in which case this returns None.
+                """
+                return await self.service.get_agent_run(ctx, agent_run_id)
+
+            return _resolver
+
+        ar_resolvers = [_make_ar_resolver(agent_run_id) for agent_run_id in ar_ids_selected]
 
         async with BatchedWriter(self.session_cm_factory) as writer:
-            # Use taskgroup for cancellation instead of events
             async with anyio.create_task_group() as tg:
 
                 async def _callback(batch_index: int, judge_results: list[JudgeResult] | None):
                     if judge_results is None:
                         return
-
-                    nonlocal num_results
-                    num_results += len(judge_results)
 
                     await writer.add_all(
                         [
@@ -360,23 +393,25 @@ class RubricService:
                         ]
                     )
 
-                    if (
-                        max_results is not None
-                        and num_results >= max_results
-                        and not tg.cancel_scope.cancel_called
-                    ):
-                        tg.cancel_scope.cancel()
+                    # Spawn reflection task for this agent_run
+                    # Pass new results directly; reflection will merge with existing DB results
+                    # This handles race conditions where new results may not be committed yet
+                    if judge_results:
+                        tg.start_soon(
+                            self._create_reflection_background,
+                            judge_results,
+                            rubric.to_pydantic(),
+                            label_set_id,
+                        )
 
-                # Run the search, saving data to the database as we go
-                try:
-                    await run_rubric(
-                        agent_runs,
-                        rubric.to_pydantic(),
-                        llm_svc=self.llm_svc,
-                        callback=_callback,
-                    )
-                except anyio.get_cancelled_exc_class():
-                    logger.info(f"Rubric evaluation cancelled after reaching {num_results} results")
+                # Run the judge, saving data to the database as we go
+                await run_rubric(
+                    ar_resolvers,
+                    rubric.to_pydantic(),
+                    llm_svc=self.llm_svc,
+                    callback=_callback,
+                    n_rollouts_per_input=rollouts_needed_per_run,
+                )
 
     async def get_active_job_for_rubric(self, rubric_id: str) -> SQLAJob | None:
         return await self._get_active_rubric_job(self.session, rubric_id)
@@ -453,17 +488,451 @@ class RubricService:
         if job:
             await self.job_svc.cancel_job(job.id)
 
-    # async def clear_rubric_results(self, rubric_id: str):
-    #     """Clear all results for a rubric."""
-    #     # First cancel any jobs involving this rubric
-    #     await self.cancel_active_rubric_eval_job(rubric_id)
+    ####################
+    # Judge Reflections #
+    ####################
 
-    #     result = await self.session.execute(
-    #         select(SQLAJudgeResult).where(SQLAJudgeResult.rubric_id == rubric_id)
-    #     )
-    #     results = result.scalars().all()
-    #     for result in results:
-    #         await self.session.delete(result)
+    async def _create_or_update_reflection(
+        self,
+        session: AsyncSession,
+        judge_results: list[JudgeResult],
+        rubric: Rubric,
+        label_set_id: str | None = None,
+    ) -> SQLAJudgeReflection | None:
+        """Core logic for creating/updating reflections.
+
+        Always replaces existing reflections for the same agent_run + rubric.
+
+        Args:
+            session: Database session to use
+            judge_results: The judge results to reflect on (already loaded)
+            rubric: The rubric
+            label_set_id: Optional label set ID to filter labels by
+
+        Returns:
+            The created/updated reflection, or None if not enough results to reflect on
+        """
+        if not judge_results:
+            return None
+
+        agent_run_id = judge_results[0].agent_run_id
+        rubric_id = judge_results[0].rubric_id
+        rubric_version = judge_results[0].rubric_version
+
+        # Get human label if exists for the specified label set
+        human_label = None
+        label_id = None
+        if label_set_id:
+            query = select(SQLALabel).where(
+                SQLALabel.agent_run_id == agent_run_id,
+                SQLALabel.label_set_id == label_set_id,
+            )
+
+            label_result = await session.execute(query)
+            sqla_label = label_result.scalar_one_or_none()
+            human_label = sqla_label.label_value if sqla_label else None
+            label_id = sqla_label.id if sqla_label else None
+
+        # Only create reflection if there are multiple results OR a label exists
+        if len(judge_results) <= 1 and not human_label:
+            return None
+
+        # Extract rollouts
+        rollouts = [jr.output for jr in judge_results]
+
+        # Run the reflection
+        reflection_output = await run_reflection(
+            rubric=rubric, rollouts=rollouts, llm_svc=self.llm_svc, human_label=human_label
+        )
+
+        # Upsert reflection using unique constraint on (agent_run_id, rubric_id, rubric_version, label_id)
+        result_ids = [jr.id for jr in judge_results]
+        stmt = insert(SQLAJudgeReflection).values(
+            id=str(uuid4()),
+            agent_run_id=agent_run_id,
+            rubric_id=rubric_id,
+            rubric_version=rubric_version,
+            judge_result_ids=result_ids,
+            label_id=label_id,
+            reflection_output=reflection_output,
+        )
+
+        if label_id is not None:
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["agent_run_id", "rubric_id", "rubric_version", "label_id"],
+                index_where=(SQLAJudgeReflection.label_id.is_not(None)),
+                set_={
+                    "judge_result_ids": stmt.excluded.judge_result_ids,
+                    "reflection_output": stmt.excluded.reflection_output,
+                    "created_at": stmt.excluded.created_at,
+                },
+            )
+        else:
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["agent_run_id", "rubric_id", "rubric_version"],
+                index_where=(SQLAJudgeReflection.label_id.is_(None)),
+                set_={
+                    "judge_result_ids": stmt.excluded.judge_result_ids,
+                    "reflection_output": stmt.excluded.reflection_output,
+                    "created_at": stmt.excluded.created_at,
+                },
+            )
+
+        stmt = stmt.returning(SQLAJudgeReflection)
+        result = await session.execute(stmt)
+        return result.scalar_one()
+
+    async def _create_reflection_background(
+        self,
+        new_judge_results: list[JudgeResult],
+        rubric: Rubric,
+        label_set_id: str | None = None,
+    ):
+        """Background task to create a reflection for multi-rollout judge results.
+
+        Merges newly generated results with existing DB results to handle cases where:
+        - New results haven't been committed yet (BatchedWriter delay)
+        - Evaluations are rerun with additional rollouts
+
+        Args:
+            new_judge_results: Newly generated judge results for a single agent_run
+            rubric: The rubric
+            label_set_id: Optional label set ID to filter labels by
+        """
+        if not new_judge_results:
+            return
+
+        agent_run_id = new_judge_results[0].agent_run_id
+        rubric_id = new_judge_results[0].rubric_id
+        rubric_version = new_judge_results[0].rubric_version
+
+        try:
+            async with self.session_cm_factory() as session:
+                # Query ALL existing results from DB
+                all_results_query = select(SQLAJudgeResult).where(
+                    SQLAJudgeResult.agent_run_id == agent_run_id,
+                    SQLAJudgeResult.rubric_id == rubric_id,
+                    SQLAJudgeResult.rubric_version == rubric_version,
+                )
+                result = await session.execute(all_results_query)
+                sqla_results = result.scalars().all()
+                db_results = [r.to_pydantic() for r in sqla_results]
+
+                # Merge new and DB results, deduplicating by ID
+                # New results take precedence (in case of edge case updates)
+                results_by_id = {r.id: r for r in db_results}
+                for new_result in new_judge_results:
+                    results_by_id[new_result.id] = new_result
+
+                all_judge_results = list(results_by_id.values())
+
+                sqla_reflection = await self._create_or_update_reflection(
+                    session, all_judge_results, rubric, label_set_id=label_set_id
+                )
+
+                if sqla_reflection:
+                    await session.commit()
+                    logger.info(
+                        f"Created reflection for agent_run {agent_run_id} "
+                        f"with {len(all_judge_results)} total rollouts "
+                        f"({len(new_judge_results)} new, {len(db_results)} from DB)"
+                    )
+
+        except Exception as e:
+            logger.error(f"Failed to create reflection for agent_run {agent_run_id}: {e}")
+
+    async def get_reflections_for_agent_runs(
+        self,
+        agent_run_ids: list[str],
+        rubric_id: str,
+        rubric_version: int,
+        label_set_id: str | None = None,
+    ) -> dict[str, JudgeReflection | None]:
+        """Batch fetch reflections for multiple agent_runs.
+
+        If label_set_id is provided, for each agent_run that has a label in that
+        label set, returns the reflection associated with that label. Otherwise,
+        returns the reflection with no label.
+
+        Args:
+            agent_run_ids: List of agent run IDs
+            rubric_id: The rubric ID
+            rubric_version: The rubric version
+            label_set_id: Optional label set ID to check for labeled reflections
+
+        Returns:
+            Dict mapping agent_run_id to reflection (or None if not found)
+        """
+        if not agent_run_ids:
+            return {}
+
+        # Get the rubric for parsing citations
+        sqla_rubric = await self.get_rubric(rubric_id, rubric_version)
+        if sqla_rubric is None:
+            return {agent_run_id: None for agent_run_id in agent_run_ids}
+
+        # Map agent_run_id to label_id (if label_set_id is provided)
+        agent_run_to_label_id: dict[str, str | None] = {
+            agent_run_id: None for agent_run_id in agent_run_ids
+        }
+
+        if label_set_id is not None:
+            labels_result = await self.session.execute(
+                select(SQLALabel).where(
+                    SQLALabel.agent_run_id.in_(agent_run_ids),
+                    SQLALabel.label_set_id == label_set_id,
+                )
+            )
+            sqla_labels = labels_result.scalars().all()
+            for sqla_label in sqla_labels:
+                agent_run_to_label_id[sqla_label.agent_run_id] = sqla_label.id
+
+        # Fetch all reflections for these agent_runs in one query
+        reflections_result = await self.session.execute(
+            select(SQLAJudgeReflection).where(
+                SQLAJudgeReflection.rubric_id == rubric_id,
+                SQLAJudgeReflection.rubric_version == rubric_version,
+                SQLAJudgeReflection.agent_run_id.in_(agent_run_ids),
+            )
+        )
+        sqla_reflections_all = reflections_result.scalars().all()
+
+        # Filter to match expected label_id for each agent_run
+        sqla_reflections = [
+            sqla_r
+            for sqla_r in sqla_reflections_all
+            if sqla_r.label_id == agent_run_to_label_id.get(sqla_r.agent_run_id)
+        ]
+
+        # Collect all judge result IDs we need to fetch
+        all_judge_result_ids: set[str] = set()
+        for sqla_reflection in sqla_reflections:
+            if sqla_reflection.judge_result_ids:
+                all_judge_result_ids.update(sqla_reflection.judge_result_ids)
+
+        # Fetch all judge results in one query
+        judge_results_map: dict[str, SQLAJudgeResult] = {}
+        if all_judge_result_ids:
+            results_result = await self.session.execute(
+                select(SQLAJudgeResult).where(SQLAJudgeResult.id.in_(list(all_judge_result_ids)))
+            )
+            sqla_results = results_result.scalars().all()
+            judge_results_map = {r.id: r for r in sqla_results}
+
+        # Build the result map
+        result_map: dict[str, JudgeReflection | None] = {}
+        reflection_map = {sqla_r.agent_run_id: sqla_r for sqla_r in sqla_reflections}
+
+        for agent_run_id in agent_run_ids:
+            sqla_reflection = reflection_map.get(agent_run_id)
+            if sqla_reflection is None or not sqla_reflection.judge_result_ids:
+                result_map[agent_run_id] = None
+                continue
+
+            # Check if all judge results are present
+            result_ids = sqla_reflection.judge_result_ids
+            if not all(result_id in judge_results_map for result_id in result_ids):
+                result_map[agent_run_id] = None
+                continue
+
+            reflection = JudgeReflection.from_raw_output(
+                judge_result_ids=result_ids,
+                raw_output=sqla_reflection.reflection_output,
+            )
+            result_map[agent_run_id] = reflection
+
+        return result_map
+
+    ####################
+    # Reflection Jobs  #
+    ####################
+
+    async def start_or_get_reflection_job(
+        self,
+        ctx: ViewContext,
+        agent_run_id: str,
+        rubric_id: str,
+        rubric_version: int,
+        label_set_id: str | None = None,
+        force_new: bool = False,
+    ) -> str:
+        """Start a job to compute reflection for an agent run's judge results.
+
+        Args:
+            ctx: View context
+            agent_run_id: The agent run ID
+            rubric_id: The rubric ID
+            rubric_version: The rubric version
+            label_set_id: Optional label set ID to filter labels by
+            force_new: If True, always start a new job even if one is already running/pending
+        """
+        # Use a separate session that commits immediately so the job is in DB before worker picks it up
+        async with self.session_cm_factory() as session:
+            # Is there already a job for this agent_run + rubric?
+            if not force_new:
+                result = await session.execute(
+                    select(SQLAJob)
+                    .where(SQLAJob.type == WorkerFunction.REFLECTION_JOB.value)
+                    .where(SQLAJob.job_json["agent_run_id"].astext == agent_run_id)
+                    .where(SQLAJob.job_json["rubric_id"].astext == rubric_id)
+                    .where(SQLAJob.job_json["rubric_version"].astext == str(rubric_version))
+                    .where(
+                        (SQLAJob.status == JobStatus.PENDING)
+                        | (SQLAJob.status == JobStatus.RUNNING)
+                    )
+                    .limit(1)
+                )
+                existing_job = result.scalar_one_or_none()
+                if existing_job:
+                    return existing_job.id
+
+            # There is no running job, create a new one
+            job_id = str(uuid4())
+            session.add(
+                SQLAJob(
+                    id=job_id,
+                    type=WorkerFunction.REFLECTION_JOB.value,
+                    job_json={
+                        "agent_run_id": agent_run_id,
+                        "rubric_id": rubric_id,
+                        "rubric_version": rubric_version,
+                        "label_set_id": label_set_id,
+                    },
+                )
+            )
+            # Session commits when context exits
+
+        # Job is now committed to DB, safe to enqueue
+        await enqueue_job(ctx, job_id)
+
+        return job_id
+
+    async def wait_for_reflection_result(
+        self,
+        job_id: str,
+        agent_run_id: str,
+        rubric_id: str,
+        rubric_version: int,
+        label_set_id: str | None = None,
+        timeout_seconds: int = 300,
+    ) -> JudgeReflection | None:
+        """Wait for reflection result to be computed via Redis stream.
+
+        Blocks until the reflection is ready, then returns it.
+
+        Args:
+            job_id: The job ID to wait for
+            agent_run_id: The agent run ID
+            rubric_id: The rubric ID
+            rubric_version: The rubric version
+            timeout_seconds: Maximum time to wait (default 5 minutes)
+
+        Returns:
+            JudgeReflection when ready, or None if timeout/error
+
+        Raises:
+            TimeoutError: If reflection doesn't complete within timeout
+        """
+        REDIS = await get_redis_client()
+        stream_key = STREAM_KEY_FORMAT.format(job_id=job_id)
+
+        # Listen to stream for completion
+        last_id = "0-0"
+        start_time = asyncio.get_event_loop().time()
+
+        while True:
+            # Check timeout
+            elapsed = asyncio.get_event_loop().time() - start_time
+            if elapsed > timeout_seconds:
+                raise TimeoutError(
+                    f"Reflection job {job_id} timed out after {timeout_seconds} seconds"
+                )
+
+            try:
+                # Calculate remaining timeout
+                remaining_timeout = int((timeout_seconds - elapsed) * 1000)  # milliseconds
+                block_timeout = min(remaining_timeout, 30000)  # Max 30s per xread
+
+                # Block until a notification arrives
+                results = await REDIS.xread({stream_key: last_id}, block=block_timeout, count=1)  # type: ignore
+
+                # Timed out on this read; loop again to check overall timeout
+                if not results:
+                    continue
+
+                for _stream, entries in results:
+                    if len(entries) == 0:
+                        continue
+                    _entry_id, _data = entries[-1]
+
+                    # Advance cursor
+                    last_id = _entry_id
+                    data = cast(dict[str, str], _data)
+                    logger.info(f"Reflection job {job_id} received event: {data}")
+
+                    event = data.get("event")
+                    if event not in {"state_updated", "finished"}:
+                        logger.error(f"Reflection job {job_id} received unknown event: {event}")
+                        continue
+
+                    # Exit if finished
+                    if event == "finished":
+                        # Fetch final reflection from DB
+                        results = await self.get_reflections_for_agent_runs(
+                            [agent_run_id], rubric_id, rubric_version, label_set_id
+                        )
+                        return results.get(agent_run_id)
+
+            except Exception as e:
+                logger.error(
+                    f"Error reading from Redis stream {stream_key}: {e}. Traceback:\n{traceback.format_exc()}"
+                )
+                return None
+
+    async def run_reflection_job(self, ctx: ViewContext, job: SQLAJob):
+        """Run a reflection job. Should only be called by the worker."""
+        agent_run_id = job.job_json["agent_run_id"]
+        rubric_id = job.job_json["rubric_id"]
+        rubric_version = job.job_json["rubric_version"]
+        label_set_id = job.job_json.get("label_set_id", None)
+
+        # Get the rubric
+        sqla_rubric = await self.get_rubric(rubric_id, rubric_version)
+        if sqla_rubric is None:
+            raise ValueError(f"Rubric {rubric_id} version {rubric_version} not found")
+
+        # Query all judge results for this agent_run + rubric
+        result = await self.session.execute(
+            select(SQLAJudgeResult).where(
+                SQLAJudgeResult.agent_run_id == agent_run_id,
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == rubric_version,
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
+            )
+        )
+        sqla_results = result.scalars().all()
+
+        if len(sqla_results) == 0:
+            logger.warning(f"Agent run {agent_run_id} has no results, skipping reflection")
+            return
+
+        # Convert to pydantic
+        judge_results = [r.to_pydantic() for r in sqla_results]
+
+        # Use common reflection logic
+        sqla_reflection = await self._create_or_update_reflection(
+            self.session, judge_results, sqla_rubric.to_pydantic(), label_set_id=label_set_id
+        )
+
+        if sqla_reflection:
+            logger.info(
+                f"Saved reflection for agent_run {agent_run_id} with {len(judge_results)} rollouts"
+            )
+        else:
+            logger.info(
+                f"Skipped reflection for agent_run {agent_run_id}: "
+                f"only {len(judge_results)} result(s) and no human label"
+            )
 
     #############################
     # Clustering rubric results #
@@ -551,6 +1020,15 @@ class RubricService:
         if not judge_results:
             logger.info(f"No judge results with values found for rubric {rubric.id}")
             return []
+
+        # For clustering, only use the first result per agent_run_id
+        # This ensures consistency with what's displayed in the UI
+        first_results_map: dict[str, JudgeResult] = {}
+        for jr in judge_results:
+            if jr.agent_run_id not in first_results_map:
+                first_results_map[jr.agent_run_id] = jr
+        judge_results = list(first_results_map.values())
+
         # Separate the values because clustering just takes the values
         judge_result_types = set(jr.result_type for jr in judge_results)
 
@@ -673,6 +1151,14 @@ class RubricService:
         if not judge_results:
             logger.info(f"No judge results with values found for rubric {sqla_rubric.id}")
             return
+
+        # For clustering, only use the first result per agent_run_id
+        # This ensures consistency with what's displayed in the UI
+        first_results_map: dict[str, JudgeResult] = {}
+        for jr in judge_results:
+            if jr.agent_run_id not in first_results_map:
+                first_results_map[jr.agent_run_id] = jr
+        judge_results = list(first_results_map.values())
 
         # Construct inputs to the clustering function, filtering out assigned pairs
         pairs_to_assign = [

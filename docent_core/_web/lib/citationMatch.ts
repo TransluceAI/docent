@@ -8,9 +8,16 @@ export interface TextSpanWithCitations {
   citationId: string;
 }
 
-// Simple capped cache (LRU-ish) keyed by text + citations signature
+// Position without citation ID (used for caching)
+interface Position {
+  start: number;
+  end: number;
+}
+
+// Simple capped cache (LRU-ish) keyed by text + pattern signature
+// Cache stores positions only, not citation IDs, to avoid stale ID issues when switching results
 const MAX_CACHE_ENTRIES = 100;
-const cache = new Map<string, TextSpanWithCitations[]>();
+const patternMatchCache = new Map<string, Position[]>();
 
 const escapeForRegex = (input: string): string => {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -112,37 +119,59 @@ const simpleHash = (s: string): string => {
   return String(h >>> 0);
 };
 
-const buildKey = (text: string, citations: Citation[]): string => {
-  const textHash = simpleHash(text);
-  // Only include fields relevant to matching to keep key stable and small
-  const sig = citations
-    .map((c) => `${c.transcript_idx}-${c.block_idx}-${c.start_pattern ?? ''}`)
-    .join(';');
-  return `${textHash}::${sig}`;
-};
-
 const CAP_MATCHES_PER_CITATION = 200;
 
+// Find pattern matches (cached at pattern level)
+const findMatchesForPattern = (text: string, pattern: string): Position[] => {
+  if (!pattern) return [];
+
+  // Create cache key from text hash and pattern
+  const textHash = simpleHash(text);
+  const cacheKey = `${textHash}::${pattern}`;
+
+  // Check cache first
+  const cached = patternMatchCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Compute matches
+  const positions: Position[] = [];
+  const regex = buildWhitespaceFlexibleRegex(pattern);
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m[0].length === 0) {
+      regex.lastIndex++;
+      continue;
+    }
+    positions.push({ start: m.index, end: m.index + m[0].length });
+    if (positions.length >= CAP_MATCHES_PER_CITATION) break;
+  }
+
+  // Cache with simple eviction
+  if (patternMatchCache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = patternMatchCache.keys().next().value;
+    if (firstKey) {
+      patternMatchCache.delete(firstKey);
+    }
+  }
+  patternMatchCache.set(cacheKey, positions);
+
+  return positions;
+};
+
+// Find matches for a citation (attaches IDs after pattern matching)
 const findMatchesForCitation = (
   text: string,
   citation: Citation
 ): TextSpanWithCitations[] => {
-  const id = generateCitationId(citation);
-  const result: TextSpanWithCitations[] = [];
   const { start_pattern } = citation;
-  if (!start_pattern) return result;
+  if (!start_pattern) return [];
 
-  const startRe = buildWhitespaceFlexibleRegex(start_pattern);
-  let m: RegExpExecArray | null;
-  while ((m = startRe.exec(text)) !== null) {
-    if (m[0].length === 0) {
-      startRe.lastIndex++;
-      continue;
-    }
-    result.push({ start: m.index, end: m.index + m[0].length, citationId: id });
-    if (result.length >= CAP_MATCHES_PER_CITATION) break;
-  }
-  return result;
+  // Get positions from cache (pattern-based)
+  const positions = findMatchesForPattern(text, start_pattern);
+
+  // Attach citation ID (not cached, generated fresh each time)
+  const id = generateCitationId(citation);
+  return positions.map((pos) => ({ ...pos, citationId: id }));
 };
 
 // Compute intervals for an arbitrary pattern without requiring a full Citation
@@ -175,9 +204,6 @@ export const computeCitationIntervals = (
   citations: Citation[]
 ): TextSpanWithCitations[] => {
   if (!citations || citations.length === 0) return [];
-  const key = buildKey(text, citations);
-  const cached = cache.get(key);
-  if (cached) return cached;
 
   const intervals: TextSpanWithCitations[] = [];
   for (const c of citations) {
@@ -185,14 +211,6 @@ export const computeCitationIntervals = (
     if (matches.length) intervals.push(...matches);
   }
 
-  // Cache with simple eviction
-  if (cache.size >= MAX_CACHE_ENTRIES) {
-    const firstKey = cache.keys().next().value;
-    if (firstKey) {
-      cache.delete(firstKey);
-    }
-  }
-  cache.set(key, intervals);
   return intervals;
 };
 

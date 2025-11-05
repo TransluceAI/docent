@@ -23,36 +23,37 @@ import {
 import { SchemaDefinition, SchemaProperty } from '@/app/types/schema';
 import { toast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { useParams } from 'next/navigation';
 
 interface LabelEditFormProps {
   labelSet: LabelSet;
-  existingLabel: LabelType;
-  agentRunId: string;
-  collectionId: string;
+  existingLabel?: LabelType;
   onSuccess?: () => void;
 }
 
 export default function LabelEditForm({
   labelSet,
   existingLabel,
-  agentRunId,
-  collectionId,
   onSuccess,
 }: LabelEditFormProps) {
+  const { collection_id: collectionId, agent_run_id: agentRunId } = useParams<{
+    collection_id: string;
+    agent_run_id: string;
+  }>();
+
   const [createLabel, { isLoading: isCreating }] = useCreateLabelMutation();
   const [updateLabel, { isLoading: isUpdating }] = useUpdateLabelMutation();
   const [deleteLabel, { isLoading: isDeleting }] = useDeleteLabelMutation();
 
   const schema = labelSet.label_schema as SchemaDefinition;
   const [formValues, setFormValues] = useState<Record<string, any>>(
-    existingLabel.label_value || {}
+    existingLabel?.label_value || {}
   );
 
   // Sync form values when existingLabel changes
   useEffect(() => {
-    if (existingLabel) {
-      setFormValues(existingLabel.label_value);
-    }
+    if (!existingLabel) return;
+    setFormValues(existingLabel.label_value);
   }, [existingLabel]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -202,15 +203,13 @@ export default function LabelEditForm({
       );
     }
 
-    if (
-      (property.type === 'integer' || property.type === 'number') &&
-      'maximum' in property &&
-      'minimum' in property
-    ) {
+    if (property.type === 'integer' || property.type === 'number') {
+      const minimum = property.minimum ?? undefined;
+      const maximum = property.maximum ?? undefined;
       return (
         <div key={key} className="flex flex-col gap-1">
           <Label htmlFor={key} className="text-xs text-muted-foreground">
-            {key} ({property.minimum} - {property.maximum})
+            {key} {minimum && maximum && `(${minimum} - ${maximum})`}
             {isRequired && (
               <span className="text-red-500 ml-1">(required)</span>
             )}
@@ -229,8 +228,8 @@ export default function LabelEditForm({
                 [key]: isNaN(numValue) ? undefined : numValue,
               }));
             }}
-            min={property.minimum}
-            max={property.maximum}
+            min={minimum}
+            max={maximum}
             step={property.type === 'integer' ? 1 : 0.1}
             className="text-sm"
           />

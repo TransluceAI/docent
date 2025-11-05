@@ -21,9 +21,11 @@ export default function AgentRunPage() {
 
   const dispatch = useAppDispatch();
 
-  const collectionId = useAppSelector(
-    (state) => state.collection?.collectionId
-  );
+  const { collection_id: collectionId, agent_run_id: agentRunId } = useParams<{
+    collection_id: string;
+    agent_run_id: string;
+  }>();
+
   const rightSidebarOpen = useAppSelector(
     (state) => state.transcript?.rightSidebarOpen
   );
@@ -32,11 +34,6 @@ export default function AgentRunPage() {
       state.transcript?.agentRunSidebarTab ??
       (disableAITools ? 'labels' : 'chat')
   );
-
-  const params = useParams();
-  const curAgentRunId = Array.isArray(params.agent_run_id)
-    ? params.agent_run_id[0]
-    : params.agent_run_id;
 
   const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
 
@@ -80,7 +77,7 @@ export default function AgentRunPage() {
         className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
         style={{ flexGrow: '2' }}
       >
-        <AgentRunViewer agentRunId={curAgentRunId} ref={setViewerRef} />
+        <AgentRunViewer agentRunId={agentRunId} ref={setViewerRef} />
       </Card>
 
       {/* Assistant summary / transcript chat */}
@@ -107,7 +104,7 @@ export default function AgentRunPage() {
             <TabsContent value="chat" className="flex-1 mt-0 min-h-0">
               <div className="h-full pt-2 flex flex-col min-h-0">
                 <TranscriptChat
-                  runId={curAgentRunId}
+                  agentRunId={agentRunId}
                   collectionId={collectionId}
                   title="Transcript Chat"
                   className="flex-1 flex flex-col min-w-0 min-h-0"
@@ -117,12 +114,10 @@ export default function AgentRunPage() {
 
             <TabsContent value="labels" className="flex-1 mt-0 min-h-0">
               <div className="h-full pt-2 flex flex-col min-h-0">
-                {collectionId && (
-                  <AgentRunLabels
-                    agentRunId={curAgentRunId}
-                    collectionId={collectionId}
-                  />
-                )}
+                <AgentRunLabels
+                  agentRunId={agentRunId}
+                  collectionId={collectionId}
+                />
               </div>
             </TabsContent>
           </Tabs>

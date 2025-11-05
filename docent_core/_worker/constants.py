@@ -14,3 +14,4 @@ class WorkerFunction(str, Enum):
     TELEMETRY_PROCESSING_JOB = "telemetry_processing_job"
     COUNTERFACTUAL_EXPERIMENT_JOB = "counterfactual_experiment_job"
     SIMPLE_ROLLOUT_EXPERIMENT_JOB = "simple_rollout_experiment_job"
+    REFLECTION_JOB = "reflection_job"

@@ -7,7 +7,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Plus, CirclePlus, Trash2, CheckCircle2 } from 'lucide-react';
+import { CirclePlus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -23,12 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+
 import { cn, getSchemaPreview } from '@/lib/utils';
 import { LabelSet } from '@/app/api/labelApi';
 import { SchemaDefinition } from '@/app/types/schema';
@@ -47,45 +42,40 @@ export interface LabelSetsTableProps {
   labelSets: LabelSetTableRow[];
   selectedLabelSetId: string | null;
   onSelectLabelSet: (id: string) => void;
-  onCreateNewLabelSet: () => void;
   onImportLabelSet?: (labelSet: LabelSet) => void;
   onDeleteLabelSet?: (labelSetId: string) => void;
-  isValidRow: (row: LabelSetTableRow) => boolean;
+  isValidRow?: (row: LabelSetTableRow) => boolean;
   activeLabelSetId?: string;
   isLoading?: boolean;
-  tooltipText?: {
-    active: string;
-    inactive: string;
-  };
-  incompatibleHeaderText?: string;
 }
 
 export default function LabelSetsTable({
   labelSets,
   selectedLabelSetId,
   onSelectLabelSet,
-  onCreateNewLabelSet,
   onImportLabelSet,
   onDeleteLabelSet,
   isValidRow,
   activeLabelSetId,
   isLoading,
-  tooltipText = {
-    active: 'Currently active',
-    inactive: 'Set as active label set',
-  },
-  incompatibleHeaderText,
 }: LabelSetsTableProps) {
   const [deletePopoverId, setDeletePopoverId] = useState<string | null>(null);
+  const [showIncompatible, setShowIncompatible] = useState(false);
 
-  // Sort label sets into compatible and incompatible groups
-  const { sortedLabelSets, firstIncompatibleIndex } = useMemo(() => {
+  // Split label sets into compatible and incompatible groups
+  const { compatibleLabelSets, incompatibleLabelSets } = useMemo(() => {
+    if (!isValidRow) {
+      return {
+        compatibleLabelSets: labelSets,
+        incompatibleLabelSets: [],
+      };
+    }
+
     const compatible = labelSets.filter(isValidRow);
     const incompatible = labelSets.filter((row) => !isValidRow(row));
     return {
-      sortedLabelSets: [...compatible, ...incompatible],
-      firstIncompatibleIndex:
-        incompatible.length > 0 ? compatible.length : undefined,
+      compatibleLabelSets: compatible,
+      incompatibleLabelSets: incompatible,
     };
   }, [labelSets, isValidRow]);
 
@@ -94,7 +84,7 @@ export default function LabelSetsTable({
   //****************************
 
   const ActionButtons = ({ row }: { row: LabelSetTableRow }) => {
-    const isValid = isValidRow(row);
+    const isValid = isValidRow ? isValidRow(row) : true;
 
     const isActive = row.id === activeLabelSetId;
 
@@ -111,10 +101,14 @@ export default function LabelSetsTable({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Show activate button in SingleRubricArea context */}
-        {onImportLabelSet && isValid ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
+        <div className="flex justify-end w-16">
+          {onImportLabelSet && isValid ? (
+            <>
+              {isActive ? (
+                <div className="text-[10px] font-medium border text-green-text border-green-border bg-green-bg rounded-full px-2 py-0.5">
+                  Selected
+                </div>
+              ) : (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -127,21 +121,12 @@ export default function LabelSetsTable({
                     }
                   }}
                 >
-                  {isActive ? (
-                    <CheckCircle2 className="size-4 text-green-text flex-shrink-0" />
-                  ) : (
-                    <CirclePlus className="h-3.5 w-3.5" />
-                  )}
+                  <CirclePlus className="h-3.5 w-3.5" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isActive ? tooltipText.active : tooltipText.inactive}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          <div className="h-7 w-7 p-0 !opacity-100" />
-        )}
+              )}
+            </>
+          ) : null}
+        </div>
         {onDeleteLabelSet && (
           <Popover
             open={deletePopoverId === row.id}
@@ -263,7 +248,7 @@ export default function LabelSetsTable({
         cell: ({ row }) => {
           const preview = getSchemaPreview(row.original.labelSchema);
           return (
-            <div className="text-xs text-muted-foreground truncate">
+            <div className="text-xs text-muted-foreground truncate w-64">
               {preview || '-'}
             </div>
           );
@@ -285,131 +270,167 @@ export default function LabelSetsTable({
     ];
   }, [onImportLabelSet, onDeleteLabelSet, activeLabelSetId, deletePopoverId]);
 
-  const table = useReactTable({
-    data: sortedLabelSets,
+  const compatibleTable = useReactTable({
+    data: compatibleLabelSets,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  const incompatibleTable = useReactTable({
+    data: incompatibleLabelSets,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
 
   return (
-    <div className="flex flex-col h-full min-h-0 space-y-3">
-      <div className="flex items-center justify-end">
-        {/* <div className="text-sm font-semibold">Label Sets</div> */}
-        <Button
-          size="sm"
-          onClick={onCreateNewLabelSet}
-          className="gap-1.5 h-7 text-xs"
-        >
-          <Plus className="h-3 w-3" />
-          Create New
-        </Button>
+    <div className="border rounded-md flex-1 flex flex-col min-h-0">
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <Table className="min-w-full">
+          <TableHeader className="sticky top-0 z-20 bg-secondary">
+            {compatibleTable.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead
+                    key={header.id}
+                    className="text-xs"
+                    style={{
+                      height: ROW_HEIGHT_PX,
+                      width: header.column.columnDef.size,
+                    }}
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-center py-8 text-xs text-muted-foreground"
+                >
+                  Loading label sets...
+                </TableCell>
+              </TableRow>
+            ) : compatibleLabelSets.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-center py-8 text-xs text-muted-foreground"
+                >
+                  No compatible label sets found. Create a new one to get
+                  started.
+                </TableCell>
+              </TableRow>
+            ) : (
+              <>
+                {compatibleTable.getRowModel().rows.map((row) => {
+                  const isActive = selectedLabelSetId === row.original.id;
+
+                  return (
+                    <TableRow
+                      key={row.id}
+                      data-state={isActive ? 'active' : undefined}
+                      onClick={() => onSelectLabelSet(row.original.id)}
+                      className={cn(
+                        'text-xs cursor-pointer select-none group',
+                        isActive
+                          ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
+                          : 'hover:bg-muted'
+                      )}
+                      style={{ height: ROW_HEIGHT_PX }}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell
+                          key={cell.id}
+                          className="py-1.5"
+                          style={{
+                            width: cell.column.columnDef.size,
+                          }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+              </>
+            )}
+          </TableBody>
+        </Table>
       </div>
 
-      <div className="border rounded-md flex-1 flex flex-col min-h-0">
-        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-          <Table className="min-w-full">
-            <TableHeader className="sticky top-0 z-20 bg-secondary">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead
-                      key={header.id}
-                      className="text-xs"
-                      style={{
-                        height: ROW_HEIGHT_PX,
-                        width: header.column.columnDef.size,
-                      }}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="text-center py-8 text-xs text-muted-foreground"
-                  >
-                    Loading label sets...
-                  </TableCell>
-                </TableRow>
-              ) : labelSets.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="text-center py-8 text-xs text-muted-foreground"
-                  >
-                    No label sets found. Create one to get started.
-                  </TableCell>
-                </TableRow>
+      {/* Collapsible incompatible label sets section */}
+      {incompatibleLabelSets.length > 0 && (
+        <div className="border-t">
+          <button
+            onClick={() => setShowIncompatible(!showIncompatible)}
+            className="w-full px-4 py-2 flex items-center justify-between hover:bg-muted transition-colors text-xs text-muted-foreground"
+          >
+            <span className="flex items-center gap-2">
+              {showIncompatible ? (
+                <ChevronDown className="h-3.5 w-3.5" />
               ) : (
-                <>
-                  {table.getRowModel().rows.map((row, index) => {
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              Incompatible Schema: These label sets don&apos;t match the
+              rubric&apos;s output schema ({incompatibleLabelSets.length})
+            </span>
+          </button>
+
+          {showIncompatible && (
+            <div className="overflow-auto custom-scrollbar max-h-[300px]">
+              <Table className="min-w-full">
+                <TableBody>
+                  {incompatibleTable.getRowModel().rows.map((row) => {
                     const isActive = selectedLabelSetId === row.original.id;
-                    const isFirstIncompatible =
-                      index === firstIncompatibleIndex;
 
                     return (
-                      <>
-                        {/* Insert separator row before first incompatible item */}
-                        {isFirstIncompatible && incompatibleHeaderText && (
-                          <TableRow
-                            key="separator"
-                            className="hover:bg-transparent"
-                          >
-                            <TableCell
-                              colSpan={columns.length}
-                              className="text-center py-2 text-xs bg-muted text-muted-foreground"
-                            >
-                              {incompatibleHeaderText}
-                            </TableCell>
-                          </TableRow>
+                      <TableRow
+                        key={row.id}
+                        data-state={isActive ? 'active' : undefined}
+                        onClick={() => onSelectLabelSet(row.original.id)}
+                        className={cn(
+                          'text-xs cursor-pointer select-none group',
+                          isActive
+                            ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
+                            : 'hover:bg-muted'
                         )}
-
-                        <TableRow
-                          key={row.id}
-                          data-state={isActive ? 'active' : undefined}
-                          onClick={() => onSelectLabelSet(row.original.id)}
-                          className={cn(
-                            'text-xs cursor-pointer select-none group',
-                            isActive
-                              ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
-                              : 'hover:bg-muted'
-                          )}
-                          style={{ height: ROW_HEIGHT_PX }}
-                        >
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell
-                              key={cell.id}
-                              className="py-1.5"
-                              style={{
-                                width: cell.column.columnDef.size,
-                              }}
-                            >
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext()
-                              )}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </>
+                        style={{ height: ROW_HEIGHT_PX }}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell
+                            key={cell.id}
+                            className="py-1.5"
+                            style={{
+                              width: cell.column.columnDef.size,
+                            }}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
                     );
                   })}
-                </>
-              )}
-            </TableBody>
-          </Table>
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

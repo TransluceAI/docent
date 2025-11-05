@@ -1,8 +1,6 @@
 'use client';
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { SchemaDefinition } from '@/app/types/schema';
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
-import { Label } from '@/app/api/labelApi';
 import { useGetRubricQuery } from '@/app/api/rubricApi';
 
 export type Operator = '==' | '!=' | '<' | '<=' | '>' | '>=' | 'contains';
@@ -13,17 +11,19 @@ export type JudgeFilter = {
   value: any;
 };
 
+export type ViewMode =
+  | 'all'
+  | 'labeled_disagreement'
+  | 'missing_labels'
+  | 'incomplete_labels';
+
 interface ResultFilterControlsContextValue {
   schema: SchemaDefinition | undefined;
   options: string[];
   filters: JudgeFilter[];
   setFilters: (filters: JudgeFilter[]) => void;
-  labeled: boolean;
-  setLabeled: (labeled: boolean) => void;
-  applyFilters: (
-    results: JudgeResultWithCitations[],
-    labels?: Label[]
-  ) => JudgeResultWithCitations[];
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
   getValidOps: (key: string) => Operator[];
 }
 
@@ -58,75 +58,10 @@ export function ResultFilterControlsProvider({
   const schema = rubric?.output_schema as SchemaDefinition | undefined;
 
   const [filters, setFilters] = useState<JudgeFilter[]>([]);
-  const [labeled, setLabeled] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('all');
 
   // Only support one level of nesting for now
   const options: string[] = Object.keys(schema?.properties ?? {});
-
-  const compareValues = (
-    itemValue: string | number,
-    filterValue: string | number,
-    op: Operator
-  ): boolean => {
-    const itemType = typeof itemValue;
-    const filterType = typeof filterValue;
-
-    // Use a string bc discriminant is matched by reference in JS switch statements
-    const typeKey = `${itemType}-${filterType}`;
-    switch (typeKey) {
-      case 'number-number':
-        if (op === '==') return itemValue === filterValue;
-        if (op === '!=') return itemValue !== filterValue;
-        if (op === '<') return itemValue < filterValue;
-        if (op === '<=') return itemValue <= filterValue;
-        if (op === '>') return itemValue > filterValue;
-        if (op === '>=') return itemValue >= filterValue;
-        break;
-      case 'string-string':
-        if (op === '==') return itemValue === filterValue;
-        if (op === '!=') return itemValue !== filterValue;
-        if (op === 'contains')
-          return (itemValue as string)
-            .toLowerCase()
-            .includes((filterValue as string).toLowerCase());
-        break;
-      default:
-        return false;
-    }
-    return false;
-  };
-
-  const _applyFilters = useCallback(
-    (result: JudgeResultWithCitations) => {
-      return filters.every((filter) => {
-        // If the value is a citation, we want to use the text
-        let value = result.output[filter.path];
-        if (value.text) value = value.text;
-
-        return compareValues(value, filter.value, filter.op);
-      });
-    },
-    [filters]
-  );
-
-  const applyFilters = useCallback(
-    // This assumes that there's a unique label and result per agent_run_id
-    (results: JudgeResultWithCitations[], labels?: Label[]) => {
-      if (labeled) {
-        const labeledResults = results.filter((result) => {
-          const label = labels?.find(
-            (l) => l.agent_run_id === result.agent_run_id
-          );
-          return label !== undefined;
-        });
-        return labeledResults.filter((result) => _applyFilters(result));
-      }
-
-      const newResults = results.filter((result) => _applyFilters(result));
-      return newResults;
-    },
-    [_applyFilters, labeled]
-  );
 
   const getValidOps = (key: string): Operator[] => {
     const property = schema?.properties[key];
@@ -157,9 +92,8 @@ export function ResultFilterControlsProvider({
     options,
     filters,
     setFilters,
-    labeled,
-    setLabeled,
-    applyFilters,
+    viewMode,
+    setViewMode,
     getValidOps,
   };
 

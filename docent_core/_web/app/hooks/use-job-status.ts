@@ -3,20 +3,21 @@ import {
   useGetClusteringStateQuery,
   useGetRubricRunStateQuery,
   RubricCentroid,
+  AgentRunJudgeResults,
 } from '../api/rubricApi';
-import { JudgeResultWithCitations } from '../store/rubricSlice';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 
 interface UseJobStatusProps {
   collectionId: string;
   rubricId: string;
+  labelSetId: string | null;
 }
 
 interface UseJobStatusResponse {
   rubricJobId: string | null;
-  judgeResults: JudgeResultWithCitations[];
-  totalAgentRuns: number;
-  currentAgentRuns: number;
+  agentRunResults: AgentRunJudgeResults[];
+  totalResultsNeeded: number;
+  currentResultsCount: number;
   activeClusteringJobId?: string;
   clusteringJobId: string | null;
   centroids: RubricCentroid[];
@@ -29,6 +30,7 @@ interface UseJobStatusResponse {
 const useJobStatus = ({
   collectionId,
   rubricId,
+  labelSetId,
 }: UseJobStatusProps): UseJobStatusResponse => {
   // Rubric run state
   const { version } = useRubricVersion();
@@ -41,6 +43,7 @@ const useJobStatus = ({
         collectionId,
         rubricId,
         version,
+        labelSetId,
       },
       {
         pollingInterval: rubricJobId !== null ? 1000 : 0,
@@ -69,11 +72,11 @@ const useJobStatus = ({
   return {
     // Rubric run progress
     rubricJobId,
-    totalAgentRuns: rubricRunState?.total_agent_runs ?? 0,
-    currentAgentRuns: rubricRunState?.results.length ?? 0,
+    totalResultsNeeded: rubricRunState?.total_results_needed ?? 0,
+    currentResultsCount: rubricRunState?.current_results_count ?? 0,
 
     // Rubric run results
-    judgeResults: rubricRunState?.results ?? [],
+    agentRunResults: rubricRunState?.results ?? [],
 
     // Clustering job status
     clusteringJobId,

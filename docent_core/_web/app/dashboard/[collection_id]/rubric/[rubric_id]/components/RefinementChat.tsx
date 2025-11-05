@@ -27,23 +27,26 @@ import { skipToken } from '@reduxjs/toolkit/query';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import { useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
 import { useLabelSets } from '@/providers/use-label-sets';
+import { useParams } from 'next/navigation';
 
 interface RefinementChatProps {
-  collectionId: string;
   sessionId?: string;
   isOnResultRoute?: boolean;
 }
 
 export default function RefinementChat({
-  collectionId,
   sessionId,
   isOnResultRoute,
 }: RefinementChatProps) {
+  const { collection_id: collectionId, rubric_id: rubricId } = useParams<{
+    collection_id: string;
+    rubric_id: string;
+  }>();
   const hasWritePermission = useHasCollectionWritePermission();
   const { refinementJobId, setRefinementJobId } = useRefinementTab();
 
   // Judge run labels
-  const { activeLabelSet } = useLabelSets();
+  const { activeLabelSet } = useLabelSets(rubricId);
   const { data: labels = [] } = useGetLabelsInLabelSetQuery(
     activeLabelSet ? { collectionId, labelSetId: activeLabelSet.id } : skipToken
   );

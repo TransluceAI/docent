@@ -2,22 +2,26 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    ARRAY,
     Boolean,
     DateTime,
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docent._llm_util.providers.preference_types import ModelOption
 from docent._log_util.logger import get_logger
+from docent_core.docent.db.schemas.label import TABLE_LABEL, SQLALabel
 
 if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
@@ -31,6 +35,7 @@ TABLE_JUDGE_RESULT = "judge_results"
 TABLE_JUDGE_RUN_LABEL = "judge_run_labels"
 TABLE_RUBRIC_CENTROID = "rubric_centroids"
 TABLE_JUDGE_RESULT_CENTROIDS = "judge_result_centroids"
+TABLE_JUDGE_REFLECTION = "judge_reflections"
 
 logger = get_logger(__name__)
 
@@ -216,7 +221,6 @@ class SQLAJudgeResult(SQLABase):
         back_populates="judge_result",
         cascade="all, delete-orphan",
     )
-    # Relationship to result labels removed; labels are tied to agent_run_id now
 
     @classmethod
     def from_pydantic(cls, judge_result: JudgeResult) -> "SQLAJudgeResult":
@@ -313,4 +317,55 @@ class SQLAJudgeResultCentroid(SQLABase):
             "centroid_id",
             name="uq_judge_result_centroid",
         ),
+    )
+
+
+class SQLAJudgeReflection(SQLABase):
+    """Stores reflection analysis for multi-rollout judge results."""
+
+    __tablename__ = TABLE_JUDGE_REFLECTION
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    agent_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rubric_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    rubric_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    judge_result_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String(36)), nullable=True)
+    label_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_LABEL}.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    reflection_output: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_judge_reflection_with_label",
+            "agent_run_id",
+            "rubric_id",
+            "rubric_version",
+            "label_id",
+            unique=True,
+            postgresql_where=text("label_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_judge_reflection_without_label",
+            "agent_run_id",
+            "rubric_id",
+            "rubric_version",
+            unique=True,
+            postgresql_where=text("label_id IS NULL"),
+        ),
+    )
+
+    # Relationship to label
+    label: Mapped["SQLALabel | None"] = relationship(
+        "SQLALabel",
+        foreign_keys=[label_id],
     )

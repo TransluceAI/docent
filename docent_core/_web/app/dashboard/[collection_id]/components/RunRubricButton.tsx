@@ -1,21 +1,18 @@
 import { Button } from '@/components/ui/button';
-import {
-  useStartEvaluationMutation,
-  useCancelEvaluationMutation,
-} from '@/app/api/rubricApi';
+import { useCancelEvaluationMutation } from '@/app/api/rubricApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useLabelSets } from '@/providers/use-label-sets';
 
 interface RunRubricButtonProps {
   collectionId: string;
   rubricId: string;
   rubricJobId: string | null;
   hasUnsavedChanges: boolean;
+  onClick: () => void;
 }
 
 const RunRubricButton = ({
@@ -23,23 +20,17 @@ const RunRubricButton = ({
   rubricId,
   rubricJobId,
   hasUnsavedChanges,
+  onClick,
 }: RunRubricButtonProps) => {
-  const { activeLabelSet } = useLabelSets();
-  const [startEvaluation, { isLoading: isStartingEvaluation }] =
-    useStartEvaluationMutation();
   const [cancelEvaluation, { isLoading: isCancellingEvaluation }] =
     useCancelEvaluationMutation();
 
   const { version, latestVersion } = useRubricVersion();
   const isLatestVersion = version === latestVersion;
 
-  const handleStartRubricJob = async () => {
+  const handleStartRubricJob = () => {
     if (!isLatestVersion) return;
-    await startEvaluation({
-      collectionId,
-      rubricId,
-      label_set_id: activeLabelSet?.id ?? null,
-    });
+    onClick();
   };
 
   const handleCancelRubricJob = async () => {
@@ -51,8 +42,7 @@ const RunRubricButton = ({
     });
   };
 
-  const isButtonDisabled =
-    isStartingEvaluation || hasUnsavedChanges || !isLatestVersion;
+  const isButtonDisabled = hasUnsavedChanges || !isLatestVersion;
 
   const RunButton = () => {
     return (
@@ -63,7 +53,7 @@ const RunRubricButton = ({
         disabled={isButtonDisabled}
         onClick={handleStartRubricJob}
       >
-        {isStartingEvaluation ? 'Starting rubric...' : 'Run rubric'}
+        {isCancellingEvaluation ? 'Stopping rubric...' : 'Run rubric...'}
       </Button>
     );
   };

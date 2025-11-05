@@ -14,11 +14,15 @@ import {
   useCreateLabelSetMutation,
 } from '@/app/api/labelApi';
 import JsonEditor from './JsonEditor';
+import { useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
+import { useAppDispatch } from '@/app/store/hooks';
+import { useLabelSets } from '@/providers/use-label-sets';
 
 interface LabelSetEditorProps {
   labelSetId: string | null;
   isCreateMode: boolean;
-  collectionId?: string;
   onCreateSuccess?: (labelSetId: string) => void;
   prefillSchema?: Record<string, any>;
 }
@@ -26,10 +30,15 @@ interface LabelSetEditorProps {
 export default function LabelSetEditor({
   labelSetId,
   isCreateMode,
-  collectionId,
   onCreateSuccess,
   prefillSchema,
 }: LabelSetEditorProps) {
+  const { collection_id: collectionId } = useParams<{
+    collection_id: string;
+  }>();
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+
   // Fetch label set data if not in create mode
   const { data: labelSet, isLoading: isLoadingLabelSet } = useGetLabelSetQuery(
     { collectionId: collectionId!, labelSetId: labelSetId! },
@@ -73,6 +82,7 @@ export default function LabelSetEditor({
       // Use prefill schema if provided, otherwise use default
       const defaultSchema = prefillSchema || {
         type: 'object',
+        required: [],
         properties: {},
       };
       setSchemaText(JSON.stringify(defaultSchema, null, 2));
@@ -97,9 +107,75 @@ export default function LabelSetEditor({
     );
   }, [name, description, schemaText, labelSet, isCreateMode]);
 
+  const { setLabelSet: setActiveLabelSet } = useLabelSets(collectionId);
+
+  const navigateToRun = (agentRunId: string) => {
+    dispatch(setAgentRunSidebarTab('labels'));
+    setActiveLabelSet(labelSet ?? null);
+    router.push(`/dashboard/${collectionId}/agent_run/${agentRunId}`);
+  };
+
+  // Helper function to add a field to the schema
+  const handleAddField = (
+    fieldType: 'number' | 'boolean' | 'explanation' | 'enum'
+  ) => {
+    try {
+      // Parse the current schema
+      const parsedSchema = JSON.parse(schemaText);
+
+      // Validate schema structure
+      if (
+        !parsedSchema.properties ||
+        typeof parsedSchema.properties !== 'object'
+      ) {
+        setSchemaError(
+          'Invalid schema: Must have a "properties" field with an object value'
+        );
+        return;
+      }
+
+      // Generate a unique field name
+      const existingKeys = Object.keys(parsedSchema.properties);
+      let fieldIndex = 1;
+      let fieldName = `field_${fieldIndex}`;
+      while (existingKeys.includes(fieldName)) {
+        fieldIndex++;
+        fieldName = `field_${fieldIndex}`;
+      }
+
+      // Create the field definition based on type
+      let fieldDefinition: any;
+      switch (fieldType) {
+        case 'number':
+          fieldDefinition = { type: 'number', minimum: 0, maximum: 10 };
+          break;
+        case 'boolean':
+          fieldDefinition = { type: 'boolean' };
+          break;
+        case 'explanation':
+          fieldDefinition = { type: 'string', citations: true };
+          break;
+        case 'enum':
+          fieldDefinition = { type: 'string', enum: ['option1', 'option2'] };
+          break;
+      }
+
+      // Add the new field to properties
+      parsedSchema.properties[fieldName] = fieldDefinition;
+
+      // Update the schema text with proper formatting
+      setSchemaText(JSON.stringify(parsedSchema, null, 2));
+      setSchemaError(null);
+    } catch (e) {
+      setSchemaError(
+        `Cannot add field: Invalid JSON - ${e instanceof Error ? e.message : 'Unknown error'}`
+      );
+    }
+  };
+
   // Handlers
   const handleSave = async () => {
-    // Validate JSON
+    // 1) Raise an error if the JSON is invalid
     let parsedSchema;
     try {
       parsedSchema = JSON.parse(schemaText);
@@ -110,6 +186,13 @@ export default function LabelSetEditor({
       return;
     }
 
+    // 2) Raise an error if the JSON does not have any properties
+    if (Object.keys(parsedSchema.properties).length === 0) {
+      setSchemaError('Invalid schema: Must have at least one property');
+      return;
+    }
+
+    // 3) If all is good, clear any existing errors
     setSchemaError(null);
 
     if (isCreateMode) {
@@ -179,7 +262,7 @@ export default function LabelSetEditor({
 
         {/* Name and Description */}
         <div className={showDescription ? 'space-y-2' : ''}>
-          <div className="flex flex-col">
+          <div className="flex flex-col space-y-2">
             <Label htmlFor="name" className="text-xs text-muted-foreground">
               Name
             </Label>
@@ -203,7 +286,9 @@ export default function LabelSetEditor({
           </div>
           <div
             className={`flex flex-col transition-all duration-300 ease-in-out ${
-              showDescription ? 'max-h-24 opacity-100' : '!max-h-0 opacity-0'
+              showDescription
+                ? 'max-h-24 opacity-100'
+                : '!max-h-0 opacity-0 hidden'
             }`}
           >
             <Label
@@ -223,13 +308,58 @@ export default function LabelSetEditor({
         </div>
 
         {/* Schema Editor */}
-        <div className="flex flex-col">
-          <Label
-            htmlFor="description"
-            className="text-xs text-muted-foreground"
-          >
-            Output Schema
-          </Label>
+        <div className="flex flex-col space-y-2">
+          <div className="flex items-center justify-between">
+            <Label
+              htmlFor="description"
+              className="text-xs text-muted-foreground"
+            >
+              Output Schema
+            </Label>
+            {isCreateMode && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground ">
+                  Add Field:
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddField('number')}
+                  className="h-6 px-2 text-xs"
+                >
+                  + Number
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddField('boolean')}
+                  className="h-6 px-2 text-xs"
+                >
+                  + Bool
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddField('explanation')}
+                  className="h-6 px-2 text-xs"
+                >
+                  Explanation
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddField('enum')}
+                  className="h-6 px-2 text-xs"
+                >
+                  + Enum
+                </Button>
+              </div>
+            )}
+          </div>
           <JsonEditor
             schemaText={schemaText}
             setSchemaText={setSchemaText}
@@ -260,20 +390,20 @@ export default function LabelSetEditor({
                     return (
                       <div
                         key={label.id}
-                        className="bg-background border rounded p-3 space-y-1.5"
+                        className="bg-background border rounded p-3 space-y-1.5 cursor-pointer hover:bg-muted"
+                        onClick={() => navigateToRun(label.agent_run_id)}
                       >
                         <div className="text-[10px] text-muted-foreground font-mono pb-1 border-b">
                           {label.agent_run_id}
                         </div>
                         <div className="space-y-1">
                           {schemaKeys.map((key) => {
-                            const displayValue = String(label.label_value[key]);
                             return (
                               <div key={key} className="text-xs">
                                 <span className="font-semibold">{key}:</span>{' '}
                                 {label.label_value[key] ? (
                                   <span className="text-foreground">
-                                    {displayValue}
+                                    {String(label.label_value[key])}
                                   </span>
                                 ) : (
                                   <span className="text-muted-foreground italic">

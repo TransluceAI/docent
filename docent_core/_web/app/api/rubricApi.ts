@@ -20,6 +20,7 @@ export interface UpdateRubricRequest {
     rubric_text: string;
     judge_model: ModelOption;
     output_schema: Record<string, any>;
+    n_rollouts_per_input?: number;
   };
 }
 
@@ -40,10 +41,19 @@ export interface AssignmentJobDetails {
   created_at: string;
 }
 
-export interface RubricRunStateResponse {
+export interface AgentRunJudgeResults {
+  agent_run_id: string;
+  rubric_id: string;
+  rubric_version: number;
   results: JudgeResultWithCitations[];
+  reflection: JudgeReflection | null;
+}
+
+export interface RubricRunStateResponse {
+  results: AgentRunJudgeResults[];
   job_id: string | null;
-  total_agent_runs: number | null;
+  total_results_needed: number | null;
+  current_results_count: number | null;
 }
 
 export interface StartClusteringJobRequest {
@@ -102,6 +112,26 @@ export interface CopyRubricRequest {
   target_collection_id: string;
 }
 
+export interface ReflectionSummary {
+  rollout_indices: number[];
+  text: string;
+  classification?: 'human_miss' | 'ai_miss' | 'disagree' | 'agree';
+}
+
+export interface ReflectionIssue {
+  rollout_indices: number[];
+  type: 'false_negative' | 'false_positive' | 'human_miss' | 'ai_miss';
+  summary: string;
+}
+
+export interface JudgeReflection {
+  id: string;
+  judge_result_id: string;
+  judge_result_ids?: string[] | null;
+  summaries: ReflectionSummary[] | null;
+  issues: ReflectionIssue[] | null;
+}
+
 export const rubricApi = createApi({
   reducerPath: 'rubricApi',
   baseQuery: fetchBaseQuery({
@@ -116,6 +146,7 @@ export const rubricApi = createApi({
     'Centroids',
     'Assignments',
     'RubricMetrics',
+    'JudgeReflection',
   ],
   endpoints: (build) => ({
     getRubrics: build.query<Rubric[], { collectionId: string }>({
@@ -163,24 +194,28 @@ export const rubricApi = createApi({
           ? [{ type: 'JudgeResult', id: result.rubric_id }]
           : ['JudgeResult'],
     }),
-    getResultByAgentRun: build.query<
-      JudgeResultWithCitations,
+    recomputeAgentRunReflection: build.mutation<
+      JudgeReflection,
       {
         collectionId: string;
         rubricId: string;
         agentRunId: string;
         version: number;
+        labelSetId?: string | null;
       }
     >({
-      query: ({ collectionId, rubricId, agentRunId, version }) => ({
-        url: `/${collectionId}/rubric/${rubricId}/result/${agentRunId}`,
+      query: ({ collectionId, rubricId, agentRunId, version, labelSetId }) => ({
+        url: `/${collectionId}/rubric/${rubricId}/agent_run/${agentRunId}/reflection`,
         method: 'GET',
-        params: { version },
+        params: {
+          version,
+          force_recompute: true,
+          label_set_id: labelSetId ?? undefined,
+        },
       }),
-      providesTags: (result) =>
-        result
-          ? [{ type: 'JudgeResult', id: result.rubric_id }]
-          : ['JudgeResult'],
+      invalidatesTags: (result, error, { rubricId, labelSetId }) => [
+        { type: 'JudgeReflection', id: rubricId, label_set_id: labelSetId },
+      ],
     }),
     getRubricMetrics: build.query<
       RubricMetricsResponse,
@@ -254,15 +289,23 @@ export const rubricApi = createApi({
       {
         collectionId: string;
         rubricId: string;
-        max_results?: number | null;
+        max_agent_runs?: number | null;
+        n_rollouts_per_input?: number;
         label_set_id?: string | null;
       }
     >({
-      query: ({ collectionId, rubricId, max_results, label_set_id }) => ({
+      query: ({
+        collectionId,
+        rubricId,
+        max_agent_runs,
+        n_rollouts_per_input,
+        label_set_id,
+      }) => ({
         url: `/${collectionId}/${rubricId}/evaluate`,
         method: 'POST',
         body: {
-          max_results: max_results ?? null,
+          max_agent_runs: max_agent_runs ?? null,
+          n_rollouts_per_input: n_rollouts_per_input ?? 1,
           label_set_id: label_set_id ?? null,
         },
       }),
@@ -310,16 +353,25 @@ export const rubricApi = createApi({
     }),
     getRubricRunState: build.query<
       RubricRunStateResponse,
-      { collectionId: string; rubricId: string; version?: number | null }
+      {
+        collectionId: string;
+        rubricId: string;
+        version?: number | null;
+        labelSetId?: string | null;
+      }
     >({
-      query: ({ collectionId, rubricId, version }) => ({
+      query: ({ collectionId, rubricId, version, labelSetId }) => ({
         url: `/${collectionId}/${rubricId}/rubric_run_state`,
         method: 'GET',
-        params: version ? { version } : undefined,
+        params: {
+          version: version ?? undefined,
+          label_set_id: labelSetId ?? undefined,
+        },
       }),
-      providesTags: (result, error, { rubricId, version }) => [
+      providesTags: (result, error, { rubricId, version, labelSetId }) => [
         { type: 'RubricJob', id: rubricId },
-        { type: 'JudgeResult', id: rubricId },
+        { type: 'JudgeResult', id: rubricId, label_set_id: labelSetId },
+        { type: 'JudgeReflection', id: rubricId, label_set_id: labelSetId },
       ],
     }),
     startClusteringJob: build.mutation<
@@ -392,8 +444,7 @@ export const {
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
   useGetResultByIdQuery,
-  useLazyGetResultByAgentRunQuery,
-  useGetResultByAgentRunQuery,
+  useRecomputeAgentRunReflectionMutation,
   useGetRubricMetricsQuery,
   useGetJudgeModelsQuery,
   useCreateRubricMutation,

@@ -13,6 +13,7 @@ import { setCollectionId } from '../../store/collectionSlice';
 import { useAppDispatch } from '../../store/hooks';
 import { Button } from '@/components/ui/button';
 import { useUserContext } from '@/app/contexts/UserContext';
+import { LabelSetsProvider } from '@/providers/use-label-sets';
 
 export default function DocentDashboardClientLayout({
   children,
@@ -38,12 +39,14 @@ export default function DocentDashboardClientLayout({
   }, [collectionId, dispatch]);
 
   return (
-    <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-[900px]">
-      <Suspense fallback={<div className="h-7">Loading breadcrumbs...</div>}>
-        <Breadcrumbs />
-      </Suspense>
-      {children}
-    </div>
+    <LabelSetsProvider collectionId={collectionId}>
+      <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-[900px]">
+        <Suspense fallback={<div className="h-7">Loading breadcrumbs...</div>}>
+          <Breadcrumbs />
+        </Suspense>
+        {children}
+      </div>
+    </LabelSetsProvider>
   );
 }
 

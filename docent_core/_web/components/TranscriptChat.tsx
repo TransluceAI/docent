@@ -7,11 +7,12 @@ import {
   SuggestedMessage,
 } from '@/app/dashboard/[collection_id]/components/chat/ChatArea';
 import { ChatHeader } from '@/app/dashboard/[collection_id]/components/chat/ChatHeader';
-import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
+import { ModelOption } from '@/app/store/rubricSlice';
+import { AgentRunJudgeResults } from '@/app/api/rubricApi';
 import { useTranscriptChat } from '@/app/hooks/use-transcript-chat';
 import { useGetChatModelsQuery } from '@/app/api/chatApi';
 import { cn } from '@/lib/utils';
-import JudgeResultDetail from './JudgeResultDetail';
+import JudgeResultWithReflection from './JudgeResultWithReflection';
 import ModelPicker from './ModelPicker';
 import SelectionBadges from './SelectionBadges';
 import { Citation } from '@/app/types/experimentViewerTypes';
@@ -22,11 +23,13 @@ import Link from 'next/link';
 const ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS = 8192;
 
 export interface TranscriptChatProps {
-  runId: string;
+  agentRunId: string;
   collectionId?: string;
+  rubricId?: string;
 
   // Result-specific props
-  judgeResult?: JudgeResultWithCitations | null;
+  agentRunResults?: AgentRunJudgeResults | null;
+  selectedResultId?: string;
   showEmptyResultMessage?: boolean;
 
   // UI customization
@@ -72,9 +75,11 @@ const resultSpecificSuggestedMessages: SuggestedMessage[] = [
 ];
 
 export default function TranscriptChat({
-  runId,
+  agentRunId,
   collectionId: propCollectionId,
-  judgeResult,
+  rubricId,
+  agentRunResults,
+  selectedResultId,
   showEmptyResultMessage = false,
   title = 'Transcript Chat',
   className = 'flex flex-col h-full space-y-2',
@@ -83,6 +88,16 @@ export default function TranscriptChat({
 
   // Use provided collectionId or extract from params
   const collectionId = propCollectionId || (params.collection_id as string);
+
+  // Extract the selected result from agentRunResults
+  const judgeResult = useMemo(() => {
+    if (!agentRunResults || !selectedResultId) return null;
+    return (
+      agentRunResults.results.find((r) => r.id === selectedResultId) ??
+      agentRunResults.results[0] ??
+      null
+    );
+  }, [agentRunResults, selectedResultId]);
 
   const { selections, removeSelection, clearSelections } = useTextSelection({});
   const selectedTexts = selections.map((s) => s.text);
@@ -100,7 +115,7 @@ export default function TranscriptChat({
     errorMessage,
     errorId,
     estimatedInputTokens,
-  } = useTranscriptChat({ runId, collectionId, judgeResult });
+  } = useTranscriptChat({ agentRunId, collectionId, judgeResult });
 
   // Chat models state
   const { data: availableChatModels } = useGetChatModelsQuery();
@@ -263,13 +278,19 @@ export default function TranscriptChat({
           headerElement={
             <>
               {headerElement}
-              {judgeResult && <JudgeResultDetail judgeResult={judgeResult} />}
-              {showEmptyResultMessage && !judgeResult && (
+              {agentRunResults && rubricId ? (
+                <JudgeResultWithReflection
+                  agentRunResults={agentRunResults}
+                  selectedResultId={selectedResultId}
+                  collectionId={collectionId}
+                  rubricId={rubricId}
+                />
+              ) : showEmptyResultMessage ? (
                 <div className="text-xs text-muted-foreground flex items-center border rounded-lg bg-muted border-dashed h-24 justify-center p-2">
-                  Agent run {runId?.split('-')?.[0] || 'unknown'} has no result
-                  at this rubric version.
+                  Agent run {agentRunId?.split('-')?.[0] || 'unknown'} has no
+                  result at this rubric version.
                 </div>
-              )}
+              ) : null}
             </>
           }
           inputHeaderElement={
