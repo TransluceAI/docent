@@ -119,9 +119,9 @@ class PrimitiveFilter(BaseCollectionFilter):
         json_keys: list[str] | None = None
 
         # Extract value from appropriate source
-        if mode == "text":
-            sqla_value = table.text_for_search  # type: ignore
-        elif mode == "created_at":
+        # if mode == "text":
+        #     sqla_value = table.text_for_search  # type: ignore
+        if mode == "created_at":
             sqla_value = cast(table.created_at, String)  # type: ignore
         elif mode == "agent_run_id":
             sqla_value = cast(table.id, String)  # type: ignore

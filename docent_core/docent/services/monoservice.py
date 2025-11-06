@@ -2465,7 +2465,7 @@ class MonoService:
             all_fields[field_name] = {"name": field_name, "type": info.value_type}
 
         all_fields["agent_run_id"] = {"name": "agent_run_id", "type": "str"}
-        all_fields["text"] = {"name": "text", "type": "str"}
+        # all_fields["text"] = {"name": "text", "type": "str"}
 
         return sorted(all_fields.values(), key=lambda f: f["name"])
 

@@ -101,7 +101,8 @@ class SQLAAgentRun(SQLABase):
     )
 
     # This column is *only* used for regex search; it needs to be preprocessed to remove invalid characters
-    text_for_search = mapped_column(Text, nullable=False)
+    # NOTE(mengk): removed on 2025/11/05 to avoid (pointless) 2X storage costs for agent runs
+    # text_for_search = mapped_column(Text, nullable=False)
 
     __table_args__ = (
         Index("idx_agent_runs_metadata_json_gin", "metadata_json", postgresql_using="gin"),
@@ -113,14 +114,14 @@ class SQLAAgentRun(SQLABase):
         metadata_json = json.loads(
             sanitize_pg_text(json.dumps(to_jsonable_python(agent_run.metadata)))
         )
-        text_for_search = sanitize_pg_text(agent_run.text)
+        # text_for_search = sanitize_pg_text(agent_run.text)
         return cls(
             id=agent_run.id,
             name=agent_run.name,
             description=agent_run.description,
             collection_id=collection_id,
             metadata_json=metadata_json,
-            text_for_search=text_for_search,
+            # text_for_search=text_for_search,
         )
 
     def to_agent_run(
