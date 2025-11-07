@@ -63,16 +63,6 @@ export default function LabelSetEditor({
   const [description, setDescription] = useState('');
   const [schemaText, setSchemaText] = useState('');
   const [schemaError, setSchemaError] = useState<string | null>(null);
-  const [showDescriptionButton, setShowDescriptionButton] = useState(false);
-  const [showDescription, setShowDescription] = useState(false);
-
-  useEffect(() => {
-    if (name.trim().length > 0) {
-      setShowDescriptionButton(true);
-    } else {
-      setShowDescriptionButton(false);
-    }
-  }, [name]);
 
   // Initialize form when labelSet data loads
   useEffect(() => {
@@ -256,41 +246,25 @@ export default function LabelSetEditor({
     <div className="flex flex-col h-full w-full -m-0.5">
       {/* Scrollable Content */}
       <div className="flex-1 min-h-0 p-0.5 overflow-y-auto space-y-3 custom-scrollbar">
-        <div className="text-sm font-semibold">
+        <div className="font-semibold">
           {isCreateMode ? 'Create Label Set' : 'Label Set Details'}
         </div>
 
         {/* Name and Description */}
-        <div className={showDescription ? 'space-y-2' : ''}>
+        <div className="space-y-2">
           <div className="flex flex-col space-y-2">
             <Label htmlFor="name" className="text-xs text-muted-foreground">
               Name
             </Label>
-            <div className="relative">
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter label set name"
-                className="text-sm"
-              />
-              {showDescriptionButton && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 border text-xs bg-muted rounded px-2 py-0.5 text-muted-foreground hover:text-primary"
-                  onClick={() => setShowDescription(!showDescription)}
-                >
-                  {showDescription ? 'Description -' : 'Description +'}
-                </button>
-              )}
-            </div>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter label set name"
+              className="text-sm"
+            />
           </div>
-          <div
-            className={`flex flex-col transition-all duration-300 ease-in-out ${
-              showDescription
-                ? 'max-h-24 opacity-100'
-                : '!max-h-0 opacity-0 hidden'
-            }`}
-          >
+          <div className="flex flex-col space-y-2">
             <Label
               htmlFor="description"
               className="text-xs text-muted-foreground"
@@ -431,7 +405,6 @@ export default function LabelSetEditor({
       {/* Footer Actions */}
       <div className="flex items-center justify-end gap-2 pt-2">
         <Button
-          size="sm"
           onClick={handleSave}
           disabled={!hasChanges || isUpdating || isCreating}
           className="gap-1.5"

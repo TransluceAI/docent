@@ -116,7 +116,7 @@ export default function ViewModeDropdown({
               key={option.value}
               onClick={() => setViewMode(option.value)}
               className={cn(
-                'flex flex-col items-start gap-1 py-2 cursor-pointer',
+                'flex flex-col items-start gap-0.5 py-1.5 cursor-pointer',
                 isSelected && 'bg-accent'
               )}
             >
@@ -125,7 +125,7 @@ export default function ViewModeDropdown({
                   {OptionIcon && (
                     <OptionIcon className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
-                  <span className="font-medium text-sm">{option.label}</span>
+                  <span className="font-medium text-xs">{option.label}</span>
                 </div>
                 <Badge
                   variant={isSelected ? 'default' : 'secondary'}

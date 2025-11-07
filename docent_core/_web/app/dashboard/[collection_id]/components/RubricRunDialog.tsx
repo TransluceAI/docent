@@ -28,7 +28,7 @@ export default function RunRubricDialog({
   collectionId,
   rubricId,
 }: RunRubricDialogProps) {
-  const [runMode, setRunMode] = useState<'all' | 'first-n'>('first-n');
+  const [runMode, setRunMode] = useState<'all' | 'first-n'>('all');
   const [maxResults, setMaxResults] = useState<string>('10');
   const [rolloutsPerInput, setRolloutsPerInput] = useState<string>('1');
   const [startEvaluation, { isLoading: isStarting }] =

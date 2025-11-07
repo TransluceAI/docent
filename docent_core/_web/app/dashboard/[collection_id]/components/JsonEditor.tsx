@@ -45,7 +45,7 @@ export default function JsonEditor({
       <button
         type="button"
         className={cn(
-          'flex items-center justify-between transition-colors duration-200 rounded-md h-9 px-2 py-1.5 disabled:opacity-80',
+          'flex items-center justify-between transition-colors duration-200 rounded-md h-7 px-2 py-1.5 disabled:opacity-80',
           !editable || forceOpenSchema ? '' : 'hover:bg-accent',
           schemaOpen ? 'rounded-b-none' : ''
         )}

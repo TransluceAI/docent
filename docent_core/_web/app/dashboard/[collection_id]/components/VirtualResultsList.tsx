@@ -22,6 +22,7 @@ interface ViewSnapshot {
 interface VirtualResultsListProps {
   agentRunResults: AgentRunJudgeResults[];
   activeResultId?: string;
+  activeAgentRunId?: string;
   schema: SchemaDefinition;
   labels?: Label[];
   activeLabelSet: any;
@@ -30,6 +31,7 @@ interface VirtualResultsListProps {
 const VirtualResultsList = ({
   agentRunResults,
   activeResultId,
+  activeAgentRunId,
   schema,
   labels,
   activeLabelSet,
@@ -190,13 +192,13 @@ const VirtualResultsList = ({
 
   // Scroll to the active result group if it exists on load
   useEffect(() => {
-    const activeResultResultIdx = agentRunResults.findIndex((group) =>
-      group.results.some((result) => result.id === activeResultId)
+    const activeResultResultIdx = agentRunResults.findIndex(
+      (group) => group.agent_run_id === activeAgentRunId
     );
     if (activeResultResultIdx !== -1) {
       virtualizer.scrollToIndex(activeResultResultIdx, { align: 'start' });
     }
-  }, []);
+  }, [agentRunResults, activeAgentRunId, virtualizer]);
 
   return (
     <div
@@ -227,9 +229,7 @@ const VirtualResultsList = ({
         >
           {items.map((virtualRow) => {
             const group = sortedJudgeResultsList[virtualRow.index];
-            const hasActiveResult = group.results.some(
-              (result) => result.id === activeResultId
-            );
+            const hasActiveResult = group.agent_run_id === activeAgentRunId;
             return (
               <div
                 key={virtualRow.key}
@@ -245,13 +245,20 @@ const VirtualResultsList = ({
                 >
                   <span>Agent Run {group.agent_run_id.slice(0, 8)}</span>
                 </div>
-                <JudgeResultCard
-                  key={group.agent_run_id}
-                  agentRunResult={group}
-                  schema={schema}
-                  labels={labelsMap?.get(group.agent_run_id) || []}
-                  activeLabelSetId={activeLabelSet?.id || null}
-                />
+                <div
+                  className={cn(
+                    'ml-0.5 border-l-2 pl-2',
+                    hasActiveResult ? 'border-indigo-border' : 'border-border'
+                  )}
+                >
+                  <JudgeResultCard
+                    key={group.agent_run_id}
+                    agentRunResult={group}
+                    schema={schema}
+                    labels={labelsMap?.get(group.agent_run_id) || []}
+                    activeLabelSetId={activeLabelSet?.id || null}
+                  />
+                </div>
               </div>
             );
           })}

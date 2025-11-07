@@ -15,6 +15,7 @@ interface JudgeResultsListProps {
   labels: Label[];
   isClusteringActive?: boolean;
   activeResultId?: string;
+  activeAgentRunId?: string;
   schema: SchemaDefinition;
   activeLabelSet: any;
 }
@@ -26,6 +27,7 @@ export const JudgeResultsList = ({
   labels,
   isClusteringActive,
   activeResultId,
+  activeAgentRunId,
   schema,
   activeLabelSet,
 }: JudgeResultsListProps) => {
@@ -36,6 +38,7 @@ export const JudgeResultsList = ({
         centroids={centroids}
         isClusteringActive={isClusteringActive}
         activeResultId={activeResultId}
+        activeAgentRunId={activeAgentRunId}
         schema={schema}
         agentRunResults={agentRunResults}
         labels={labels}
@@ -49,6 +52,7 @@ export const JudgeResultsList = ({
     <VirtualResultsList
       agentRunResults={agentRunResults}
       activeResultId={activeResultId}
+      activeAgentRunId={activeAgentRunId}
       schema={schema}
       labels={labels}
       activeLabelSet={activeLabelSet}
@@ -61,6 +65,7 @@ interface CentroidsListProps {
   centroids: RubricCentroid[];
   isClusteringActive?: boolean;
   activeResultId?: string;
+  activeAgentRunId?: string;
   schema: SchemaDefinition;
   agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
@@ -72,6 +77,7 @@ const CentroidsList = ({
   centroids,
   isClusteringActive,
   activeResultId,
+  activeAgentRunId,
   schema,
   agentRunResults,
   labels,
@@ -162,6 +168,7 @@ const CentroidsList = ({
         <VirtualResultsList
           agentRunResults={selected.agentRunResults}
           activeResultId={activeResultId}
+          activeAgentRunId={activeAgentRunId}
           schema={schema}
           labels={labels}
           activeLabelSet={activeLabelSet}

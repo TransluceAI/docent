@@ -53,7 +53,7 @@ const RunRubricButton = ({
         disabled={isButtonDisabled}
         onClick={handleStartRubricJob}
       >
-        {isCancellingEvaluation ? 'Stopping rubric...' : 'Run rubric...'}
+        {isCancellingEvaluation ? 'Stopping rubric...' : 'Run rubric'}
       </Button>
     );
   };

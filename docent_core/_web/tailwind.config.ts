@@ -119,6 +119,7 @@ const config: Config = {
         '3xs': '0.5rem',
         '2xs': '0.625rem',
         xxs: ['0.625rem', { lineHeight: '0.875rem' }], // This is equivalent to 10px with a line-height of 14px
+        base: ['0.85rem', { lineHeight: '1.2rem' }],
         // xs: ['0.825rem', { lineHeight: '1.1rem' }], // Custom text-sm definition (changed from default 0.875rem)
       },
       transitionDuration: {

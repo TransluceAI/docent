@@ -18,10 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import LabelSetsDialog from './LabelSetsDialog';
-import {
-  ResultFilterControlsTrigger,
-  ResultFilterControlsBadges,
-} from '@/app/components/ResultFilterControls';
+import { ResultFilterControlsBadges } from '@/app/components/ResultFilterControls';
 import RunRubricButton from './RunRubricButton';
 import { AgreementPopover } from './AgreementPopover';
 import ClusterButton from './ClusterButton';
@@ -47,9 +44,14 @@ export default function SingleRubricArea({
   rubricId,
   sessionId,
 }: SingleRubricAreaProps) {
-  const { collection_id: collectionId, result_id: resultId } = useParams<{
+  const {
+    collection_id: collectionId,
+    result_id: resultId,
+    agent_run_id: agentRunId,
+  } = useParams<{
     collection_id: string;
     result_id?: string;
+    agent_run_id?: string;
   }>();
 
   const [
@@ -150,25 +152,14 @@ export default function SingleRubricArea({
     <>
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center justify-between">
-        {/* Version changer */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* View mode dropdown */}
           <ViewModeDropdown
             agentRunResults={agentRunResults}
             labels={labels ?? []}
           />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <ResultFilterControlsTrigger />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Filter results</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
 
-          {/* Label Sets Button Group */}
+          {/* Label set */}
           <TooltipProvider>
             <div className="flex">
               <Tooltip>
@@ -176,18 +167,16 @@ export default function SingleRubricArea({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-7 text-xs shadow-l gap-1"
+                    size="sm"
                     onClick={() => setIsLabelSetsDialogOpen(true)}
                   >
-                    <Tags className="h-3 w-3" />
+                    <Tags className="h-3 w-3 mr-1" />
                     {activeLabelSet ? (
                       <span className="hidden xl:inline">
                         {activeLabelSet.name}
                       </span>
                     ) : (
-                      <span className="hidden xl:inline">
-                        Select A Label Set
-                      </span>
+                      <span className="hidden xl:inline">Select label set</span>
                     )}
                   </Button>
                 </TooltipTrigger>
@@ -195,25 +184,7 @@ export default function SingleRubricArea({
               </Tooltip>
             </div>
           </TooltipProvider>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden lg:flex items-center gap-2">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="size-7 text-xs text-muted-foreground"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </Button>
-
-            <ShareRubricButton
-              rubricId={rubricId}
-              collectionId={collectionId}
-            />
-          </div>
           {/* Clustering controls */}
           {!rubricJobId && hasWritePermission && !noJudgeResults && (
             <ClusterButton
@@ -235,6 +206,24 @@ export default function SingleRubricArea({
               onClick={() => setIsRunDialogOpen(true)}
             />
           )}
+
+          {/* Expand / collapse and sharing */}
+          <div className="hidden lg:flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 text-xs text-muted-foreground"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </Button>
+
+            <ShareRubricButton
+              rubricId={rubricId}
+              collectionId={collectionId}
+            />
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2 px-0.5 justify-between">
@@ -279,6 +268,7 @@ export default function SingleRubricArea({
           agentRunResults={agentRunResults}
           isClusteringActive={clusteringJobId !== null}
           activeResultId={resultId}
+          activeAgentRunId={agentRunId}
           schema={schema}
           activeLabelSet={activeLabelSet}
         />

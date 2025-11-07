@@ -168,7 +168,7 @@ export default function LabelSetsDialog({
           {/* Right Side - Detail Panel */}
           <div
             className={cn(
-              'w-1/2 min-h-0 rounded-md p-4 items-center justify-center flex',
+              'w-1/2 min-h-0 rounded-md p-3 items-center justify-center flex',
               selectedLabelSetId ? 'border' : 'border-dashed border'
             )}
           >

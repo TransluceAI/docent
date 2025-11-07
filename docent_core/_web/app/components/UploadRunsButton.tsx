@@ -75,7 +75,7 @@ export default function UploadRunsButton({
             disabled={disabled}
           >
             <PlusIcon size={14} className="mr-1" />
-            Add Data
+            Add data
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

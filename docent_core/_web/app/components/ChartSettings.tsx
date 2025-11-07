@@ -415,17 +415,17 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
             />
           )}
 
-          {/* Add filter button/popover */}
+          {/* Filter button/popover */}
           <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className="h-6 px-1 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-primary flex-shrink-0"
-                title="Add filter"
+                title="Filter"
                 disabled={!hasWritePermission}
               >
                 <FunnelPlus size={18} className="stroke-[1.5]" />
-                <span className="text-xs">Add Filter</span>
+                <span className="text-xs">Filter</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent

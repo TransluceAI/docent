@@ -142,7 +142,7 @@ const TagButton = React.forwardRef<HTMLButtonElement>(({ ...props }, ref) => {
   return (
     <button
       ref={ref}
-      className="inline-flex items-center gap-1 border rounded-xl border-dashed hover:bg-muted/70 text-muted-foreground px-1.5 py-0.5 text-xs"
+      className="inline-flex items-center gap-1 border rounded-md border-dashed hover:bg-muted/70 text-muted-foreground px-1 py-[0.1rem] text-xs"
       {...props}
     >
       <Pencil className="size-3" />
@@ -168,15 +168,14 @@ const LabelBadge = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="flex w-fit px-1.5 py-0.5 cursor-pointer border relative bg-green-bg border-green-border rounded-xl group/label"
+      className="flex w-fit px-1 py-[0.1rem] cursor-pointer border relative bg-green-bg border-green-border rounded-md group/label"
       {...props}
     >
-      <div className="flex items-start gap-1">
+      <div className="flex items-center gap-1">
+        <Tag className="size-3 flex-shrink-0 text-green-text" />
         <span className="text-primary text-xs">{labeledValue}</span>
-        <Tag className="size-3 mt-0.5 flex-shrink-0 text-green-text" />
-        <span className="text-xs font-mono">{labelSetName}</span>
         <X
-          className="size-3 mt-0.5 flex-shrink-0 text-green-text cursor-pointer"
+          className="size-3 flex-shrink-0 text-green-text cursor-pointer"
           onPointerDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -583,7 +582,7 @@ const TextWithCitationsInput = ({
 
   const navigateToAgentRun = () => {
     router.push(
-      `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}`
+      `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`
     );
   };
 

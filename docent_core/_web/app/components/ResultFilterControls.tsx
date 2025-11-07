@@ -60,7 +60,7 @@ function reducer(state: FilterState, action: Action): FilterState {
   }
 }
 
-function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
+export function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
   const { options, filters, setFilters, getValidOps, schema } =
     useResultFilterControls();
 
@@ -227,7 +227,7 @@ function FilterControls({ setIsPopoverOpen }: FilterControlsProps) {
           onClick={addFilter}
           disabled={!state.path || !state.op}
         >
-          Add Filter
+          Add filter
         </Button>
       </div>
     </div>
@@ -256,7 +256,7 @@ export function ResultFilterControlsTrigger() {
               </Badge>
             </>
           ) : (
-            <span className="hidden xl:inline">Add filter</span>
+            <span className="hidden xl:inline">Filter</span>
           )}
         </Button>
       </PopoverTrigger>
@@ -269,6 +269,7 @@ export function ResultFilterControlsTrigger() {
 
 export function ResultFilterControlsBadges() {
   const { filters, setFilters } = useResultFilterControls();
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const removeFilter = (idx: number) => {
     setFilters(filters.filter((_, i) => i !== idx));
@@ -282,15 +283,30 @@ export function ResultFilterControlsBadges() {
 
   return (
     <div className="flex flex-wrap gap-1.5 max-h-7 h-7 items-center">
-      <span className="text-xs text-muted-foreground">Filters:</span>
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className="inline-flex items-center h-6 gap-x-1 text-xs bg-background text-muted-foreground hover:text-primary border border-border px-1.5 rounded-md hover:bg-accent transition-all duration-200"
+            title="Filter"
+          >
+            <FunnelPlus size={14} className="stroke-[1.5]" />
+            <span>Filter</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={4} className="w-[520px] p-3">
+          <FilterControls setIsPopoverOpen={setIsPopoverOpen} />
+        </PopoverContent>
+      </Popover>
       {!showFilters && (
-        <span className="text-xs text-muted-foreground font-mono">None</span>
+        <span className="text-xs text-muted-foreground font-mono">
+          No filters
+        </span>
       )}
       {showFilters &&
         filters.map((f, idx) => (
           <div
             key={`${f.path}-${idx}`}
-            className="inline-flex items-center gap-x-1 text-xs bg-indigo-50 dark:bg-indigo-950/30 text-primary border border-indigo-200 dark:border-indigo-800 pl-1.5 pr-1 py-0.5 rounded-md"
+            className="inline-flex items-center h-6 gap-x-1 text-xs bg-indigo-50 dark:bg-indigo-950/30 text-primary border border-indigo-200 dark:border-indigo-800 pl-1.5 pr-1 rounded-md"
           >
             <span className="font-mono">{f.path}</span>
             <span className="text-indigo-500 dark:text-indigo-400 font-mono">
@@ -313,7 +329,7 @@ export function ResultFilterControlsBadges() {
           onClick={() => {
             clearAll();
           }}
-          className="inline-flex items-center gap-x-1 text-xs bg-red-50 dark:bg-red-950/30 text-primary border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded-md hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
+          className="inline-flex items-center h-6 gap-x-1 text-xs bg-red-50 dark:bg-red-950/30 text-primary border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded-md hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
         >
           Clear
         </button>
