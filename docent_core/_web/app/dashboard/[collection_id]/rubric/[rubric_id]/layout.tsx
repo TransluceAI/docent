@@ -188,6 +188,7 @@ function RubricLayoutBody({
                 {isOnResultRoute && agentRunId && (
                   <TranscriptChat
                     agentRunId={agentRunId}
+                    rubricId={rubricId}
                     collectionId={collectionId}
                     agentRunResults={currentAgentRunGroup}
                     selectedResultId={resultId}
