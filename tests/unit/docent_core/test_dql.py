@@ -738,7 +738,7 @@ class _DummyDB:
         self._session = session
 
     @asynccontextmanager
-    async def dql_session(self):
+    async def dql_session(self, collection_id: str):
         yield self._session
 
 
@@ -766,11 +766,12 @@ async def test_execute_dql_query_sets_read_only_rls_context() -> None:
 
     sql_sequence = [sql for sql, _ in session.statements]
     assert sql_sequence[0] == "SET TRANSACTION READ ONLY"
+    assert sql_sequence[1] == "SET LOCAL ROLE docent_dql_reader"
     assert (
-        sql_sequence[1]
+        sql_sequence[2]
         == f"SELECT set_config('{DQL_COLLECTION_SETTING_KEY}', :collection_id, true)"
     )
-    query_sql, query_params = session.statements[2]
+    query_sql, query_params = session.statements[3]
     assert "FROM agent_runs" in query_sql
     assert "collection_id = :__dql_param_" in query_sql
     assert query_params is not None

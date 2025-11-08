@@ -47,7 +47,6 @@ from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.dql import (
-    DQL_COLLECTION_SETTING_KEY,
     DQLExecutionError,
     JsonFieldInfo,
     QueryExpression,
@@ -895,15 +894,8 @@ class MonoService:
         )
 
         start_time = perf_counter()
-        async with self.db.dql_session() as session:
+        async with self.db.dql_session(collection_id) as session:
             try:
-                await session.execute(text("SET TRANSACTION READ ONLY"))
-                await session.execute(
-                    text(
-                        f"SELECT set_config('{DQL_COLLECTION_SETTING_KEY}', :collection_id, true)"
-                    ),
-                    {"collection_id": collection_id},
-                )
                 result = await session.execute(statement, parameters or {})
             except SQLAlchemyError as exc:
                 message = str(getattr(exc, "orig", exc)).strip()
