@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.ext.asyncio.engine import AsyncConnection
 
-from docent_core._db_service.db import DocentDB, get_pg_params
+from docent_core._db_service.db import DocentDB, ShieldedAsyncSession, get_pg_params
 from docent_core._server._broker.redis_client import get_redis_url
 from docent_core._server.api import asgi_app
 from docent_core.docent.db.schemas.auth_models import User
@@ -84,7 +84,9 @@ async def session_cm_factory(
 
 @pytest_asyncio.fixture(scope="function")
 async def db_service(db_engine: AsyncEngine) -> AsyncGenerator[DocentDB, None]:
-    session_maker = async_sessionmaker(bind=db_engine, expire_on_commit=False)
+    session_maker = async_sessionmaker(
+        bind=db_engine, expire_on_commit=False, class_=ShieldedAsyncSession
+    )
     yield DocentDB(db_engine, session_maker)
 
 

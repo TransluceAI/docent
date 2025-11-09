@@ -8,8 +8,123 @@ import IPython
 IPython.get_ipython().run_line_magic("load_ext", "autoreload")
 IPython.get_ipython().run_line_magic("autoreload", "2")
 
+# %%
+
+from docent_core._db_service.db import DocentDB
+
+db = await DocentDB.init()
+
 
 # %%
+
+
+async def print_pool_stats(tag: str = ""):
+    pool = db.engine.sync_engine.pool
+    print(
+        f"{tag} | status={pool.status()} | "
+        f"size={pool.size()} | in={pool.checkedin()} | out={pool.checkedout()} | overflow={pool.overflow()}"
+    )
+
+
+await print_pool_stats("initial")
+
+
+# %%
+
+import anyio
+
+
+async def _f():
+    from sqlalchemy import text
+
+    async with db.session() as session:
+        print("session opened")
+        result = await session.execute(
+            text("SELECT t.* from agent_runs a JOIN transcripts t on a.id = t.agent_run_id")
+        )
+        print("got result")
+        rows = result.all()
+        print(len(rows))
+        print("got results; sleeping")
+        await anyio.sleep(5)
+
+    print("session closed")
+
+
+async def _c(tg):
+    await anyio.sleep(1)
+    print("triggered cancel")
+    tg.cancel_scope.cancel()
+
+
+async def _leave_conn_hanging():
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(_f)
+        tg.start_soon(_c, tg)
+
+
+async with anyio.create_task_group() as tg:
+    for _ in range(1):
+        tg.start_soon(_leave_conn_hanging)
+
+print("done")
+
+
+# %%
+
+
+# %%
+
+
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def dummy_context_manager():
+    print("entering context")
+    try:
+        yield
+    except anyio.get_cancelled_exc_class():
+        print("cancelled inside of context")
+        raise
+    finally:
+        print("exiting context")
+
+
+async def _subwork():
+    try:
+        print("subwork started")
+        await anyio.sleep(10)
+        print("subwork finished")
+    except anyio.get_cancelled_exc_class():
+        print("cancelled inside of subwork")
+        raise
+
+
+async def _work():
+    async with dummy_context_manager():
+        try:
+            print("inside context")
+            await _subwork()
+        except anyio.get_cancelled_exc_class():
+            print("cancelled inside of work")
+            raise
+
+
+async def _cancel(tg):
+    await anyio.sleep(1)
+    print("triggered cancel")
+    tg.cancel_scope.cancel()
+
+
+async with anyio.create_task_group() as tg:
+    tg.start_soon(_work)
+    tg.start_soon(_cancel, tg)
+
+
+# %%
+
+c  # %%
 
 
 from docent.data_models import AgentRun, Transcript
