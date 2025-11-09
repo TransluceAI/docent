@@ -204,9 +204,14 @@ class DocentDB:
             connection_url = url.set(database=target_database)
             logger.info(f"Using database connection: {connection_url}")
 
+            # Specify size of persistent (+ overflow) connection pools
+            # Default to 25 (previous default) for backward compatibility.
+            pool_size = int(ENV.get("DOCENT_PG_POOL_SIZE", 25))
+            max_overflow = int(ENV.get("DOCENT_PG_MAX_OVERFLOW", 25))
+
             engine_kwargs = dict(
-                pool_size=25,
-                max_overflow=25,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
                 pool_timeout=30,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
                 pool_pre_ping=True,  # Check connection validity before use
