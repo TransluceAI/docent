@@ -54,7 +54,14 @@ if [ "$confirmation" != "FORCE PUSH" ]; then
 fi
 
 # Require exact branch name confirmation as an additional safeguard
-read -p "Now type the target branch name exactly to proceed: " branch_confirmation
+read -p "Now type the source branch name exactly to proceed: " source_confirmation
+if [ "$source_confirmation" != "$SOURCE_BRANCH" ]; then
+  echo "Operation cancelled. Source branch name did not match."
+  exit 1
+fi
+
+# Require target branch confirmation as well
+read -p "Finally, type the target branch name exactly to proceed: " branch_confirmation
 if [ "$branch_confirmation" != "$TARGET_BRANCH" ]; then
   echo "Operation cancelled. Target branch name did not match."
   exit 1
