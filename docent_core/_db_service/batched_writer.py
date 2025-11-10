@@ -74,10 +74,6 @@ class BatchedWriter:
         """Background task that periodically commits pending objects."""
         while True:
             await anyio.sleep(self.commit_interval_seconds)
-            logger.info(
-                f"Auto-committing pending objects (interval={self.commit_interval_seconds})"
-            )
-
             try:
                 await self.commit_pending()
             except Exception as e:

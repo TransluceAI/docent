@@ -5,12 +5,13 @@ public_subnet_count = 2
 nat_gateway_count = 2
 
 rds_instance_class = "db.m5.8xlarge"
+rds_max_allocated_storage = 1000
 elasticache_node_type = "cache.m6g.large"
 # db_password = ...  # you need to set this in the environment variables
 
 app_runner_cpu = 4096
 app_runner_memory = 8192
-app_runner_max_concurrency = 10
+app_runner_max_concurrency = 20
 app_runner_min_size = 2
 app_runner_max_size = 20
 app_runner_num_workers = 4

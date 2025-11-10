@@ -64,9 +64,18 @@ bump_version() {
     local suffix="${BASH_REMATCH[5]}"
 
     case "$bump_type" in
-        major) major=$((major + 1)) ;;
-        minor) minor=$((minor + 1)) ;;
-        patch) patch=$((patch + 1)) ;;
+        major)
+            major=$((major + 1))
+            minor=0
+            patch=0
+            ;;
+        minor)
+            minor=$((minor + 1))
+            patch=0
+            ;;
+        patch)
+            patch=$((patch + 1))
+            ;;
         *)
             error "Unsupported bump type '$bump_type'."
             return 1

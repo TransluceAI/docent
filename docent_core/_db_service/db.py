@@ -1,16 +1,16 @@
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, TypeVar, overload
 
 import anyio
-from sqlalchemy import URL, create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import URL, CursorResult, Executable, Result, UpdateBase, create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.sql.selectable import TypedReturnsRows
 
 import docent_core._db_service.schemas._all_tables as tables  # Import all tables to ensure SQLAlchemy checks their existence
 from docent._log_util import get_logger
@@ -72,6 +72,63 @@ def get_sync_engine():
     )
 
 
+_T = TypeVar("_T", bound=Any)
+
+
+class ShieldedAsyncSession(AsyncSession):
+    """I believe there is an outstanding bug in SQLAlchemy / asyncpg,
+    and this is a hack around it.
+
+    I'm not confident that this solution covers all edge cases or codepaths.
+    All I know is that if you don't shield these basic calls,
+    you can get connection leaks when they're cancelled.
+
+    The execute overrides are necessary to ensure correct type checking.
+    They mirror the implementation in sqlalchemy.ext.asyncio.session.AsyncSession.
+
+    Also, it's not ideal that cancelled calls will continue blocking
+    until they complete.
+
+    TODO(mengk): investigate further.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+
+    @overload
+    async def execute(
+        self, statement: TypedReturnsRows[_T], *args: Any, **kwargs: Any
+    ) -> Result[_T]: ...
+
+    @overload
+    async def execute(
+        self, statement: UpdateBase, *args: Any, **kwargs: Any
+    ) -> CursorResult[Any]: ...
+
+    @overload
+    async def execute(self, statement: Executable, *args: Any, **kwargs: Any) -> Result[Any]: ...
+
+    async def execute(self, statement: Executable, *args: Any, **kwargs: Any):
+        with anyio.CancelScope(shield=True):
+            return await super().execute(statement, *args, **kwargs)
+
+    async def flush(self, *args: Any, **kwargs: Any):  # type: ignore
+        with anyio.CancelScope(shield=True):
+            return await super().flush(*args, **kwargs)
+
+    async def commit(self, *args: Any, **kwargs: Any):  # type: ignore
+        with anyio.CancelScope(shield=True):
+            return await super().commit(*args, **kwargs)
+
+    async def rollback(self, *args: Any, **kwargs: Any):  # type: ignore
+        with anyio.CancelScope(shield=True):
+            return await super().rollback(*args, **kwargs)
+
+    async def close(self, *args: Any, **kwargs: Any):  # type: ignore
+        with anyio.CancelScope(shield=True):
+            return await super().close(*args, **kwargs)
+
+
 class DocentDB:
     """PostgreSQL database service for Docent."""
 
@@ -82,7 +139,7 @@ class DocentDB:
     def __init__(
         self,
         engine: AsyncEngine,
-        Session: async_sessionmaker[AsyncSession],
+        Session: async_sessionmaker[ShieldedAsyncSession],
     ):
         self.engine = engine
         self._Session = Session
@@ -90,19 +147,27 @@ class DocentDB:
     @asynccontextmanager
     async def _session_scope(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
-    ) -> AsyncIterator[AsyncSession]:
+        session_factory: async_sessionmaker[ShieldedAsyncSession],
+    ) -> AsyncIterator[ShieldedAsyncSession]:
         session = session_factory()
         try:
             yield session
             await session.commit()
-        except SQLAlchemyError:
-            await session.rollback()
-            logger.error("Rolled back database transaction")
+        # These exceptions are processed _after_ code in the body.
+        # Therefore, if an exception caused a connection to leak in the body,
+        #   we may not be able to close or roll it back here. We need to avoid that.
+        except Exception:
+            try:
+                await session.rollback()
+                logger.info("Rolled back database transaction")
+            except Exception as rb_err:
+                logger.error("Failed to rollback database transaction: %r", rb_err)
             raise
         finally:
-            with anyio.CancelScope(shield=True):
+            try:
                 await session.close()
+            except Exception as cl_err:
+                logger.error("Failed to close database session: %r", cl_err)
 
     @classmethod
     async def init(cls):
@@ -139,9 +204,14 @@ class DocentDB:
             connection_url = url.set(database=target_database)
             logger.info(f"Using database connection: {connection_url}")
 
+            # Specify size of persistent (+ overflow) connection pools
+            # Default to 25 (previous default) for backward compatibility.
+            pool_size = int(ENV.get("DOCENT_PG_POOL_SIZE", 25))
+            max_overflow = int(ENV.get("DOCENT_PG_MAX_OVERFLOW", 25))
+
             engine_kwargs = dict(
-                pool_size=25,
-                max_overflow=25,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
                 pool_timeout=30,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
                 pool_pre_ping=True,  # Check connection validity before use
@@ -153,6 +223,7 @@ class DocentDB:
             # Create session factory
             Session = async_sessionmaker(
                 bind=engine,
+                class_=ShieldedAsyncSession,
                 autoflush=False,
                 expire_on_commit=False,
             )
@@ -227,28 +298,18 @@ class DocentDB:
         async with self.engine.begin() as conn:
             await conn.run_sync(tables.base.SQLABase.metadata.drop_all)
 
-    async def _get_test_session(self) -> AsyncSession:
+    async def _get_test_session(self) -> ShieldedAsyncSession:
         logger.warning("Using test session. This is not recommended for production.")
         return self._Session()
 
     @asynccontextmanager
-    async def session(self) -> AsyncIterator[AsyncSession]:
+    async def session(self) -> AsyncIterator[ShieldedAsyncSession]:
         """Provide a transactional scope around a series of operations."""
-        # I think we don't need automatic recovery of failed sessions, since the codepath
-        # has already errored out at that point.
-
         async with self._session_scope(self._Session) as session:
-            try:
-                yield session
-                # If already in the middle of a commit, see it through
-                with anyio.CancelScope(shield=True):
-                    await session.commit()
-            finally:
-                with anyio.CancelScope(shield=True):
-                    await session.close()
+            yield session
 
     @asynccontextmanager
-    async def dql_session(self, collection_id: str) -> AsyncIterator[AsyncSession]:
+    async def dql_session(self, collection_id: str) -> AsyncIterator[ShieldedAsyncSession]:
         """Return a session with the read-only DQL role assumed and collection configured."""
         from docent_core.docent.db.dql import DQL_COLLECTION_SETTING_KEY
 

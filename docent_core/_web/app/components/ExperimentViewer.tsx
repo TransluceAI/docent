@@ -788,25 +788,25 @@ export default function ExperimentViewer({
                 : 'Query collection data with Docent Query Language'}
             </div>
           </div>
-          <TabsList className="grid grid-cols-2 h-8">
-            <TabsTrigger value="filters" className="py-0.5">
-              Filters
-            </TabsTrigger>
-            <TabsTrigger value="dql" className="py-0.5">
-              DQL
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-2">
+            <UploadRunsButton
+              onImportSuccess={handleUploadSuccess}
+              disabled={!hasWritePermission}
+            />
+            <TabsList className="grid grid-cols-2 h-8">
+              <TabsTrigger value="filters" className="py-0.5">
+                Filters
+              </TabsTrigger>
+              <TabsTrigger value="dql" className="py-0.5">
+                DQL
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
         <TabsContent
           value="filters"
           className="mt-0 flex-1 flex flex-col gap-3 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden"
         >
-          <div className="flex justify-end">
-            <UploadRunsButton
-              onImportSuccess={handleUploadSuccess}
-              disabled={!hasWritePermission}
-            />
-          </div>
           <TranscriptFilterControls metadataData={metadataData} />
           <div className="flex-1 min-w-0 min-h-0 flex">
             <AgentRunTable

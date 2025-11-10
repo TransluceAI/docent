@@ -48,6 +48,12 @@ variable "rds_instance_class" {
   type        = string
 }
 
+variable "rds_max_allocated_storage" {
+  description = "RDS max allocated storage"
+  type        = number
+  default     = 100
+}
+
 variable "db_username" {
   description = "Database username"
   type        = string
