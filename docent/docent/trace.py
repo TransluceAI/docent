@@ -56,6 +56,27 @@ DISABLED_TRANSCRIPT_ID = "disabled"
 DISABLED_TRANSCRIPT_GROUP_ID = "disabled"
 
 
+def _get_disabled_agent_run_id(agent_run_id: Optional[str]) -> str:
+    """Return sentinel value for agent run ID when tracing is disabled."""
+    if agent_run_id is None:
+        return DISABLED_AGENT_RUN_ID
+    return agent_run_id
+
+
+def _get_disabled_transcript_id(transcript_id: Optional[str]) -> str:
+    """Return sentinel value for transcript ID when tracing is disabled."""
+    if transcript_id is None:
+        return DISABLED_TRANSCRIPT_ID
+    return transcript_id
+
+
+def _get_disabled_transcript_group_id(transcript_group_id: Optional[str]) -> str:
+    """Return sentinel value for transcript group ID when tracing is disabled."""
+    if transcript_group_id is None:
+        return DISABLED_TRANSCRIPT_GROUP_ID
+    return transcript_group_id
+
+
 class DocentTelemetryRequestError(RuntimeError):
     """Raised when the Docent telemetry backend rejects a client request."""
 
@@ -91,9 +112,9 @@ class DocentTracer:
     ):
         self._initialized: bool = False
         # Check if tracing is disabled via environment variable
-        if _is_tracing_disabled():
+        if _global_tracing_disabled:
             self._disabled = True
-            logger.info("Docent tracing disabled via DOCENT_DISABLE_TRACING environment variable")
+            logger.info("Docent tracing disabled.")
             return
 
         self.collection_name: str = collection_name
@@ -246,7 +267,7 @@ class DocentTracer:
             return
 
         # If tracing is disabled, mark as initialized but don't set up anything
-        if self._disabled:
+        if self.is_disabled():
             self._initialized = True
             return
 
@@ -459,7 +480,7 @@ class DocentTracer:
         1. Flushes all span processors to ensure data is exported
         2. Shuts down the tracer provider and releases resources
         """
-        if self._disabled:
+        if self.is_disabled():
             return
 
         try:
@@ -473,7 +494,7 @@ class DocentTracer:
 
     def close(self):
         """Explicitly close the Docent tracing manager."""
-        if self._disabled:
+        if self.is_disabled():
             return
 
         try:
@@ -486,7 +507,7 @@ class DocentTracer:
 
     def flush(self) -> None:
         """Force flush all spans to exporters."""
-        if self._disabled:
+        if self.is_disabled():
             return
 
         try:
@@ -501,7 +522,7 @@ class DocentTracer:
 
     def is_disabled(self) -> bool:
         """Check if tracing is disabled."""
-        return self._disabled
+        return _global_tracing_disabled or self._disabled
 
     def set_disabled(self, disabled: bool) -> None:
         """Enable or disable tracing."""
@@ -551,7 +572,7 @@ class DocentTracer:
         Yields:
             Tuple of (agent_run_id, transcript_id)
         """
-        if self._disabled:
+        if self.is_disabled():
             agent_run_id = self.get_disabled_agent_run_id(agent_run_id)
             transcript_id = self.get_disabled_transcript_id(transcript_id)
             yield agent_run_id, transcript_id
@@ -605,7 +626,7 @@ class DocentTracer:
         Yields:
             Tuple of (agent_run_id, transcript_id)
         """
-        if self._disabled:
+        if self.is_disabled():
             agent_run_id = self.get_disabled_agent_run_id(agent_run_id)
             transcript_id = self.get_disabled_transcript_id(transcript_id)
             yield agent_run_id, transcript_id
@@ -848,7 +869,7 @@ class DocentTracer:
             score: Numeric score value
             attributes: Optional additional attributes
         """
-        if self._disabled:
+        if self.is_disabled():
             return
 
         collection_id = self.collection_id
@@ -864,7 +885,7 @@ class DocentTracer:
         self._post_json("/v1/scores", payload)
 
     def send_agent_run_metadata(self, agent_run_id: str, metadata: Dict[str, Any]) -> None:
-        if self._disabled:
+        if self.is_disabled():
             return
 
         self._ensure_json_serializable_metadata(metadata, "Agent run")
@@ -896,7 +917,7 @@ class DocentTracer:
             transcript_group_id: Optional transcript group ID
             metadata: Optional metadata to send
         """
-        if self._disabled:
+        if self.is_disabled():
             return
 
         collection_id = self.collection_id
@@ -965,7 +986,7 @@ class DocentTracer:
         Yields:
             The transcript ID
         """
-        if self._disabled:
+        if self.is_disabled():
             transcript_id = self.get_disabled_transcript_id(transcript_id)
             yield transcript_id
             return
@@ -1025,7 +1046,7 @@ class DocentTracer:
         Yields:
             The transcript ID
         """
-        if self._disabled:
+        if self.is_disabled():
             transcript_id = self.get_disabled_transcript_id(transcript_id)
             yield transcript_id
             return
@@ -1081,7 +1102,7 @@ class DocentTracer:
             parent_transcript_group_id: Optional parent transcript group ID
             metadata: Optional metadata to send
         """
-        if self._disabled:
+        if self.is_disabled():
             return
 
         collection_id = self.collection_id
@@ -1156,7 +1177,7 @@ class DocentTracer:
         Yields:
             The transcript group ID
         """
-        if self._disabled:
+        if self.is_disabled():
             transcript_group_id = self.get_disabled_transcript_group_id(transcript_group_id)
             yield transcript_group_id
             return
@@ -1218,7 +1239,7 @@ class DocentTracer:
         Yields:
             The transcript group ID
         """
-        if self._disabled:
+        if self.is_disabled():
             transcript_group_id = self.get_disabled_transcript_group_id(transcript_group_id)
             yield transcript_group_id
             return
@@ -1259,7 +1280,7 @@ class DocentTracer:
             self._transcript_group_id_var.reset(transcript_group_id_token)
 
     def _send_trace_done(self) -> None:
-        if self._disabled:
+        if self.is_disabled():
             return
 
         collection_id = self.collection_id
@@ -1272,6 +1293,7 @@ class DocentTracer:
 
 
 _global_tracer: Optional[DocentTracer] = None
+_global_tracing_disabled: bool = os.environ.get("DOCENT_DISABLE_TRACING", "").lower() == "true"
 
 
 def initialize_tracing(
@@ -1386,6 +1408,8 @@ def is_initialized() -> bool:
 
 def is_disabled() -> bool:
     """Check if global tracing is disabled."""
+    if _global_tracing_disabled:
+        return True
     if _global_tracer:
         return _global_tracer.is_disabled()
     return True
@@ -1393,6 +1417,8 @@ def is_disabled() -> bool:
 
 def set_disabled(disabled: bool) -> None:
     """Enable or disable global tracing."""
+    global _global_tracing_disabled
+    _global_tracing_disabled = disabled
     if _global_tracer:
         _global_tracer.set_disabled(disabled)
 
@@ -1406,10 +1432,10 @@ def agent_run_score(name: str, score: float, attributes: Optional[Dict[str, Any]
         score: Numeric score value
         attributes: Optional additional attributes for the score event
     """
+    if is_disabled():
+        return
     try:
         tracer: DocentTracer = get_tracer()
-        if tracer.is_disabled():
-            return
         agent_run_id = tracer.get_current_agent_run_id()
 
         if not agent_run_id:
@@ -1444,10 +1470,10 @@ def agent_run_metadata(metadata: Dict[str, Any]) -> None:
         agent_run_metadata({"user": "John", "id": 123, "flagged": True})
         agent_run_metadata({"user": {"id": "123", "name": "John"}, "config": {"model": "gpt-4"}})
     """
+    if is_disabled():
+        return
     try:
         tracer = get_tracer()
-        if tracer.is_disabled():
-            return
         agent_run_id = tracer.get_current_agent_run_id()
         if not agent_run_id:
             logger.warning("No active agent run context. Metadata will not be sent.")
@@ -1483,10 +1509,10 @@ def transcript_metadata(
             transcript_group_id="group-123",
         )
     """
+    if is_disabled():
+        return
     try:
         tracer = get_tracer()
-        if tracer.is_disabled():
-            return
         transcript_id = tracer.get_current_transcript_id()
         if not transcript_id:
             logger.warning("No active transcript context. Metadata will not be sent.")
@@ -1524,10 +1550,10 @@ def transcript_group_metadata(
             parent_transcript_group_id="root-group",
         )
     """
+    if is_disabled():
+        return
     try:
         tracer = get_tracer()
-        if tracer.is_disabled():
-            return
         transcript_group_id = tracer.get_current_transcript_group_id()
         if not transcript_group_id:
             logger.warning("No active transcript group context. Metadata will not be sent.")
@@ -1560,9 +1586,8 @@ class AgentRunContext:
     def __enter__(self) -> tuple[str, str]:
         """Sync context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.agent_run_id = tracer.get_disabled_agent_run_id(self.agent_run_id)
-            self.transcript_id = tracer.get_disabled_transcript_id(self.transcript_id)
+            self.agent_run_id = _get_disabled_agent_run_id(self.agent_run_id)
+            self.transcript_id = _get_disabled_transcript_id(self.transcript_id)
             return self.agent_run_id, self.transcript_id
         self._sync_context = get_tracer().agent_run_context(
             self.agent_run_id, self.transcript_id, metadata=self.metadata, **self.attributes
@@ -1577,9 +1602,8 @@ class AgentRunContext:
     async def __aenter__(self) -> tuple[str, str]:
         """Async context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.agent_run_id = tracer.get_disabled_agent_run_id(self.agent_run_id)
-            self.transcript_id = tracer.get_disabled_transcript_id(self.transcript_id)
+            self.agent_run_id = _get_disabled_agent_run_id(self.agent_run_id)
+            self.transcript_id = _get_disabled_transcript_id(self.transcript_id)
             return self.agent_run_id, self.transcript_id
         self._async_context = get_tracer().async_agent_run_context(
             self.agent_run_id, self.transcript_id, metadata=self.metadata, **self.attributes
@@ -1722,8 +1746,7 @@ class TranscriptContext:
     def __enter__(self) -> str:
         """Sync context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.transcript_id = tracer.get_disabled_transcript_id(self.transcript_id)
+            self.transcript_id = _get_disabled_transcript_id(self.transcript_id)
             return self.transcript_id
         self._sync_context = get_tracer().transcript_context(
             name=self.name,
@@ -1742,8 +1765,7 @@ class TranscriptContext:
     async def __aenter__(self) -> str:
         """Async context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.transcript_id = tracer.get_disabled_transcript_id(self.transcript_id)
+            self.transcript_id = _get_disabled_transcript_id(self.transcript_id)
             return self.transcript_id
         self._async_context = get_tracer().async_transcript_context(
             name=self.name,
@@ -1907,10 +1929,7 @@ class TranscriptGroupContext:
     def __enter__(self) -> str:
         """Sync context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.transcript_group_id = tracer.get_disabled_transcript_group_id(
-                self.transcript_group_id
-            )
+            self.transcript_group_id = _get_disabled_transcript_group_id(self.transcript_group_id)
             return self.transcript_group_id
         self._sync_context = get_tracer().transcript_group_context(
             name=self.name,
@@ -1929,10 +1948,7 @@ class TranscriptGroupContext:
     async def __aenter__(self) -> str:
         """Async context manager entry."""
         if is_disabled():
-            tracer = get_tracer()
-            self.transcript_group_id = tracer.get_disabled_transcript_group_id(
-                self.transcript_group_id
-            )
+            self.transcript_group_id = _get_disabled_transcript_group_id(self.transcript_group_id)
             return self.transcript_group_id
         self._async_context = get_tracer().async_transcript_group_context(
             name=self.name,
@@ -2074,11 +2090,6 @@ def transcript_group_context(
     return TranscriptGroupContext(
         name, transcript_group_id, description, metadata, parent_transcript_group_id
     )
-
-
-def _is_tracing_disabled() -> bool:
-    """Check if tracing is disabled via environment variable."""
-    return os.environ.get("DOCENT_DISABLE_TRACING", "").lower() == "true"
 
 
 def _is_notebook() -> bool:
