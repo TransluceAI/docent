@@ -2,10 +2,7 @@
 
 Docent Query Language is a read-only SQL subset that supports ad-hoc exploration in Docent.
 
-## Overview
-
-- DQL accepts a **single `SELECT` statement**. The validator rejects data-changing commands, multi-statement batches, and unsupported syntax.
-- Queries can only run over a single collection by design (if you need multi-collection support, please reach out to us!)
+Queries can only run over a single collection by design (if you need multi-collection support, please reach out to us!)
 
 ## Available Tables and Columns
 
@@ -21,12 +18,11 @@ Docent Query Language is a read-only SQL subset that supports ad-hoc exploration
 | Column | Description |
 | --- | --- |
 | `id` | Agent run identifier (UUID). |
-| `collection_id` | Collection that owns the run; DQL enforces equality with the active collection. |
+| `collection_id` | Collection that owns the run |
 | `name` | Optional user-provided display name. |
 | `description` | Optional description supplied at ingest time. |
 | `metadata_json` | User suplied metadata, stored as JSON.  |
 | `created_at` | When the run was recorded in Docent. |
-| `text_for_search` | Preprocessed text blob used by full-text search. |
 
 ### `transcripts`
 
@@ -47,8 +43,8 @@ Docent Query Language is a read-only SQL subset that supports ad-hoc exploration
 | Column | Description |
 | --- | --- |
 | `id` | Transcript group identifier. |
-| `collection_id` | Owning collection. |
-| `agent_run_id` | Parent run identifier. |
+| `collection_id` | Collection that owns the transcript. |
+| `agent_run_id` | Parent run identifier; joins back to `agent_runs.id`. |
 | `name` | Optional name for the group. |
 | `description` | Optional descriptive text. |
 | `parent_transcript_group_id` | Identifier of the parent group (for hierarchical groupings). |
@@ -66,7 +62,6 @@ Docent Query Language is a read-only SQL subset that supports ad-hoc exploration
 | `output` | JSON representation of rubric outputs. |
 | `result_metadata` | Optional JSON metadata attached to the result. |
 | `result_type` | Enum describing the rubric output type. |
-| `value` | Deprecated string value retained for back-compat. |
 
 ### JSON Metadata Paths
 
@@ -102,19 +97,27 @@ When querying JSON fields, comparisons default to string semantics. Cast values 
 
 DQL supported keywords:
 
-| Feature | Notes / References |
-| --- | --- |
-| `SELECT`, `DISTINCT`, `FROM`, `WHERE` | Standard projections and filters. |
-| `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN` | Explicit joins across tables. |
-| `WITH ...` (CTEs) | Common table expressions are supported; each body is validated and collection-scoped. |
-| `GROUP BY`, `HAVING` | Aggregations. |
-| `ORDER BY`, `LIMIT`, `OFFSET` | Limits are capped by the service (default 500 rows). |
-| `CASE ... WHEN ... THEN ... END` | Conditional projections. |
-| `COUNT()` | Row counts without needing `*`. |
-| Boolean logic (`AND`, `OR`, `NOT`) | Nested expressions are permitted. |
-| Comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`, `IS`, `IS NOT`) | Includes `IN`, `BETWEEN`, `LIKE`, `ILIKE`, `EXISTS`. |
-| Arithmetic (`+`, `-`, `*`, `/`) | Limited to expression contexts supported by `sqlglot`. |
-| JSON operators | `metadata_json` paths compile to PostgreSQL JSON operators (`->`, `->>`, etc.). |
+| Feature |
+| --- |
+| `SELECT`, `DISTINCT`, `FROM`, `WHERE`, subqueries |
+| `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN`, `CROSS JOIN` |
+| `WITH` (CTEs) |
+| `UNION [ALL]`, `INTERSECT`, `EXCEPT` |
+| `GROUP BY`, `HAVING` |
+| Aggregations (`COUNT`, `AVG`, `MIN`, `MAX`, `SUM`, `STDDEV_POP`, `STDDEV_SAMP`, `VAR_POP`, `VAR_SAMP`, `ARRAY_AGG`, `STRING_AGG`, `JSON_AGG`, `JSONB_AGG`, `JSON_OBJECT_AGG`, `PERCENTILE_CONT`, `PERCENTILE_DISC` (`WITHIN GROUP`)) |
+| Window functions (`ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`, `NTH_VALUE`, `PERCENT_RANK`, `CUME_DIST`) |
+| `ORDER BY`, `LIMIT`, `OFFSET` |
+| Conditional & null helpers (`CASE`, `COALESCE`, `NULLIF`) |
+| Boolean logic (`AND`, `OR`, `NOT`) |
+| Comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`, `IS`, `IS NOT`, `IS DISTINCT FROM`, `IN`, `BETWEEN`, `LIKE`, `ILIKE`, `EXISTS`, `SIMILAR TO`, `~`, `~*`, `!~`, `!~*`) |
+| Arithmetic & math (`+`, `-`, `*`, `/`, `%`, `POWER`, `ABS`, `SIGN`, `SQRT`, `LN`, `LOG`, `EXP`, `GREATEST`, `LEAST`, `FLOOR`, `CEIL`, `ROUND`, `RANDOM`) |
+| String helpers (`SUBSTRING`, `LEFT`, `RIGHT`, `LENGTH`, `UPPER`, `LOWER`, `INITCAP`, `TRIM`, `REPLACE`, `SPLIT_PART`, `POSITION`, `CONCAT`, `CONCAT_WS`, `STRING_AGG`) |
+| JSON operators & functions (`->`, `->>`, `#>`, `#>>`, `@>`, `?`, `?|`, `?&`, `jsonb_build_object`, `jsonb_build_array`, `json_agg`, `jsonb_agg`, `json_object_agg`, `jsonb_set`, `jsonb_path_query`, `jsonb_path_exists`) |
+| Date/time basics (`CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `NOW()`, `EXTRACT`, `DATE_TRUNC`, `AGE`, `AT TIME ZONE`, `timezone()`) |
+| Interval arithmetic (`timestamp +/- INTERVAL`, `INTERVAL` literals, `MAKE_INTERVAL`, `JUSTIFY_DAYS`, `JUSTIFY_HOURS`, `JUSTIFY_INTERVAL`) |
+| Construction & conversion (`MAKE_DATE`, `MAKE_TIME`, `MAKE_TIMESTAMP`, `MAKE_TIMESTAMPTZ`, `TO_CHAR`, `TO_DATE`, `TO_TIMESTAMP`, `DATE_PART`) |
+| Array helpers (`ARRAY[...]`, `array_cat`, `array_length`, `cardinality`, `unnest`, `ARRAY(SELECT ...)`, `= ANY`, `= ALL`, `array_position`, `array_remove`) |
+| Type helpers (`CAST`, `::`) |
 
 Unsupported constructs include `*`, user-defined functions, and any DDL or DML commands.
 
@@ -166,6 +169,77 @@ WHERE jr.result_metadata->>'severity' = 'high'
   )
 ORDER BY score DESC
 LIMIT 25;
+```
+
+### Completion Rate by Environment
+
+Aggregates per-environment success rates by normalizing metadata into a CTE.
+
+```sql
+WITH normalized_runs AS (
+  SELECT
+    metadata_json->>'environment' AS environment,
+    metadata_json->>'status' AS status
+  FROM agent_runs
+  WHERE metadata_json ? 'environment'
+)
+SELECT
+  environment,
+  COUNT(*) AS total_runs,
+  SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_runs,
+  CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS DOUBLE PRECISION)
+    / NULLIF(COUNT(*), 0) AS completion_rate
+FROM normalized_runs
+GROUP BY environment
+ORDER BY total_runs DESC;
+```
+
+### Latest Rubric Scores by Model
+
+Pulls the most recent rubric result per run, then joins runs to surface the model responsible for the score.
+
+```sql
+WITH latest_scores AS (
+  SELECT
+    agent_run_id,
+    MAX(rubric_version) AS rubric_version
+  FROM judge_results
+  WHERE rubric_id = 'helpful_response_v1'
+  GROUP BY agent_run_id
+)
+SELECT
+  ar.id,
+  ar.metadata_json->'model'->>'name' AS model_name,
+  jr.output->>'score' AS score,
+  jr.result_metadata->>'label' AS label
+FROM latest_scores ls
+JOIN judge_results jr
+  ON jr.agent_run_id = ls.agent_run_id
+  AND jr.rubric_version = ls.rubric_version
+  AND jr.rubric_id = 'helpful_response_v1'
+JOIN agent_runs ar ON ar.id = jr.agent_run_id
+WHERE ar.metadata_json->>'environment' = 'prod'
+ORDER BY CAST(jr.output->>'score' AS DOUBLE PRECISION) DESC
+LIMIT 15;
+```
+
+### Transcript Coverage Audit
+
+Finds transcript groups that are marked as `must_have` but have no associated transcripts.
+
+```sql
+SELECT
+  tg.id AS group_id,
+  tg.name AS group_name,
+  COUNT(t.id) AS transcript_count
+FROM transcript_groups tg
+LEFT JOIN transcripts t
+  ON t.transcript_group_id = tg.id
+  AND t.collection_id = tg.collection_id
+WHERE tg.metadata_json->>'priority' = 'must_have'
+GROUP BY tg.id, tg.name
+HAVING COUNT(t.id) = 0
+ORDER BY group_name;
 ```
 
 ## Restrictions and Best Practices

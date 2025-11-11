@@ -592,7 +592,7 @@ const DQLEditor = ({
           <div className="flex items-center justify-between">
             <Label>Docent Query Language</Label>
             <a
-              href="https://docs.transluce.org/concepts/docent_query_language/"
+              href="https://docs.transluce.org/en/latest/concepts/docent_query_language/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline"
