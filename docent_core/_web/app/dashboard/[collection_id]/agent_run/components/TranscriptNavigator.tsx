@@ -167,10 +167,10 @@ const TreeNodeView: React.FC<{
       {/* Group Header */}
       <div
         className={cn(
-          'flex items-center text-xs rounded border transition-colors min-w-0',
+          'flex items-center text-xs rounded transition-colors min-w-0',
           isSelected
-            ? 'bg-indigo-bg border-indigo-border text-primary'
-            : 'bg-muted/60 border-border/80 text-primary/80 hover:bg-muted hover:text-primary'
+            ? 'bg-indigo-bg border border-indigo-border text-primary'
+            : 'text-primary/70 hover:bg-muted/40 hover:text-primary'
         )}
         style={{ marginLeft: `${node.level * 12}px` }}
       >
@@ -199,10 +199,10 @@ const TreeNodeView: React.FC<{
                         hasGroupMetadata
                           ? isSelected
                             ? 'text-primary hover:bg-indigo-bg/70'
-                            : 'text-primary/90 hover:bg-muted'
+                            : 'text-primary/80 hover:bg-muted/60'
                           : isSelected
                             ? 'text-muted-foreground/80 hover:bg-indigo-bg/40'
-                            : 'text-muted-foreground/60 hover:bg-muted/40'
+                            : 'text-muted-foreground/50 hover:bg-muted/50'
                       )}
                     >
                       <FileText className="h-3 w-3" />
@@ -295,7 +295,7 @@ const TranscriptListItem: React.FC<{
     >
       <button
         onClick={() => onTranscriptSelect(transcriptId)}
-        className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
+        className="flex-1 text-left px-2 py-1 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
         title={
           transcript?.name
             ? `${transcript?.name}\n${transcriptId}`
