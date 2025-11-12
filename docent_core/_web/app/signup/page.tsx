@@ -186,6 +186,7 @@ function SignupPageContent() {
             <Button
               type="submit"
               className="w-full"
+              size="lg"
               disabled={isSubmitting || !email.trim() || !password.trim()}
             >
               {isSubmitting ? (

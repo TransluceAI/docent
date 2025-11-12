@@ -118,6 +118,7 @@ function LoginPageContent() {
             <Button
               type="submit"
               className="w-full"
+              size="lg"
               disabled={isSubmitting || !email.trim()}
             >
               {isSubmitting ? (
