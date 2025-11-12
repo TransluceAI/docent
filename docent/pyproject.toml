@@ -1,7 +1,7 @@
 [project]
 name = "docent-python"
 description = "Docent SDK"
-version = "0.1.31-alpha"
+version = "0.1.32-alpha"
 authors = [
   { name="Transluce", email="info@transluce.org" },
 ]
