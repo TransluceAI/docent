@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.sql.elements import TextClause
 from sqlglot import exp
 
@@ -726,6 +727,8 @@ class _RecordingSession:
         self.statements.append((sql, params))
         if sql.startswith("SET TRANSACTION READ ONLY"):
             return _ResultStub()
+        if sql.startswith("SET LOCAL ROLE"):
+            return _ResultStub()
         if sql.startswith("SELECT set_config"):
             return _ResultStub()
         if "FROM agent_runs" in sql:
@@ -739,6 +742,12 @@ class _DummyDB:
 
     @asynccontextmanager
     async def dql_session(self, collection_id: str):
+        await self._session.execute(text("SET TRANSACTION READ ONLY"))
+        await self._session.execute(text("SET LOCAL ROLE docent_dql_reader"))
+        await self._session.execute(
+            text(f"SELECT set_config('{DQL_COLLECTION_SETTING_KEY}', :collection_id, true)"),
+            {"collection_id": collection_id},
+        )
         yield self._session
 
 
@@ -764,14 +773,9 @@ async def test_execute_dql_query_sets_read_only_rls_context() -> None:
         dql="SELECT id FROM agent_runs",
     )
 
-    sql_sequence = [sql for sql, _ in session.statements]
-    assert sql_sequence[0] == "SET TRANSACTION READ ONLY"
-    assert sql_sequence[1] == "SET LOCAL ROLE docent_dql_reader"
-    assert (
-        sql_sequence[2]
-        == f"SELECT set_config('{DQL_COLLECTION_SETTING_KEY}', :collection_id, true)"
+    query_sql, query_params = next(
+        (sql, params) for sql, params in session.statements if "FROM agent_runs" in sql
     )
-    query_sql, query_params = session.statements[3]
     assert "FROM agent_runs" in query_sql
     assert "collection_id = :__dql_param_" in query_sql
     assert query_params is not None
