@@ -760,7 +760,7 @@ export default function ExperimentViewer({
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Header with organization dropdown - always visible */}
-      <div className="flex justify-between items-center shrink-0">
+      <div className="flex justify-between items-center shrink-0 mb-2">
         <div className="flex flex-col">
           <div className="text-sm font-semibold">Chart Visualization</div>
         </div>
@@ -771,7 +771,7 @@ export default function ExperimentViewer({
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}
-        className="flex-1 flex flex-col mt-3 space-y-3 min-h-0"
+        className="flex-1 flex flex-col space-y-3 min-h-0 mt-3"
       >
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="flex flex-col hidden lg:block">

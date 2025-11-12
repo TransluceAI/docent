@@ -2,12 +2,12 @@ import { ModeToggle } from '@/components/ui/theme-toggle';
 import {
   BookText,
   ChevronRight,
-  FileText,
   Settings,
   MessageCircle,
   Tags,
   Layers,
   type LucideIcon,
+  Search,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
@@ -56,17 +56,17 @@ const Breadcrumbs: React.FC = () => {
   const pageCrumbs: Record<string, Crumb> = {
     undefined: {
       title: 'Agent Runs',
-      icon: Layers,
       url: `${BASE_DOCENT_PATH}/${collectionId}`,
+      icon: Layers,
     },
     agent_run: {
       title: 'Agent Runs',
-      icon: Layers,
       url: `${BASE_DOCENT_PATH}/${collectionId}`,
+      icon: Layers,
     },
     rubric: {
       title: 'Rubrics',
-      icon: FileText,
+      icon: Search,
     },
     labels: {
       title: 'Label Sets',
@@ -137,25 +137,34 @@ const Breadcrumbs: React.FC = () => {
       );
 
   return (
-    <div className="text-sm flex pl-2 items-center justify-between w-full">
-      <div className="flex items-center gap-x-3">
+    <div className="text-sm flex items-center justify-between w-full">
+      <div className="flex items-center gap-x-1">
+        {collectionId && collectionName && (
+          <>
+            <Link
+              className={cn(
+                'flex items-center gap-x-2',
+                disableNavigation && '!pointer-events-none'
+              )}
+              href={`${BASE_DOCENT_PATH}/${collectionId}`}
+            >
+              Collection: {collectionName}
+            </Link>
+            <ChevronRight className="size-3.5" />
+          </>
+        )}
         {segments.map(({ url, title, icon: Icon }, index) => (
           <>
             <Link
               className={cn(
                 'flex items-center gap-x-2',
-                index === 0 && segments.length === 1 && 'font-semibold',
-                segments.length > 1 &&
-                  !disableNavigation &&
-                  segments.length - 1 !== index &&
-                  'text-blue-text underline hover:text-blue-text/80',
                 disableNavigation && '!pointer-events-none'
               )}
               key={url}
               href={url}
             >
-              {Icon && <Icon className="size-3.5" />} {title}{' '}
-              {index === 0 && collectionName && `- ${collectionName}`}
+              {Icon && <Icon className="size-3.5" />}
+              {title}
             </Link>
             {index < segments.length - 1 && (
               <ChevronRight className="size-3.5" />

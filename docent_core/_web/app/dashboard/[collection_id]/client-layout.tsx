@@ -44,8 +44,8 @@ export default function DocentDashboardClientLayout({
     <SidebarProvider defaultOpen={false}>
       <LabelSetsProvider collectionId={collectionId}>
         <CollectionSidebar />
-        <div className="flex flex-col pr-3 pb-3 h-screen w-full bg-sidebar min-h-0 min-w-[900px]">
-          <div className="h-12 items-center justify-center flex flex-shrink-0">
+        <div className="flex flex-col pr-3 h-screen w-full bg-sidebar min-h-0 min-w-[900px]">
+          <div className="items-center justify-center flex flex-shrink-0 my-2">
             <Suspense
               fallback={<div className="h-7">Loading breadcrumbs...</div>}
             >
