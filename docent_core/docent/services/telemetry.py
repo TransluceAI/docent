@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
+from pydantic import ValidationError
 from sqlalchemy import Integer, and_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import delete, func, not_, or_, select, update
@@ -191,13 +192,33 @@ class TelemetryService:
 
             except Exception as e:
                 # Mark agent run as needs_processing again if processing failed
+                error_message = str(e)
+
+                # Extract detailed information from Pydantic ValidationError
+                if isinstance(e, ValidationError):
+                    error_details: List[str] = []
+                    for error in e.errors():
+                        field_path = " -> ".join(str(loc) for loc in error.get("loc", []))
+                        field_type = error.get("type", "unknown")
+                        input_value = error.get("input")
+                        error_msg = error.get("msg", "")
+                        error_details.append(
+                            f"Field '{field_path}': {error_msg} (type: {field_type}, "
+                            f"input_type: {type(input_value).__name__}, "
+                            f"input_value: {repr(input_value)[:200]})"
+                        )
+                    error_message = f"{error_message}\nDetails: {'; '.join(error_details)}"
+
                 await self._mark_agent_runs_as_errored(
                     collection_id,
                     {agent_run_id: current_version},
-                    error_message=str(e),
+                    error_message=error_message,
                     error=e,
                 )
-                logger.error(f"Error processing agent run {agent_run_id}: {str(e)}")
+                logger.error(
+                    f"Error processing agent run {agent_run_id} (version {current_version}) "
+                    f"in collection {collection_id}: {error_message}"
+                )
                 continue
 
         # Mark all successfully processed agent runs as completed with their versions
@@ -1112,7 +1133,7 @@ class TelemetryService:
                 # Use merge to handle both insert and update
                 await self.session.merge(sqla_transcript_group)
                 logger.debug(
-                    f"Saved transcript group: {sqla_transcript_group.id} with parent {sqla_transcript_group.parent_transcript_group_id}"
+                    f"Saved transcript group: ID: {sqla_transcript_group.id} NAME: {sqla_transcript_group.name} with parent {sqla_transcript_group.parent_transcript_group_id}"
                 )
         await self.session.commit()
 
@@ -1299,15 +1320,84 @@ class TelemetryService:
                 )
                 continue
 
+            # Normalize name and description fields to strings or None
+            # These fields are optional, so we can be lenient with type coercion
+            if name is not None and not isinstance(name, str):
+                try:
+                    if isinstance(name, dict):
+                        # For dicts, try JSON stringification for a readable representation
+                        name = json.dumps(name, sort_keys=True)
+                    else:
+                        # For other types, use str() conversion
+                        name = str(name)
+                    logger.warning(
+                        f"Coerced 'name' field to string for transcript_group_id={transcript_group_id}, "
+                        f"agent_run_id={agent_run_id}, collection_id={collection_id}. "
+                        f"Original type: {type(metadata.get('name')).__name__}"
+                    )
+                except Exception:
+                    # If coercion fails, set to None since it's optional
+                    logger.warning(
+                        f"Failed to coerce 'name' field to string for transcript_group_id={transcript_group_id}, "
+                        f"agent_run_id={agent_run_id}, collection_id={collection_id}. "
+                        f"Setting to None. Original type: {type(metadata.get('name')).__name__}"
+                    )
+                    name = None
+
+            if description is not None and not isinstance(description, str):
+                try:
+                    if isinstance(description, dict):
+                        # For dicts, try JSON stringification for a readable representation
+                        description = json.dumps(description, sort_keys=True)
+                    else:
+                        # For other types, use str() conversion
+                        description = str(description)
+                    logger.warning(
+                        f"Coerced 'description' field to string for transcript_group_id={transcript_group_id}, "
+                        f"agent_run_id={agent_run_id}, collection_id={collection_id}. "
+                        f"Original type: {type(metadata.get('description')).__name__}"
+                    )
+                except Exception:
+                    # If coercion fails, set to None since it's optional
+                    logger.warning(
+                        f"Failed to coerce 'description' field to string for transcript_group_id={transcript_group_id}, "
+                        f"agent_run_id={agent_run_id}, collection_id={collection_id}. "
+                        f"Setting to None. Original type: {type(metadata.get('description')).__name__}"
+                    )
+                    description = None
+
             # Create TranscriptGroup object
-            transcript_group = TranscriptGroup(
-                id=transcript_group_id,
-                name=name,
-                description=description,
-                agent_run_id=agent_run_id,
-                parent_transcript_group_id=parent_transcript_group_id,
-                metadata=metadata_dict if metadata_dict else {},
-            )
+            try:
+                transcript_group = TranscriptGroup(
+                    id=transcript_group_id,
+                    name=name,
+                    description=description,
+                    agent_run_id=agent_run_id,
+                    parent_transcript_group_id=parent_transcript_group_id,
+                    metadata=metadata_dict if metadata_dict else {},
+                )
+            except ValidationError as e:
+                # Extract field information from validation error
+                field_errors: List[str] = []
+                for error in e.errors():
+                    field_path = " -> ".join(str(loc) for loc in error.get("loc", []))
+                    field_type = error.get("type", "unknown")
+                    input_value = error.get("input")
+                    error_msg = error.get("msg", "")
+                    field_errors.append(
+                        f"Field '{field_path}': {error_msg} (type: {field_type}, "
+                        f"input_type: {type(input_value).__name__}, "
+                        f"input_value: {repr(input_value)[:200]})"
+                    )
+
+                logger.error(
+                    f"Failed to create TranscriptGroup: transcript_group_id={transcript_group_id}, "
+                    f"agent_run_id={agent_run_id}, collection_id={collection_id}, "
+                    f"parent_transcript_group_id={parent_transcript_group_id}. "
+                    f"Validation errors: {'; '.join(field_errors)}. "
+                    f"Metadata keys: {list(metadata.keys())}"
+                )
+                raise
 
             transcript_groups.append(transcript_group)
 
