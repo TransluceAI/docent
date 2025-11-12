@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 
 import {
   AlertTriangle,
@@ -10,11 +8,15 @@ import {
   ConciergeBell,
 } from 'lucide-react';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+
+import { cn } from '@/lib/utils';
+
 import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip';
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from '@/components/ui/input-group';
 
 const DEFAULT_PLACEHOLDER_TEXT =
   'Describe an agent behavior you want to explore...';
@@ -47,12 +49,14 @@ interface QuickSearchBoxProps {
   onGuided: (highLevelDescription: string) => void;
   onDirect: (highLevelDescription: string) => void;
   isLoading: boolean;
+  modelPicker?: React.ReactNode;
 }
 
 export default function QuickSearchBox({
   onGuided,
   onDirect,
   isLoading,
+  modelPicker,
 }: QuickSearchBoxProps) {
   /**
    * Presets
@@ -95,61 +99,62 @@ export default function QuickSearchBox({
         submitGuided();
       }}
     >
-      <fieldset className="relative">
-        <Textarea
-          className="h-[10rem] resize-none border-0 p-2 shadow-none focus-visible:ring-0 text-xs font-mono"
-          placeholder={placeholderText}
-          value={isPresetHovered ? '' : searchQueryTextboxValue}
-          disabled={!hasWritePermission}
-          onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submitGuided();
-            }
-          }}
-        />
-
-        <div className="absolute right-2 bottom-2 flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            className="gap-2 h-7 text-xs"
-            onClick={submitDirect}
-            variant="outline"
-            disabled={!hasWritePermission || emptyInput || isLoading}
-          >
-            <Search className="size-3 -ml-0.5" />
-            Direct search
-          </Button>
-          <Button
-            type="submit"
-            size="sm"
-            className="gap-2 h-7 text-xs"
-            disabled={!hasWritePermission || emptyInput || isLoading}
-          >
-            <ConciergeBell className="size-3.5 -ml-0.5" />
-            Guided search
-          </Button>
-        </div>
+      <fieldset>
+        <InputGroup>
+          <InputGroupTextarea
+            className="h-48 resize-none p-2 text-xs font-mono"
+            placeholder={placeholderText}
+            value={isPresetHovered ? '' : searchQueryTextboxValue}
+            disabled={!hasWritePermission}
+            onChange={(e) => setSearchQueryTextboxValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitGuided();
+              }
+            }}
+          />
+          <InputGroupAddon align="block-end" className="p-2">
+            {modelPicker}
+            <div className="flex justify-end ml-auto items-center gap-2">
+              <InputGroupButton
+                type="button"
+                size="sm"
+                className="gap-2 h-7 text-xs"
+                onClick={submitDirect}
+                variant="outline"
+                disabled={!hasWritePermission || emptyInput || isLoading}
+              >
+                <Search className="size-3 -ml-0.5" />
+                Direct search
+              </InputGroupButton>
+              <InputGroupButton
+                type="submit"
+                variant="default"
+                size="sm"
+                className="gap-2 h-7 text-xs"
+                disabled={!hasWritePermission || emptyInput || isLoading}
+              >
+                <ConciergeBell className="size-3.5 -ml-0.5" />
+                Guided search
+              </InputGroupButton>
+            </div>
+          </InputGroupAddon>
+        </InputGroup>
       </fieldset>
     </form>
   );
 
   return (
-    // <div className="bg-muted rounded-md space-y-1 border p-2">
-    <div className="space-y-2">
+    <div className="space-y-2 overflow-x-visible">
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
-          <div className="text-sm font-semibold">Create a rubric</div>
-          <div className="text-xs text-muted-foreground">
-            Find and explore occurrences of an agent behavior
-          </div>
+          <div className="text-sm font-semibold">Run rubric</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-[11px] text-muted-foreground">Try a preset:</div>
           <div className="flex flex-wrap gap-1">
-            {PRESET_QUERIES.map((preset) => {
+            {PRESET_QUERIES.map((preset, index) => {
               const IconComponent = preset.icon;
               return (
                 <button
@@ -157,7 +162,10 @@ export default function QuickSearchBox({
                   onClick={() => handleSelectPreset(preset.query)}
                   onMouseEnter={() => handlePresetHover(preset.query)}
                   onMouseLeave={handlePresetLeave}
-                  className="inline-flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded-md text-xs font-medium text-primary disabled:opacity-50 hover:bg-secondary hover:border-border transition-colors"
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded-md text-xs font-medium text-primary disabled:opacity-50 hover:bg-secondary hover:border-border transition-colors',
+                    index === 0 ? 'hidden 2xl:inline-flex' : ''
+                  )}
                   disabled={!hasWritePermission}
                 >
                   <IconComponent className={`h-3 w-3 ${preset.color}`} />
@@ -168,7 +176,8 @@ export default function QuickSearchBox({
           </div>
         </div>
       </div>
-      <div className="relative overflow-hidden rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring">
+      {searchForm}
+      {/* <div>
         {!hasWritePermission ? (
           <Tooltip>
             <TooltipTrigger asChild>{searchForm}</TooltipTrigger>
@@ -182,7 +191,7 @@ export default function QuickSearchBox({
         ) : (
           searchForm
         )}
-      </div>
+      </div> */}
     </div>
   );
 }

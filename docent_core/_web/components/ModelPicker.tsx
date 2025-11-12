@@ -2,7 +2,6 @@ import { KeyRound } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
-  TooltipPortal,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
@@ -165,11 +164,9 @@ export default function ModelPicker({
                   <TooltipTrigger asChild>
                     <KeyRound className="h-3 w-3 flex-shrink-0" />
                   </TooltipTrigger>
-                  <TooltipPortal>
-                    <TooltipContent side="top">
-                      <p>This model uses your own API key</p>
-                    </TooltipContent>
-                  </TooltipPortal>
+                  <TooltipContent side="top">
+                    <p>This model uses your own API key</p>
+                  </TooltipContent>
                 </Tooltip>
               )}
             </span>
@@ -188,11 +185,9 @@ export default function ModelPicker({
                   <TooltipTrigger asChild>
                     <KeyRound className="h-3 w-3 flex-shrink-0" />
                   </TooltipTrigger>
-                  <TooltipPortal>
-                    <TooltipContent>
-                      <p>This model uses your own API key</p>
-                    </TooltipContent>
-                  </TooltipPortal>
+                  <TooltipContent>
+                    <p>This model uses your own API key</p>
+                  </TooltipContent>
                 </Tooltip>
               )}
             </span>

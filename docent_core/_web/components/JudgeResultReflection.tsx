@@ -59,8 +59,12 @@ function RolloutButtons({
           key={rolloutIdx}
           variant={selectedRolloutIndex === rolloutIdx ? 'default' : 'outline'}
           className={cn(
-            'cursor-pointer hover:bg-primary/80 transition-colors',
-            selectedRolloutIndex === rolloutIdx && 'ring-2 ring-primary'
+            'cursor-pointer transition-colors',
+            selectedRolloutIndex === rolloutIdx &&
+              'ring-2 ring-primary hover:ring-primary/80',
+            selectedRolloutIndex !== rolloutIdx
+              ? 'hover:bg-muted'
+              : 'hover:bg-primary/80'
           )}
           onClick={() => handleRolloutClick(rolloutIdx)}
         >

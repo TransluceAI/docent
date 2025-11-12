@@ -7,7 +7,6 @@ import {
   Pause,
   Loader2,
   ClipboardCopyIcon,
-  Tags,
 } from 'lucide-react';
 import { useAppSelector } from '@/app/store/hooks';
 import { type Rubric } from '@/app/store/rubricSlice';
@@ -38,9 +37,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useState } from 'react';
-import LabelSetsDialog from './LabelSetsDialog';
-import { Button } from '@/components/ui/button';
 
 interface RubricCardProps {
   rubric: Rubric;
@@ -342,8 +338,6 @@ export default function RubricList() {
   // Check write permissions
   const hasWritePermission = useHasCollectionWritePermission();
 
-  const [isLabelSetsDialogOpen, setIsLabelSetsDialogOpen] = useState(false);
-
   // Fetch rubrics using the new API
   const { data: rubrics, isLoading: isLoadingRubrics } = useGetRubricsQuery(
     effectiveCollectionId
@@ -355,22 +349,8 @@ export default function RubricList() {
   return (
     <div className="space-y-2">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <div className="text-sm font-semibold">Saved Rubrics</div>
-          <div className="text-xs text-muted-foreground">
-            Run and modify previously-created rubrics
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setIsLabelSetsDialogOpen(true)}
-          className="text-xs gap-1.5 h-7"
-        >
-          <Tags className="h-3 w-3" />
-          All Label Sets
-        </Button>
+      <div className="flex flex-col">
+        <div className="text-sm font-semibold">Saved Rubrics</div>
       </div>
 
       {/* Rubrics List */}
@@ -398,10 +378,6 @@ export default function RubricList() {
           ))
         )}
       </div>
-      <LabelSetsDialog
-        open={isLabelSetsDialogOpen}
-        onOpenChange={setIsLabelSetsDialogOpen}
-      />
     </div>
   );
 }

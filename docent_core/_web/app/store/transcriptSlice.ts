@@ -3,24 +3,12 @@
  * This is not very "React-ive" - having global state like this and using async thunks is highly discouraged.
  */
 
-import {
-  createSlice,
-  type PayloadAction,
-  createAsyncThunk,
-} from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import { apiRestClient } from '../services/apiService';
-import sseService from '../services/sseService';
-import { v4 as uuidv4 } from 'uuid';
 import { AgentRun, SolutionSummary } from '../types/transcriptTypes';
 import { Citation } from '../types/experimentViewerTypes';
 
 import { RootState } from './store';
-import { setToastNotification } from './toastSlice';
-
-// Map to store cancel functions for active SSE connections
-const cancelFunctionsMap: Record<string, () => void> = {};
-
 // Utility functions for TA session localStorage keys
 export const getTaSessionStorageKey = (agentRunId: string) =>
   `ta-session-${agentRunId}`;
@@ -44,154 +32,19 @@ export interface TranscriptState {
   agentRunSidebarTab?: string;
   // Sidebar visibility states for different routes
   agentRunLeftSidebarOpen: boolean;
+  agentRunRightSidebarOpen: boolean;
   judgeLeftSidebarOpen: boolean;
-  rightSidebarOpen: boolean;
+  judgeRightSidebarOpen: boolean;
 }
 
 const initialState: TranscriptState = {
   agentRunLeftSidebarOpen: false,
+  agentRunRightSidebarOpen: true,
   judgeLeftSidebarOpen: true,
-  rightSidebarOpen: true,
+  judgeRightSidebarOpen: true,
   allCitations: {},
   highlightedCitationId: null,
 };
-
-export const getSolutionSummary = createAsyncThunk(
-  'transcript/getSolutionSummary',
-  async (agentRunId: string, { dispatch, getState }) => {
-    const state = getState() as RootState;
-    const collectionId = state.collection.collectionId;
-
-    // Cancel existing request
-    const { solutionSummaryTaskId } = state.transcript;
-    if (solutionSummaryTaskId && cancelFunctionsMap[solutionSummaryTaskId]) {
-      cancelFunctionsMap[solutionSummaryTaskId]();
-      delete cancelFunctionsMap[solutionSummaryTaskId];
-    }
-
-    // Set UI state
-    dispatch(setSolutionSummary(undefined));
-    dispatch(setLoadingSolutionSummaryForTranscriptId(agentRunId));
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      dispatch(onFinishLoadingSolutionSummary());
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      // Generate a task ID for cancellation
-      const taskId = uuidv4();
-      dispatch(setSolutionSummaryTaskId(taskId));
-
-      // Create SSE connection using the service
-      const { onCancel } = sseService.createEventSource(
-        `/rest/${collectionId}/solution_summary?agent_run_id=${agentRunId}`,
-        (data) => {
-          // Update solution summary with streamed data
-          dispatch(
-            setSolutionSummary({
-              agent_run_id: data.agent_run_id,
-              summary: data.summary,
-              parts: data.parts,
-            })
-          );
-        },
-        () => {
-          dispatch(onFinishLoadingSolutionSummary());
-        },
-        dispatch // Pass dispatch function to handle errors
-      );
-
-      // Store the cancel function for potential cleanup
-      cancelFunctionsMap[taskId] = onCancel;
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error getting solution summary',
-          description: 'Failed to retrieve solution summary',
-          variant: 'destructive',
-        })
-      );
-      dispatch(onFinishLoadingSolutionSummary());
-      throw error;
-    }
-  }
-);
-
-export const clearSolutionSummary = createAsyncThunk(
-  'transcript/clearSolutionSummary',
-  async (_, { dispatch, getState }) => {
-    dispatch(setSolutionSummary(undefined));
-    dispatch(setLoadingSolutionSummaryForTranscriptId(undefined));
-  }
-);
-
-export const clearCurAgentRun = createAsyncThunk(
-  'transcript/clearCurAgentRun',
-  async (_, { dispatch }) => {
-    dispatch(setCurAgentRun(undefined));
-  }
-);
-
-export const getCurAgentRun = createAsyncThunk(
-  'transcript/getAgentRun',
-  async (agentRunId: string, { dispatch, getState }) => {
-    const state = getState() as RootState;
-    const collectionId = state.collection.collectionId;
-
-    // Clear current datapoint
-    const curAgentRun = state.transcript.curAgentRun;
-    if (curAgentRun !== undefined) {
-      dispatch(clearCurAgentRun());
-    }
-
-    if (!collectionId) {
-      dispatch(
-        setToastNotification({
-          title: 'Configuration error',
-          description: 'No collection ID available',
-          variant: 'destructive',
-        })
-      );
-      throw new Error('No collection ID available');
-    }
-
-    try {
-      const response = await apiRestClient.get(
-        `/${collectionId}/agent_run?agent_run_id=${agentRunId}&apply_base_where_clause=false`
-      );
-
-      if (!response.data) {
-        dispatch(
-          setToastNotification({
-            title: 'Agent run not found',
-            description: 'The requested agent run could not be found',
-            variant: 'destructive',
-          })
-        );
-        return;
-      }
-
-      dispatch(setCurAgentRun(response.data));
-    } catch (error) {
-      dispatch(
-        setToastNotification({
-          title: 'Error getting agent run',
-          description: 'Failed with unknown error',
-          variant: 'destructive',
-        })
-      );
-      throw error;
-    }
-  }
-);
 
 export const transcriptSlice = createSlice({
   name: 'transcript',
@@ -256,23 +109,21 @@ export const transcriptSlice = createSlice({
     setAgentRunSidebarTab: (state, action: PayloadAction<string>) => {
       state.agentRunSidebarTab = action.payload;
     },
-    setAgentRunLeftSidebarOpen: (state, action: PayloadAction<boolean>) => {
-      state.agentRunLeftSidebarOpen = action.payload;
-    },
+
+    // Sidebar visibility states for different routes
     toggleAgentRunLeftSidebar: (state) => {
       state.agentRunLeftSidebarOpen = !(state.agentRunLeftSidebarOpen ?? false);
     },
-    setJudgeLeftSidebarOpen: (state, action: PayloadAction<boolean>) => {
-      state.judgeLeftSidebarOpen = action.payload;
+    toggleAgentRunRightSidebar: (state) => {
+      state.agentRunRightSidebarOpen = !(
+        state.agentRunRightSidebarOpen ?? false
+      );
     },
     toggleJudgeLeftSidebar: (state) => {
       state.judgeLeftSidebarOpen = !(state.judgeLeftSidebarOpen ?? false);
     },
-    setRightSidebarOpen: (state, action: PayloadAction<boolean>) => {
-      state.rightSidebarOpen = action.payload;
-    },
-    toggleRightSidebar: (state) => {
-      state.rightSidebarOpen = !state.rightSidebarOpen;
+    toggleJudgeRightSidebar: (state) => {
+      state.judgeRightSidebarOpen = !state.judgeRightSidebarOpen;
     },
     resetTranscriptSlice: () => initialState,
   },
@@ -291,12 +142,12 @@ export const {
   setHighlightedCitation,
   clearHighlightedCitation,
   setAgentRunSidebarTab,
-  setAgentRunLeftSidebarOpen,
+
+  // Various sidebar states
   toggleAgentRunLeftSidebar,
-  setJudgeLeftSidebarOpen,
   toggleJudgeLeftSidebar,
-  setRightSidebarOpen,
-  toggleRightSidebar,
+  toggleAgentRunRightSidebar,
+  toggleJudgeRightSidebar,
 } = transcriptSlice.actions;
 
 export const selectRunCitationsById = (state: RootState, runId?: string) => {

@@ -111,11 +111,10 @@ export default function JudgeResultPage() {
   let agentRunViewerContent = null;
   if (agentRunId) {
     agentRunViewerContent = (
-      <div className="h-full border rounded-xl p-3 overflow-hidden flex flex-col space-y-2">
+      <div className="h-full overflow-hidden flex flex-col space-y-2">
         <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
       </div>
     );
-    // }
   }
 
   return <Suspense>{agentRunViewerContent}</Suspense>;

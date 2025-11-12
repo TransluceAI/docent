@@ -10,7 +10,6 @@ import React, {
 } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -759,14 +758,11 @@ export default function ExperimentViewer({
     );
 
   return (
-    <Card className="flex-1 flex flex-col h-full min-w-0">
+    <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Header with organization dropdown - always visible */}
       <div className="flex justify-between items-center shrink-0">
         <div className="flex flex-col">
           <div className="text-sm font-semibold">Chart Visualization</div>
-          <div className="text-xs text-muted-foreground">
-            Plot trends in your data
-          </div>
         </div>
       </div>
 
@@ -778,7 +774,7 @@ export default function ExperimentViewer({
         className="flex-1 flex flex-col mt-3 space-y-3 min-h-0"
       >
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <div className="flex flex-col">
+          <div className="flex flex-col hidden lg:block">
             <div className="text-sm font-semibold">
               {activeTab === 'filters' ? 'Agent Run List' : 'DQL Explorer'}
             </div>
@@ -789,10 +785,12 @@ export default function ExperimentViewer({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <UploadRunsButton
-              onImportSuccess={handleUploadSuccess}
-              disabled={!hasWritePermission}
-            />
+            <div className="hidden 2xl:block">
+              <UploadRunsButton
+                onImportSuccess={handleUploadSuccess}
+                disabled={!hasWritePermission}
+              />
+            </div>
             <TabsList className="grid grid-cols-2 h-8">
               <TabsTrigger value="filters" className="py-0.5">
                 Filters
@@ -856,6 +854,6 @@ export default function ExperimentViewer({
         file={draggedFile}
         onImportSuccess={handleUploadSuccess}
       />
-    </Card>
+    </div>
   );
 }

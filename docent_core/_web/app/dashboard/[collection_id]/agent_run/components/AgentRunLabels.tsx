@@ -26,7 +26,7 @@ import { Label } from '@/components/ui/label';
 import LabelSetsDialog from '../../components/LabelSetsDialog';
 import { toast } from '@/hooks/use-toast';
 import { useSearchParams } from 'next/navigation';
-import { TooltipProvider } from '@/components/ui/tooltip';
+
 import {
   Popover,
   PopoverContent,
@@ -150,7 +150,7 @@ export default function AgentRunLabels({
 
     return (
       <>
-        <div className="flex items-end justify-between">
+        <div className="flex 2xl:items-end 2xl:justify-between 2xl:flex-row flex-col gap-2">
           <div className="flex flex-col gap-1">
             <h4 className="font-semibold text-sm">Labels for this Agent Run</h4>
 
@@ -168,52 +168,50 @@ export default function AgentRunLabels({
               Back
             </Button>
           ) : (
-            <TooltipProvider>
-              <div className="flex gap-2">
-                {activeLabelSet && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 gap-2 text-xs"
-                    disabled={disableAddLabels}
-                    onClick={() => setIsLabelSetsDialogOpen(true)}
-                  >
-                    <Tags className="h-3.5 w-3.5" />
-                    Select a different set
-                  </Button>
-                )}
+            <div className="flex gap-2  flex-col xl:flex-row">
+              {activeLabelSet && (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 px-2 gap-1 text-xs"
-                  disabled={
-                    disableAddLabels ||
-                    (activeLabelSet ? activeLabelSetHasLabel : false)
-                  }
-                  onClick={() => {
-                    if (activeLabelSet) {
-                      setViewMode('edit');
-                    } else {
-                      setIsLabelSetsDialogOpen(true);
-                    }
-                  }}
+                  className="h-7 gap-2  w-full text-xs"
+                  disabled={disableAddLabels}
+                  onClick={() => setIsLabelSetsDialogOpen(true)}
                 >
-                  <Plus className="size-3.5" />
-                  {activeLabelSet ? (
-                    <span className="truncate">
-                      Add label:{' '}
-                      <span className="font-mono text-blue-text">
-                        {activeLabelSet.name}
-                      </span>
-                    </span>
-                  ) : hasLabelSets ? (
-                    <span>Select label set</span>
-                  ) : (
-                    <span>Create a label set</span>
-                  )}
+                  <Tags className="h-3.5 w-3.5" />
+                  Select a different set
                 </Button>
-              </div>
-            </TooltipProvider>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 gap-1 w-full text-xs"
+                disabled={
+                  disableAddLabels ||
+                  (activeLabelSet ? activeLabelSetHasLabel : false)
+                }
+                onClick={() => {
+                  if (activeLabelSet) {
+                    setViewMode('edit');
+                  } else {
+                    setIsLabelSetsDialogOpen(true);
+                  }
+                }}
+              >
+                <Plus className="size-3.5" />
+                {activeLabelSet ? (
+                  <span className="truncate">
+                    Add label:{' '}
+                    <span className="font-mono text-blue-text">
+                      {activeLabelSet.name}
+                    </span>
+                  </span>
+                ) : hasLabelSets ? (
+                  <span>Select label set</span>
+                ) : (
+                  <span>Create a label set</span>
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </>

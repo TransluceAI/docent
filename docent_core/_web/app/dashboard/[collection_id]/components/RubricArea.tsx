@@ -1,7 +1,6 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
 
 import RubricList from './RubricList';
 import {
@@ -104,21 +103,17 @@ const RubricArea = () => {
   };
 
   return (
-    <Card className="h-full flex overflow-y-auto flex-col flex-1 p-3 custom-scrollbar space-y-3">
+    <div className="space-y-2">
       {/* Rubric Display */}
-      <div className="space-y-2">
-        <QuickSearchBox
-          onGuided={handleGuidedSubmit}
-          onDirect={handleDirectSubmit}
-          isLoading={
-            isCreatingRubric ||
-            isCreatingOrGettingSession ||
-            isStartingEvaluation
-          }
-        />
-        <RubricList />
-      </div>
-    </Card>
+      <QuickSearchBox
+        onGuided={handleGuidedSubmit}
+        onDirect={handleDirectSubmit}
+        isLoading={
+          isCreatingRubric || isCreatingOrGettingSession || isStartingEvaluation
+        }
+      />
+      <RubricList />
+    </div>
   );
 };
 

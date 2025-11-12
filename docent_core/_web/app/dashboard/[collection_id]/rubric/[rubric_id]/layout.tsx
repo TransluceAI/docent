@@ -1,11 +1,9 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { Suspense, useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import SingleRubricArea from '../../components/SingleRubricArea';
 import { CitationNavigationProvider } from './NavigateToCitationContext';
-import { Card } from '@/components/ui/card';
 import { ResultFilterControlsProvider } from '@/providers/use-result-filters';
 import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,6 +19,13 @@ import {
 import { TextSelectionProvider } from '@/providers/use-text-selection';
 import { useAppSelector } from '@/app/store/hooks';
 import { useLabelSets } from '@/providers/use-label-sets';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
+import { cn } from '@/lib/utils';
 
 interface RubricLayoutBodyProps {
   collectionId: string;
@@ -126,82 +131,125 @@ function RubricLayoutBody({
     (state) => state.transcript.judgeLeftSidebarOpen
   );
   const rightSidebarOpen = useAppSelector(
-    (state) => state.transcript.rightSidebarOpen
+    (state) => state.transcript.judgeRightSidebarOpen
   );
 
+  const rightSizePanelRef = useRef<ImperativePanelHandle>(null);
+  const leftPanelRef = useRef<ImperativePanelHandle>(null);
+  const middlePanelRef = useRef<ImperativePanelHandle>(null);
+
+  // Resize the panels when changing from the rubric --> a result route and back
+  useEffect(() => {
+    const leftPanelSize = 35;
+    const middlePanelSize = isOnResultRoute ? 40 : 0;
+    const rightPanelSize = isOnResultRoute ? 25 : 65;
+
+    leftPanelRef.current?.resize(leftPanelSize);
+    rightSizePanelRef.current?.resize(rightPanelSize);
+    middlePanelRef.current?.resize(middlePanelSize);
+  }, [isOnResultRoute]);
+
   return (
-    <div className="flex-1 flex space-x-3 min-h-0 shrink-0">
+    <ResizablePanelGroup
+      direction="horizontal"
+      className="flex-1 flex bg-card space-x-3 min-h-0 shrink-0 border rounded-lg"
+    >
       {/* Left: SingleRubricArea (collapsible) */}
-      {leftSidebarOpen && (
-        <Card className="flex min-w-0 basis-1/3 max-w-1/3 grow-0 shrink-0">
-          <ResultFilterControlsProvider
-            collectionId={collectionId}
-            rubricId={rubricId}
-          >
-            <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
-          </ResultFilterControlsProvider>
-        </Card>
-      )}
+      <ResizablePanel
+        ref={leftPanelRef}
+        defaultSize={35}
+        minSize={20}
+        maxSize={50}
+        className={cn(
+          'flex p-3',
+          !leftSidebarOpen && isOnResultRoute && 'hidden'
+        )}
+      >
+        <ResultFilterControlsProvider
+          collectionId={collectionId}
+          rubricId={rubricId}
+        >
+          <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
+        </ResultFilterControlsProvider>
+      </ResizablePanel>
+
+      <ResizableHandle
+        className={cn(
+          '!mx-0 !px-0',
+          !leftSidebarOpen && isOnResultRoute && 'hidden'
+        )}
+      />
 
       {/* Middle area: only when on a result */}
-      {isOnResultRoute && (
-        <div className="flex-1 min-w-0 min-h-0">{children}</div>
-      )}
+      {
+        <ResizablePanel
+          ref={middlePanelRef}
+          defaultSize={isOnResultRoute ? 40 : 0}
+          minSize={isOnResultRoute ? 30 : 0}
+          maxSize={70}
+          // NOTE(cadentj): ResizablePanel has some weird default margin-x that we need to override
+          className="flex-1 min-w-0 min-h-0 p-3 !mx-0"
+        >
+          {children}
+        </ResizablePanel>
+      }
+
+      <ResizableHandle
+        className={cn(
+          (!isOnResultRoute || !rightSidebarOpen) && 'hidden',
+          '!mx-0 !px-0'
+        )}
+      />
 
       {/* Right tabs area (collapsible via AgentRunViewer toggle) */}
-      {rightSidebarOpen && (
-        <motion.div
-          layout
-          transition={{ type: 'tween', duration: 0.25 }}
-          className={
-            isOnResultRoute
-              ? 'flex min-w-[260px] max-w-sm basis-1/4 grow-0 shrink-0'
-              : 'flex flex-1 min-w-0 min-h-0'
-          }
+      <ResizablePanel
+        ref={rightSizePanelRef}
+        defaultSize={isOnResultRoute ? 25 : 65}
+        minSize={isOnResultRoute ? 20 : 30}
+        maxSize={isOnResultRoute ? 40 : 70}
+        className={cn(
+          'p-3 flex !mx-0 min-w-0',
+          !rightSidebarOpen && isOnResultRoute && 'hidden'
+        )}
+      >
+        <Tabs
+          defaultValue={activeTab}
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as 'refine' | 'analyze')}
+          className="flex flex-col size-full"
         >
-          <Card className="flex-1 min-w-0 min-h-0 p-2">
-            <Tabs
-              defaultValue={activeTab}
-              value={activeTab}
-              onValueChange={(value) =>
-                setActiveTab(value as 'refine' | 'analyze')
-              }
-              className={`flex flex-col h-full `}
-            >
-              {isOnResultRoute && (
-                <TabsList className="grid grid-cols-2 justify-start w-full mb-2">
-                  <TabsTrigger value="refine">Refine</TabsTrigger>
-                  <TabsTrigger value="analyze" disabled={!isOnResultRoute}>
-                    Analyze
-                  </TabsTrigger>
-                </TabsList>
-              )}
+          {isOnResultRoute && (
+            <TabsList className="grid grid-cols-2 w-full mb-2">
+              <TabsTrigger value="refine">Refine</TabsTrigger>
+              <TabsTrigger value="analyze" disabled={!isOnResultRoute}>
+                Analyze
+              </TabsTrigger>
+            </TabsList>
+          )}
 
-              <TabsContent value="refine" className="flex-1 min-h-0">
-                <RefinementChat
-                  sessionId={sessionId}
-                  isOnResultRoute={isOnResultRoute}
-                />
-              </TabsContent>
+          <TabsContent value="refine" className="flex-1 min-h-0">
+            <RefinementChat
+              sessionId={sessionId}
+              isOnResultRoute={isOnResultRoute}
+            />
+          </TabsContent>
 
-              <TabsContent value="analyze" className="flex-1 min-h-0">
-                {isOnResultRoute && agentRunId && (
-                  <TranscriptChat
-                    agentRunId={agentRunId}
-                    rubricId={rubricId}
-                    collectionId={collectionId}
-                    agentRunResults={currentAgentRunGroup}
-                    selectedResultId={resultId}
-                    showEmptyResultMessage={!currentAgentRunGroup}
-                    className="flex flex-col min-w-0 h-full"
-                  />
-                )}
-              </TabsContent>
-            </Tabs>
-          </Card>
-        </motion.div>
-      )}
-    </div>
+          <TabsContent value="analyze" className="flex-1 min-h-0">
+            {isOnResultRoute && agentRunId && (
+              <TranscriptChat
+                agentRunId={agentRunId}
+                rubricId={rubricId}
+                collectionId={collectionId}
+                agentRunResults={currentAgentRunGroup}
+                selectedResultId={resultId}
+                showEmptyResultMessage={!currentAgentRunGroup}
+                className="flex flex-col min-w-0 h-full"
+              />
+            )}
+          </TabsContent>
+        </Tabs>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 }
 

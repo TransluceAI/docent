@@ -7,13 +7,15 @@ import {
   useSearchParams,
 } from 'next/navigation';
 import React, { useEffect, Suspense } from 'react';
+import { SidebarProvider } from '@/components/ui/sidebar';
 
-import Breadcrumbs from '../../components/Breadcrumbs';
+import CollectionBreadcrumbs from '../../components/Breadcrumbs';
 import { setCollectionId } from '../../store/collectionSlice';
 import { useAppDispatch } from '../../store/hooks';
 import { Button } from '@/components/ui/button';
 import { useUserContext } from '@/app/contexts/UserContext';
 import { LabelSetsProvider } from '@/providers/use-label-sets';
+import { CollectionSidebar } from '@/components/CollectionSidebar';
 
 export default function DocentDashboardClientLayout({
   children,
@@ -39,14 +41,21 @@ export default function DocentDashboardClientLayout({
   }, [collectionId, dispatch]);
 
   return (
-    <LabelSetsProvider collectionId={collectionId}>
-      <div className="flex flex-col h-screen w-screen p-3 pt-2 space-y-2 min-h-0 min-w-[900px]">
-        <Suspense fallback={<div className="h-7">Loading breadcrumbs...</div>}>
-          <Breadcrumbs />
-        </Suspense>
-        {children}
-      </div>
-    </LabelSetsProvider>
+    <SidebarProvider defaultOpen={false}>
+      <LabelSetsProvider collectionId={collectionId}>
+        <CollectionSidebar />
+        <div className="flex flex-col pr-3 pb-3 h-screen w-full bg-sidebar min-h-0 min-w-[900px]">
+          <div className="h-12 items-center justify-center flex flex-shrink-0">
+            <Suspense
+              fallback={<div className="h-7">Loading breadcrumbs...</div>}
+            >
+              <CollectionBreadcrumbs />
+            </Suspense>
+          </div>
+          {children}
+        </div>
+      </LabelSetsProvider>
+    </SidebarProvider>
   );
 }
 

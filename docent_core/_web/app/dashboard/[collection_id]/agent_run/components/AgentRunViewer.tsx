@@ -4,9 +4,9 @@ import {
   Loader2,
   FolderTree,
   ChevronRight,
-  PanelRightClose,
-  PanelRightOpen,
   AlertCircle,
+  PanelLeft,
+  PanelRight,
 } from 'lucide-react';
 import React, {
   forwardRef,
@@ -21,7 +21,10 @@ import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   clearHighlightedCitation,
   selectRunCitationsById,
-  toggleRightSidebar,
+  toggleAgentRunLeftSidebar,
+  toggleAgentRunRightSidebar,
+  toggleJudgeLeftSidebar,
+  toggleJudgeRightSidebar,
 } from '@/app/store/transcriptSlice';
 import {
   AgentRun,
@@ -47,6 +50,7 @@ import { MessageBox, hasJsonContent } from './MessageBox';
 import { Button } from '@/components/ui/button';
 import { useGetAgentRunWithCanonicalTreeQuery } from '@/app/api/collectionApi';
 import { skipToken } from '@reduxjs/toolkit/query';
+import { useParams } from 'next/navigation';
 
 // Export interface for use in other components
 interface ScrollToBlockParams {
@@ -220,6 +224,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       (state) => state.collection?.collectionId
     );
 
+    const { rubric_id: rubricId } = useParams<{ rubric_id: string }>();
+
     // Full tree toggle (default off)
     const [fullTree, setFullTree] = useState(false);
 
@@ -281,9 +287,22 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // State for sidebar toggle and hover functionality
     const [sidebarVisible, setSidebarVisible] = useState(true);
-    const rightSidebarOpen = useAppSelector(
-      (state) => state.transcript?.rightSidebarOpen
-    );
+    const toggleLeftSidebar = useCallback(() => {
+      if (rubricId) {
+        dispatch(toggleJudgeLeftSidebar());
+      } else {
+        dispatch(toggleAgentRunLeftSidebar());
+      }
+    }, [dispatch]);
+
+    const toggleRightSidebar = useCallback(() => {
+      if (rubricId) {
+        dispatch(toggleJudgeRightSidebar());
+      } else {
+        dispatch(toggleAgentRunRightSidebar());
+      }
+    }, [dispatch]);
+
     const [sidebarHovering, setSidebarHovering] = useState(false);
 
     // Helper for sidebar-aware styling
@@ -794,6 +813,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between space-x-1">
                 <div className="flex items-center space-x-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 cursor-default"
+                    onClick={toggleLeftSidebar}
+                  >
+                    <PanelLeft className="h-4 w-4" />
+                  </Button>
                   <div className="font-semibold text-sm shrink-0">
                     Agent Run
                   </div>
@@ -832,13 +859,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 cursor-default"
-                  onClick={() => dispatch(toggleRightSidebar())}
+                  onClick={toggleRightSidebar}
                 >
-                  {rightSidebarOpen ? (
-                    <PanelRightClose className="h-4 w-4" />
-                  ) : (
-                    <PanelRightOpen className="h-4 w-4" />
-                  )}
+                  <PanelRight className="h-4 w-4" />
                 </Button>
               </div>
               <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">

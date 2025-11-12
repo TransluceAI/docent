@@ -221,7 +221,7 @@ export default function RefinementChat({
   return (
     <div className="flex-1 flex flex-col space-y-3 h-full">
       {showSummaryProgressBar && (
-        <div className="flex items-center gap-2 2xl:px-64 xl:px-16 md:px-16">
+        <div className="flex items-center gap-2 px-16">
           <div className="flex-1">
             <ProgressBar current={rSession?.n_summaries || 0} total={10} />
           </div>
@@ -237,12 +237,8 @@ export default function RefinementChat({
         isSendingMessage={isSSEConnected || !sessionId}
         byoFlexDiv={true}
         __showThinkingSpacerAfterFirstMessage={true}
-        scrollContainerClassName={
-          !isOnResultRoute ? '2xl:px-64 xl:px-16 md:px-16' : undefined
-        }
-        inputAreaClassName={
-          !isOnResultRoute ? '2xl:px-64 xl:px-16 md:px-16' : undefined
-        }
+        scrollContainerClassName={!isOnResultRoute ? 'px-16' : undefined}
+        inputAreaClassName={!isOnResultRoute ? 'px-16' : undefined}
         inputErrorMessage={persistedSession?.error_message}
         inputAreaFooter={undefined}
         headerElement={

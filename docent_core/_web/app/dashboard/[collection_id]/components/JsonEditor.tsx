@@ -12,6 +12,7 @@ interface JsonEditorProps {
   editable: boolean;
   forceOpenSchema: boolean;
   showPreview?: boolean;
+  expandedContentClassName?: string;
 }
 
 export default function JsonEditor({
@@ -20,6 +21,7 @@ export default function JsonEditor({
   schemaError,
   editable,
   forceOpenSchema,
+  expandedContentClassName = 'max-h-48',
   showPreview = true,
 }: JsonEditorProps) {
   const [schemaOpen, setSchemaOpen] = useState(false);
@@ -40,7 +42,7 @@ export default function JsonEditor({
   }, [schemaText]);
 
   return (
-    <div className="rounded-md flex flex-col border bg-background shadow-sm">
+    <div className="rounded-md overflow-hidden flex flex-col border bg-background shadow-sm">
       {/* Dropdown button */}
       <button
         type="button"
@@ -67,10 +69,11 @@ export default function JsonEditor({
             ))}
         </div>
         <ChevronLeft
-          className={
-            'h-3 w-3 transition-transform' +
-            (schemaOpen || forceOpenSchema ? '-rotate-90' : '')
-          }
+          className={cn(
+            'h-3 w-3 transition-transform',
+            schemaOpen ? '-rotate-90' : '',
+            forceOpenSchema ? 'hidden' : ''
+          )}
         />
       </button>
 
@@ -80,15 +83,19 @@ export default function JsonEditor({
         className={cn(
           'px-0 overflow-hidden transition-all duration-200',
           schemaOpen || forceOpenSchema
-            ? 'max-h-[40vh] opacity-100'
-            : '!max-h-0  opacity-0 pointer-events-none'
+            ? 'opacity-100 min-h-48'
+            : '!max-h-0 opacity-0 pointer-events-none'
         )}
       >
-        <div className="max-h-[30vh] overflow-y-auto custom-scrollbar">
+        <div
+          className={cn(
+            'max-h-[30vh] overflow-y-auto custom-scrollbar',
+            expandedContentClassName
+          )}
+        >
           <CodeMirror
             value={schemaText}
             height="auto"
-            // maxHeight="30vh"
             theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
             extensions={extensions}
             onChange={(value) => setSchemaText(value)}

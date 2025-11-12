@@ -86,41 +86,54 @@ const config: Config = {
         'blue-border': 'hsl(var(--blue-border))',
         'blue-text': 'hsl(var(--blue-text))',
         'blue-muted': 'hsl(var(--blue-muted))',
-
         'orange-bg': 'hsl(var(--orange))',
         'orange-border': 'hsl(var(--orange-border))',
         'orange-text': 'hsl(var(--orange-text))',
-
         'green-bg': 'hsl(var(--green))',
         'green-border': 'hsl(var(--green-border))',
         'green-text': 'hsl(var(--green-text))',
         'green-muted': 'hsl(var(--green-muted))',
-
         'yellow-bg': 'hsl(var(--yellow))',
         'yellow-border': 'hsl(var(--yellow-border))',
         'yellow-text': 'hsl(var(--yellow-text))',
         'yellow-muted': 'hsl(var(--yellow-muted))',
-
         'red-bg': 'hsl(var(--red))',
         'red-border': 'hsl(var(--red-border))',
         'red-text': 'hsl(var(--red-text))',
         'red-muted': 'hsl(var(--red-muted))',
-
         'indigo-bg': 'hsl(var(--indigo))',
         'indigo-border': 'hsl(var(--indigo-border))',
         'indigo-text': 'hsl(var(--indigo-text))',
         'indigo-muted': 'hsl(var(--indigo-muted))',
-
         'purple-bg': 'hsl(var(--purple))',
         'purple-border': 'hsl(var(--purple-border))',
         'purple-text': 'hsl(var(--purple-text))',
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
+        },
       },
       fontSize: {
         '3xs': '0.5rem',
         '2xs': '0.625rem',
-        xxs: ['0.625rem', { lineHeight: '0.875rem' }], // This is equivalent to 10px with a line-height of 14px
-        base: ['0.85rem', { lineHeight: '1.2rem' }],
-        // xs: ['0.825rem', { lineHeight: '1.1rem' }], // Custom text-sm definition (changed from default 0.875rem)
+        xxs: [
+          '0.625rem',
+          {
+            lineHeight: '0.875rem',
+          },
+        ],
+        base: [
+          '0.85rem',
+          {
+            lineHeight: '1.2rem',
+          },
+        ],
       },
       transitionDuration: {
         '1500': '1500ms',

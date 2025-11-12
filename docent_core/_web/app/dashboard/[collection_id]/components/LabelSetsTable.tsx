@@ -331,8 +331,12 @@ export default function LabelSetsTable({
               </TableRow>
             ) : (
               <>
-                {compatibleTable.getRowModel().rows.map((row) => {
+                {compatibleTable.getRowModel().rows.map((row, index) => {
                   const isActive = selectedLabelSetId === row.original.id;
+                  const nextIsActive =
+                    index < compatibleTable.getRowModel().rows.length - 1 &&
+                    compatibleTable.getRowModel().rows[index + 1].original
+                      .id === selectedLabelSetId;
 
                   return (
                     <TableRow
@@ -342,10 +346,16 @@ export default function LabelSetsTable({
                       className={cn(
                         'text-xs cursor-pointer select-none group',
                         isActive
-                          ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
-                          : 'hover:bg-muted'
+                          ? 'bg-indigo-bg/80 hover:bg-indigo-bg/80'
+                          : 'hover:bg-muted',
+                        nextIsActive ? 'border-b-transparent' : 'border-b'
                       )}
-                      style={{ height: ROW_HEIGHT_PX }}
+                      style={{
+                        height: ROW_HEIGHT_PX,
+                        boxShadow: isActive
+                          ? 'inset 0 0 0 1px hsl(var(--indigo-border))'
+                          : undefined,
+                      }}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell
@@ -392,8 +402,12 @@ export default function LabelSetsTable({
             <div className="overflow-auto custom-scrollbar max-h-[300px]">
               <Table className="min-w-full">
                 <TableBody>
-                  {incompatibleTable.getRowModel().rows.map((row) => {
+                  {incompatibleTable.getRowModel().rows.map((row, index) => {
                     const isActive = selectedLabelSetId === row.original.id;
+                    const nextIsActive =
+                      index < incompatibleTable.getRowModel().rows.length - 1 &&
+                      incompatibleTable.getRowModel().rows[index + 1].original
+                        .id === selectedLabelSetId;
 
                     return (
                       <TableRow
@@ -403,10 +417,16 @@ export default function LabelSetsTable({
                         className={cn(
                           'text-xs cursor-pointer select-none group',
                           isActive
-                            ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
-                            : 'hover:bg-muted'
+                            ? 'bg-indigo-bg/80 hover:bg-indigo-bg/80'
+                            : 'hover:bg-muted',
+                          nextIsActive ? 'border-b-transparent' : 'border-b'
                         )}
-                        style={{ height: ROW_HEIGHT_PX }}
+                        style={{
+                          height: ROW_HEIGHT_PX,
+                          boxShadow: isActive
+                            ? 'inset 0 0 0 1px hsl(var(--indigo-border))'
+                            : undefined,
+                        }}
                       >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell

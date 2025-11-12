@@ -2,183 +2,166 @@ import { ModeToggle } from '@/components/ui/theme-toggle';
 import {
   BookText,
   ChevronRight,
-  House,
+  FileText,
+  Settings,
   MessageCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Tags,
+  Layers,
+  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
-import { useSelector } from 'react-redux';
 
 import { BASE_DOCENT_PATH } from '@/app/constants';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 
-import { RootState } from '../store/store';
-import { useAppDispatch } from '../store/hooks';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
 import { useGetCollectionNameQuery } from '@/app/api/collectionApi';
-import {
-  toggleAgentRunLeftSidebar,
-  toggleJudgeLeftSidebar,
-} from '../store/transcriptSlice';
+import { skipToken } from '@reduxjs/toolkit/query';
 import { cn } from '@/lib/utils';
+
+interface Crumb {
+  title: string;
+  url?: string;
+  icon?: LucideIcon;
+}
 
 const Breadcrumbs: React.FC = () => {
   const searchParams = useSearchParams();
   const disableNavigation = searchParams.get('nav') === 'false';
 
-  const params = useParams();
+  const { collection_id: collectionId, agent_run_id: agentRunId } = useParams<{
+    collection_id?: string;
+    agent_run_id?: string;
+  }>();
   const pathname = usePathname();
-  const dispatch = useAppDispatch();
-
-  const collectionId = useSelector(
-    (state: RootState) => state.collection.collectionId
+  const { data } = useGetCollectionNameQuery(
+    collectionId ? collectionId : skipToken
   );
+  const collectionName = data?.name;
 
-  // Determine route
-  const agentRunId = params?.agent_run_id as string | undefined;
-  const rubricId = params?.rubric_id as string | undefined;
-  const resultId = params?.result_id as string | undefined;
-  const isAgentRunView = !!agentRunId && !rubricId;
-  const isJudgeResultView = !!rubricId && (!!agentRunId || !!resultId);
+  const crumbs: Record<string, Crumb> = {
+    agent_run: {
+      title: `Run ${agentRunId?.split('-')[0]}`,
+    },
+    result: {
+      title: 'Result',
+    },
+    rubric: {
+      title: 'Rubric',
+    },
+  };
 
-  // Select left sidebar state based on route
-  const leftSidebarOpen = useSelector((state: RootState) =>
-    isJudgeResultView
-      ? state.transcript.judgeLeftSidebarOpen
-      : state.transcript.agentRunLeftSidebarOpen
-  );
+  const pageCrumbs: Record<string, Crumb> = {
+    undefined: {
+      title: 'Agent Runs',
+      icon: Layers,
+      url: `${BASE_DOCENT_PATH}/${collectionId}`,
+    },
+    agent_run: {
+      title: 'Agent Runs',
+      icon: Layers,
+      url: `${BASE_DOCENT_PATH}/${collectionId}`,
+    },
+    rubric: {
+      title: 'Rubrics',
+      icon: FileText,
+    },
+    labels: {
+      title: 'Label Sets',
+      icon: Tags,
+    },
+    settings: {
+      title: 'Settings',
+      icon: Settings,
+      url: `${BASE_DOCENT_PATH}`,
+    },
+  };
 
-  // Check if we're on settings pages
-  const isSettingsPage = pathname?.startsWith('/settings');
+  const isUUID = (segment: string) => {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      segment
+    );
+  };
 
-  // check if we are "home", i.e. at /dashboard/[collection_id]
-  const effectiveCollectionId =
-    collectionId || (params?.collection_id as string | undefined);
-  const { data: collectionNameResp } = useGetCollectionNameQuery(
-    effectiveCollectionId as string,
-    {
-      skip: !effectiveCollectionId,
+  const getSegmentsWithRoot = (
+    segments: string[],
+    baseUrl: string
+  ): (Crumb & { url: string })[] => {
+    // Initial url and empty components array
+    let url = baseUrl;
+    const components: (Crumb & { url: string })[] = [];
+
+    // Make the breadcrumb root
+    const pageKey = segments[0] as keyof typeof pageCrumbs;
+    components.push({
+      url: `${url}/${pageKey}`,
+      ...pageCrumbs[pageKey],
+    });
+
+    let pending = null;
+
+    // Iterate over the remaining segments
+    for (const segment of segments) {
+      url = `${url}/${segment}`;
+
+      if (isUUID(segment) || pending !== null) {
+        components.push({
+          url: url,
+          ...crumbs[pending as keyof typeof crumbs],
+        });
+
+        pending = null;
+      } else {
+        pending = segment;
+      }
     }
-  );
-  const collectionName = collectionNameResp?.name ?? null;
 
-  const normalizePath = (p?: string | null) => (p ? p.replace(/\/+$/, '') : '');
-  const isHome =
-    !!effectiveCollectionId &&
-    normalizePath(pathname) ===
-      normalizePath(`${BASE_DOCENT_PATH}/${effectiveCollectionId}`);
+    if (pending !== null && segments.length > 1) {
+      components.push({
+        url: url,
+        ...crumbs[pending as keyof typeof crumbs],
+      });
+    }
 
-  // Get the current page information
-  const refinementSessionId = params?.session_id as string | undefined;
+    return components;
+  };
 
-  // Check if we're on a page that should show sidebar toggles
-  const showSidebarToggles = isAgentRunView || isJudgeResultView;
-
-  const collectionBreadcrumbText = collectionName
-    ? `Collection: ${collectionName}`
-    : 'Collection';
+  const onDashboard = pathname.startsWith(BASE_DOCENT_PATH);
+  const segments = !onDashboard
+    ? getSegmentsWithRoot(pathname.split('/').slice(1), `${BASE_DOCENT_PATH}`)
+    : getSegmentsWithRoot(
+        pathname.split('/').slice(3),
+        `${BASE_DOCENT_PATH}/${collectionId}`
+      );
 
   return (
-    <div className="_Breadcrumbs text-sm flex items-center justify-between w-full">
+    <div className="text-sm flex pl-2 items-center justify-between w-full">
       <div className="flex items-center gap-x-3">
-        {/* Go Home button */}
-        <Tooltip>
-          <TooltipTrigger
-            asChild
-            className={cn(
-              disableNavigation && 'pointer-events-none opacity-50'
-            )}
-          >
-            <Button
-              asChild
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs whitespace-nowrap px-2 py-0 flex items-center gap-x-1"
-            >
-              <Link href="/dashboard">
-                <House size={14} />
-              </Link>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>See all Collections</p>
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Breadcrumbs */}
-        <div className="flex gap-x-1 items-center">
-          {/* Settings page */}
-          {isSettingsPage ? (
-            <span className="text-muted-foreground">Settings</span>
-          ) : /* Link back to collection page */
-          isHome ? (
-            <span className="text-muted-foreground">
-              {collectionBreadcrumbText}
-            </span>
-          ) : (
+        {segments.map(({ url, title, icon: Icon }, index) => (
+          <>
             <Link
-              href={`${BASE_DOCENT_PATH}/${effectiveCollectionId}`}
               className={cn(
-                'text-blue-text hover:underline',
-                disableNavigation && 'hidden'
+                'flex items-center gap-x-2',
+                index === 0 && segments.length === 1 && 'font-semibold',
+                segments.length > 1 &&
+                  !disableNavigation &&
+                  segments.length - 1 !== index &&
+                  'text-blue-text underline hover:text-blue-text/80',
+                disableNavigation && '!pointer-events-none'
               )}
+              key={url}
+              href={url}
             >
-              {collectionBreadcrumbText}
+              {Icon && <Icon className="size-3.5" />} {title}{' '}
+              {index === 0 && collectionName && `- ${collectionName}`}
             </Link>
-          )}
-
-          {/* Transcript page */}
-          {agentRunId && !isJudgeResultView && (
-            <>
-              <ChevronRight
-                size={18}
-                className={cn(disableNavigation && 'hidden')}
-              />
-              <span className="text-muted-foreground">
-                Agent run {agentRunId.split('-')[0]}
-              </span>
-            </>
-          )}
-
-          {rubricId && (
-            <>
-              <ChevronRight size={18} />
-              {isJudgeResultView ? (
-                <Link
-                  href={`${BASE_DOCENT_PATH}/${effectiveCollectionId}/rubric/${rubricId}`}
-                  className="text-blue-text hover:underline"
-                >
-                  Rubric
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">Rubric</span>
-              )}
-            </>
-          )}
-
-          {refinementSessionId && (
-            <>
-              <ChevronRight size={18} />
-              <span className="text-muted-foreground">Refinement session</span>
-            </>
-          )}
-
-          {/* Rubric result */}
-          {isJudgeResultView && (
-            <>
-              <ChevronRight size={18} />
-              <span className="text-muted-foreground">Result</span>
-            </>
-          )}
-        </div>
+            {index < segments.length - 1 && (
+              <ChevronRight className="size-3.5" />
+            )}
+          </>
+        ))}
       </div>
 
       <div className="flex items-center gap-x-2">
@@ -213,30 +196,7 @@ const Breadcrumbs: React.FC = () => {
         </Button>
 
         {/* Share view */}
-        {effectiveCollectionId && (
-          <ShareViewPopover collectionId={effectiveCollectionId} />
-        )}
-
-        {showSidebarToggles && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-x-2 h-7 cursor-default px-2"
-            onClick={() =>
-              dispatch(
-                isJudgeResultView
-                  ? toggleJudgeLeftSidebar()
-                  : toggleAgentRunLeftSidebar()
-              )
-            }
-          >
-            {leftSidebarOpen ? (
-              <PanelLeftClose size={14} />
-            ) : (
-              <PanelLeftOpen size={14} />
-            )}
-          </Button>
-        )}
+        {collectionId && <ShareViewPopover collectionId={collectionId} />}
 
         <ModeToggle />
         <UserProfile />
