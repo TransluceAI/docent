@@ -124,7 +124,13 @@ export function CollectionSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {items.map((item) => {
-                  const isActive = pathname === item.url;
+                  // For the root item (Agent Runs), only match exactly
+                  // For other items, match if on that route or any subroute
+                  const isRootItem = item.url === `/dashboard/${collectionId}`;
+                  const isActive = isRootItem
+                    ? pathname === item.url
+                    : pathname === item.url ||
+                      pathname.startsWith(item.url + '/');
                   return (
                     <SidebarMenuItem key={item.title}>
                       {isCollapsed ? (
