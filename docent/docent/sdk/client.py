@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.collection import Collection
 from docent.data_models.judge import Label
 from docent.judges.util.meta_schema import validate_judge_result_schema
 from docent.loaders import load_inspect
@@ -188,11 +189,11 @@ class Docent:
         logger.info(f"Successfully added {total_runs} agent runs to Collection '{collection_id}'")
         return {"status": "success", "total_runs_added": total_runs}
 
-    def list_collections(self) -> list[dict[str, Any]]:
+    def list_collections(self) -> list[Collection]:
         """Lists all available Collections.
 
         Returns:
-            list: List of dictionaries containing Collection information.
+            list: List of Collection objects.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
@@ -200,7 +201,28 @@ class Docent:
         url = f"{self._server_url}/collections"
         response = self._session.get(url)
         self._handle_response_errors(response)
-        return response.json()
+        return [Collection.model_validate(c) for c in response.json()]
+
+    def get_collection(self, collection_id: str) -> Collection | None:
+        """Get details about a specific Collection.
+
+        Requires READ permission on the collection.
+
+        Args:
+            collection_id: ID of the Collection to retrieve.
+
+        Returns:
+            Collection: Collection object with id, name, description, created_at, and created_by.
+                       Returns None if collection not found.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/collection_details"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        data = response.json()
+        return Collection.model_validate(data) if data is not None else None
 
     def list_rubrics(self, collection_id: str) -> list[dict[str, Any]]:
         """List all rubrics for a given collection.

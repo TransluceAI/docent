@@ -44,6 +44,7 @@ from opentelemetry.sdk.trace.export import (
 )
 from opentelemetry.trace import Span
 from requests import Response
+
 from docent._log_util import get_logger
 
 logger = get_logger(__name__)

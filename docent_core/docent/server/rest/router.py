@@ -25,6 +25,7 @@ from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
+from docent.data_models.collection import Collection
 from docent.loaders import load_inspect
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._auth.session import (
@@ -290,7 +291,7 @@ async def change_password(
 #############
 
 
-@user_router.get("/collections")
+@user_router.get("/collections", response_model=list[Collection])
 async def get_collections(
     user: User = Depends(get_user_anonymous_ok),
     mono_svc: MonoService = Depends(get_mono_svc),
@@ -303,14 +304,18 @@ async def get_collections(
     ]
 
 
-@user_router.get("/{collection_id}/collection")
-async def get_collection_name(
+@user_router.get("/{collection_id}/collection_details", response_model=Collection | None)
+async def get_collection_details(
     collection_id: str = Depends(require_collection_exists),
     mono_svc: MonoService = Depends(get_mono_svc),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
+    """Get full details about a collection including id, name, description, created_at, and created_by."""
     collection = await mono_svc.get_collection(collection_id)
-    return {"name": collection.name if collection else None}
+    if collection is None:
+        return None
+    # Return all columns from the SQLAlchemy object
+    return {c.key: getattr(collection, c.key) for c in sqla_inspect(collection).mapper.column_attrs}
 
 
 @user_router.get("/{collection_id}/exists")

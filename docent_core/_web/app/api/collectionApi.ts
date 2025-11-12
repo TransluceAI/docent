@@ -66,8 +66,11 @@ export const collectionApi = createApi({
   ],
   endpoints: (build) => ({
     getCollectionName: build.query<{ name: string | null }, string>({
-      query: (collectionId) => `/${collectionId}/collection`,
+      query: (collectionId) => `/${collectionId}/collection_details`,
       providesTags: ['Collection'],
+      transformResponse: (response: Collection | null) => ({
+        name: response?.name ?? null,
+      }),
     }),
     getCollections: build.query<Collection[], void>({
       query: () => '/collections',
