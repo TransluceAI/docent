@@ -473,7 +473,7 @@ class TelemetryService:
                     )
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Write permission required on collection {collection_id}",
+                        detail=f"User {user.id} does not have write permission on collection {collection_id}",
                     )
             else:
                 # Collection doesn't exist - this is allowed, it will be created later

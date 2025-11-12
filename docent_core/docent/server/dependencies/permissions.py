@@ -24,7 +24,10 @@ def require_collection_permission(permission: Permission):
         )
         if not allowed:
             logger.error(f"Permission denied for user {user.id} on collection {collection_id}")
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(
+                status_code=403,
+                detail=f"User {user.id} does not have {permission.value} permission on collection {collection_id}",
+            )
 
     return _check_permission
 
@@ -46,6 +49,9 @@ def require_view_permission(permission: Permission):
 
         if not allowed:
             logger.error(f"Permission denied for user {user.id} on view {ctx.view_id}")
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(
+                status_code=403,
+                detail=f"User {user.id} does not have {permission.value} permission on view {ctx.view_id}",
+            )
 
     return _check_permission
