@@ -684,7 +684,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
           top = rect.top - containerRect.top + scrollNode.scrollTop;
         }
 
-        scrollNode.scrollTo({ top, behavior: 'auto' });
+        scrollNode.scrollTo({ top, behavior: 'instant' });
         setCurrentBlockIndex(blockIdx);
         setHighlightedBlock(blockId);
         setTimeout(() => setHighlightedBlock(null), highlightDuration);

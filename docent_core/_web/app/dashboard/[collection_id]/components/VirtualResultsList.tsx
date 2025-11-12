@@ -196,7 +196,10 @@ const VirtualResultsList = ({
       (group) => group.agent_run_id === activeAgentRunId
     );
     if (activeResultResultIdx !== -1) {
-      virtualizer.scrollToIndex(activeResultResultIdx, { align: 'start' });
+      virtualizer.scrollToIndex(activeResultResultIdx, {
+        align: 'start',
+        behavior: 'smooth',
+      });
     }
   }, [agentRunResults, activeAgentRunId, virtualizer]);
 
