@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { copyToClipboard } from '@/lib/utils';
 import { Copy } from 'lucide-react';
@@ -6,6 +6,18 @@ import { Copy } from 'lucide-react';
 export default function UuidPill({ uuid }: { uuid?: string }) {
   const [isOverflowing, setIsOverflowing] = useState(false);
   const textRef = useRef<HTMLSpanElement>(null);
+
+  const shortCode = useMemo(() => {
+    if (!uuid) return '';
+    const hyphenIdx = uuid.indexOf('-');
+    if (hyphenIdx > 0) {
+      return uuid.slice(0, hyphenIdx);
+    }
+    if (uuid.length > 8) {
+      return `${uuid.slice(0, 8)}...`;
+    }
+    return uuid;
+  }, [uuid]);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -48,7 +60,7 @@ export default function UuidPill({ uuid }: { uuid?: string }) {
     <span
       className="inline-flex h-6 min-w-0 max-w-full items-center gap-x-1 rounded-md border border-border bg-muted py-0.5 pl-1 pr-0.5 text-xs font-mono text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
       onClick={onClick}
-      title="Click to copy full UUID"
+      title={`Click to copy full ID (${uuid})`}
     >
       <Copy className="h-3 w-3 flex-shrink-0" />
       <span
@@ -63,7 +75,7 @@ export default function UuidPill({ uuid }: { uuid?: string }) {
             : 'none',
         }}
       >
-        {uuid}
+        {shortCode}
       </span>
     </span>
   );

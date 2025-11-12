@@ -73,6 +73,7 @@ type ContentProps = {
   side?: 'top' | 'right' | 'bottom' | 'left';
   align?: 'start' | 'center' | 'end';
   title?: string;
+  titleRight?: React.ReactNode;
 };
 
 function Content({
@@ -80,6 +81,7 @@ function Content({
   side = 'right',
   align = 'start',
   title,
+  titleRight,
 }: ContentProps) {
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
@@ -118,10 +120,13 @@ function Content({
       }}
     >
       {title && (
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 mb-2">
           <div className="flex items-center space-x-2">
             <div className="text-sm font-medium text-primary">{title}</div>
           </div>
+          {titleRight ? (
+            <div className="flex items-center">{titleRight}</div>
+          ) : null}
         </div>
       )}
       <div

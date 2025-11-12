@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  ChevronDown,
+  ChevronRight,
   FileText,
   Folder,
   FolderOpen,
@@ -20,6 +22,7 @@ import {
 import { MetadataPopover } from '@/components/metadata/MetadataPopover';
 import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { Checkbox } from '@/components/ui/checkbox';
+import UuidPill from '@/components/UuidPill';
 
 // Unified tree node type: a node can be a group or a transcript
 export interface TreeNode {
@@ -28,6 +31,94 @@ export interface TreeNode {
   level: number; // indentation level for rendering
   children?: TreeNode[]; // only for group nodes
 }
+
+type ParentGroupInfo = {
+  id: string;
+  name?: string | null;
+};
+
+const buildParentChain = (
+  startGroupId: string | null | undefined,
+  transcriptGroupsById: Record<string, TranscriptGroup>
+): ParentGroupInfo[] => {
+  const parents: ParentGroupInfo[] = [];
+  const visited = new Set<string>();
+  let currentGroupId = startGroupId ?? undefined;
+
+  while (currentGroupId) {
+    if (visited.has(currentGroupId)) {
+      break;
+    }
+
+    const parentGroup = transcriptGroupsById[currentGroupId];
+    if (!parentGroup) {
+      break;
+    }
+
+    parents.push({
+      id: parentGroup.id,
+      name: parentGroup.name,
+    });
+    visited.add(currentGroupId);
+    currentGroupId = parentGroup.parent_transcript_group_id ?? undefined;
+  }
+
+  return parents;
+};
+
+const MetadataSummary: React.FC<{
+  parentsLabel?: string;
+  parents?: ParentGroupInfo[];
+}> = ({ parentsLabel = 'Parent groups', parents = [] }) => {
+  const hasParents = parents.length > 0;
+  const [showParents, setShowParents] = React.useState(false);
+
+  if (!hasParents) {
+    return null;
+  }
+
+  return (
+    <div className="mb-3 space-y-2 text-xs">
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={() => setShowParents((v) => !v)}
+          className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-primary transition-colors"
+        >
+          {showParents ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+          <span>
+            {parentsLabel} ({parents.length})
+          </span>
+        </button>
+        {showParents && (
+          <div className="mt-1 bg-secondary rounded-lg border border-border overflow-hidden">
+            <div className="divide-y divide-border">
+              {parents.map((parent) => (
+                <div
+                  key={parent.id}
+                  className="flex flex-wrap items-center gap-2 p-2 text-xs"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-medium text-primary truncate">
+                      {parent.name || 'Unnamed group'}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <UuidPill uuid={parent.id} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Component for rendering a single node (recursive for groups)
 const TreeNodeView: React.FC<{
@@ -58,6 +149,7 @@ const TreeNodeView: React.FC<{
         selectedTranscriptId={selectedTranscriptId}
         agentRun={agentRun}
         transcriptsById={transcriptsById}
+        transcriptGroupsById={transcriptGroupsById}
         onTranscriptSelect={onTranscriptSelect}
         level={node.level}
       />
@@ -67,6 +159,8 @@ const TreeNodeView: React.FC<{
   const group = transcriptGroupsById[node.id];
   const isExpanded = expandedGroups.has(node.id);
   const isSelected = selectedTranscriptGroupId === node.id;
+  const hasGroupMetadata =
+    !!group && Object.keys(group.metadata || {}).length > 0;
 
   return (
     <div className="space-y-1">
@@ -102,9 +196,13 @@ const TreeNodeView: React.FC<{
                     <button
                       className={cn(
                         'p-0.5 mr-1 rounded transition-colors',
-                        isSelected
-                          ? 'hover:bg-indigo-bg text-primary'
-                          : 'hover:bg-muted text-primary/80'
+                        hasGroupMetadata
+                          ? isSelected
+                            ? 'text-primary hover:bg-indigo-bg/70'
+                            : 'text-primary/90 hover:bg-muted'
+                          : isSelected
+                            ? 'text-muted-foreground/80 hover:bg-indigo-bg/40'
+                            : 'text-muted-foreground/60 hover:bg-muted/40'
                       )}
                     >
                       <FileText className="h-3 w-3" />
@@ -112,7 +210,15 @@ const TreeNodeView: React.FC<{
                   </MetadataPopover.Trigger>
                   <MetadataPopover.Content
                     title={`Transcript Group Metadata - ${group?.name || node.id}`}
+                    titleRight={<UuidPill uuid={group?.id ?? node.id} />}
                   >
+                    <MetadataSummary
+                      parentsLabel="Parent groups"
+                      parents={buildParentChain(
+                        group?.parent_transcript_group_id,
+                        transcriptGroupsById
+                      )}
+                    />
                     <MetadataPopover.Body metadata={group?.metadata || {}}>
                       {(md) => <MetadataBlock metadata={md} />}
                     </MetadataPopover.Body>
@@ -156,6 +262,7 @@ const TranscriptListItem: React.FC<{
   selectedTranscriptId: string | null;
   agentRun: AgentRun;
   transcriptsById: Record<string, Transcript>;
+  transcriptGroupsById: Record<string, TranscriptGroup>;
   onTranscriptSelect: (key: string) => void;
   level?: number;
 }> = ({
@@ -163,61 +270,82 @@ const TranscriptListItem: React.FC<{
   selectedTranscriptId,
   agentRun,
   transcriptsById,
+  transcriptGroupsById,
   onTranscriptSelect,
   level = 0,
-}) => (
-  <div
-    className={cn(
-      'flex items-center text-xs rounded border transition-colors min-w-0',
-      selectedTranscriptId === transcriptId
-        ? 'bg-blue-bg border-blue-border text-primary'
-        : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
-    )}
-    style={{ marginLeft: `${level * 12}px` }}
-  >
-    <button
-      onClick={() => onTranscriptSelect(transcriptId)}
-      className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
-      title={
-        transcriptsById[transcriptId]?.name
-          ? `${transcriptsById[transcriptId]?.name}\n${transcriptId}`
-          : transcriptId
-      }
+}) => {
+  const transcript = transcriptsById[transcriptId];
+  const transcriptMetadata = transcript?.metadata || {};
+  const hasTranscriptMetadata =
+    Object.keys(transcriptMetadata || {}).length > 0;
+  const parentGroups = buildParentChain(
+    transcript?.transcript_group_id,
+    transcriptGroupsById
+  );
+
+  return (
+    <div
+      className={cn(
+        'flex items-center text-xs rounded border transition-colors min-w-0',
+        selectedTranscriptId === transcriptId
+          ? 'bg-blue-bg border-blue-border text-primary'
+          : 'bg-secondary border-border text-primary hover:bg-blue-bg/50 hover:border-blue-border/50'
+      )}
+      style={{ marginLeft: `${level * 12}px` }}
     >
-      {transcriptsById[transcriptId]?.name || transcriptId}
-    </button>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex h-full items-center">
-          <MetadataPopover.Root>
-            <MetadataPopover.Trigger>
-              <button
-                className={cn(
-                  'p-0.5 mr-1 rounded transition-colors',
-                  selectedTranscriptId === transcriptId
-                    ? 'hover:bg-blue-bg text-primary'
-                    : 'hover:bg-accent text-muted-foreground'
-                )}
+      <button
+        onClick={() => onTranscriptSelect(transcriptId)}
+        className="flex-1 text-left px-2 py-1.5 text-ellipsis whitespace-nowrap overflow-hidden min-w-0 font-medium"
+        title={
+          transcript?.name
+            ? `${transcript?.name}\n${transcriptId}`
+            : transcriptId
+        }
+      >
+        {transcript?.name || transcriptId}
+      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex h-full items-center">
+            <MetadataPopover.Root>
+              <MetadataPopover.Trigger>
+                <button
+                  className={cn(
+                    'p-0.5 mr-1 rounded transition-colors',
+                    hasTranscriptMetadata
+                      ? selectedTranscriptId === transcriptId
+                        ? 'text-primary hover:bg-blue-bg/70'
+                        : 'text-primary/90 hover:bg-accent'
+                      : selectedTranscriptId === transcriptId
+                        ? 'text-muted-foreground/80 hover:bg-blue-bg/40'
+                        : 'text-muted-foreground/60 hover:bg-accent/40'
+                  )}
+                >
+                  <FileText className="h-3 w-3" />
+                </button>
+              </MetadataPopover.Trigger>
+              <MetadataPopover.Content
+                title={`Transcript Metadata`}
+                titleRight={<UuidPill uuid={transcriptId} />}
               >
-                <FileText className="h-3 w-3" />
-              </button>
-            </MetadataPopover.Trigger>
-            <MetadataPopover.Content title={`Transcript Metadata`}>
-              <MetadataPopover.Body
-                metadata={transcriptsById[transcriptId]?.metadata || {}}
-              >
-                {(md) => <MetadataBlock metadata={md} />}
-              </MetadataPopover.Body>
-            </MetadataPopover.Content>
-          </MetadataPopover.Root>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="left" align="center">
-        <p>View transcript metadata</p>
-      </TooltipContent>
-    </Tooltip>
-  </div>
-);
+                <MetadataSummary
+                  parentsLabel="Parent groups"
+                  parents={parentGroups}
+                />
+                <MetadataPopover.Body metadata={transcriptMetadata}>
+                  {(md) => <MetadataBlock metadata={md} />}
+                </MetadataPopover.Body>
+              </MetadataPopover.Content>
+            </MetadataPopover.Root>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="left" align="center">
+          <p>View transcript metadata</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+};
 
 // Pure navigation component - only concerned with rendering the transcript tree
 export const TranscriptNavigator: React.FC<{
