@@ -136,6 +136,7 @@ export default function ModelPicker({
           onChange(selected);
         }}
         options={options}
+        popoverAlign="start"
         placeholder="Select model"
         searchPlaceholder="Search models..."
         emptyMessage="No models found"

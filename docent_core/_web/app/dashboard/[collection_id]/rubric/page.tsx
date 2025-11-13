@@ -121,63 +121,49 @@ export default function RubricsPage() {
     }
   };
 
-  const handleAddNewRubric = async (
-    rubricText: string,
-    withSchemaAndModel: boolean = false
-  ) => {
+  const handleAddNewRubric = async (rubricText: string) => {
     if (!collectionId) return undefined;
 
-    try {
-      const rubricId = await createRubric({
-        collectionId,
-        rubric: {
-          rubric_text: rubricText,
-        },
-      }).unwrap();
-
-      // If we have schema and model configured, update the rubric immediately
-      if (withSchemaAndModel && selectedJudgeModel) {
-        try {
-          let parsedSchema;
-          try {
-            parsedSchema = JSON.parse(schemaText);
-          } catch (e) {
-            setSchemaError(
-              `Invalid JSON: ${e instanceof Error ? e.message : 'Unknown error'}`
-            );
-            return rubricId;
-          }
-
-          await updateRubric({
-            collectionId,
-            rubricId,
-            rubric: {
-              id: rubricId,
-              rubric_text: rubricText,
-              judge_model: selectedJudgeModel,
-              output_schema: parsedSchema,
-            },
-          }).unwrap();
-        } catch (error) {
-          console.error('Failed to update rubric with schema/model:', error);
-          // Don't fail the whole operation, just log the error
-        }
-      }
-
-      return rubricId;
-    } catch (error) {
-      console.error('Failed to create rubric', error);
+    if (!selectedJudgeModel) {
       toast({
         title: 'Error',
-        description: 'Failed to create rubric',
+        description: 'Judge model is still loading.',
         variant: 'destructive',
       });
       return undefined;
     }
+
+    let parsedSchema;
+    try {
+      parsedSchema = JSON.parse(schemaText);
+    } catch (e) {
+      setSchemaError(
+        `Invalid JSON: ${e instanceof Error ? e.message : 'Unknown error'}`
+      );
+      return undefined;
+    }
+
+    return await createRubric({
+      collectionId,
+      rubric: {
+        rubric_text: rubricText,
+        output_schema: parsedSchema,
+        judge_model: selectedJudgeModel,
+      },
+    })
+      .unwrap()
+      .catch((error) => {
+        console.error('Failed to create rubric', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to create rubric',
+          variant: 'destructive',
+        });
+      });
   };
 
   const handleGuidedSubmit = async (highLevelDescription: string) => {
-    const rubricId = await handleAddNewRubric(highLevelDescription, true);
+    const rubricId = await handleAddNewRubric(highLevelDescription);
     if (!rubricId) return;
 
     await createOrGetSession({
@@ -200,7 +186,7 @@ export default function RubricsPage() {
   };
 
   const handleDirectSubmit = async (highLevelDescription: string) => {
-    const rubricId = await handleAddNewRubric(highLevelDescription, true);
+    const rubricId = await handleAddNewRubric(highLevelDescription);
     if (!rubricId) return;
 
     await startEvaluation({

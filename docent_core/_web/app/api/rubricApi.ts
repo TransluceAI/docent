@@ -11,6 +11,8 @@ export interface CreateRubricRequest {
   rubric: {
     id?: string;
     rubric_text: string;
+    output_schema: Record<string, any>;
+    judge_model: ModelOption;
   };
 }
 
