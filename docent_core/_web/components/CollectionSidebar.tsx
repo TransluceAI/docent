@@ -83,7 +83,7 @@ export function CollectionSidebar() {
                     asChild
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 bg-white hover:bg-secondary"
+                    className="h-8 w-8"
                   >
                     <Link href="/dashboard">
                       <Home className="h-4 w-4" />
@@ -93,12 +93,7 @@ export function CollectionSidebar() {
                 <TooltipContent side="right">Home</TooltipContent>
               </Tooltip>
             ) : (
-              <Button
-                asChild
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 bg-white hover:bg-secondary"
-              >
+              <Button asChild variant="outline" size="icon" className="h-8 w-8">
                 <Link href="/dashboard">
                   <Home className="h-4 w-4" />
                 </Link>
@@ -109,7 +104,7 @@ export function CollectionSidebar() {
           {/* Collection name */}
           <div
             className={cn(
-              'flex flex-col pl-2 items-start w-full',
+              'flex flex-col pl-4 items-start w-full',
               isCollapsed
                 ? 'opacity-0 pointer-events-none transition-opacity duration-200'
                 : 'opacity-100'

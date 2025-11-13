@@ -7,7 +7,13 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { CirclePlus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  CirclePlus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopyIcon,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -24,9 +30,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-import { cn, getSchemaPreview } from '@/lib/utils';
+import { cn, getSchemaPreview, copyToClipboard } from '@/lib/utils';
 import { LabelSet } from '@/app/api/labelApi';
 import { SchemaDefinition } from '@/app/types/schema';
+import { toast } from '@/hooks/use-toast';
 
 const ROW_HEIGHT_PX = 40;
 
@@ -95,6 +102,23 @@ export default function LabelSetsTable({
       label_schema: row.labelSchema,
     };
 
+    const copyId = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const success = await copyToClipboard(row.id);
+      if (success) {
+        toast({
+          title: 'Label Set ID Copied',
+          description: `Copied ${row.id} to clipboard`,
+        });
+      } else {
+        toast({
+          title: 'Failed to copy',
+          description: 'Could not copy to clipboard',
+          variant: 'destructive',
+        });
+      }
+    };
+
     return (
       <div
         className="flex items-center gap-1"
@@ -127,6 +151,15 @@ export default function LabelSetsTable({
             </>
           ) : null}
         </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
+          onClick={copyId}
+          title="Copy label set ID"
+        >
+          <ClipboardCopyIcon className="h-3.5 w-3.5" />
+        </Button>
         {onDeleteLabelSet && (
           <Popover
             open={deletePopoverId === row.id}

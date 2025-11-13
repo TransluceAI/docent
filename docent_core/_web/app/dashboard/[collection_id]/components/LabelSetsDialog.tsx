@@ -14,7 +14,7 @@ import {
   type LabelSet,
 } from '@/app/api/labelApi';
 import LabelSetsTable, { type LabelSetTableRow } from './LabelSetsTable';
-import { cn } from '@/lib/utils';
+import { cn, areSchemasCompatible } from '@/lib/utils';
 import LabelSetEditor from './LabelSetEditor';
 import { useToast } from '@/hooks/use-toast';
 import { useParams } from 'next/navigation';
@@ -124,9 +124,7 @@ export default function LabelSetsDialog({
 
   const isSchemaCompatible = (row: LabelSetTableRow) => {
     if (!currentRubricSchema) return true;
-    return (
-      JSON.stringify(row.labelSchema) === JSON.stringify(currentRubricSchema)
-    );
+    return areSchemasCompatible(row.labelSchema, currentRubricSchema);
   };
 
   return (
