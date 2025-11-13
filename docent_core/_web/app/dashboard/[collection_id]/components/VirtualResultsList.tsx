@@ -190,19 +190,6 @@ const VirtualResultsList = ({
   });
   const items = virtualizer.getVirtualItems();
 
-  // Scroll to the active result group if it exists on load
-  useEffect(() => {
-    const activeResultResultIdx = agentRunResults.findIndex(
-      (group) => group.agent_run_id === activeAgentRunId
-    );
-    if (activeResultResultIdx !== -1) {
-      virtualizer.scrollToIndex(activeResultResultIdx, {
-        align: 'start',
-        behavior: 'smooth',
-      });
-    }
-  }, [agentRunResults, activeAgentRunId, virtualizer]);
-
   return (
     <div
       ref={parentRef}
