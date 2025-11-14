@@ -156,7 +156,7 @@ async def cancel_job(job_id: str) -> None:
     # Wait for confirmation from the worker
     try:
         # Wait up to T seconds for cancellation confirmation
-        result = await redis_client.blpop(response_queue, timeout=10)  # type: ignore
+        result = await redis_client.blpop(response_queue, timeout=5)  # type: ignore
         if result is None:
             raise TimeoutError(f"Timeout waiting for cancellation confirmation for job {job_id}")
 
