@@ -529,6 +529,7 @@ class SQLASearchQuery(SQLABase):
 class JobStatus(enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
+    CANCELLING = "cancelling"
     CANCELED = "canceled"
     COMPLETED = "completed"
 

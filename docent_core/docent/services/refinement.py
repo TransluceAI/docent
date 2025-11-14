@@ -236,7 +236,7 @@ class RefinementService:
             select(SQLAJob)
             .where(SQLAJob.type == WorkerFunction.REFINEMENT_AGENT_JOB.value)
             .where(SQLAJob.job_json["rsession_id"].astext == session_id)
-            .where((SQLAJob.status == JobStatus.PENDING) | (SQLAJob.status == JobStatus.RUNNING))
+            .where(SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING, JobStatus.CANCELLING]))
             .limit(1)
         )
         return result.scalar_one_or_none()

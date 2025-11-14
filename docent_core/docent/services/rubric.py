@@ -423,7 +423,7 @@ class RubricService:
             select(SQLAJob)
             .where(SQLAJob.type == WorkerFunction.RUBRIC_JOB.value)
             .where(SQLAJob.job_json["rubric_id"].astext == rubric_id)
-            .where((SQLAJob.status == JobStatus.PENDING) | (SQLAJob.status == JobStatus.RUNNING))
+            .where(SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING, JobStatus.CANCELLING]))
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -777,8 +777,9 @@ class RubricService:
                     .where(SQLAJob.job_json["rubric_id"].astext == rubric_id)
                     .where(SQLAJob.job_json["rubric_version"].astext == str(rubric_version))
                     .where(
-                        (SQLAJob.status == JobStatus.PENDING)
-                        | (SQLAJob.status == JobStatus.RUNNING)
+                        SQLAJob.status.in_(
+                            [JobStatus.PENDING, JobStatus.RUNNING, JobStatus.CANCELLING]
+                        )
                     )
                     .limit(1)
                 )
@@ -981,7 +982,7 @@ class RubricService:
             select(SQLAJob)
             .where(SQLAJob.type == WorkerFunction.CLUSTERING_JOB.value)
             .where(SQLAJob.job_json["rubric_id"].astext == rubric_id)
-            .where((SQLAJob.status == JobStatus.PENDING) | (SQLAJob.status == JobStatus.RUNNING))
+            .where(SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING, JobStatus.CANCELLING]))
             .order_by(SQLAJob.created_at.desc())
             .limit(1)
         )

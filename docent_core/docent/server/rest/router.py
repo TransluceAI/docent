@@ -20,7 +20,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
 from pydantic_core import to_jsonable_python
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.inspection import inspect as sqla_inspect
 
 from docent._log_util.logger import get_logger
@@ -45,11 +45,7 @@ from docent_core.docent.db.schemas.auth_models import (
     User,
 )
 from docent_core.docent.db.schemas.collab_models import CollectionCollaborator
-from docent_core.docent.db.schemas.tables import (
-    JobStatus,
-    SQLAAccessControlEntry,
-    SQLAJob,
-)
+from docent_core.docent.db.schemas.tables import SQLAAccessControlEntry
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import (
     get_mono_svc,
@@ -1154,17 +1150,6 @@ async def share_collection_with_email(
     return {"status": "success", "message": f"Collection shared with {request.email}"}
 
 
-@user_router.post("/{collection_id}/has_embedding_job")
-async def has_embedding_job(
-    collection_id: str,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.READ)),
-):
-    where_clause = or_(SQLAJob.status == JobStatus.PENDING, SQLAJob.status == JobStatus.RUNNING)
-    count = await mono_svc.get_embedding_job_count(collection_id, where_clause)
-    return count > 0
-
-
 ####################
 # API Key endpoints #
 ####################
@@ -1254,23 +1239,3 @@ async def disable_api_key(
     if not success:
         raise HTTPException(status_code=404, detail="API key not found")
     return {"message": "API key disabled successfully"}
-
-
-@user_router.post("/{collection_id}/fg_has_embeddings")
-async def fg_has_embeddings(
-    collection_id: str,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.READ)),
-):
-    return await mono_svc.fg_has_embeddings(collection_id)
-
-
-@user_router.post("/{collection_id}/compute_embeddings")
-async def compute_embeddings(
-    collection_id: str,
-    mono_svc: MonoService = Depends(get_mono_svc),
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
-):
-    return
-    await mono_svc.add_and_enqueue_embedding_job(ctx)

@@ -144,27 +144,13 @@ async def enqueue_job(ctx: ViewContext | WorkspaceContext, job_id: str) -> None:
 
 
 async def cancel_job(job_id: str) -> None:
-    """Cancel a job and wait for confirmation that the cancellation was processed."""
+    """
+    Request cancellation for a job by pushing a cancel command onto the job's command queue.
+
+    This function does not wait for worker confirmation and returns as soon as the cancel
+    command is enqueued to Redis.
+    """
     redis_client = await get_redis_client()
-    # Queue names
     command_queue = f"commands_{job_id}"
-    response_queue = f"cancel_response_{job_id}"
 
-    # Send the cancel command with the response ID
     await redis_client.rpush(command_queue, "cancel")  # type: ignore
-
-    # Wait for confirmation from the worker
-    try:
-        # Wait up to T seconds for cancellation confirmation
-        result = await redis_client.blpop(response_queue, timeout=5)  # type: ignore
-        if result is None:
-            raise TimeoutError(f"Timeout waiting for cancellation confirmation for job {job_id}")
-
-        _queue_name, response = result  # type: ignore
-        logger.info(f"Received cancellation confirmation for job {job_id}: {response}")
-
-    except Exception as e:
-        logger.error(f"Error waiting for cancellation confirmation for job {job_id}: {e}")
-
-    finally:
-        await redis_client.delete(response_queue)  # type: ignore

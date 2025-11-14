@@ -129,7 +129,7 @@ export default function RunRubricDialog({
               {isStarting && (
                 <Loader2
                   size={16}
-                  className="animate-spin text-muted-foreground mr-2"
+                  className="animate-spin text-muted-foreground mr-1"
                 />
               )}
               Run rubric

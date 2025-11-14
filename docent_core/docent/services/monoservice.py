@@ -39,8 +39,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import FromClause, lateral, text
 from sqlalchemy.types import Numeric
 
-from docent._llm_util.data_models.llm_output import AsyncEmbeddingStreamingCallback
-from docent._llm_util.providers.openai import get_chunked_openai_embeddings_async
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
 from docent.data_models.transcript import Transcript, TranscriptGroup
@@ -73,8 +71,6 @@ from docent_core.docent.db.schemas.chat import SQLAChatSession
 from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 from docent_core.docent.db.schemas.rubric import SQLAJudgeResult, SQLARubric
 from docent_core.docent.db.schemas.tables import (
-    EMBEDDING_DIM,
-    TABLE_TRANSCRIPT_EMBEDDING,
     JobStatus,
     SQLAAccessControlEntry,
     SQLAAgentRun,
@@ -762,27 +758,6 @@ class MonoService:
 
         return deleted_count
 
-    async def add_and_enqueue_embedding_job(self, ctx: ViewContext):
-        collection_id = ctx.collection_id
-        pending_count = await self.get_embedding_job_count(
-            collection_id, SQLAJob.status == JobStatus.PENDING
-        )
-        running_count = await self.get_embedding_job_count(
-            collection_id, SQLAJob.status == JobStatus.RUNNING
-        )
-
-        # Only start if there's at most one running job and no pending jobs
-        if running_count <= 1 and pending_count == 0:
-            # Determine whether to index the new agent runs
-            total_runs = await self.count_base_agent_runs(ctx)
-            should_index = total_runs >= 5_000
-
-            # Enqueue a job in pg and start a redis worker
-            job_id = await self.add_embedding_job(collection_id, should_index)
-            await enqueue_job(ctx, job_id)  # type: ignore
-
-            logger.info(f"Enqueued embedding job {job_id} for collection {collection_id}")
-
     async def get_agent_run_ids(
         self,
         ctx: ViewContext,
@@ -1336,273 +1311,6 @@ class MonoService:
         )
         return new_ctx
 
-    ##############
-    # Embeddings #
-    ##############
-
-    async def _rerank_agent_runs_by_embeddings(
-        self,
-        ctx: ViewContext,
-        agent_runs: list[AgentRun],
-        search_query_id: str,
-    ) -> list[AgentRun]:
-        """
-        Rerank agent runs using pgvector cosine distance search if embeddings are available.
-        Returns the original agent runs if reranking fails or embeddings are loading.
-        """
-        return agent_runs
-
-        try:
-            search_query = await self.get_search_query(search_query_id)
-            query_embeddings, _ = await get_chunked_openai_embeddings_async(
-                [search_query.search_query]
-            )
-        except Exception as e:
-            logger.warning(f"Failed to compute embeddings: {e}")
-            return agent_runs
-
-        query_embedding = query_embeddings[0]
-        async with self.db.session() as session:
-            count_query = (
-                select(func.count(SQLATranscriptEmbedding.id))
-                .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
-                .where(
-                    SQLATranscriptEmbedding.collection_id == ctx.collection_id,
-                    ctx.get_base_where_clause(SQLAAgentRun),
-                    ~exists().where(
-                        SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-                        SQLASearchResult.search_query_id == search_query_id,
-                    ),
-                )
-            )
-
-            # Execute count query to get the actual number of embeddings to process
-            count_result = await session.execute(count_query)
-            embedding_count = count_result.scalar_one()
-
-            query = (
-                select(
-                    SQLATranscriptEmbedding.agent_run_id,
-                )
-                .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
-                .where(
-                    SQLATranscriptEmbedding.collection_id == ctx.collection_id,
-                    ctx.get_base_where_clause(SQLAAgentRun),
-                    ~exists().where(
-                        SQLASearchResult.agent_run_id == SQLAAgentRun.id,
-                        SQLASearchResult.search_query_id == search_query_id,
-                    ),
-                )
-                .order_by(SQLATranscriptEmbedding.embedding.cosine_distance(query_embedding))
-                .limit(embedding_count)
-            )
-
-            # Execute the actual query
-            result = await session.execute(query)
-            ordered_results = result.all()
-            ordered_agent_run_ids = [row.agent_run_id for row in ordered_results]
-
-        # Create a mapping of ID to AgentRun for quick lookup
-        id_to_agent_run = {ar.id: ar for ar in agent_runs}
-        ordered_agent_run_ids = list(dict.fromkeys(ordered_agent_run_ids))
-        reranked_agent_runs = [id_to_agent_run[ar_id] for ar_id in ordered_agent_run_ids]
-
-        if len(reranked_agent_runs) != len(agent_runs):
-            logger.error(
-                f"Reranked to {len(reranked_agent_runs)} agent runs, but expected {len(agent_runs)}"
-            )
-
-        logger.info(f"Reranked to {len(reranked_agent_runs)}")
-
-        return reranked_agent_runs
-
-    async def fg_has_embeddings(self, collection_id: str) -> bool:
-        """Check if all runs in the current context have embeddings."""
-        async with self.db.session() as session:
-            # Check if there exists any run without embeddings
-            subquery = select(1).where(
-                SQLAAgentRun.collection_id == collection_id,
-                ~exists().where(SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id),
-            )
-
-            query = select(~exists(subquery))
-            result = await session.execute(query)
-            return result.scalar_one()
-
-    async def get_indexing_progress(self, collection_id: str) -> tuple[str | None, int | None]:
-        index_name = f"ivfflat_embedding_view_{collection_id.replace('-', '_')}"
-
-        # Filter for a specific index by name
-        query = text(
-            """
-            SELECT
-                pci.phase,
-                round(100.0 * pci.tuples_done / nullif(pci.tuples_total, 0), 1) AS percent
-            FROM pg_stat_progress_create_index pci
-            JOIN pg_class pc ON pci.index_relid = pc.oid
-            WHERE pc.relname = :index_name
-            """
-        )
-
-        async with self.db.session() as session:
-            result = await session.execute(query, {"index_name": index_name})
-            row = result.fetchone()
-
-        if row is None:
-            return None, None
-
-        # Handle case where percent is None (can happen when tuples_total is 0)
-        percent = row[1]
-        return row[0], int(percent) if percent is not None else None
-
-    async def compute_embeddings(
-        self, ctx: ViewContext, progress_callback: AsyncEmbeddingStreamingCallback
-    ):
-        async with self.db.session() as session:
-            # Get all agent runs that don't have embeddings in this collection
-            query = (
-                select(SQLAAgentRun.id)
-                .outerjoin(
-                    SQLATranscriptEmbedding,
-                    (SQLAAgentRun.id == SQLATranscriptEmbedding.agent_run_id)
-                    & (SQLATranscriptEmbedding.collection_id == ctx.collection_id),
-                )
-                .where(SQLATranscriptEmbedding.agent_run_id.is_(None))
-            )
-            result = await session.execute(query)
-            agent_run_ids_without_embeddings = result.scalars().all()
-
-        if len(agent_run_ids_without_embeddings) == 0:
-            logger.info("All agent runs already have embeddings")
-            return False
-
-        # Use existing get_agent_runs method to fetch full AgentRun objects with transcripts
-        agent_runs = await self.get_agent_runs(
-            ctx, agent_run_ids=list(agent_run_ids_without_embeddings)
-        )
-
-        logger.info(f"Computing embeddings for {len(agent_runs)} agent runs")
-
-        text = [run.text for run in agent_runs]
-        try:
-            embeddings, chunk_to_doc = await get_chunked_openai_embeddings_async(
-                text, dimensions=EMBEDDING_DIM, callback=progress_callback
-            )
-        except Exception as e:
-            # Just skip
-            logger.warning(f"Failed to compute embeddings: {e}")
-            return False
-        embedding_ids = [agent_runs[doc_idx].id for doc_idx in chunk_to_doc]
-
-        async with self.db.session() as session:
-            session.add_all(
-                [
-                    SQLATranscriptEmbedding(
-                        id=str(uuid4()),
-                        collection_id=ctx.collection_id,
-                        agent_run_id=id,
-                        embedding=embedding,
-                    )
-                    for id, embedding in zip(embedding_ids, embeddings)
-                ]
-            )
-
-        logger.info(f"Pushed {len(embeddings)} embeddings")
-
-        return True
-
-    async def compute_ivfflat_index(
-        self,
-        ctx: ViewContext,
-    ) -> str:
-        """Create an IVFFlat index for embeddings of agent runs in the given view context."""
-        # Check if embeddings exist for agent runs in this collection
-        async with self.db.session() as session:
-            count_query = (
-                select(func.count(SQLATranscriptEmbedding.id))
-                .join(SQLAAgentRun, SQLATranscriptEmbedding.agent_run_id == SQLAAgentRun.id)
-                .where(SQLAAgentRun.collection_id == ctx.collection_id)
-            )
-            result = await session.execute(count_query)
-            embedding_count = result.scalar_one()
-
-        if embedding_count == 0:
-            raise ValueError(f"No embeddings found for agent runs in view {ctx.view_id}.")
-
-        lists = min(max(100, int(embedding_count**0.5)), 1_000)
-
-        index_name = f"ivfflat_embedding_view_{ctx.collection_id.replace('-', '_')}"
-
-        # Drop existing index within a transaction
-        async with self.db.session() as session:
-            try:
-                await session.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
-                logger.info(f"Dropped existing index {index_name}")
-            except Exception as e:
-                logger.warning(f"Failed to drop existing index {index_name}: {e}")
-
-        # Create index CONCURRENTLY outside of transaction using engine connection
-        # CONCURRENTLY cannot be run within a transaction block
-        async with self.db.engine.connect() as conn:
-            # Set autocommit mode for the connection
-            await conn.execution_options(isolation_level="AUTOCOMMIT")
-
-            # Create the IVFFlat index
-            # Using cosine distance operator for semantic similarity
-            create_index_query = text(
-                f"""
-                CREATE INDEX CONCURRENTLY {index_name} ON {TABLE_TRANSCRIPT_EMBEDDING}
-                USING ivfflat (embedding vector_cosine_ops)
-                WITH (lists = {lists})
-                WHERE collection_id = '{ctx.collection_id}'
-                """
-            )
-
-            logger.info(f"Creating IVFFlat index {index_name} with {lists} lists...")
-            await conn.execute(create_index_query)
-            logger.info(f"Successfully created IVFFlat index {index_name}")
-
-        return index_name
-
-    async def get_embedding_job_count(
-        self, collection_id: str, _where_clause: ColumnElement[bool] | None = None
-    ) -> int:
-        """
-        Count the number of embedding jobs for a collection.
-
-        Args:
-            collection_id: The collection ID
-            _where_clause: Optional additional filter clause
-
-        Returns:
-            The number of embedding jobs matching the criteria
-        """
-        async with self.db.session() as session:
-            query = (
-                select(func.count(SQLAJob.id))
-                .filter(SQLAJob.type == "compute_embeddings")
-                .filter(SQLAJob.job_json["collection_id"].astext == collection_id)
-            )
-            if _where_clause is not None:
-                query = query.filter(_where_clause)
-
-            result = await session.execute(query)
-            return result.scalar() or 0
-
-    async def get_oldest_active_embedding_job(self, collection_id: str) -> SQLAJob | None:
-        async with self.db.session() as session:
-            query = (
-                select(SQLAJob)
-                .where(
-                    SQLAJob.type == "compute_embeddings",
-                    SQLAJob.job_json["collection_id"].astext == collection_id,
-                    SQLAJob.status == JobStatus.RUNNING,
-                )
-                .order_by(SQLAJob.created_at.asc())
-            )
-            result = await session.execute(query)
-            return result.scalar_one_or_none()
-
     ########
     # Jobs #
     ########
@@ -1623,29 +1331,6 @@ class MonoService:
             session.add(SQLAJob(id=job_id, type=type, created_at=datetime.now(), job_json=job_json))
             logger.info(f"Added job with ID: {job_id}")
         return job_id
-
-    async def add_embedding_job(self, collection_id: str, should_index: bool) -> str:
-        """
-        Adds or finds an embedding job for the given collection.
-
-        Args:
-            should_index: Whether to index the new agent runs
-        """
-        async with self.db.session() as session:
-            job_id = str(uuid4())
-            session.add(
-                SQLAJob(
-                    id=job_id,
-                    type="compute_embeddings",
-                    job_json={
-                        "should_index": should_index,
-                        "collection_id": collection_id,
-                    },
-                )
-            )
-            logger.info(f"Added embedding job {job_id}")
-
-            return job_id
 
     async def add_telemetry_processing_job(self, collection_id: str, user: User) -> str | None:
         """

@@ -33,7 +33,9 @@ export interface RubricCentroid {
   id: string;
   collection_id: string;
   rubric_id: string;
+  rubric_version: number;
   centroid: string;
+  result_type: 'direct_result' | 'near_miss';
 }
 
 export interface RubricState {}

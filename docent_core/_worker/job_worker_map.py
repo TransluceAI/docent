@@ -8,7 +8,6 @@ from docent_core.docent.workers.centroid_assignment_worker import (
     clustering_job,
 )
 from docent_core.docent.workers.chat_worker import chat_job
-from docent_core.docent.workers.embedding_worker import compute_embeddings
 from docent_core.docent.workers.refinement_worker import refinement_agent_job
 from docent_core.docent.workers.reflection_worker import reflection_job
 from docent_core.docent.workers.rubric_job_worker import rubric_job
@@ -26,7 +25,6 @@ WorkspaceContextJob = Callable[[WorkspaceContext, SQLAJob], Coroutine[Any, Any, 
 
 JOB_DISPATCHER_MAP: dict[str, Union[ViewContextJob, WorkspaceContextJob]] = {
     WorkerFunction.RUBRIC_JOB.value: rubric_job,
-    WorkerFunction.COMPUTE_EMBEDDINGS.value: compute_embeddings,
     WorkerFunction.CENTROID_ASSIGNMENT_JOB.value: centroid_assignment_job,
     WorkerFunction.REFINEMENT_AGENT_JOB.value: refinement_agent_job,
     WorkerFunction.CHAT_JOB.value: chat_job,

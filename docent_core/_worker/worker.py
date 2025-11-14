@@ -60,7 +60,6 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
 
     REDIS = await get_redis_client()
     commands_queue = f"commands_{job_id}"
-    response_queue = f"cancel_response_{job_id}"
 
     async def _run(tg: TaskGroup):
         nonlocal canceled
@@ -80,6 +79,8 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
                 raise RuntimeError("Job was already canceled")
             elif job.status == JobStatus.COMPLETED:
                 raise RuntimeError("Job was already completed")
+            elif job.status == JobStatus.CANCELLING:
+                raise RuntimeError(f"Job {job_id} is currently being canceled")
 
             # Mark it as running
             await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
@@ -115,15 +116,7 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
                     logger.highlight(f"Job {job_id} finished", color="green")
                     await mono_svc.set_job_status(job_id, JobStatus.COMPLETED)
 
-                # Send immediate cancellation confirmation to caller
-                if canceled:
-                    await REDIS.rpush(response_queue, "cancelled")  # type: ignore
-                    logger.info(
-                        f"Sent cancellation confirmation for job {job_id} to {response_queue}"
-                    )
-
                 # Cleanup
-                await REDIS.expire(response_queue, 600)  # type: ignore
                 await REDIS.delete(commands_queue)  # type: ignore
 
     async def await_commands(tg: TaskGroup):

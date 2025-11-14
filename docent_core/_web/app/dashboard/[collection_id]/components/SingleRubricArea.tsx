@@ -73,6 +73,7 @@ export default function SingleRubricArea({
   const {
     // Rubric job status
     rubricJobId,
+    rubricJobStatus,
     totalResultsNeeded,
     currentResultsCount,
 
@@ -81,6 +82,7 @@ export default function SingleRubricArea({
 
     // Clustering job status
     clusteringJobId,
+    clusteringJobStatus,
     centroids,
 
     // Clustering results
@@ -191,6 +193,7 @@ export default function SingleRubricArea({
               collectionId={collectionId}
               rubricId={rubricId}
               clusteringJobId={clusteringJobId}
+              clusteringJobStatus={clusteringJobStatus}
               hasUnsavedChanges={hasUnsavedChanges}
               hasCentroids={centroids.length > 0}
             />
@@ -202,6 +205,7 @@ export default function SingleRubricArea({
               collectionId={collectionId}
               rubricId={rubricId}
               rubricJobId={rubricJobId}
+              rubricJobStatus={rubricJobStatus}
               hasUnsavedChanges={hasUnsavedChanges}
               onClick={() => setIsRunDialogOpen(true)}
             />

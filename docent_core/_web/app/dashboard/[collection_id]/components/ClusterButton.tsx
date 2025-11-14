@@ -1,4 +1,5 @@
 import {
+  JobStatus,
   useCancelClusteringJobMutation,
   useClearClustersMutation,
   useStartClusteringJobMutation,
@@ -16,13 +17,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useRubricVersion } from '@/providers/use-rubric-version';
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 interface ClusterButtonProps {
   hasUnsavedChanges: boolean;
   collectionId: string;
   rubricId: string;
   clusteringJobId: string | null;
+  clusteringJobStatus: JobStatus | null;
   hasCentroids?: boolean;
 }
 
@@ -31,34 +33,44 @@ const ClusterButton = ({
   collectionId,
   rubricId,
   clusteringJobId,
+  clusteringJobStatus,
   hasCentroids,
 }: ClusterButtonProps) => {
   // Cancel clustering job
   const [cancelClusteringJob, { isLoading: isCancellingClustering }] =
     useCancelClusteringJobMutation();
+  const [hasPendingCancel, setHasPendingCancel] = useState(false);
   const handleCancelClustering = async () => {
     if (!clusteringJobId || !collectionId || !rubricId) return;
+    setHasPendingCancel(true);
     await cancelClusteringJob({
       collectionId,
       rubricId,
       jobId: clusteringJobId,
-    });
+    }).unwrap();
   };
 
   // Clustering job lifecyles
   const [startClusteringJob, { isLoading: isStartingClustering }] =
     useStartClusteringJobMutation();
+  const [hasPendingStart, setHasPendingStart] = useState(false);
   const handleStartClustering = async (
     feedback: string | undefined,
     recluster: boolean
   ) => {
     if (!collectionId || !rubricId || clusteringJobId !== null) return;
-    await startClusteringJob({
-      collectionId,
-      rubricId,
-      clustering_feedback: feedback,
-      recluster: recluster,
-    });
+    setHasPendingStart(true);
+    try {
+      await startClusteringJob({
+        collectionId,
+        rubricId,
+        clustering_feedback: feedback,
+        recluster: recluster,
+      }).unwrap();
+    } catch (error) {
+      setHasPendingStart(false);
+      throw error;
+    }
   };
 
   // Clear clusters
@@ -66,7 +78,7 @@ const ClusterButton = ({
     useClearClustersMutation();
   const handleClearClusters = async () => {
     if (!collectionId || !rubricId) return;
-    await clearClusters({ collectionId, rubricId });
+    await clearClusters({ collectionId, rubricId }).unwrap();
   };
 
   /**
@@ -86,6 +98,18 @@ const ClusterButton = ({
 
   const { latestVersion, version } = useRubricVersion();
   const isLatestVersion = version === latestVersion;
+  const isJobCancelling = clusteringJobStatus === 'cancelling';
+  const showCancellingState =
+    isCancellingClustering || hasPendingCancel || isJobCancelling;
+
+  useEffect(() => {
+    if (!clusteringJobId || isJobCancelling) {
+      setHasPendingCancel(false);
+    }
+    if (clusteringJobId) {
+      setHasPendingStart(false);
+    }
+  }, [clusteringJobId, isJobCancelling]);
 
   const StartButton = () => {
     return (
@@ -93,11 +117,16 @@ const ClusterButton = ({
         type="button"
         size="sm"
         className="gap-1 h-7 text-xs"
-        disabled={hasUnsavedChanges || isStartingClustering || !isLatestVersion}
+        disabled={
+          hasUnsavedChanges ||
+          isStartingClustering ||
+          hasPendingStart ||
+          !isLatestVersion
+        }
         variant="outline"
         onClick={() => handleStartClustering(undefined, false)}
       >
-        {isStartingClustering ? 'Starting clustering...' : 'Cluster'}
+        {isStartingClustering || hasPendingStart ? 'Starting...' : 'Cluster'}
       </Button>
     );
   };
@@ -113,7 +142,12 @@ const ClusterButton = ({
           size="sm"
           className="gap-1 h-7 text-xs"
           variant="outline"
-          disabled={clusteringJobId !== null || hasUnsavedChanges}
+          disabled={
+            clusteringJobId !== null ||
+            hasUnsavedChanges ||
+            !isLatestVersion ||
+            hasPendingStart
+          }
         >
           {clusteringJobId ? 'Proposing...' : 'Re-cluster results'}
         </Button>
@@ -146,7 +180,9 @@ const ClusterButton = ({
             size="sm"
             className="text-xs"
             onClick={handleReclusterSubmit}
-            disabled={clusteringJobId !== null}
+            disabled={
+              clusteringJobId !== null || !isLatestVersion || hasPendingStart
+            }
           >
             {clusteringJobId !== null ? 'Proposing...' : 'Re-cluster'}
           </Button>
@@ -155,6 +191,22 @@ const ClusterButton = ({
     </Popover>
   );
 
+  const renderWithVersionTooltip = (node: ReactNode) => {
+    if (isLatestVersion) {
+      return node;
+    }
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div>{node}</div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          Switch to the latest version to cluster.
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   return (
     <>
       {!clusteringJobId && !hasCentroids && (
@@ -162,32 +214,30 @@ const ClusterButton = ({
           {isLatestVersion ? (
             <StartButton />
           ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <StartButton />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                Switch to the latest version to cluster.
-              </TooltipContent>
-            </Tooltip>
+            renderWithVersionTooltip(<StartButton />)
           )}
         </>
       )}
       {!clusteringJobId && hasCentroids && (
         <>
-          {reclusterPopover}
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1 h-7 text-xs"
-            disabled={hasUnsavedChanges || isClearingClusters}
-            variant="outline"
-            onClick={handleClearClusters}
-          >
-            {isClearingClusters ? 'Clearing…' : 'Clear clusters'}
-          </Button>
+          {renderWithVersionTooltip(reclusterPopover)}
+          {renderWithVersionTooltip(
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1 h-7 text-xs"
+              disabled={
+                hasUnsavedChanges ||
+                isClearingClusters ||
+                !isLatestVersion ||
+                hasPendingStart
+              }
+              variant="outline"
+              onClick={handleClearClusters}
+            >
+              {isClearingClusters ? 'Clearing…' : 'Clear clusters'}
+            </Button>
+          )}
         </>
       )}
       {clusteringJobId && (
@@ -195,13 +245,11 @@ const ClusterButton = ({
           type="button"
           size="sm"
           className="gap-1 h-7 text-xs"
-          disabled={isCancellingClustering}
+          disabled={showCancellingState}
           variant="outline"
           onClick={handleCancelClustering}
         >
-          {isCancellingClustering
-            ? 'Stopping clustering...'
-            : 'Stop clustering'}
+          {showCancellingState ? 'Cancelling...' : 'Stop clustering'}
         </Button>
       )}
     </>

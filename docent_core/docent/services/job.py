@@ -31,6 +31,10 @@ class JobService:
 
         # Only cancel the job if it's still active
         if job.status in [JobStatus.PENDING, JobStatus.RUNNING]:
+            job.status = JobStatus.CANCELLING
+            await self.session.commit()
             await cancel_job(job_id)
+        elif job.status == JobStatus.CANCELLING:
+            logger.warning(f"Job {job_id} is already cancelling")
         else:
             logger.warning(f"Job {job_id} is not active: {job.status}")

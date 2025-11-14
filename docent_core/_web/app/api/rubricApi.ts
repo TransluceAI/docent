@@ -30,9 +30,16 @@ export interface StartRubricJobResponse {
   job_id: string;
 }
 
+export type JobStatus =
+  | 'pending'
+  | 'running'
+  | 'cancelling'
+  | 'canceled'
+  | 'completed';
+
 export interface RubricJobDetails {
   id: string;
-  status: string;
+  status: JobStatus;
   created_at: string;
   total_agent_runs: number | null;
 }
@@ -54,6 +61,7 @@ export interface AgentRunJudgeResults {
 export interface RubricRunStateResponse {
   results: AgentRunJudgeResults[];
   job_id: string | null;
+  job_status: JobStatus | null;
   total_results_needed: number | null;
   current_results_count: number | null;
 }
@@ -69,6 +77,7 @@ export interface StartClusteringJobResponse {
 
 export interface ClusteringStateResponse {
   job_id: string | null;
+  job_status: JobStatus | null;
   centroids: RubricCentroid[];
   assignments: Record<string, string[]>;
 }
@@ -86,11 +95,15 @@ export interface JudgeResultsPayload {
 }
 
 // Clustering types
+export type ResultTypeValue = 'direct_result' | 'near_miss';
+
 export interface RubricCentroid {
   id: string;
   collection_id: string;
   rubric_id: string;
+  rubric_version: number;
   centroid: string;
+  result_type: ResultTypeValue;
 }
 
 export interface CentroidsResponse {

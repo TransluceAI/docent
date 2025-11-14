@@ -183,10 +183,6 @@ class Docent:
 
                 pbar.update(len(batch))
 
-        url = f"{self._server_url}/{collection_id}/compute_embeddings"
-        response = self._session.post(url)
-        self._handle_response_errors(response)
-
         logger.info(f"Successfully added {total_runs} agent runs to Collection '{collection_id}'")
         return {"status": "success", "total_runs_added": total_runs}
 
@@ -749,13 +745,6 @@ class Docent:
 
             total_runs_added += runs_from_file
             logger.info(f"Added {runs_from_file} runs from {eval_file}")
-
-        # Compute embeddings after all files are processed
-        if total_runs_added > 0:
-            logger.info("Computing embeddings for added runs...")
-            url = f"{self._server_url}/{collection_id}/compute_embeddings"
-            response = self._session.post(url)
-            self._handle_response_errors(response)
 
         logger.info(
             f"Successfully ingested {total_runs_added} total agent runs from {len(eval_files)} files"

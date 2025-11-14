@@ -4,12 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._llm_util.providers.preference_types import merge_models_with_byok
 from docent._log_util.logger import get_logger
-from docent.judges import JudgeResultWithCitations, Rubric
+from docent.judges import JudgeResultWithCitations, ResultType, Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.ai_tools.rubric.reflect import JudgeReflection
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.rubric import SQLARubric
+from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.server.dependencies.analytics import (
     use_posthog_user_context,
 )
@@ -331,8 +332,25 @@ class AgentRunJudgeResults(BaseModel):
 class RubricRunStateResponse(BaseModel):
     results: list[AgentRunJudgeResults]
     job_id: str | None
+    job_status: JobStatus | None
     total_results_needed: int | None
     current_results_count: int | None
+
+
+class RubricCentroidResponse(BaseModel):
+    id: str
+    collection_id: str
+    rubric_id: str
+    rubric_version: int
+    centroid: str
+    result_type: ResultType
+
+
+class ClusteringStateResponse(BaseModel):
+    job_id: str | None
+    job_status: JobStatus | None
+    centroids: list[RubricCentroidResponse]
+    assignments: dict[str, list[str]]
 
 
 class StartFilteredEvalJobRequest(BaseModel):
@@ -406,6 +424,7 @@ async def get_rubric_run_state(
             return RubricRunStateResponse(
                 results=[],
                 job_id=None,
+                job_status=None,
                 total_results_needed=None,
                 current_results_count=None,
             )
@@ -474,6 +493,7 @@ async def get_rubric_run_state(
     return RubricRunStateResponse(
         results=agent_run_results,
         job_id=cur_job.id if cur_job else None,
+        job_status=cur_job.status if cur_job else None,
         total_results_needed=total_results_needed,
         current_results_count=current_results_count,
     )
@@ -552,7 +572,9 @@ async def start_clustering_job(
     return {"job_id": job_id}
 
 
-@rubric_router.get("/{collection_id}/{rubric_id}/clustering_job")
+@rubric_router.get(
+    "/{collection_id}/{rubric_id}/clustering_job", response_model=ClusteringStateResponse
+)
 async def get_clustering_state(
     collection_id: str,
     sq_rubric: SQLARubric = Depends(get_rubric),
@@ -564,11 +586,22 @@ async def get_clustering_state(
     sq_centroids = await rubric_svc.get_centroids(sq_rubric.id, sq_rubric.version)
     assignments = await rubric_svc.get_centroid_assignments(sq_rubric.id, sq_rubric.version)
 
-    return {
-        "job_id": sq_job.id if sq_job else None,
-        "centroids": [centroid.dict() for centroid in sq_centroids],
-        "assignments": assignments,
-    }
+    return ClusteringStateResponse(
+        job_id=sq_job.id if sq_job else None,
+        job_status=sq_job.status if sq_job else None,
+        centroids=[
+            RubricCentroidResponse(
+                id=centroid.id,
+                collection_id=centroid.collection_id,
+                rubric_id=centroid.rubric_id,
+                rubric_version=centroid.rubric_version,
+                centroid=centroid.centroid,
+                result_type=centroid.result_type,
+            )
+            for centroid in sq_centroids
+        ],
+        assignments=assignments,
+    )
 
 
 @rubric_router.delete("/{collection_id}/{rubric_id}/clear_clusters")

@@ -129,7 +129,7 @@ class CounterfactualService:
             select(SQLAJob)
             .where(SQLAJob.type == WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value)
             .where(SQLAJob.job_json["experiment_config_id"].as_string() == experiment_config_id)
-            .where(SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]))
+            .where(SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING, JobStatus.CANCELLING]))
         )
         return result.scalar_one_or_none()
 
