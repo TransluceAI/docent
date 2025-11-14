@@ -347,14 +347,14 @@ export default function RubricList() {
   );
 
   return (
-    <div className="space-y-2">
-      {/* Header */}
-      <div className="flex flex-col">
+    <div className="flex flex-col  min-h-0 space-y-2">
+      {/* Header - Fixed */}
+      <div className="flex-shrink-0">
         <div className="text-sm font-semibold">Saved Rubrics</div>
       </div>
 
-      {/* Rubrics List */}
-      <div className="space-y-1.5">
+      {/* Rubrics List - Scrollable */}
+      <div className="flex-1 overflow-y-auto space-y-1.5 min-h-0">
         {!effectiveCollectionId ? (
           <div className="flex justify-center py-4">
             <Loader2 size={16} className="animate-spin text-muted-foreground" />

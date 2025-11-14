@@ -42,12 +42,17 @@ export default function JsonEditor({
   }, [schemaText]);
 
   return (
-    <div className="rounded-md overflow-hidden flex flex-col border bg-background shadow-sm">
+    <div
+      className={cn(
+        'rounded-md overflow-hidden flex flex-col border bg-background shadow-sm flex-1 min-h-0',
+        expandedContentClassName
+      )}
+    >
       {/* Dropdown button */}
       <button
         type="button"
         className={cn(
-          'flex items-center justify-between transition-colors duration-200 rounded-md h-7 px-2 py-1.5 disabled:opacity-80',
+          'flex items-center justify-between transition-colors duration-200 rounded-md h-7 px-2 py-1.5 disabled:opacity-80 flex-shrink-0',
           !editable || forceOpenSchema ? '' : 'hover:bg-accent',
           schemaOpen ? 'rounded-b-none' : ''
         )}
@@ -81,18 +86,13 @@ export default function JsonEditor({
       <div
         id="schema-content"
         className={cn(
-          'px-0 overflow-hidden transition-all duration-200',
+          'px-0 overflow-hidden transition-all duration-200 flex-1 min-h-0 flex flex-col',
           schemaOpen || forceOpenSchema
-            ? 'opacity-100 min-h-48'
+            ? 'opacity-100'
             : '!max-h-0 opacity-0 pointer-events-none'
         )}
       >
-        <div
-          className={cn(
-            'max-h-[30vh] overflow-y-auto custom-scrollbar',
-            expandedContentClassName
-          )}
-        >
+        <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
           <CodeMirror
             value={schemaText}
             height="auto"
@@ -108,7 +108,9 @@ export default function JsonEditor({
           />
         </div>
         {schemaError && (
-          <div className="text-xs p-2 text-red-text">{schemaError}</div>
+          <div className="text-xs p-2 text-red-text flex-shrink-0">
+            {schemaError}
+          </div>
         )}
       </div>
     </div>

@@ -247,7 +247,7 @@ export default function RubricsPage() {
           />
 
           {/* Schema Editor */}
-          <div className="flex flex-col space-y-2">
+          <div className="flex flex-col flex-1 min-h-0 space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">
                 Output Schema
