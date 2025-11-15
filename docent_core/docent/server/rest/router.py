@@ -1239,3 +1239,13 @@ async def disable_api_key(
     if not success:
         raise HTTPException(status_code=404, detail="API key not found")
     return {"message": "API key disabled successfully"}
+
+
+@user_router.post("/{collection_id}/compute_embeddings")
+async def compute_embeddings(
+    collection_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    pass
