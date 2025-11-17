@@ -46,7 +46,8 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
         logger.error("Telemetry ingest job missing user_email")
         return
 
-    start = time.time()
+    start_wall = time.time()
+    start_monotonic = time.monotonic()
     mono_svc = await MonoService.init()
     user = await mono_svc.get_user_by_email(user_email)
     if user is None:
@@ -81,6 +82,12 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
             )
 
             raw_body = _decode_body(log_data)
+            logger.info(
+                "Telemetry ingest job %s decoded body (request_id=%s) in %.3fs",
+                telemetry_log_id,
+                request_id,
+                time.monotonic() - start_monotonic,
+            )
             if raw_body is not None:
                 trace_data = telemetry_svc.parse_protobuf_traces(raw_body)
                 compat_mode = False
@@ -93,6 +100,14 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
             collection_ids, collection_names = telemetry_svc.extract_collection_info_from_spans(
                 spans
             )
+            logger.info(
+                "Telemetry ingest job %s parsed %s spans across %s collections (request_id=%s) in %.3fs",
+                telemetry_log_id,
+                len(spans),
+                len(collection_ids),
+                request_id,
+                time.monotonic() - start_monotonic,
+            )
 
             await telemetry_svc.ensure_write_permission_for_collections(collection_ids, user)
             await telemetry_svc.ensure_collections_exist(collection_ids, collection_names, user)
@@ -104,6 +119,12 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
                 )
                 await telemetry_svc.session.commit()
 
+            logger.info(
+                "Telemetry ingest job %s beginning accumulation (request_id=%s) at %.3fs elapsed",
+                telemetry_log_id,
+                request_id,
+                time.monotonic() - start_monotonic,
+            )
             await telemetry_svc.accumulate_spans(
                 spans,
                 user.id,
@@ -131,7 +152,7 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
                     "spans": len(spans),
                     "collections": list(collection_ids),
                     "request_id": request_id,
-                    "processing_seconds": round(time.time() - start, 3),
+                    "processing_seconds": round(time.time() - start_wall, 3),
                     "compat_mode": compat_mode,
                 },
                 user.id,
@@ -141,18 +162,37 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
                 telemetry_log_id,
                 len(spans),
                 len(collection_ids),
-                time.time() - start,
+                time.time() - start_wall,
             )
-        except Exception as exc:  # noqa: BLE001
+        except TimeoutError as exc:
+            elapsed = time.monotonic() - start_monotonic
             await accumulation_service.add_ingestion_status(
                 telemetry_log_id,
                 "failed",
-                {"error": str(exc), "request_id": request_id},
+                {"error": f"timeout after {elapsed:.3f}s", "request_id": request_id},
                 user.id,
             )
             logger.error(
-                "Telemetry ingest job %s failed (request_id=%s): %s",
+                "Telemetry ingest job %s timed out after %.3fs (request_id=%s): %s",
                 telemetry_log_id,
+                elapsed,
+                request_id,
+                exc,
+                exc_info=True,
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001
+            elapsed = time.monotonic() - start_monotonic
+            await accumulation_service.add_ingestion_status(
+                telemetry_log_id,
+                "failed",
+                {"error": str(exc), "request_id": request_id, "elapsed_seconds": elapsed},
+                user.id,
+            )
+            logger.error(
+                "Telemetry ingest job %s failed after %.3fs (request_id=%s): %s",
+                telemetry_log_id,
+                elapsed,
                 request_id,
                 exc,
                 exc_info=True,

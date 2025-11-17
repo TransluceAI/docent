@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -157,6 +158,7 @@ class TelemetryService:
         user: User,
         *,
         limit: int | None = None,
+        time_budget_seconds: int | None = None,
     ) -> List[str]:
         """
         Process all agent runs that need processing for a collection.
@@ -169,12 +171,18 @@ class TelemetryService:
             collection_id: The collection ID to process
             user: The user who initiated the processing
             limit: Optional maximum number of agent runs to process in this invocation
+            time_budget_seconds: Optional max wall-clock seconds to spend before returning early
 
         Returns:
             List[str]: List of agent run IDs that were successfully processed
         """
         if limit is not None and limit <= 0:
             raise ValueError("limit must be a positive integer when provided")
+
+        if time_budget_seconds is not None and time_budget_seconds <= 0:
+            raise ValueError("time_budget_seconds must be positive when provided")
+
+        start_time = time.monotonic()
 
         # Atomically get agent runs that need processing and mark them as processing
         agent_run_versions = await self.get_and_mark_agent_runs_for_processing(
@@ -200,6 +208,18 @@ class TelemetryService:
         successfully_processed_versions: dict[str, int] = {}
 
         for agent_run_id, current_version in agent_run_versions.items():
+            if time_budget_seconds is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= time_budget_seconds:
+                    logger.info(
+                        "Stopping telemetry processing for collection %s after %.2fs to stay under budget; processed %s of %s agent runs",
+                        collection_id,
+                        elapsed,
+                        processed_count,
+                        len(agent_run_versions),
+                    )
+                    break
+
             lock = redis_client.lock(
                 self._agent_run_lock_key(collection_id, agent_run_id),
                 timeout=AGENT_RUN_LOCK_TIMEOUT_SECONDS,
