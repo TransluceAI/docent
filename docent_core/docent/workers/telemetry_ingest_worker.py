@@ -10,6 +10,8 @@ import time
 from typing import Any, Dict, Optional
 
 from docent._log_util import get_logger
+from docent_core._server._broker.redis_client import get_redis_client
+from docent_core._worker.constants import JOB_TIMEOUT_SECONDS
 from docent_core.docent.db.contexts import TelemetryContext
 from docent_core.docent.db.schemas.tables import SQLAJob
 from docent_core.docent.services.monoservice import MonoService
@@ -54,9 +56,25 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
         logger.error("Telemetry ingest job %s: user %s not found", telemetry_log_id, user_email)
         return
 
-    async with mono_svc.db.session() as session:
-        telemetry_svc = TelemetryService(session, mono_svc)
-        accumulation_service = TelemetryAccumulationService(session)
+    redis_client = await get_redis_client()
+    lock = redis_client.lock(
+        f"telemetry_ingest_lock:{telemetry_log_id}",
+        timeout=JOB_TIMEOUT_SECONDS,
+        blocking_timeout=10,
+    )
+    acquired = await lock.acquire(blocking=True)
+    if not acquired:
+        logger.error(
+            "Telemetry ingest job %s could not acquire ingest lock (request_id=%s); another ingest may be running",
+            telemetry_log_id,
+            request_id,
+        )
+        return
+
+    try:
+        async with mono_svc.db.session() as session:
+            telemetry_svc = TelemetryService(session, mono_svc)
+            accumulation_service = TelemetryAccumulationService(session)
 
         latest_status = await accumulation_service.get_latest_ingestion_status(telemetry_log_id)
         if latest_status and latest_status[0] == "processed":
@@ -164,23 +182,6 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
                 len(collection_ids),
                 time.time() - start_wall,
             )
-        except TimeoutError as exc:
-            elapsed = time.monotonic() - start_monotonic
-            await accumulation_service.add_ingestion_status(
-                telemetry_log_id,
-                "failed",
-                {"error": f"timeout after {elapsed:.3f}s", "request_id": request_id},
-                user.id,
-            )
-            logger.error(
-                "Telemetry ingest job %s timed out after %.3fs (request_id=%s): %s",
-                telemetry_log_id,
-                elapsed,
-                request_id,
-                exc,
-                exc_info=True,
-            )
-            raise
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - start_monotonic
             await accumulation_service.add_ingestion_status(
@@ -198,3 +199,12 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
                 exc_info=True,
             )
             raise
+    finally:
+        try:
+            await lock.release()
+        except Exception as lock_exc:  # noqa: BLE001
+            logger.warning(
+                "Telemetry ingest job %s failed to release ingest lock: %s",
+                telemetry_log_id,
+                lock_exc,
+            )
