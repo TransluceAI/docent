@@ -35,6 +35,7 @@ import {
   useGetAgentRunMetadataFieldsQuery,
   useGetAgentRunSortableFieldsQuery,
   collectionApi,
+  useGetBaseFilterQuery,
 } from '../api/collectionApi';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { INTERNAL_BASE_URL } from '@/app/constants';
@@ -43,6 +44,12 @@ import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
 import posthog from 'posthog-js';
 import type { DqlExecuteResponse } from '@/app/types/dqlTypes';
+import {
+  type CollectionFilter,
+  type ComplexFilter,
+  type PrimitiveFilter,
+} from '@/app/types/collectionTypes';
+import { v4 as uuid4 } from 'uuid';
 
 const processAgentRunMetadata = (
   structuredMetadata: Record<string, unknown> | null | undefined
@@ -368,10 +375,15 @@ export default function ExperimentViewer({
     collectionId!,
     { skip: !collectionId }
   );
+  const agentRunMetadataFields = metadataFieldsData?.fields ?? [];
 
   const { data: sortableFieldsData } = useGetAgentRunSortableFieldsQuery(
     collectionId!,
     { skip: !collectionId }
+  );
+
+  const { data: baseFilter } = useGetBaseFilterQuery(
+    collectionId ? collectionId : skipToken
   );
 
   // Fetch agent run IDs using RTK skipToken
@@ -487,6 +499,11 @@ export default function ExperimentViewer({
         (sortableFieldsData?.fields ?? []).map((field) => field.name)
       ),
     [sortableFieldsData]
+  );
+
+  const filterableColumns = useMemo(
+    () => new Set<string>(agentRunMetadataFields.map((field) => field.name)),
+    [agentRunMetadataFields]
   );
 
   /**
@@ -715,10 +732,122 @@ export default function ExperimentViewer({
     [dispatch]
   );
 
+  const normalizeFilterValue = useCallback((value: unknown) => {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value === null
+    ) {
+      return value;
+    }
+
+    if (value === undefined) {
+      return undefined;
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch (error) {
+      console.warn('Unable to serialize filter value', error);
+      return String(value);
+    }
+  }, []);
+
+  const dedupePrimitiveFilters = useCallback(
+    (filters: CollectionFilter[]): CollectionFilter[] => {
+      const seenFilterKeys = new Set<string>();
+      return filters.reduceRight<CollectionFilter[]>((acc, filter) => {
+        if (filter.type !== 'primitive') {
+          return [filter, ...acc];
+        }
+
+        const primitiveFilter = filter as PrimitiveFilter;
+        const keyPath = primitiveFilter.key_path?.join('.') || '';
+        const filterKey = `${keyPath}:${primitiveFilter.value}:${primitiveFilter.op}`;
+
+        if (seenFilterKeys.has(filterKey)) {
+          return acc;
+        }
+
+        seenFilterKeys.add(filterKey);
+        return [filter, ...acc];
+      }, []);
+    },
+    []
+  );
+
+  const handleCreateFilterFromCell = useCallback(
+    (columnKey: string, value: unknown, mode: 'append' | 'replace') => {
+      if (!collectionId) {
+        return;
+      }
+
+      const normalizedValue = normalizeFilterValue(value);
+      if (normalizedValue === undefined) {
+        return;
+      }
+
+      const nextFilter: PrimitiveFilter = {
+        id: uuid4(),
+        name: null,
+        type: 'primitive',
+        key_path: columnKey.split('.'),
+        value: normalizedValue,
+        op: '==',
+        supports_sql: true,
+        disabled: false,
+      };
+
+      const existingFilters =
+        mode === 'append' ? (baseFilter?.filters ?? []) : [];
+      const mergedFilters = [...existingFilters, nextFilter];
+      const dedupedFilters = dedupePrimitiveFilters(mergedFilters);
+
+      const updatedFilter: ComplexFilter = {
+        id: baseFilter?.id ?? uuid4(),
+        name: baseFilter?.name ?? null,
+        type: 'complex',
+        filters: dedupedFilters,
+        op: baseFilter?.op ?? 'and',
+        supports_sql: baseFilter?.supports_sql ?? true,
+        disabled: baseFilter?.disabled,
+      };
+
+      dispatch(
+        collectionApi.endpoints.postBaseFilter.initiate({
+          collection_id: collectionId,
+          filter: updatedFilter,
+        })
+      );
+
+      posthog.capture('agent_run_table_quick_filter', {
+        collectionId,
+        columnKey,
+        mode,
+      });
+    },
+    [
+      baseFilter,
+      collectionId,
+      dedupePrimitiveFilters,
+      dispatch,
+      normalizeFilterValue,
+    ]
+  );
+
   const handleRowMouseDown = useCallback(
     (runId: string, event: React.MouseEvent<HTMLTableRowElement>) => {
       event.stopPropagation();
-      const openInNewTab = event.button === 1 || event.metaKey || event.ctrlKey;
+      // Treat ctrl+click as context menu (common on macOS) to avoid navigating when opening quick filter menu.
+      const isContextClick =
+        event.button === 2 ||
+        (event.button === 0 && event.ctrlKey && !event.metaKey);
+      if (isContextClick) {
+        event.preventDefault();
+        return;
+      }
+      const openInNewTab = event.button === 1 || event.metaKey;
 
       posthog.capture('agent_run_clicked', {
         agent_run_id: runId,
@@ -828,6 +957,8 @@ export default function ExperimentViewer({
               isLoadingAgentRuns={isLoadingAgentRuns}
               isFetchingAgentRuns={isFetchingAgentRuns}
               onRowMouseDown={handleRowMouseDown}
+              onCreateFilterFromCell={handleCreateFilterFromCell}
+              filterableColumns={filterableColumns}
               emptyState={emptyStateContent}
             />
           </div>

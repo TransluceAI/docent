@@ -42,10 +42,10 @@ export const FilterChips = ({
           <div
             key={subFilter.id}
             className={cn(
-              'inline-flex items-center gap-x-1 text-[11px] border pl-1.5 pr-1 py-0.5 rounded-md transition-colors',
+              'inline-flex items-center gap-x-1 text-[11px] border pl-1.5 pr-1 py-0.5 rounded-md transition-colors min-w-0',
               isDisabled
                 ? 'bg-muted text-muted-foreground border-dashed border-muted-foreground/50'
-                : 'bg-indigo-bg text-primary border-indigo-border'
+                : 'bg-indigo-bg text-primary border-indigo-border hover:bg-indigo-bg/80 hover:border-indigo-border/80'
             )}
           >
             {(() => {
@@ -54,21 +54,31 @@ export const FilterChips = ({
                 const displayKey = formatFilterFieldLabel(
                   filterCast.key_path.join('.')
                 );
+                const displayValue = String(filterCast.value);
                 return (
                   <>
-                    <span className="font-mono">{displayKey}</span>
+                    <span
+                      className="font-mono inline-block max-w-[160px] truncate"
+                      title={displayKey}
+                    >
+                      {displayKey}
+                    </span>
                     <span
                       className={cn(
-                        'font-mono',
+                        'font-mono inline-block max-w-[110px] truncate',
                         isDisabled
                           ? 'text-muted-foreground/70'
                           : 'text-indigo-400'
                       )}
+                      title={filterCast.op || '=='}
                     >
                       {filterCast.op || '=='}
                     </span>
-                    <span className="font-mono">
-                      {String(filterCast.value)}
+                    <span
+                      className="font-mono inline-block max-w-[260px] truncate"
+                      title={displayValue}
+                    >
+                      {displayValue}
                     </span>
                   </>
                 );
@@ -78,7 +88,7 @@ export const FilterChips = ({
             })()}
             <button
               onClick={() => onToggleFilter(subFilter.id)}
-              className="p-0.5 text-current hover:text-current/60 transition-colors"
+              className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
               title={isDisabled ? 'Enable filter' : 'Disable filter'}
               disabled={disabled}
             >
@@ -87,7 +97,7 @@ export const FilterChips = ({
             {subFilter.type === 'primitive' && (
               <button
                 onClick={() => onEditFilter(subFilter as PrimitiveFilter)}
-                className="p-0.5 text-current hover:text-current/60 transition-colors"
+                className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
                 title="Edit filter"
                 disabled={disabled}
               >
@@ -96,7 +106,7 @@ export const FilterChips = ({
             )}
             <button
               onClick={() => onRemoveFilter(subFilter.id)}
-              className="p-0.5 text-current hover:text-current/60 transition-colors"
+              className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
               title="Remove filter"
               disabled={disabled}
             >
