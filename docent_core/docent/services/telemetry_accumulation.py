@@ -144,9 +144,6 @@ class TelemetryAccumulationService:
         """Add spans to accumulation for a collection."""
         agent_run_ids: set[str] = set()
 
-        if telemetry_log_id and replace_existing_for_log:
-            await self.delete_spans_for_telemetry_log(telemetry_log_id)
-
         for span in spans:
             # Extract agent_run_id from span attributes if present
             agent_run_id = span.get("attributes", {}).get("agent_run_id")
