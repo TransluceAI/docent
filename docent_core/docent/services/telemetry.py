@@ -6,14 +6,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 from uuid import uuid4
 
+from asyncpg.exceptions import DeadlockDetectedError
 from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 from redis.exceptions import LockError
 from sqlalchemy import Integer, and_, case
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import delete, func, not_, or_, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.engine import Result
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from docent._log_util import get_logger
 from docent.data_models import (
@@ -65,6 +67,18 @@ class TelemetryService:
 
     def _agent_run_lock_key(self, collection_id: str, agent_run_id: str) -> str:
         return f"{AGENT_RUN_LOCK_PREFIX}_{collection_id}_{agent_run_id}"
+
+    @staticmethod
+    def _is_deadlock_error(exc: Exception) -> bool:
+        if isinstance(exc, DeadlockDetectedError):
+            return True
+
+        if isinstance(exc, DBAPIError):
+            if isinstance(exc.orig, DeadlockDetectedError):
+                return True
+            return isinstance(getattr(exc.orig, "__cause__", None), DeadlockDetectedError)
+
+        return isinstance(getattr(exc, "__cause__", None), DeadlockDetectedError)
 
     ###################
     # Telemetry Logs  #
@@ -194,6 +208,8 @@ class TelemetryService:
             try:
                 async with lock:
                     try:
+                        # Ensure clean session state before processing this agent run
+                        await self.session.rollback()
                         logger.info(
                             f"Processing agent run {agent_run_id} (version {current_version}) in collection {collection_id}"
                         )
@@ -763,6 +779,9 @@ class TelemetryService:
         spans: List[Dict[str, Any]],
         user_id: str | None = None,
         accumulation_service: TelemetryAccumulationService | None = None,
+        *,
+        telemetry_log_id: str | None = None,
+        replace_existing_for_log: bool = False,
     ) -> None:
         """
         Accumulate spans by collection_id for later processing and mark agent runs as needing processing.
@@ -771,6 +790,8 @@ class TelemetryService:
             spans: List of processed spans to accumulate
             user_id: Optional user ID for tracking who created the spans
             accumulation_service: Optional service instance to use
+            telemetry_log_id: Optional telemetry log identifier for idempotent accumulation
+            replace_existing_for_log: Delete previous spans written for this telemetry log before adding
         """
         # Group spans by collection_id for efficient processing
         spans_by_collection: Dict[str, List[Dict[str, Any]]] = {}
@@ -791,7 +812,13 @@ class TelemetryService:
         # Add spans to accumulation
         for collection_id, collection_spans in spans_by_collection.items():
             if accumulation_service:
-                await accumulation_service.add_spans(collection_id, collection_spans, user_id)
+                await accumulation_service.add_spans(
+                    collection_id,
+                    collection_spans,
+                    user_id,
+                    telemetry_log_id=telemetry_log_id,
+                    replace_existing_for_log=replace_existing_for_log,
+                )
             else:
                 logger.error("Accumulation service not found, skipping accumulation")
 
@@ -826,18 +853,25 @@ class TelemetryService:
         needs_processing_condition = (
             SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.NEEDS_PROCESSING.value
         )
+        version_greater_than_processed = (
+            SQLATelemetryAgentRunStatus.current_version
+            > SQLATelemetryAgentRunStatus.processed_version
+        )
+        needs_processing_condition = and_(
+            SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.NEEDS_PROCESSING.value,
+            version_greater_than_processed,
+        )
         completed_with_new_data_condition = and_(
             SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.COMPLETED.value,
-            SQLATelemetryAgentRunStatus.current_version
-            > SQLATelemetryAgentRunStatus.processed_version,
+            version_greater_than_processed,
         )
         errored_with_new_data_condition = and_(
             SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.ERROR.value,
+            version_greater_than_processed,
             SQLATelemetryAgentRunStatus.current_version > errored_version,
         )
         fallback_condition = and_(
-            SQLATelemetryAgentRunStatus.current_version
-            > SQLATelemetryAgentRunStatus.processed_version,
+            version_greater_than_processed,
             not_(
                 and_(
                     SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.ERROR.value,
@@ -845,19 +879,20 @@ class TelemetryService:
                 ),
             ),
         )
-        processing_filter = or_(needs_processing_condition, fallback_condition)
+        processing_filter = or_(
+            needs_processing_condition,
+            completed_with_new_data_condition,
+            errored_with_new_data_condition,
+            fallback_condition,
+        )
 
-        stmt = (
-            update(SQLATelemetryAgentRunStatus)
-            .where(
-                SQLATelemetryAgentRunStatus.collection_id == collection_id,
-                processing_filter,
-            )
-            .values(status=TelemetryAgentRunStatus.PROCESSING.value)
-            .returning(
-                SQLATelemetryAgentRunStatus.agent_run_id,
-                SQLATelemetryAgentRunStatus.current_version,
-            )
+        stmt = select(
+            SQLATelemetryAgentRunStatus.id,
+            SQLATelemetryAgentRunStatus.agent_run_id,
+            SQLATelemetryAgentRunStatus.current_version,
+        ).where(
+            SQLATelemetryAgentRunStatus.collection_id == collection_id,
+            processing_filter,
         )
 
         if limit is not None:
@@ -869,26 +904,30 @@ class TelemetryService:
                 (fallback_condition, 4),
                 else_=5,
             )
-            limited_ids_subquery = (
-                select(SQLATelemetryAgentRunStatus.id)
-                .where(
-                    SQLATelemetryAgentRunStatus.collection_id == collection_id,
-                    processing_filter,
-                )
-                .order_by(
-                    priority_case.asc(),
-                    SQLATelemetryAgentRunStatus.created_at.asc(),
-                    SQLATelemetryAgentRunStatus.id.asc(),
-                )
-                .limit(limit)
+            stmt = stmt.order_by(
+                priority_case.asc(),
+                SQLATelemetryAgentRunStatus.created_at.asc(),
+                SQLATelemetryAgentRunStatus.id.asc(),
+            ).limit(limit)
+
+        # Reserve rows without waiting on locks; other workers skip locked rows instead of deadlocking.
+        candidate_cte = stmt.with_for_update(skip_locked=True).cte("candidate_runs")
+
+        update_stmt = (
+            update(SQLATelemetryAgentRunStatus)
+            .where(SQLATelemetryAgentRunStatus.id.in_(select(candidate_cte.c.id)))
+            .values(status=TelemetryAgentRunStatus.PROCESSING.value)
+            .returning(
+                SQLATelemetryAgentRunStatus.agent_run_id,
+                SQLATelemetryAgentRunStatus.current_version,
             )
-            stmt = stmt.where(SQLATelemetryAgentRunStatus.id.in_(limited_ids_subquery))
+        )
 
         log_sql: str | None = None
         bind = self.session.get_bind()
         if hasattr(bind, "dialect"):
             try:
-                compiled_stmt = stmt.compile(
+                compiled_stmt = update_stmt.compile(
                     dialect=bind.dialect,  # type: ignore[attr-defined]
                     compile_kwargs={"literal_binds": True},
                 )
@@ -904,9 +943,9 @@ class TelemetryService:
             "Executing telemetry agent-run mark query for collection %s (limit=%s): %s",
             collection_id,
             limit if limit is not None else "all",
-            log_sql or stmt,
+            log_sql or update_stmt,
         )
-        result = await self.session.execute(stmt)
+        result = await self.session.execute(update_stmt)
         rows = result.fetchall()
         logger.info(
             "Telemetry mark query returned %s agent runs for collection %s",
@@ -938,16 +977,23 @@ class TelemetryService:
             0,
         )
 
+        version_greater_than_processed = (
+            SQLATelemetryAgentRunStatus.current_version
+            > SQLATelemetryAgentRunStatus.processed_version
+        )
+
         stmt = (
             select(SQLATelemetryAgentRunStatus.agent_run_id)
             .where(
                 SQLATelemetryAgentRunStatus.collection_id == collection_id,
                 or_(
-                    SQLATelemetryAgentRunStatus.status
-                    == TelemetryAgentRunStatus.NEEDS_PROCESSING.value,
                     and_(
-                        SQLATelemetryAgentRunStatus.current_version
-                        > SQLATelemetryAgentRunStatus.processed_version,
+                        SQLATelemetryAgentRunStatus.status
+                        == TelemetryAgentRunStatus.NEEDS_PROCESSING.value,
+                        version_greater_than_processed,
+                    ),
+                    and_(
+                        version_greater_than_processed,
                         or_(
                             SQLATelemetryAgentRunStatus.status
                             != TelemetryAgentRunStatus.ERROR.value,
@@ -995,8 +1041,7 @@ class TelemetryService:
     ) -> None:
         """
         Mark agent runs as completed after successful processing.
-        Updates the processed_version to match the version that was processed.
-        Only mark as completed if currently processing to prevent the case where new data arrives while agent runs are being processed.
+        Always advance processed_version to at least the version that was processed, even if status was updated concurrently.
 
         Args:
             collection_id: The collection ID
@@ -1005,23 +1050,35 @@ class TelemetryService:
         if not agent_run_versions:
             return
 
-        # Update each agent run individually to set the correct processed_version
-        for agent_run_id, processed_version in agent_run_versions.items():
+        # Ensure prior processing work is committed so deadlock retries don't roll back earlier DB writes.
+        await self.session.commit()
+
+        # Sort updates to take row locks in a stable order and reduce lock inversion risk.
+        sorted_agent_runs = sorted(agent_run_versions.items())
+        completed_rows: list[tuple[str, int, int]] = []
+
+        for agent_run_id, processed_version in sorted_agent_runs:
             update_stmt = (
                 update(SQLATelemetryAgentRunStatus)
                 .where(
                     SQLATelemetryAgentRunStatus.agent_run_id == agent_run_id,
                     SQLATelemetryAgentRunStatus.collection_id == collection_id,
-                    SQLATelemetryAgentRunStatus.status == TelemetryAgentRunStatus.PROCESSING.value,
                 )
                 .values(
                     status=TelemetryAgentRunStatus.COMPLETED.value,
-                    processed_version=processed_version,
+                    processed_version=func.greatest(
+                        SQLATelemetryAgentRunStatus.processed_version, processed_version
+                    ),
                 )
             )
 
             result = await self.session.execute(update_stmt)
-            if result.rowcount > 0:
+            completed_rows.append((agent_run_id, processed_version, result.rowcount))
+
+        await self.session.commit()
+
+        for agent_run_id, processed_version, rowcount in completed_rows:
+            if rowcount > 0:
                 logger.info(
                     f"Marked agent run {agent_run_id} as completed with processed_version {processed_version}"
                 )
@@ -1062,7 +1119,7 @@ class TelemetryService:
                     f"No telemetry status row found for agent run {agent_run_id} in collection {collection_id}"
                 )
                 continue
-            stored_metadata: dict[str, Any] = row.metadata_json
+            stored_metadata: dict[str, Any] = row.metadata_json or {}
 
             previous_error_version = stored_metadata.get("errored_version", 0)
 
@@ -1174,13 +1231,151 @@ class TelemetryService:
 
         # Handle transcript groups
         if transcript_group_data:
+            batch_debug_snapshot = [
+                {
+                    "id": tg.id,
+                    "parent": tg.parent_transcript_group_id,
+                    "agent_run_id": tg.agent_run_id,
+                    "collection_id": tg.collection_id,
+                }
+                for tg in transcript_group_data
+            ]
+            logger.debug("Transcript group batch (pre-validation): %s", batch_debug_snapshot)
+            # Ensure parent IDs exist either in batch or DB before merge
+            batch_ids = {tg.id for tg in transcript_group_data}
+            parent_ids = {
+                tg.parent_transcript_group_id
+                for tg in transcript_group_data
+                if tg.parent_transcript_group_id
+            }
+            existing_parent_ids: set[str] = set()
+            if parent_ids:
+                query = (
+                    select(SQLATranscriptGroup.id)
+                    .where(SQLATranscriptGroup.collection_id == ctx.collection_id)
+                    .where(SQLATranscriptGroup.id.in_(parent_ids))
+                )
+                parent_id_result = await self.session.execute(query)
+                existing_parent_ids = set(parent_id_result.scalars().all())
+            logger.debug(
+                "Transcript group parent check: batch_ids=%s parent_ids=%s existing_parent_ids=%s",
+                batch_ids,
+                parent_ids,
+                existing_parent_ids,
+            )
+            missing_parent_ids = {
+                pid for pid in parent_ids if pid not in batch_ids and pid not in existing_parent_ids
+            }
+            if missing_parent_ids:
+                logger.debug(
+                    "Clearing missing parents in batch: missing_parent_ids=%s batch_ids=%s",
+                    missing_parent_ids,
+                    batch_ids,
+                )
+                # Clear parents for affected groups in this batch before merge
+                await self.session.execute(
+                    update(SQLATranscriptGroup)
+                    .where(
+                        SQLATranscriptGroup.id.in_(batch_ids),
+                        SQLATranscriptGroup.parent_transcript_group_id.in_(missing_parent_ids),
+                    )
+                    .values(parent_transcript_group_id=None)
+                )
+            invalid_child_ids: set[str] = set()
+            for tg in transcript_group_data:
+                pid = tg.parent_transcript_group_id
+                if pid and pid in missing_parent_ids:
+                    logger.warning(
+                        "Removing reference to missing parent transcript group %s from %s before merge (tg.agent_run_id=%s)",
+                        pid,
+                        tg.id,
+                        tg.agent_run_id,
+                    )
+                    tg.parent_transcript_group_id = None
+                    invalid_child_ids.add(tg.id)
+                elif pid:
+                    # If parent is not in this batch, double-check the DB directly
+                    if pid not in batch_ids:
+                        parent_exists = False
+                        res = await self.session.execute(
+                            select(SQLATranscriptGroup.id).where(
+                                SQLATranscriptGroup.id == pid,
+                                SQLATranscriptGroup.collection_id == ctx.collection_id,
+                            )
+                        )
+                        parent_exists = res.scalar_one_or_none() is not None
+                        if not parent_exists:
+                            logger.warning(
+                                "Clearing parent transcript group %s from %s after DB check (agent_run_id=%s)",
+                                pid,
+                                tg.id,
+                                tg.agent_run_id,
+                            )
+                            tg.parent_transcript_group_id = None
+                            invalid_child_ids.add(tg.id)
+                            continue
+                    logger.debug(
+                        "Keeping parent transcript group %s for %s (in_batch=%s, in_db=%s)",
+                        pid,
+                        tg.id,
+                        pid in batch_ids,
+                        pid in existing_parent_ids,
+                    )
+                else:
+                    logger.debug(
+                        "Transcript group %s has no parent; agent_run_id=%s", tg.id, tg.agent_run_id
+                    )
+
+            if invalid_child_ids:
+                logger.debug(
+                    "Persistently clearing parents for invalid children: %s", invalid_child_ids
+                )
+                await self.session.execute(
+                    update(SQLATranscriptGroup)
+                    .where(
+                        SQLATranscriptGroup.collection_id == ctx.collection_id,
+                        SQLATranscriptGroup.id.in_(invalid_child_ids),
+                    )
+                    .values(parent_transcript_group_id=None)
+                )
+            post_clean_snapshot = [
+                {
+                    "id": tg.id,
+                    "parent": tg.parent_transcript_group_id,
+                    "agent_run_id": tg.agent_run_id,
+                    "collection_id": tg.collection_id,
+                }
+                for tg in transcript_group_data
+            ]
+            logger.debug("Transcript group batch (post-validation): %s", post_clean_snapshot)
+
             # Sort transcript groups to ensure parent groups come before children
             sorted_transcript_group_data = sort_transcript_groups_by_parent_order(
                 transcript_group_data
             )
+            persisted_parent_ids: set[str] = set(existing_parent_ids)
             for sqla_transcript_group in sorted_transcript_group_data:
+                pid = sqla_transcript_group.parent_transcript_group_id
+                if pid and pid not in persisted_parent_ids and pid not in existing_parent_ids:
+                    logger.warning(
+                        "Clearing parent transcript group %s from %s before merge due to missing parent in batch or DB",
+                        pid,
+                        sqla_transcript_group.id,
+                    )
+                    sqla_transcript_group.parent_transcript_group_id = None
+                    pid = None
                 # Use merge to handle both insert and update
+                logger.debug(
+                    "Merging transcript group id=%s parent=%s agent_run_id=%s collection_id=%s",
+                    sqla_transcript_group.id,
+                    sqla_transcript_group.parent_transcript_group_id,
+                    sqla_transcript_group.agent_run_id,
+                    sqla_transcript_group.collection_id,
+                )
                 await self.session.merge(sqla_transcript_group)
+                # Flush so parent groups are persisted before children to satisfy FK constraints
+                await self.session.flush()
+                persisted_parent_ids.add(sqla_transcript_group.id)
                 logger.debug(
                     f"Saved transcript group: {sqla_transcript_group.id} with parent {sqla_transcript_group.parent_transcript_group_id}"
                 )
@@ -1190,25 +1385,66 @@ class TelemetryService:
         await self._validate_transcript_group_references(transcript_data, transcript_group_data)
 
         # Handle transcripts - delete existing and recreate
-        # Delete existing transcripts for these agent runs
-        delete_transcript_query = delete(SQLATranscript).where(
-            SQLATranscript.agent_run_id.in_(agent_run_ids)
-        )
-        await self.session.execute(delete_transcript_query)
+        if not transcript_data:
+            logger.warning(
+                "No transcripts were constructed for agent_run_ids=%s; leaving existing transcripts untouched",
+                agent_run_ids,
+            )
+        else:
+            logger.info(
+                "Deleting and recreating %s transcripts for agent_run_ids=%s",
+                len(transcript_data),
+                agent_run_ids,
+            )
+            delete_transcript_query = delete(SQLATranscript).where(
+                SQLATranscript.agent_run_id.in_(agent_run_ids)
+            )
+            await self.session.execute(delete_transcript_query)
 
-        # Insert new transcripts
-        self.session.add_all(transcript_data)
+            # Insert new transcripts
+            self.session.add_all(transcript_data)
+            logger.info(
+                "Inserted %s transcripts for agent_run_ids=%s", len(transcript_data), agent_run_ids
+            )
 
-        logger.info(
-            f"Added {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
-        )
+            # Force a commit and verify from a fresh session to ensure transcripts are persisted
+            await self.session.commit()
+            try:
+                async_session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
+                    self.session.bind  # type: ignore[arg-type]
+                )
+                async with async_session_maker() as verify_session:
+                    verification_result: Result[tuple[str, str | None]] = (
+                        await verify_session.execute(
+                            select(SQLATranscript.id, SQLATranscript.transcript_group_id).where(
+                                SQLATranscript.agent_run_id.in_(agent_run_ids)
+                            )
+                        )
+                    )
+                    persisted: list[tuple[str, str | None]] = [
+                        tuple(row) for row in verification_result.all()
+                    ]
+                    logger.info(
+                        "Post-commit verification for agent_run_ids=%s found %s transcripts: %s",
+                        agent_run_ids,
+                        len(persisted),
+                        persisted,
+                    )
+            except Exception as verify_exc:
+                logger.warning(
+                    "Failed verification query for agent_run_ids=%s: %s", agent_run_ids, verify_exc
+                )
+
+            logger.info(
+                f"Added {len(agent_runs)} agent runs, {len(transcript_data)} transcripts, and {len(transcript_group_data)} transcript groups"
+            )
 
     async def _validate_transcript_group_parent_references(
         self, transcript_group_data: List[SQLATranscriptGroup]
     ) -> None:
         """
-        Validate that all parent_transcript_group_id references in transcript groups exist in the current batch.
-        If a parent reference doesn't exist in the current batch, set it to None to avoid foreign key violations.
+        Validate that all parent_transcript_group_id references in transcript groups exist in the current batch
+        or already exist in the database. If not, set parent to None to avoid foreign key violations.
         This ensures that parent groups are saved before their children.
 
         Args:
@@ -1217,12 +1453,49 @@ class TelemetryService:
         # Create a set of all transcript group IDs in the current batch
         current_group_ids = {group.id for group in transcript_group_data}
 
-        # Check for parent references that don't exist in the current batch
+        # Parent IDs referenced in this batch
+        parent_ids = {
+            group.parent_transcript_group_id
+            for group in transcript_group_data
+            if group.parent_transcript_group_id
+        }
+
+        logger.debug(
+            "Validating transcript group parents: current_group_ids=%s parent_ids=%s",
+            current_group_ids,
+            parent_ids,
+        )
+
+        if not parent_ids:
+            return
+
+        # Parents not present in this batch
+        missing_in_batch = {pid for pid in parent_ids if pid not in current_group_ids}
+
+        # Check for parents that already exist in the database
+        existing_parent_ids: set[str] = set()
+        if missing_in_batch:
+            query = select(SQLATranscriptGroup.id).where(
+                SQLATranscriptGroup.id.in_(missing_in_batch)
+            )
+            result = await self.session.execute(query)
+            existing_parent_ids = set(result.scalars().all())
+
+        # Parents that are neither in the batch nor in the DB
+        missing_anywhere = missing_in_batch - existing_parent_ids
+        logger.debug(
+            "Parent validation intermediate: missing_in_batch=%s existing_parent_ids=%s missing_anywhere=%s",
+            missing_in_batch,
+            existing_parent_ids,
+            missing_anywhere,
+        )
+
+        # Check for parent references that don't exist anywhere
         invalid_parent_references: List[tuple[str, str]] = []
         for group in transcript_group_data:
             if (
                 group.parent_transcript_group_id
-                and group.parent_transcript_group_id not in current_group_ids
+                and group.parent_transcript_group_id in missing_anywhere
             ):
                 invalid_parent_references.append((group.id, group.parent_transcript_group_id))
 
@@ -1230,6 +1503,7 @@ class TelemetryService:
             logger.warning(
                 f"Found {len(invalid_parent_references)} transcript groups with parent references not in current batch"
             )
+            logger.debug("Invalid parent references: %s", invalid_parent_references)
             # Set parent_transcript_group_id to None for groups referencing missing parents
             for group_id, parent_id in invalid_parent_references:
                 for group in transcript_group_data:
@@ -1468,8 +1742,13 @@ class TelemetryService:
 
                 # Create transcripts from spans
                 transcripts_list = self._create_transcripts_from_spans(transcript_spans)
-                logger.debug(
-                    f"    Created {len(transcripts_list)} transcripts from {len(transcript_spans)} spans"
+                logger.info(
+                    "    Transcript extraction summary: agent_run_id=%s transcript_id=%s "
+                    "span_count=%s transcripts_created=%s",
+                    agent_run_id,
+                    transcript_id,
+                    len(transcript_spans),
+                    len(transcripts_list),
                 )
 
                 if not transcripts_list:
@@ -1491,6 +1770,11 @@ class TelemetryService:
 
             # Create agent run if it has transcripts
             if agent_run_transcripts:
+                logger.info(
+                    "  agent_run_id=%s finalized with %s transcripts before DB update",
+                    agent_run_id,
+                    len(agent_run_transcripts),
+                )
                 # Create metadata with scores, model, and any additional metadata using BaseAgentRunMetadata
                 metadata_dict: Dict[str, Any] = {"scores": agent_run_scores}
                 if agent_run_model:
@@ -2030,7 +2314,8 @@ class TelemetryService:
             ):
                 # Skip keys that aren't digits
                 if not key.isdigit():
-                    logger.info(f"Skipping non-digit key: {key}")
+                    if key != "prompt_filter_results":
+                        logger.info(f"Skipping non-digit key: {key}")
                     continue
 
                 prompt_data: dict[str, Any] = gen_ai["prompt"][key]
@@ -2048,7 +2333,8 @@ class TelemetryService:
             ):
                 # Skip keys that aren't digits
                 if not key.isdigit():
-                    logger.info(f"Skipping non-digit key: {key}")
+                    if key != "prompt_filter_results":
+                        logger.info(f"Skipping non-digit key: {key}")
                     continue
 
                 # openllmetry anthropic instrumentation handles thinking blocks by changing the role to "thinking" and then incrementing the key used for subsequent blocks

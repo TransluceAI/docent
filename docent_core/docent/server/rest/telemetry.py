@@ -1,3 +1,4 @@
+import base64
 import time
 from typing import Any, Dict, Optional, cast
 from uuid import uuid4
@@ -172,15 +173,12 @@ async def trace_endpoint(
 
     request_id = _get_request_id(request)
     start_time = time.time()
+    telemetry_id: str | None = None
 
     try:
         content_type = request.headers.get("content-type", "")
         body = await request.body()
-
-        if request.headers.get("content-encoding") == "gzip":
-            import gzip
-
-            body = gzip.decompress(body)
+        content_encoding = request.headers.get("content-encoding")
 
         if "application/x-protobuf" not in content_type:
             raise _telemetry_http_exception(
@@ -191,51 +189,73 @@ async def trace_endpoint(
                 error_code="TELEMETRY_UNSUPPORTED_MEDIA_TYPE",
             )
 
-        trace_data = telemetry_svc.parse_protobuf_traces(body)
+        telemetry_payload = {
+            "content_type": content_type,
+            "content_encoding": content_encoding,
+            "body_b64": base64.b64encode(body).decode("ascii"),
+            "request_id": request_id,
+        }
 
         telemetry_id = await telemetry_svc.store_telemetry_log(
             user.id,
-            type="traces",
+            type="traces-ingest",
             version="v1",
-            json_data=trace_data,
+            json_data=telemetry_payload,
+        )
+        await accumulation_service.add_ingestion_status(
+            telemetry_id,
+            "received",
+            {
+                "content_type": content_type,
+                "content_encoding": content_encoding,
+                "body_bytes": len(body),
+                "request_id": request_id,
+            },
+            user.id,
         )
 
-        spans = await telemetry_svc.extract_spans(trace_data)
-        collection_ids, collection_names = telemetry_svc.extract_collection_info_from_spans(spans)
+        job_id = await telemetry_svc.mono_svc.add_and_enqueue_telemetry_ingest_job(
+            telemetry_id,
+            user,
+            request_id=request_id,
+            content_type=content_type,
+            content_encoding=content_encoding,
+        )
 
-        await telemetry_svc.ensure_write_permission_for_collections(collection_ids, user)
-        await telemetry_svc.ensure_collections_exist(collection_ids, collection_names, user)
-
-        if collection_ids:
-            primary_collection_id = next(iter(collection_ids))
-            await telemetry_svc.update_telemetry_log_collection_id(
-                telemetry_id, primary_collection_id
+        if job_id:
+            await accumulation_service.add_ingestion_status(
+                telemetry_id,
+                "queued",
+                {"job_id": job_id, "request_id": request_id},
+                user.id,
             )
-            await telemetry_svc.session.commit()
 
-        await telemetry_svc.accumulate_spans(spans, user.id, accumulation_service)
-
-        for collection_id in collection_ids:
-            try:
-                await telemetry_svc.mono_svc.add_and_enqueue_telemetry_processing_job(
-                    collection_id, user
-                )
-            except Exception as exc:
-                logger.error(
-                    "Failed to trigger telemetry processing job for collection %s: %s",
-                    collection_id,
-                    exc,
-                )
-
-        return _success_response({"status": "success", "spans_accumulated": len(spans)}, request_id)
+        return _success_response(
+            {"status": "success", "telemetry_log_id": telemetry_id, "job_id": job_id},
+            request_id,
+        )
     except HTTPException as exc:
         raise _http_exception_with_request_id(exc, request_id)
     except Exception as exc:
+        if telemetry_id:
+            try:
+                await accumulation_service.add_ingestion_status(
+                    telemetry_id,
+                    "failed",
+                    {"error": str(exc), "request_id": request_id},
+                    user.id,
+                )
+            except Exception as status_exc:
+                logger.error(
+                    "Failed to record ingestion failure for telemetry %s: %s",
+                    telemetry_id,
+                    status_exc,
+                )
         processing_time = time.time() - start_time
         _handle_unexpected_error(
             request_id,
             exc,
-            f"Processing OTLP traces after {processing_time:.3f}s",
+            f"Queuing OTLP traces after {processing_time:.3f}s",
         )
 
 

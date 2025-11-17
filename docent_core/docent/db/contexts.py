@@ -39,3 +39,11 @@ class ViewContext(BaseModel):
             return base_clause
 
         return and_(base_clause, base_filter_clause)
+
+
+class TelemetryContext(BaseModel):
+    """
+    Minimal context for telemetry ingest jobs that are not tied to a specific collection/view.
+    """
+
+    user: User | None

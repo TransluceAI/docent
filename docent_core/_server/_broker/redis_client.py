@@ -9,7 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._worker.constants import WORKER_QUEUE_NAME
-from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.investigator.db.contexts import WorkspaceContext
 
 logger = get_logger(__name__)
@@ -132,15 +132,19 @@ async def publish_view_update(collection_id: str, view_id: str, payload: dict[st
     await redis_client.publish(channel, json.dumps(jsonable_encoder(payload)))  # type: ignore
 
 
-async def _enqueue_job(queue_name: str, func_name: str, *args: Any, **kwargs: Any) -> None:
+async def _enqueue_job(
+    queue_name: str, func_name: str, *args: Any, job_id: str | None = None, **kwargs: Any
+) -> None:
     redis_client = await get_redis_client()
-    j = await redis_client.enqueue_job(func_name, *args, _queue_name=queue_name, **kwargs)
+    j = await redis_client.enqueue_job(
+        func_name, *args, _queue_name=queue_name, _job_id=job_id, **kwargs
+    )
     print(f"Enqueued job {j} to {queue_name} with func {func_name}")
 
 
-async def enqueue_job(ctx: ViewContext | WorkspaceContext, job_id: str) -> None:
+async def enqueue_job(ctx: ViewContext | WorkspaceContext | TelemetryContext, job_id: str) -> None:
     """Enqueue a job to the worker."""
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", ctx, job_id)
+    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", ctx, job_id, job_id=job_id)
 
 
 async def cancel_job(job_id: str) -> None:

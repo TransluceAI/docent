@@ -33,7 +33,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import FromClause, lateral, text
@@ -43,8 +43,9 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun, FilterableField
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
-from docent_core._server._broker.redis_client import enqueue_job
-from docent_core.docent.db.contexts import ViewContext
+from docent_core._server._broker.redis_client import enqueue_job, get_redis_client
+from docent_core._worker.constants import WORKER_QUEUE_NAME
+from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.dql import (
     DQLExecutionError,
     JsonFieldInfo,
@@ -1243,24 +1244,36 @@ class MonoService:
                 )
                 creator_default_view = result.scalar_one_or_none()
 
-            # Create new view and insert
-            if creator_default_view is not None:
-                view = SQLAView(
-                    id=str(uuid4()),
-                    collection_id=collection_id,
-                    user_id=user.id,
-                    base_filter_dict=creator_default_view.base_filter_dict,
-                    inner_bin_key=creator_default_view.inner_bin_key,
-                    outer_bin_key=creator_default_view.outer_bin_key,
-                )
-            else:
-                view = SQLAView(
-                    id=str(uuid4()),
-                    collection_id=collection_id,
-                    user_id=user.id,
-                )
+            # Create new view and insert, handling races where it may already exist
             async with self.db.session() as session:
-                session.add(view)
+                try:
+                    if creator_default_view is not None:
+                        view = SQLAView(
+                            id=str(uuid4()),
+                            collection_id=collection_id,
+                            user_id=user.id,
+                            base_filter_dict=creator_default_view.base_filter_dict,
+                            inner_bin_key=creator_default_view.inner_bin_key,
+                            outer_bin_key=creator_default_view.outer_bin_key,
+                        )
+                    else:
+                        view = SQLAView(
+                            id=str(uuid4()),
+                            collection_id=collection_id,
+                            user_id=user.id,
+                        )
+                    session.add(view)
+                    await session.flush()
+                except IntegrityError:
+                    await session.rollback()
+                    result = await session.execute(
+                        select(SQLAView).where(
+                            SQLAView.collection_id == collection_id,
+                            SQLAView.user_id == user.id,
+                            SQLAView.for_sharing.is_(False),
+                        )
+                    )
+                    view = result.scalar_one()
 
             # Create ACL entry for the user
             await self.set_acl_permission(
@@ -1279,6 +1292,9 @@ class MonoService:
         return ViewContext(
             collection_id=collection_id, view_id=view.id, base_filter=view.base_filter, user=user
         )
+
+    async def get_telemetry_ctx_for_user(self, user: User) -> TelemetryContext:
+        return TelemetryContext(user=user)
 
     async def set_view_base_filter(self, ctx: ViewContext, filter: ComplexFilter | None):
         # Clear the old base filter
@@ -1349,7 +1365,7 @@ class MonoService:
             existing_job_query = select(SQLAJob).where(
                 SQLAJob.type == "telemetry_processing_job",
                 SQLAJob.job_json.contains({"collection_id": collection_id}),
-                SQLAJob.status.in_([JobStatus.PENDING]),
+                SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
             )
 
             existing_job_result = await session.execute(existing_job_query)
@@ -1381,6 +1397,94 @@ class MonoService:
 
             return job_id
 
+    async def add_telemetry_ingest_job(
+        self,
+        telemetry_log_id: str,
+        user: User,
+        *,
+        request_id: str | None = None,
+        content_type: str | None = None,
+        content_encoding: str | None = None,
+    ) -> str | None:
+        """
+        Adds a telemetry ingest job for the given telemetry log.
+        Only adds the job if there isn't already a pending job for this telemetry log.
+        """
+        async with self.db.session() as session:
+            existing_job_query = select(SQLAJob).where(
+                SQLAJob.type == "telemetry_ingest_job",
+                SQLAJob.job_json.contains({"telemetry_log_id": telemetry_log_id}),
+                SQLAJob.status.in_([JobStatus.PENDING]),
+            )
+
+            existing_job_result = await session.execute(existing_job_query)
+            existing_jobs = existing_job_result.scalars().all()
+
+            if existing_jobs:
+                job_ids = [job.id for job in existing_jobs]
+                logger.debug(
+                    "Telemetry ingest job(s) already exist for telemetry_log_id %s: %s (statuses: %s)",
+                    telemetry_log_id,
+                    job_ids,
+                    [job.status for job in existing_jobs],
+                )
+                return None
+
+            job_id = str(uuid4())
+            session.add(
+                SQLAJob(
+                    id=job_id,
+                    type="telemetry_ingest_job",
+                    job_json={
+                        "telemetry_log_id": telemetry_log_id,
+                        "user_id": user.id,
+                        "user_email": user.email,
+                        "user_organization_ids": user.organization_ids,
+                        "request_id": request_id,
+                        "content_type": content_type,
+                        "content_encoding": content_encoding,
+                    },
+                )
+            )
+            logger.info(
+                "Added telemetry ingest job %s for telemetry_log_id %s (request_id=%s)",
+                job_id,
+                telemetry_log_id,
+                request_id,
+            )
+
+            return job_id
+
+    async def add_and_enqueue_telemetry_ingest_job(
+        self,
+        telemetry_log_id: str,
+        user: User,
+        *,
+        request_id: str | None = None,
+        content_type: str | None = None,
+        content_encoding: str | None = None,
+    ) -> str | None:
+        job_id = await self.add_telemetry_ingest_job(
+            telemetry_log_id,
+            user,
+            request_id=request_id,
+            content_type=content_type,
+            content_encoding=content_encoding,
+        )
+
+        if job_id is None:
+            return None
+
+        ctx = await self.get_telemetry_ctx_for_user(user)
+        await enqueue_job(ctx, job_id)  # type: ignore
+        logger.info(
+            "Enqueued telemetry ingest job %s for telemetry_log_id %s (request_id=%s)",
+            job_id,
+            telemetry_log_id,
+            request_id,
+        )
+        return job_id
+
     async def add_and_enqueue_telemetry_processing_job(
         self, collection_id: str, user: User
     ) -> str | None:
@@ -1395,21 +1499,66 @@ class MonoService:
         Returns:
             The job ID if created and enqueued, None if job already exists
         """
-        # Create the job in the database
+        # Create or reuse a job in the database
         job_id = await self.add_telemetry_processing_job(collection_id, user)
-
         if job_id is None:
-            return None
+            # Verify if an existing pending job is already enqueued; if not, enqueue it
+            async with self.db.session() as session:
+                pending_job_query = (
+                    select(SQLAJob)
+                    .where(
+                        SQLAJob.type == "telemetry_processing_job",
+                        SQLAJob.job_json.contains({"collection_id": collection_id}),
+                        SQLAJob.status == JobStatus.PENDING,
+                    )
+                    .order_by(SQLAJob.created_at.desc())
+                )
+                result = await session.execute(pending_job_query)
+                pending_job = result.scalars().first()
+                if pending_job is None:
+                    return None
+                job_id = pending_job.id
 
-        # Create a ViewContext for the collection
+                # Check if already enqueued in Redis
+                try:
+                    redis_client = await get_redis_client()
+                    if await redis_client.zscore(WORKER_QUEUE_NAME, job_id) is not None:  # type: ignore[arg-type]
+                        logger.info(
+                            "Telemetry processing job %s for collection %s is already enqueued",
+                            job_id,
+                            collection_id,
+                        )
+                        return job_id
+                except Exception as exc:
+                    logger.error(
+                        "Unable to check redis queue for telemetry processing job %s: %s",
+                        job_id,
+                        exc,
+                    )
+
         ctx = await self.get_default_view_ctx(collection_id, user)
 
-        # Enqueue the job to Redis
-        await enqueue_job(ctx, job_id)  # type: ignore
-
-        logger.info(f"Enqueued telemetry processing job {job_id} for collection {collection_id}")
-
-        return job_id
+        try:
+            await enqueue_job(ctx, job_id)  # type: ignore
+            logger.info(
+                f"Enqueued telemetry processing job {job_id} for collection {collection_id}"
+            )
+            return job_id
+        except Exception as exc:
+            logger.error(
+                "Failed to enqueue telemetry processing job %s for collection %s: %s",
+                job_id,
+                collection_id,
+                exc,
+            )
+            # If enqueue failed, clear the pending job so future attempts can recreate
+            async with self.db.session() as session:
+                await session.execute(
+                    update(SQLAJob)
+                    .where(SQLAJob.id == job_id, SQLAJob.status == JobStatus.PENDING)
+                    .values(status=JobStatus.CANCELED)
+                )
+            return None
 
     async def get_job(self, job_id: str) -> SQLAJob | None:
         """

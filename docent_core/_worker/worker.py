@@ -15,7 +15,7 @@ from docent_core._env_util import ENV, get_deployment_id, init_sentry_or_raise
 from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import JOB_TIMEOUT_SECONDS, WORKER_QUEUE_NAME
 from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
-from docent_core.docent.db.contexts import ViewContext
+from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.investigator.db.contexts import WorkspaceContext
@@ -54,7 +54,7 @@ def _resolve_job_completion_wait_seconds() -> int:
     return value
 
 
-async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
+async def run_job(_: Any, ctx: ViewContext | WorkspaceContext | TelemetryContext, job_id: str):
     mono_svc = await MonoService.init()
     canceled = False
 
@@ -63,6 +63,7 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
 
     async def _run(tg: TaskGroup):
         nonlocal canceled
+        skip_status_update = False
 
         try:
             #########
@@ -76,11 +77,17 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
 
             # If it's canceled, just return
             if job.status == JobStatus.CANCELED:
-                raise RuntimeError("Job was already canceled")
+                logger.info("Job %s already canceled, skipping", job_id)
+                skip_status_update = True
+                return
             elif job.status == JobStatus.COMPLETED:
-                raise RuntimeError("Job was already completed")
+                logger.info("Job %s already completed, skipping", job_id)
+                skip_status_update = True
+                return
             elif job.status == JobStatus.CANCELLING:
-                raise RuntimeError(f"Job {job_id} is currently being canceled")
+                logger.info("Job %s is currently being canceled, skipping", job_id)
+                skip_status_update = True
+                return
 
             # Mark it as running
             await mono_svc.set_job_status(job_id, JobStatus.RUNNING)
@@ -108,6 +115,8 @@ async def run_job(_: Any, ctx: ViewContext | WorkspaceContext, job_id: str):
             tg.cancel_scope.cancel()
 
             with anyio.CancelScope(shield=True):
+                if skip_status_update:
+                    return
                 # Update the job status
                 if canceled:
                     logger.highlight(f"Job {job_id} canceled", color="red")

@@ -5,6 +5,7 @@ This service replaces Redis storage for spans, scores, metadata, and other telem
 that needs to be accumulated before processing.
 """
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, cast
 from uuid import uuid4
 
@@ -78,11 +79,73 @@ class TelemetryAccumulationService:
 
         return ":".join(key_parts)
 
+    async def add_ingestion_status(
+        self,
+        telemetry_log_id: str,
+        status: str,
+        details: Dict[str, Any] | None = None,
+        user_id: Optional[str] = None,
+    ) -> None:
+        status_payload: Dict[str, Any] = {
+            "telemetry_log_id": telemetry_log_id,
+            "status": status,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if details:
+            status_payload["details"] = details
+
+        entry = SQLATelemetryAccumulation(
+            key=f"telemetry_log_id={telemetry_log_id}",
+            data_type="ingestion-status",
+            data=status_payload,
+            user_id=user_id,
+        )
+        self.session.add(entry)
+        await self.session.commit()
+
+    async def get_latest_ingestion_status(
+        self, telemetry_log_id: str
+    ) -> tuple[str, Dict[str, Any]] | None:
+        stmt = (
+            select(SQLATelemetryAccumulation)
+            .where(
+                SQLATelemetryAccumulation.data_type == "ingestion-status",
+                SQLATelemetryAccumulation.key == f"telemetry_log_id={telemetry_log_id}",
+            )
+            .order_by(SQLATelemetryAccumulation.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        entry = result.scalar_one_or_none()
+        if not entry:
+            return None
+        data: Dict[str, Any] = entry.data or {}
+        status = cast(str, data.get("status", ""))
+        return status, data
+
+    async def delete_spans_for_telemetry_log(self, telemetry_log_id: str) -> None:
+        await self.session.execute(
+            delete(SQLATelemetryAccumulation).where(
+                SQLATelemetryAccumulation.data_type == "spans",
+                SQLATelemetryAccumulation.data["telemetry_log_id"].astext == telemetry_log_id,
+            )
+        )
+        await self.session.commit()
+
     async def add_spans(
-        self, collection_id: str, spans: List[Dict[str, Any]], user_id: Optional[str] = None
+        self,
+        collection_id: str,
+        spans: List[Dict[str, Any]],
+        user_id: Optional[str] = None,
+        *,
+        telemetry_log_id: str | None = None,
+        replace_existing_for_log: bool = False,
     ) -> None:
         """Add spans to accumulation for a collection."""
         agent_run_ids: set[str] = set()
+
+        if telemetry_log_id and replace_existing_for_log:
+            await self.delete_spans_for_telemetry_log(telemetry_log_id)
 
         for span in spans:
             # Extract agent_run_id from span attributes if present
@@ -92,21 +155,25 @@ class TelemetryAccumulationService:
                 key = self._build_key(collection_id, agent_run_id=agent_run_id)
             else:
                 logger.warning(
-                    f"Span missing agent_run_id: {span['span_id']}, collection_id={collection_id}"
+                    f"Span missing agent_run_id: {span.get('span_id')}, collection_id={collection_id}"
                 )
                 key = self._build_key(collection_id)
+
+            span_payload = dict(span)
+            if telemetry_log_id:
+                span_payload["telemetry_log_id"] = telemetry_log_id
 
             accumulation_entry = SQLATelemetryAccumulation(
                 key=key,
                 data_type="spans",
-                data=span,
+                data=span_payload,
                 user_id=user_id,
             )
             self.session.add(accumulation_entry)
 
         await self.session.commit()
         logger.info(
-            f"Added {len(spans)} spans to accumulation for collection {collection_id}, span_ids={', '.join([span['raw_span_id'] for span in spans])}"
+            f"Added {len(spans)} spans to accumulation for collection {collection_id}, span_ids={', '.join([span.get('raw_span_id', '') for span in spans])}"
         )
 
         # Mark agent runs for processing

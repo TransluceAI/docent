@@ -10,6 +10,7 @@ from sqlalchemy import Integer, and_, case
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import func, or_, select
 
+from docent_core._worker.constants import WorkerFunction
 from docent_core.docent.db.schemas.tables import (
     JobStatus,
     SQLAJob,
@@ -38,6 +39,20 @@ class JobInfo:
     collection_id: str | None
     user_email: str | None
     payload: Mapping[str, Any]
+
+
+@dataclass(slots=True)
+class JobQueueStats:
+    job_type: str
+    pending: int
+    running: int
+    completed: int
+    recent_completed: int
+    completion_rate_per_min: float
+
+    @property
+    def queued(self) -> int:
+        return self.pending + self.running
 
 
 @dataclass(slots=True)
@@ -74,13 +89,15 @@ DATETIME_FLOOR = datetime.min.replace(tzinfo=None)
 JobSortKey = Callable[[JobInfo], Any]
 CollectionSortKey = Callable[[CollectionStatusRow], Any]
 AgentRunSortKey = Callable[[AgentRunStatusRow], Any]
+IngestSortKey = Callable[[JobInfo], Any]
 
 JOB_SORT_MAP: dict[int, JobSortKey] = {
     0: lambda job: job.status,
-    1: lambda job: job.collection_id or "",
-    2: lambda job: job.user_email or "",
-    3: lambda job: job.created_at,
-    4: lambda job: job.id,
+    1: lambda job: job.type,
+    2: lambda job: job.collection_id or "",
+    3: lambda job: job.user_email or "",
+    4: lambda job: job.created_at,
+    5: lambda job: job.id,
 }
 
 COLLECTION_SORT_MAP: dict[int, CollectionSortKey] = {
@@ -102,6 +119,15 @@ RUN_SORT_MAP: dict[int, AgentRunSortKey] = {
     4: lambda row: row.processed_version,
     5: lambda row: row.updated_at or DATETIME_FLOOR,
     6: lambda row: row.error_message or "",
+}
+
+INGEST_SORT_MAP: dict[int, IngestSortKey] = {
+    0: lambda job: job.status,
+    1: lambda job: job.payload.get("telemetry_log_id") or "",
+    2: lambda job: job.collection_id or "",
+    3: lambda job: job.user_email or "",
+    4: lambda job: job.created_at,
+    5: lambda job: job.id,
 }
 
 
@@ -202,11 +228,92 @@ class TelemetryDataProvider:
             raise RuntimeError("MonoService is not initialized")
         return self._mono_svc
 
+    async def fetch_job_stats(self) -> dict[str, JobQueueStats]:
+        job_types = [
+            WorkerFunction.TELEMETRY_INGEST_JOB.value,
+            WorkerFunction.TELEMETRY_PROCESSING_JOB.value,
+        ]
+        recent_cutoff = utcnow_naive() - timedelta(minutes=self.RECENT_COMPLETION_MINUTES)
+
+        async with self.mono_svc.db.session() as session:
+            pending_label = func.sum(case((SQLAJob.status == JobStatus.PENDING, 1), else_=0)).label(
+                "pending_count"
+            )
+            running_label = func.sum(case((SQLAJob.status == JobStatus.RUNNING, 1), else_=0)).label(
+                "running_count"
+            )
+            completed_label = func.sum(
+                case((SQLAJob.status == JobStatus.COMPLETED, 1), else_=0)
+            ).label("completed_count")
+            recent_completed_label = func.sum(
+                case(
+                    (
+                        and_(
+                            SQLAJob.status == JobStatus.COMPLETED,
+                            SQLAJob.created_at >= recent_cutoff,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("recent_completed_count")
+
+            stmt = (
+                select(
+                    SQLAJob.type,
+                    pending_label,
+                    running_label,
+                    completed_label,
+                    recent_completed_label,
+                )
+                .where(SQLAJob.type.in_(job_types))
+                .group_by(SQLAJob.type)
+            )
+            result = await session.execute(stmt)
+            records = result.fetchall()
+
+        stats: dict[str, JobQueueStats] = {
+            job_type: JobQueueStats(
+                job_type=job_type,
+                pending=0,
+                running=0,
+                completed=0,
+                recent_completed=0,
+                completion_rate_per_min=0.0,
+            )
+            for job_type in job_types
+        }
+
+        for record in records:
+            pending = int(record.pending_count or 0)
+            running = int(record.running_count or 0)
+            completed = int(record.completed_count or 0)
+            recent_completed = int(record.recent_completed_count or 0)
+            rate = (
+                recent_completed / self.RECENT_COMPLETION_MINUTES
+                if self.RECENT_COMPLETION_MINUTES > 0
+                else 0.0
+            )
+            stats[record.type] = JobQueueStats(
+                job_type=record.type,
+                pending=pending,
+                running=running,
+                completed=completed,
+                recent_completed=recent_completed,
+                completion_rate_per_min=rate,
+            )
+
+        return stats
+
     async def fetch_jobs(self, limit: int = 50) -> list[JobInfo]:
+        job_types = [
+            WorkerFunction.TELEMETRY_PROCESSING_JOB.value,
+            WorkerFunction.TELEMETRY_INGEST_JOB.value,
+        ]
         async with self.mono_svc.db.session() as session:
             stmt = (
                 select(SQLAJob)
-                .where(SQLAJob.type == "telemetry_processing_job")
+                .where(SQLAJob.type.in_(job_types))
                 .order_by(SQLAJob.created_at.desc())
                 .limit(limit)
             )
@@ -219,17 +326,18 @@ class TelemetryDataProvider:
             status_value = (
                 job.status.value if isinstance(job.status, JobStatus) else str(job.status)
             )
+            target_id = (
+                job_json.get("collection_id")
+                or job_json.get("telemetry_log_id")
+                or job_json.get("log_id")
+            )
             job_infos.append(
                 JobInfo(
                     id=job.id,
                     type=job.type,
                     status=status_value,
                     created_at=job.created_at,
-                    collection_id=(
-                        str(job_json.get("collection_id"))
-                        if job_json.get("collection_id")
-                        else None
-                    ),
+                    collection_id=str(target_id) if target_id else None,
                     user_email=(
                         str(job_json.get("user_email")) if job_json.get("user_email") else None
                     ),
@@ -375,7 +483,8 @@ class TelemetryDashboardApp(App[None]):
     """Textual dashboard showing telemetry processing progress."""
 
     DEFAULT_DESC_COLUMNS = {
-        "jobs-table": {3},
+        "jobs-table": {4},
+        "ingestion-table": {4},
         "collections-table": {7},
         "runs-table": {5},
     }
@@ -391,13 +500,13 @@ class TelemetryDashboardApp(App[None]):
         text-style: bold;
     }
 
-    #jobs-panel, #collections-panel, #runs-panel {
+    #jobs-panel, #ingestion-panel, #collections-panel, #runs-panel {
         border: tall $primary;
         padding: 0 1;
     }
 
     #jobs-panel {
-        height: 9;
+        height: 13;
     }
 
     #jobs-panel DataTable {
@@ -409,8 +518,11 @@ class TelemetryDashboardApp(App[None]):
         height: 1fr;
     }
 
-    #collections-panel, #runs-panel {
+    #ingestion-panel, #collections-panel, #runs-panel {
         width: 1fr;
+    }
+    #ingestion-panel {
+        width: 0.8fr;
     }
 
     .panel-title {
@@ -448,9 +560,11 @@ class TelemetryDashboardApp(App[None]):
         super().__init__()
         self.data_provider = TelemetryDataProvider()
         self.jobs_table: DataTable | None = None
+        self.ingestion_table: DataTable | None = None
         self.collections_table: DataTable | None = None
         self.runs_table: DataTable | None = None
         self.jobs_summary: Static | None = None
+        self.ingestion_summary: Static | None = None
         self.collections_summary: Static | None = None
         self.runs_summary: Static | None = None
         self.status_label: Static | None = None
@@ -460,9 +574,12 @@ class TelemetryDashboardApp(App[None]):
         self._runs_task: asyncio.Task[None] | None = None
         self.auto_refresh_enabled = True
         self._jobs_data: list[JobInfo] = []
+        self._ingestion_data: list[JobInfo] = []
+        self._job_stats_data: dict[str, JobQueueStats] = {}
         self._collections_data: list[CollectionStatusRow] = []
         self._runs_data: list[AgentRunStatusRow] = []
         self._jobs_sort_state: tuple[int, bool] | None = None
+        self._ingestion_sort_state: tuple[int, bool] | None = None
         self._collections_sort_state: tuple[int, bool] | None = None
         self._runs_sort_state: tuple[int, bool] | None = None
 
@@ -473,6 +590,10 @@ class TelemetryDashboardApp(App[None]):
             yield Static("—", classes="panel-subtitle", id="jobs-summary")
             yield DataTable(id="jobs-table")
         with Horizontal(id="main-panels"):
+            with Vertical(id="ingestion-panel"):
+                yield Static("Ingestion", classes="panel-title")
+                yield Static("—", classes="panel-subtitle", id="ingestion-summary")
+                yield DataTable(id="ingestion-table")
             with Vertical(id="collections-panel"):
                 yield Static("Collections", classes="panel-title")
                 yield Static("—", classes="panel-subtitle", id="collections-summary")
@@ -490,23 +611,35 @@ class TelemetryDashboardApp(App[None]):
 
     async def on_mount(self) -> None:
         self.jobs_table = self.query_one("#jobs-table", DataTable)
+        self.ingestion_table = self.query_one("#ingestion-table", DataTable)
         self.collections_table = self.query_one("#collections-table", DataTable)
         self.runs_table = self.query_one("#runs-table", DataTable)
         self.jobs_summary = self.query_one("#jobs-summary", Static)
+        self.ingestion_summary = self.query_one("#ingestion-summary", Static)
         self.collections_summary = self.query_one("#collections-summary", Static)
         self.runs_summary = self.query_one("#runs-summary", Static)
         self.status_label = self.query_one("#status-bar", Static)
         self.watch_status_message(self.status_message)
 
         self.jobs_table.zebra_stripes = True
+        self.ingestion_table.zebra_stripes = True
         self.collections_table.zebra_stripes = True
         self.runs_table.zebra_stripes = True
 
         self.jobs_table.cursor_type = "row"
+        self.ingestion_table.cursor_type = "row"
         self.collections_table.cursor_type = "row"
         self.runs_table.cursor_type = "row"
 
-        self.jobs_table.add_columns("Status", "Collection", "User", "Age", "Job ID")
+        self.jobs_table.add_columns("Status", "Type", "Target", "User", "Age", "Job ID")
+        self.ingestion_table.add_columns(
+            "Status",
+            "Log",
+            "Collection",
+            "User",
+            "Age",
+            "Job ID",
+        )
         self.collections_table.add_columns(
             "Collection",
             "Awaiting",
@@ -561,43 +694,120 @@ class TelemetryDashboardApp(App[None]):
             self.status_message = "Refreshing telemetry state…"
             try:
                 jobs_task = asyncio.create_task(self.data_provider.fetch_jobs())
+                job_stats_task = asyncio.create_task(self.data_provider.fetch_job_stats())
                 collections_task = asyncio.create_task(
                     self.data_provider.fetch_collection_statuses()
                 )
-                jobs, collections = await asyncio.gather(jobs_task, collections_task)
+                jobs, job_stats, collections = await asyncio.gather(
+                    jobs_task, job_stats_task, collections_task
+                )
             except Exception as exc:
                 self.status_message = f"Refresh failed: {exc}"
                 raise
-            self._render_jobs(jobs)
+            self._render_jobs(jobs, job_stats)
+            ingestion_jobs = [
+                job for job in jobs if job.type == WorkerFunction.TELEMETRY_INGEST_JOB.value
+            ]
+            self._render_ingestion(ingestion_jobs)
             self._render_collections(collections)
             if self.selected_collection_id:
                 self._start_agent_runs_task(self.selected_collection_id)
             self.status_message = "Telemetry state updated"
 
-    def _render_jobs(self, jobs: Sequence[JobInfo]) -> None:
+    def _render_jobs(
+        self,
+        jobs: Sequence[JobInfo],
+        job_stats: Mapping[str, JobQueueStats] | None = None,
+    ) -> None:
         assert self.jobs_table is not None and self.jobs_summary is not None
+        cursor, scroll = self._capture_table_state(self.jobs_table)
         self._jobs_data = list(jobs)
+        if job_stats is not None:
+            self._job_stats_data = dict(job_stats)
         self.jobs_table.clear()
         sorted_jobs = self._sorted_jobs()
         now = utcnow_naive()
         for job in sorted_jobs:
             age = humanize_timedelta(now - job.created_at)
+            job_type = job.type.replace("_", " ").title()
             self.jobs_table.add_row(
                 job.status.upper(),
+                job_type,
                 job.collection_id or "—",
                 job.user_email or "—",
                 age,
                 job.id,
                 key=job.id,
             )
+        self.jobs_summary.update(self._build_job_summary())
+        self._restore_table_state(self.jobs_table, cursor, scroll)
+
+    def _render_ingestion(self, jobs: Sequence[JobInfo]) -> None:
+        assert self.ingestion_table is not None and self.ingestion_summary is not None
+        cursor, scroll = self._capture_table_state(self.ingestion_table)
+        self._ingestion_data = list(jobs)
+        self.ingestion_table.clear()
+        ordered = self._sorted_ingestion()
+        now = utcnow_naive()
+        for job in ordered:
+            age = humanize_timedelta(now - job.created_at)
+            log_id = job.payload.get("telemetry_log_id") or "—"
+            collection = job.payload.get("collection_id") or "—"
+            self.ingestion_table.add_row(
+                job.status.upper(),
+                log_id,
+                collection,
+                job.user_email or "—",
+                age,
+                job.id,
+                key=job.id,
+            )
+        self.ingestion_summary.update(self._build_ingestion_summary())
+        self._restore_table_state(self.ingestion_table, cursor, scroll)
+
+    def _build_job_summary(self) -> str:
+        recent_window = self.data_provider.RECENT_COMPLETION_MINUTES
+        ingest_stats = self._job_stats_data.get(WorkerFunction.TELEMETRY_INGEST_JOB.value)
+        processing_stats = self._job_stats_data.get(WorkerFunction.TELEMETRY_PROCESSING_JOB.value)
+
+        parts: list[str] = []
+        if ingest_stats:
+            parts.append(self._format_job_stats("Ingest", ingest_stats, recent_window))
+        if processing_stats:
+            parts.append(self._format_job_stats("Processing", processing_stats, recent_window))
+
+        if parts:
+            return " | ".join(parts)
+
         pending = sum(1 for job in self._jobs_data if job.status == JobStatus.PENDING.value)
         running = sum(1 for job in self._jobs_data if job.status == JobStatus.RUNNING.value)
-        self.jobs_summary.update(
-            f"{len(self._jobs_data)} jobs · {pending} pending · {running} running"
+        return f"{len(self._jobs_data)} jobs · {pending} pending · {running} running"
+
+    @staticmethod
+    def _format_job_stats(label: str, stats: JobQueueStats, recent_window: int) -> str:
+        rate_display = f"{stats.completion_rate_per_min:.2f}/m"
+        return (
+            f"{label}: queued {stats.queued} (pending {stats.pending}, running {stats.running})"
+            f" · done {stats.completed} · {stats.recent_completed} in last {recent_window}m"
+            f" ({rate_display})"
         )
+
+    def _build_ingestion_summary(self) -> str:
+        ingest_stats = self._job_stats_data.get(WorkerFunction.TELEMETRY_INGEST_JOB.value)
+        if ingest_stats:
+            rate_display = f"{ingest_stats.completion_rate_per_min:.2f}/m"
+            return (
+                f"{ingest_stats.queued} queued · {ingest_stats.pending} pending · "
+                f"{ingest_stats.running} running · {ingest_stats.recent_completed} in last "
+                f"{self.data_provider.RECENT_COMPLETION_MINUTES}m ({rate_display})"
+            )
+        pending = sum(1 for job in self._ingestion_data if job.status == JobStatus.PENDING.value)
+        running = sum(1 for job in self._ingestion_data if job.status == JobStatus.RUNNING.value)
+        return f"{len(self._ingestion_data)} jobs · {pending} pending · {running} running"
 
     def _render_collections(self, collections: Sequence[CollectionStatusRow]) -> None:
         assert self.collections_table is not None and self.collections_summary is not None
+        _cursor, scroll = self._capture_table_state(self.collections_table)
         previous_selection = self.selected_collection_id
         self._collections_data = list(collections)
         self.collection_rows = {row.collection_id: row for row in self._collections_data}
@@ -636,6 +846,7 @@ class TelemetryDashboardApp(App[None]):
             highlighted = self._highlight_collection_row()
             if not highlighted:
                 self._clear_runs_table()
+        self._restore_table_state(self.collections_table, None, scroll)
 
     def _clear_runs_table(self) -> None:
         if self.runs_table is not None:
@@ -683,6 +894,7 @@ class TelemetryDashboardApp(App[None]):
 
     def _render_agent_runs(self, runs: Sequence[AgentRunStatusRow]) -> None:
         assert self.runs_table is not None and self.runs_summary is not None
+        cursor, scroll = self._capture_table_state(self.runs_table)
         self._runs_data = list(runs)
         self.runs_table.clear()
         ordered_rows = self._sorted_runs()
@@ -709,6 +921,7 @@ class TelemetryDashboardApp(App[None]):
         self.runs_summary.update(
             f"{urgent} runs waiting · showing {len(self._runs_data)} most recent rows"
         )
+        self._restore_table_state(self.runs_table, cursor, scroll)
 
     async def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.data_table.id != "collections-table":
@@ -728,7 +941,12 @@ class TelemetryDashboardApp(App[None]):
             self._jobs_sort_state = self._next_sort_state(
                 self._jobs_sort_state, column_index, table_id
             )
-            self._render_jobs(self._jobs_data)
+            self._render_jobs(self._jobs_data, self._job_stats_data)
+        elif table_id == "ingestion-table":
+            self._ingestion_sort_state = self._next_sort_state(
+                self._ingestion_sort_state, column_index, table_id
+            )
+            self._render_ingestion(self._ingestion_data)
         elif table_id == "collections-table":
             self._collections_sort_state = self._next_sort_state(
                 self._collections_sort_state, column_index, table_id
@@ -751,22 +969,88 @@ class TelemetryDashboardApp(App[None]):
             return (column_index, not current[1])
         return (column_index, column_index in default_desc)
 
+    @staticmethod
+    def _capture_table_state(
+        table: DataTable | None,
+    ) -> tuple[tuple[int, int] | None, Any]:
+        if table is None:
+            return None, None
+        cursor = getattr(table, "cursor_coordinate", None)
+        scroll_offset = getattr(table, "scroll_offset", None)
+        return cursor, scroll_offset
+
+    @staticmethod
+    def _restore_table_state(
+        table: DataTable | None,
+        cursor: tuple[int, int] | None,
+        scroll_offset: Any,
+    ) -> None:
+        if table is None:
+            return
+        if cursor is not None:
+            row, col = cursor
+            row_count = getattr(table, "row_count", None)
+            if row_count is None:
+                try:
+                    row_count = len(table.rows)
+                except Exception:
+                    row_count = 0
+            col_count = getattr(table, "column_count", None)
+            if col_count is None:
+                try:
+                    col_count = len(table.columns)
+                except Exception:
+                    col_count = 0
+            max_row = max(row_count - 1, 0)
+            max_col = max(col_count - 1, 0)
+            safe_row = min(row, max_row)
+            safe_col = min(col, max_col)
+            try:
+                table.cursor_coordinate = (safe_row, safe_col)
+            except Exception:
+                pass
+        if scroll_offset is not None:
+            try:
+                scroll_to = getattr(table, "scroll_to", None)
+                if callable(scroll_to):
+                    x = getattr(scroll_offset, "x", 0)
+                    y = getattr(scroll_offset, "y", scroll_offset)
+                    scroll_to(x=x, y=y, animate=False)
+                elif hasattr(table, "scroll_offset"):
+                    table.scroll_offset = scroll_offset
+            except Exception:
+                pass
+
     def _sorted_jobs(self) -> list[JobInfo]:
         data = list(self._jobs_data)
         if not data:
             return data
         if self._jobs_sort_state is None:
-            self._jobs_sort_state = (3, True)
+            self._jobs_sort_state = (4, True)
         column, reverse = self._jobs_sort_state
         key_func = JOB_SORT_MAP.get(column)
         if key_func is None:
             return data
         return sorted(data, key=key_func, reverse=reverse)
 
+    def _sorted_ingestion(self) -> list[JobInfo]:
+        data = list(self._ingestion_data)
+        if not data:
+            return data
+        if self._ingestion_sort_state is None:
+            self._ingestion_sort_state = (4, True)
+        column, reverse = self._ingestion_sort_state
+        key_func = INGEST_SORT_MAP.get(column)
+        if key_func is None:
+            return data
+        return sorted(data, key=key_func, reverse=reverse)
+
     def _sorted_collections(self) -> list[CollectionStatusRow]:
         data = list(self._collections_data)
-        if not data or self._collections_sort_state is None:
+        if not data:
             return data
+        if self._collections_sort_state is None:
+            self._collections_sort_state = (7, True)
         column, reverse = self._collections_sort_state
         key_func = COLLECTION_SORT_MAP.get(column)
         if key_func is None:
@@ -775,8 +1059,10 @@ class TelemetryDashboardApp(App[None]):
 
     def _sorted_runs(self) -> list[AgentRunStatusRow]:
         data = list(self._runs_data)
-        if not data or self._runs_sort_state is None:
+        if not data:
             return data
+        if self._runs_sort_state is None:
+            self._runs_sort_state = (5, True)
         column, reverse = self._runs_sort_state
         key_func = RUN_SORT_MAP.get(column)
         if key_func is None:
