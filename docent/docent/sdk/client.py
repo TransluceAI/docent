@@ -23,23 +23,63 @@ class Docent:
     """Client for interacting with the Docent API.
 
     This client provides methods for creating and managing Collections,
-    dimensions, agent runs, and filters in the Docent system.
+    dimensions, agent runs, and filters in the Docent system. It handles
+    authentication via API keys and provides a high-level interface for
+    logging, querying, and analyzing agent traces.
 
-    Args:
-        server_url: URL of the Docent API server.
-        web_url: URL of the Docent web UI.
-        email: Email address for authentication.
-        password: Password for authentication.
+    Example:
+        >>> from docent import Docent
+        >>> client = Docent(api_key="your-api-key")
+        >>> collection_id = client.create_collection(name="My Collection")
     """
 
     def __init__(
         self,
-        server_url: str = "https://api.docent.transluce.org",
-        web_url: str = "https://docent.transluce.org",
+        *,
+        domain: str = "docent.transluce.org",
         api_key: str | None = None,
+        # Deprecated
+        server_url: str | None = None,  # Use domain instead
+        web_url: str | None = None,  # Use domain instead
     ):
-        self._server_url = server_url.rstrip("/") + "/rest"
-        self._web_url = web_url.rstrip("/")
+        """Initialize the Docent client.
+
+        Args:
+            domain: The domain of the Docent instance. Defaults to "docent.transluce.org".
+                The API and web URLs will be constructed from this domain automatically.
+            api_key: API key for authentication. If not provided, will attempt to read
+                from the DOCENT_API_KEY environment variable.
+            server_url: (Deprecated) Direct URL of the Docent API server. Use `domain` instead.
+            web_url: (Deprecated) Direct URL of the Docent web UI. Use `domain` instead.
+
+        Raises:
+            ValueError: If no API key is provided and DOCENT_API_KEY is not set.
+
+        Example:
+            >>> client = Docent(domain="my-instance.docent.com", api_key="sk-...")
+        """
+        # Warn about deprecated parameters
+        if server_url is not None:
+            logger.warning(
+                "The 'server_url' parameter is deprecated and will be removed in a future version. "
+                "Please use 'domain' instead."
+            )
+        if web_url is not None:
+            logger.warning(
+                "The 'web_url' parameter is deprecated and will be removed in a future version. "
+                "Please use 'domain' instead."
+            )
+
+        self._domain = domain
+
+        # Set server URL; server_url takes precedence over domain
+        server_url = (server_url or f"https://api.{domain}").rstrip("/")
+        if not server_url.endswith("/rest"):
+            server_url = f"{server_url}/rest"
+        self._server_url = server_url
+
+        # Set web URL; web_url takes precedence over domain
+        self._web_url = (web_url or f"https://{domain}").rstrip("/")
 
         # Use requests.Session for connection pooling and persistent headers
         self._session = requests.Session()
