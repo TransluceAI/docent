@@ -2,10 +2,13 @@ from docent.data_models.chat.content import Content, ContentReasoning, ContentTe
 from docent.data_models.chat.message import (
     AssistantMessage,
     ChatMessage,
+    DocentAssistantMessage,
+    DocentChatMessage,
     SystemMessage,
     ToolMessage,
     UserMessage,
     parse_chat_message,
+    parse_docent_chat_message,
 )
 from docent.data_models.chat.tool import (
     ToolCall,
@@ -16,7 +19,9 @@ from docent.data_models.chat.tool import (
 
 __all__ = [
     "ChatMessage",
+    "DocentChatMessage",
     "AssistantMessage",
+    "DocentAssistantMessage",
     "SystemMessage",
     "ToolMessage",
     "UserMessage",
@@ -28,4 +33,5 @@ __all__ = [
     "ToolInfo",
     "ToolParams",
     "parse_chat_message",
+    "parse_docent_chat_message",
 ]

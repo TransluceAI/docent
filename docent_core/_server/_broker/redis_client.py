@@ -142,7 +142,9 @@ async def _enqueue_job(
     print(f"Enqueued job {j} to {queue_name} with func {func_name}")
 
 
-async def enqueue_job(ctx: ViewContext | WorkspaceContext | TelemetryContext, job_id: str) -> None:
+async def enqueue_job(
+    ctx: ViewContext | WorkspaceContext | TelemetryContext | None, job_id: str
+) -> None:
     """Enqueue a job to the worker."""
     await _enqueue_job(WORKER_QUEUE_NAME, "run_job", ctx, job_id, job_id=job_id)
 

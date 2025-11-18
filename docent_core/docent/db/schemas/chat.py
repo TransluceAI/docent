@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from docent._llm_util.providers.preference_types import ModelOption
 from docent._log_util import get_logger
-from docent.data_models.chat.message import ChatMessage, parse_chat_message
+from docent.data_models.chat.message import DocentChatMessage, parse_docent_chat_message
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.rubric import TABLE_JUDGE_RESULT
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_USER
@@ -23,9 +23,10 @@ class ChatSession(BaseModel):
     id: str
     agent_run_id: str | None = None
     judge_result_id: str | None
-    messages: list[ChatMessage]
+    messages: list[DocentChatMessage]
     chat_model: ModelOption | None = None
     estimated_input_tokens: int | None = None
+    context_serialized: dict[str, Any] | None = None
 
     # Errors are sent over SSE when they happen, but not stored in the db
     error_id: str | None = None
@@ -58,6 +59,9 @@ class SQLAChatSession(SQLABase):
     # Token count from most recent API call (input + output tokens)
     estimated_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Serialized LLMContext for multi-object chat sessions
+    context_serialized: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False, index=True
     )
@@ -74,9 +78,10 @@ class SQLAChatSession(SQLABase):
             id=self.id,
             agent_run_id=self.agent_run_id,
             judge_result_id=self.judge_result_id,
-            messages=[parse_chat_message(m) for m in self.messages],
+            messages=[parse_docent_chat_message(m) for m in self.messages],
             chat_model=chat_model,
             estimated_input_tokens=self.estimated_input_tokens,
+            context_serialized=self.context_serialized,
         )
 
     @classmethod
@@ -95,4 +100,5 @@ class SQLAChatSession(SQLABase):
             judge_result_id=session.judge_result_id,
             messages=[m.model_dump() for m in session.messages],
             chat_model=chat_model,
+            context_serialized=session.context_serialized,
         )

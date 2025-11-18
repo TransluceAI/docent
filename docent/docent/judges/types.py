@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field, field_serializer, field_validator
 from docent._llm_util.providers.preference_types import PUBLIC_PROVIDER_PREFERENCES, ModelOption
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
-from docent.data_models.citation import parse_citations
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent.judges.util.meta_schema import validate_judge_result_schema
+from docent.sdk.llm_context import LLMContext, resolve_citations_with_context
 
 logger = get_logger(__name__)
 
@@ -232,13 +232,22 @@ class JudgeResult(BaseModel):
 class JudgeResultWithCitations(JudgeResult):
     @classmethod
     def from_judge_result(
-        cls, result: JudgeResult, schema: dict[str, Any]
+        cls, result: JudgeResult, schema: dict[str, Any], agent_run: AgentRun
     ) -> "JudgeResultWithCitations":
-        """Judge result must be validated against the schema before calling this function!"""
+        """Judge result must be validated against the schema before calling this function!
+
+        Args:
+            result: The judge result to convert
+            schema: The output schema used to validate the result
+            agent_run: The agent run being judged (used to resolve citation aliases)
+        """
+        # LLMContext uses AgentRun.get_transcript_ids_ordered to sort transcripts within a run
+        # So in the case of a single agent run, its numbering should match with Rubric.materialize_system_prompt
+        context = LLMContext(items=[agent_run])
 
         def _parse_citation_string(output: str) -> dict[str, Any]:
-            text, citations = parse_citations(output)
-            return {"text": text, "citations": citations}
+            text, citations = resolve_citations_with_context(output, context)
+            return {"text": text, "citations": [c.model_dump() for c in citations]}
 
         data = result.model_dump()
         try:

@@ -11,7 +11,7 @@ import React, {
 
 export type TextSelectionItem = {
   text: string;
-  transcriptIdx?: number;
+  transcriptId?: string;
   blockIdx?: number;
 };
 

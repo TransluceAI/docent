@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 
 import { BaseMetadata } from '@/app/types/transcriptTypes';
+import { CitationTargetTextRange } from '@/app/types/citationTypes';
 import { computeIntervalsForJsonPattern } from '@/lib/citationMatch';
 import { SegmentedText } from '@/lib/SegmentedText';
 
@@ -50,11 +51,11 @@ const CopyButton: React.FC<{ value: any }> = ({ value }) => {
 export function MetadataBlock({
   metadata,
   citedKey,
-  citedTextRange,
+  textRange,
 }: {
   metadata: BaseMetadata;
   citedKey?: string;
-  citedTextRange?: string;
+  textRange?: CitationTargetTextRange;
 }) {
   const shouldHighlightRow = (key: string) => {
     return citedKey ? key === citedKey : false;
@@ -62,12 +63,12 @@ export function MetadataBlock({
 
   const getHighlightedValue = (value: any, shouldHighlight: boolean) => {
     const formattedValue = formatMetadataValue(value);
-    if (!shouldHighlight || !citedTextRange) {
+    if (!shouldHighlight || !textRange?.start_pattern) {
       return <span>{formattedValue}</span>;
     }
     const intervals = computeIntervalsForJsonPattern(
       formattedValue,
-      citedTextRange
+      textRange.start_pattern
     );
     return <SegmentedText text={formattedValue} intervals={intervals} />;
   };

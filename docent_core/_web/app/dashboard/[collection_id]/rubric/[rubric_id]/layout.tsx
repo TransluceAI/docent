@@ -3,12 +3,12 @@
 import React, { Suspense, useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import SingleRubricArea from '../../components/SingleRubricArea';
-import { CitationNavigationProvider } from './NavigateToCitationContext';
 import { ResultFilterControlsProvider } from '@/providers/use-result-filters';
 import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RefinementChat from './components/RefinementChat';
 import TranscriptChat from '@/components/TranscriptChat';
+import { CitationNavigationProvider } from '@/providers/CitationNavigationProvider';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';

@@ -19,7 +19,6 @@ import React, {
 
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
-  clearHighlightedCitation,
   selectRunCitationsById,
   toggleAgentRunLeftSidebar,
   toggleAgentRunRightSidebar,
@@ -35,12 +34,16 @@ import {
 import { TranscriptNavigator, TreeNode } from './TranscriptNavigator';
 import UuidPill from '@/components/UuidPill';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 
 import { MetadataPopover } from '@/components/metadata/MetadataPopover';
 import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { cn } from '@/lib/utils';
-import { Citation } from '@/app/types/experimentViewerTypes';
-import { generateCitationId } from '@/lib/citationUtils';
+import {
+  CitationTarget,
+  CitationTargetTextRange,
+} from '@/app/types/citationTypes';
+import { citationTargetToId } from '@/lib/citationId';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -55,36 +58,37 @@ import { useParams } from 'next/navigation';
 // Export interface for use in other components
 interface ScrollToBlockParams {
   blockIdx: number;
-  transcriptIdx: number;
-  agentRunIdx: number;
+  transcriptId: string;
   highlightDuration?: number;
-  citation?: Citation;
+  citationTargetId?: string; // Encoded citation target ID for highlighting
 }
 export interface AgentRunViewerHandle {
   scrollToBlock: (params: ScrollToBlockParams) => void;
-  focusCitation: (citation: Citation) => void;
+  focusCitationTarget: (target: CitationTarget) => void;
 }
 
 // Add props interface
 interface AgentRunViewerProps {
   agentRunId: string;
+  collectionId?: string;
+  allConversationCitations?: CitationTarget[];
 }
 
 // Controlled metadata intent (run/transcript/message) for opening dialogs
 type MetadataIntent =
-  | { type: 'run'; citedKey?: string; citedTextRange?: string }
+  | { type: 'run'; citedKey?: string; textRange?: CitationTargetTextRange }
   | {
       type: 'transcript';
       transcriptIdx: number;
       citedKey?: string;
-      citedTextRange?: string;
+      textRange?: CitationTargetTextRange;
     }
   | {
       type: 'message';
       transcriptIdx: number;
       blockIdx: number;
       citedKey?: string;
-      citedTextRange?: string;
+      textRange?: CitationTargetTextRange;
     };
 
 // Add this helper function near the top of the file
@@ -112,6 +116,33 @@ const getMessageContent = (content: string | Content[]): string => {
     )
     .map((item) => item.text)
     .join('\n');
+};
+
+// Helper to filter citations for a specific block and add selectedCitation if it matches
+const getCitationsForBlock = (
+  allCitations: CitationTarget[],
+  selectedCitation: CitationTarget | null,
+  blockIdx: number,
+  transcriptId: string
+): CitationTarget[] => {
+  // Filter to citations for this block
+  const blockCitations = allCitations.filter(
+    (citation) =>
+      citation.item.item_type === 'block_content' &&
+      citation.item.transcript_id === transcriptId &&
+      citation.item.block_idx === blockIdx
+  );
+
+  // Add selectedCitation if it matches this block
+  const matchesThisBlock =
+    selectedCitation &&
+    selectedCitation.item.item_type === 'block_content' &&
+    selectedCitation.item.transcript_id === transcriptId &&
+    selectedCitation.item.block_idx === blockIdx;
+
+  return matchesThisBlock
+    ? [...blockCitations, selectedCitation]
+    : blockCitations;
 };
 
 // Helper function to build transcript path
@@ -217,12 +248,18 @@ const TranscriptPath: React.FC<{
 };
 
 const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
-  ({ agentRunId }, ref) => {
+  (
+    { agentRunId, collectionId: collectionIdProp, allConversationCitations },
+    ref
+  ) => {
     const dispatch = useAppDispatch();
 
-    const collectionId = useAppSelector(
+    const collectionIdFromRedux = useAppSelector(
       (state) => state.collection?.collectionId
     );
+
+    // Use prop if provided, otherwise fall back to Redux
+    const collectionId = collectionIdProp ?? collectionIdFromRedux;
 
     const { rubric_id: rubricId } = useParams<{ rubric_id: string }>();
 
@@ -272,6 +309,11 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const runCitations = useAppSelector((state) =>
       selectRunCitationsById(state, agentRun?.id)
     );
+
+    // Agent run and judge result pages store citations in Redux, but the new /chat route passes citations as a prop.
+    const allCitations = allConversationCitations
+      ? allConversationCitations
+      : runCitations.map((c) => c.target);
 
     // Add state for selected transcript id and transcript group
     const [selectedTranscriptId, setSelectedTranscriptId] = useState<
@@ -413,6 +455,13 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // Upon initial load, if no transcript has been selected, select the first one
     const initTranscriptSelected = useRef(false);
+
+    // Reset transcript selection when agent run changes
+    useEffect(() => {
+      initTranscriptSelected.current = false;
+      setSelectedTranscriptId(null);
+    }, [agentRunId]);
+
     useEffect(() => {
       if (
         !initTranscriptSelected.current &&
@@ -491,14 +540,12 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const handleTranscriptSelect = useCallback(
       (transcriptId: string) => {
         setSelectedTranscriptId(transcriptId);
-        // Clear any highlighted citations when switching transcripts
-        dispatch(clearHighlightedCitation());
         // Close floating sidebar when transcript is selected
         if (!sidebarVisible) {
           setSidebarHovering(false);
         }
       },
-      [dispatch, sidebarVisible]
+      [sidebarVisible]
     );
 
     /**
@@ -570,7 +617,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
       // Get all block elements
       const blockElements = Array.from(
-        document.querySelectorAll(`[id*="r-0_t-${transcriptIdx}_b-"]`)
+        document.querySelectorAll(`[id*="t-${transcriptIdx}_b-"]`)
       );
       if (blockElements.length === 0) return;
 
@@ -618,30 +665,35 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // Fulfill pending scroll with simple retries instead of MutationObserver
     useEffect(() => {
-      if (!pendingScrollTarget || !scrollNode) return;
+      if (!pendingScrollTarget) return;
 
-      const {
-        blockIdx,
-        transcriptIdx,
-        agentRunIdx,
-        highlightDuration,
-        citation,
-      } = pendingScrollTarget;
-      let blockId = `r-${agentRunIdx}_t-${transcriptIdx}_b-${blockIdx}`;
+      const { blockIdx, transcriptId, highlightDuration, citationTargetId } =
+        pendingScrollTarget;
+
+      // Switch transcript first if needed - this triggers re-render and scrollNode to be set
+      if (transcriptId !== selectedTranscriptId) {
+        console.log('scroll: changing transcript to', transcriptId);
+        setSelectedTranscriptId(transcriptId);
+        return; // Effect will re-run after transcript renders
+      }
+
+      // Now check if scrollNode exists - transcript should be rendered at this point
+      if (!scrollNode) return;
 
       const tryScrollNow = (): boolean => {
-        // First, change the selected transcript if needed
-        const targetTranscriptId = transcriptIdxToId[transcriptIdx];
-        if (!targetTranscriptId) return false;
-        if (targetTranscriptId !== selectedTranscriptId) {
-          console.log('scroll: changing transcript to', targetTranscriptId);
-          setSelectedTranscriptId(targetTranscriptId);
+        // Convert transcriptId to transcriptIdx for DOM lookup
+        const transcriptIdx = transcriptIdToIdx[transcriptId];
+        if (transcriptIdx === undefined) {
+          console.error('scroll: transcript not found', transcriptId);
+          return false;
         }
+
+        let blockId = `t-${transcriptIdx}_b-${blockIdx}`;
 
         let blockElement = document.getElementById(blockId);
         if (!blockElement) {
           // It's possible this is an invalid blockIdx; check if 0 exists
-          const testBlockId = `r-${agentRunIdx}_t-${transcriptIdx}_b-0`;
+          const testBlockId = `t-${transcriptIdx}_b-0`;
           const testBlockElement = document.getElementById(testBlockId);
           if (testBlockElement) {
             console.error(
@@ -664,10 +716,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         const containerRect = scrollNode.getBoundingClientRect();
         let top: number | null = null;
 
-        if (citation) {
-          const citationId = generateCitationId(citation);
+        // Use citationTargetId for highlighting specific text within the block
+        if (citationTargetId) {
           const targetSpan = (blockElement as HTMLElement).querySelector(
-            `span[data-citation-ids*="${citationId}"]`
+            `span[data-citation-ids*="${citationTargetId}"]`
           ) as HTMLElement | null;
           if (targetSpan) {
             const spanRect = targetSpan.getBoundingClientRect();
@@ -711,7 +763,12 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       return () => {
         window.clearInterval(intervalId);
       };
-    }, [pendingScrollTarget, scrollNode]);
+    }, [
+      pendingScrollTarget,
+      scrollNode,
+      selectedTranscriptId,
+      transcriptIdToIdx,
+    ]);
 
     // Scroll to block function
     const scrollToBlock = setPendingScrollTarget;
@@ -720,57 +777,70 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       null
     );
 
-    const focusCitation = useCallback(
-      (citation: Citation) => {
-        const citedKey = citation.metadata_key;
-        const citedTextRange = citation.start_pattern;
+    const citationNav = useCitationNavigation();
+    const selectedCitation = citationNav?.selectedCitation ?? null;
 
-        // Run-level metadata
-        if (citation.transcript_idx == undefined && citedKey != undefined) {
-          setMetadataIntent({ type: 'run', citedKey, citedTextRange });
-          return;
-        }
+    const focusCitationTarget = useCallback(
+      (target: CitationTarget) => {
+        const { item, text_range } = target;
+        const textRange: CitationTargetTextRange | undefined =
+          text_range ?? undefined;
 
-        const tIdx = citation.transcript_idx ?? 0;
+        // Handle based on item type
+        switch (item.item_type) {
+          case 'agent_run_metadata':
+            // Run-level metadata
+            setMetadataIntent({
+              type: 'run',
+              citedKey: item.metadata_key,
+              textRange,
+            });
+            break;
 
-        // Transcript-level metadata
-        if (citation.block_idx == undefined && citedKey != undefined) {
-          const targetTranscriptId = transcriptIdxToId[tIdx];
-          if (
-            targetTranscriptId &&
-            targetTranscriptId !== selectedTranscriptId
-          ) {
-            setSelectedTranscriptId(targetTranscriptId);
-          }
-          setMetadataIntent({
-            type: 'transcript',
-            transcriptIdx: tIdx,
-            citedKey,
-            citedTextRange,
-          });
-          return;
-        }
+          case 'transcript_metadata':
+            // Transcript-level metadata
+            if (item.transcript_id !== selectedTranscriptId) {
+              setSelectedTranscriptId(item.transcript_id);
+            }
+            setMetadataIntent({
+              type: 'transcript',
+              transcriptIdx: 0,
+              citedKey: item.metadata_key,
+              textRange,
+            });
+            break;
 
-        // Message-level citation (possibly metadata)
-        const blockIdx = citation.block_idx ?? 0;
-        scrollToBlock({
-          blockIdx,
-          transcriptIdx: tIdx,
-          agentRunIdx: 0,
-          highlightDuration: 500,
-          citation,
-        });
-        if (citedKey != undefined) {
-          setMetadataIntent({
-            type: 'message',
-            transcriptIdx: tIdx,
-            blockIdx,
-            citedKey,
-            citedTextRange,
-          });
+          case 'block_metadata':
+            // Block-level metadata
+            scrollToBlock({
+              blockIdx: item.block_idx,
+              transcriptId: item.transcript_id,
+              highlightDuration: 500,
+            });
+            setMetadataIntent({
+              type: 'message',
+              transcriptIdx: 0,
+              blockIdx: item.block_idx,
+              citedKey: item.metadata_key,
+              textRange,
+            });
+            break;
+
+          case 'block_content':
+            // Block content citation
+            scrollToBlock({
+              blockIdx: item.block_idx,
+              transcriptId: item.transcript_id,
+              highlightDuration: 500,
+              citationTargetId: text_range
+                ? citationTargetToId(target)
+                : undefined,
+            });
+            setMetadataIntent(null);
+            break;
         }
       },
-      [scrollToBlock, transcriptIdxToId, selectedTranscriptId]
+      [scrollToBlock, selectedTranscriptId]
     );
 
     /**
@@ -781,29 +851,35 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       ref,
       () => ({
         scrollToBlock,
-        focusCitation,
+        focusCitationTarget,
       }),
-      [scrollToBlock, focusCitation]
+      [scrollToBlock, focusCitationTarget]
     );
 
     const goToNextBlock = useCallback(() => {
-      if (!transcript || transcriptIdx === undefined) return;
+      if (!transcript || !selectedTranscriptId) return;
 
       const nextIndex =
         currentBlockIndex !== null
           ? Math.min(currentBlockIndex + 1, transcript.messages.length - 1)
           : 0;
 
-      scrollToBlock({ blockIdx: nextIndex, transcriptIdx, agentRunIdx: 0 });
-    }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
+      scrollToBlock({
+        blockIdx: nextIndex,
+        transcriptId: selectedTranscriptId,
+      });
+    }, [currentBlockIndex, transcript, scrollToBlock, selectedTranscriptId]);
     const goToPrevBlock = useCallback(() => {
-      if (!transcript || transcriptIdx === undefined) return;
+      if (!transcript || !selectedTranscriptId) return;
 
       const prevIndex =
         currentBlockIndex !== null ? Math.max(currentBlockIndex - 1, 0) : 0;
 
-      scrollToBlock({ blockIdx: prevIndex, transcriptIdx, agentRunIdx: 0 });
-    }, [currentBlockIndex, transcript, scrollToBlock, transcriptIdx]);
+      scrollToBlock({
+        blockIdx: prevIndex,
+        transcriptId: selectedTranscriptId,
+      });
+    }, [currentBlockIndex, transcript, scrollToBlock, selectedTranscriptId]);
 
     return (
       <>
@@ -843,9 +919,9 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                   ? metadataIntent.citedKey
                                   : undefined
                               }
-                              citedTextRange={
+                              textRange={
                                 metadataIntent?.type === 'run'
-                                  ? metadataIntent.citedTextRange
+                                  ? metadataIntent.textRange
                                   : undefined
                               }
                             />
@@ -1001,8 +1077,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                             const citedKey = isTranscriptIntent
                               ? metadataIntent?.citedKey
                               : undefined;
-                            const citedTextRange = isTranscriptIntent
-                              ? metadataIntent?.citedTextRange
+                            const textRange = isTranscriptIntent
+                              ? metadataIntent?.textRange
                               : undefined;
                             return (
                               <MetadataPopover.Root
@@ -1034,7 +1110,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                       <MetadataBlock
                                         metadata={md}
                                         citedKey={citedKey}
-                                        citedTextRange={citedTextRange}
+                                        textRange={textRange}
                                       />
                                     )}
                                   </MetadataPopover.Body>
@@ -1065,7 +1141,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                     ref={scrollContainerRef}
                   >
                     {transcript.messages.map((message, index) => {
-                      const blockId = `r-0_t-${transcriptIdx}_b-${index}`;
+                      const blockId = `t-${transcriptIdx}_b-${index}`;
                       const isMsgIntent =
                         metadataIntent?.type === 'message' &&
                         metadataIntent.transcriptIdx === (transcriptIdx ?? 0) &&
@@ -1074,8 +1150,16 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         ? metadataIntent?.citedKey
                         : undefined;
                       const msgCitedRange = isMsgIntent
-                        ? metadataIntent?.citedTextRange
+                        ? metadataIntent?.textRange
                         : undefined;
+
+                      const citedTargets = getCitationsForBlock(
+                        allCitations,
+                        selectedCitation,
+                        index,
+                        selectedTranscriptId!
+                      );
+
                       return (
                         <MessageBox
                           key={index}
@@ -1083,11 +1167,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           index={index}
                           blockId={blockId}
                           isHighlighted={highlightedBlock === blockId}
-                          citedRanges={runCitations.filter(
-                            (c) =>
-                              c.transcript_idx === transcriptIdx &&
-                              c.block_idx === index
-                          )}
+                          citedTargets={citedTargets}
                           prettyPrintJsonMessages={prettyPrintJsonMessages}
                           setPrettyPrintJsonMessages={
                             setPrettyPrintJsonMessages
@@ -1107,7 +1187,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                             citedKey: msgCitedKey,
                             citedTextRange: msgCitedRange,
                           }}
-                          transcriptIdx={transcriptIdx}
+                          transcriptId={selectedTranscriptId ?? undefined}
                         />
                       );
                     })}

@@ -1,6 +1,6 @@
-import { Citation } from '@/app/types/experimentViewerTypes';
-import { generateCitationId } from './citationUtils';
+import { CitationTarget } from '@/app/types/citationTypes';
 import { logErrorWithToast } from './errorUtils';
+import { citationTargetToId } from './citationId';
 
 export interface TextSpanWithCitations {
   start: number;
@@ -158,23 +158,7 @@ const findMatchesForPattern = (text: string, pattern: string): Position[] => {
   return positions;
 };
 
-// Find matches for a citation (attaches IDs after pattern matching)
-const findMatchesForCitation = (
-  text: string,
-  citation: Citation
-): TextSpanWithCitations[] => {
-  const { start_pattern } = citation;
-  if (!start_pattern) return [];
-
-  // Get positions from cache (pattern-based)
-  const positions = findMatchesForPattern(text, start_pattern);
-
-  // Attach citation ID (not cached, generated fresh each time)
-  const id = generateCitationId(citation);
-  return positions.map((pos) => ({ ...pos, citationId: id }));
-};
-
-// Compute intervals for an arbitrary pattern without requiring a full Citation
+// Compute intervals for an arbitrary pattern without requiring a full citation
 // Useful for UI cases like metadata dialogs where we only need to highlight a pattern
 export const computeIntervalsForJsonPattern = (
   text: string,
@@ -199,15 +183,27 @@ export const computeIntervalsForJsonPattern = (
   return intervals;
 };
 
-export const computeCitationIntervals = (
+/**
+ * Compute intervals for citation targets with text ranges
+ * Uses the full CitationTarget to generate a proper, lossless citation ID
+ */
+export const computeIntervalsForCitationTargets = (
   text: string,
-  citations: Citation[]
+  targets: CitationTarget[]
 ): TextSpanWithCitations[] => {
-  if (!citations || citations.length === 0) return [];
+  if (!targets || targets.length === 0) return [];
 
   const intervals: TextSpanWithCitations[] = [];
-  for (const c of citations) {
-    const matches = findMatchesForCitation(text, c);
+  for (const target of targets) {
+    const { start_pattern } = target.text_range || {};
+    if (!start_pattern) continue;
+
+    // Get positions from cache (pattern-based)
+    const positions = findMatchesForPattern(text, start_pattern);
+
+    // Generate proper citation ID from full CitationTarget
+    const citationId = citationTargetToId(target);
+    const matches = positions.map((pos) => ({ ...pos, citationId }));
     if (matches.length) intervals.push(...matches);
   }
 

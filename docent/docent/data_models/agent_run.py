@@ -134,7 +134,7 @@ class AgentRun(BaseModel):
     # Converting to text #
     ######################
 
-    def _to_text_impl(self, token_limit: int = sys.maxsize, use_blocks: bool = False) -> list[str]:
+    def _to_text_impl(self, token_limit: int = sys.maxsize) -> list[str]:
         """
         Core implementation for converting agent run to text representation.
 
@@ -151,8 +151,6 @@ class AgentRun(BaseModel):
             transcript_content = t.to_str(
                 token_limit=sys.maxsize,
                 transcript_idx=i,
-                agent_run_idx=None,
-                use_action_units=not use_blocks,
             )[0]
             transcript_strs.append(f"<transcript>\n{transcript_content}\n</transcript>")
 
@@ -202,15 +200,16 @@ class AgentRun(BaseModel):
                     ), "Ranges without metadata should be a single message"
                     t = self.transcripts[msg_range.start]
                     if msg_range.num_tokens < token_limit - 50:
-                        transcript = f"<transcript>\n{t.to_str(token_limit=sys.maxsize, use_action_units=not use_blocks)[0]}\n</transcript>"
+                        transcript = (
+                            f"<transcript>\n{t.to_str(token_limit=sys.maxsize)[0]}\n</transcript>"
+                        )
                         result = (
                             f"Here is a partial agent run for analysis purposes only:\n{transcript}"
                         )
                         results.append(result)
                     else:
-                        transcript_fragments = t.to_str(
+                        transcript_fragments: list[str] = t.to_str(
                             token_limit=token_limit - 50,
-                            use_action_units=not use_blocks,
                         )
                         for fragment in transcript_fragments:
                             result = f"<transcript>\n{fragment}\n</transcript>"
@@ -220,26 +219,6 @@ class AgentRun(BaseModel):
                             results.append(result)
             return results
 
-    def to_text(self, token_limit: int = sys.maxsize) -> list[str]:
-        """
-        Represents an agent run as a list of strings, each of which is at most token_limit tokens
-        under the GPT-4 tokenization scheme.
-
-        We'll try to split up long AgentRuns along transcript boundaries and include metadata.
-        For very long transcripts, we'll have to split them up further and remove metadata.
-        """
-        return self._to_text_impl(token_limit=token_limit, use_blocks=False)
-
-    def to_text_blocks(self, token_limit: int = sys.maxsize) -> list[str]:
-        """
-        Represents an agent run as a list of strings using individual message blocks,
-        each of which is at most token_limit tokens under the GPT-4 tokenization scheme.
-
-        Unlike to_text() which uses action units, this method formats each message
-        as an individual block.
-        """
-        return self._to_text_impl(token_limit=token_limit, use_blocks=True)
-
     @property
     def text(self) -> str:
         """Concatenates all transcript texts with double newlines as separators.
@@ -247,16 +226,7 @@ class AgentRun(BaseModel):
         Returns:
             str: A string representation of all transcripts.
         """
-        return self._to_text_impl(token_limit=sys.maxsize, use_blocks=False)[0]
-
-    @property
-    def text_blocks(self) -> str:
-        """Concatenates all transcript texts using individual blocks format.
-
-        Returns:
-            str: A string representation of all transcripts using individual message blocks.
-        """
-        return self._to_text_impl(token_limit=sys.maxsize, use_blocks=True)[0]
+        return self._to_text_impl(token_limit=sys.maxsize)[0]
 
     ##############################
     # New text rendering methods #
@@ -414,10 +384,20 @@ class AgentRun(BaseModel):
 
         return c_tree, transcript_idx_map
 
-    def to_text_new(self, indent: int = 0, full_tree: bool = False):
+    def to_text_new(
+        self,
+        agent_run_alias: int | str = 0,
+        t_idx_map: dict[str, int] | None = None,
+        indent: int = 0,
+        full_tree: bool = False,
+    ):
+        if isinstance(agent_run_alias, int):
+            agent_run_alias = f"R{agent_run_alias}"
+
         c_tree = self.get_canonical_tree(full_tree=full_tree)
         t_ids_ordered = self.get_transcript_ids_ordered(full_tree=full_tree)
-        t_idx_map = {t_id: i for i, t_id in enumerate(t_ids_ordered)}
+        if t_idx_map is None:
+            t_idx_map = {t_id: i for i, t_id in enumerate(t_ids_ordered)}
         t_dict = self.transcript_dict
         tg_dict = self.transcript_group_dict
 
@@ -430,7 +410,7 @@ class AgentRun(BaseModel):
                     children_texts.append(_recurse(child_id))
                 else:
                     cur_text = t_dict[child_id].to_text_new(
-                        transcript_idx=t_idx_map[child_id],
+                        transcript_alias=t_idx_map[child_id],
                         indent=indent,
                     )
                     children_texts.append(cur_text)
@@ -451,6 +431,7 @@ class AgentRun(BaseModel):
         if metadata_text is not None:
             if indent > 0:
                 metadata_text = textwrap.indent(metadata_text, " " * indent)
-            text += f"\n<|agent run metadata|>\n{metadata_text}\n</|agent run metadata|>"
+            metadata_alias = f"{agent_run_alias}M"
+            text += f"\n<|agent run metadata {metadata_alias}|>\n{metadata_text}\n</|agent run metadata {metadata_alias}|>"
 
-        return text
+        return f"<|agent run {agent_run_alias}|>\n{text}\n</|agent run {agent_run_alias}|>\n"

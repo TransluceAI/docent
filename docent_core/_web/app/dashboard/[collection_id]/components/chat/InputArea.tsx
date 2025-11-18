@@ -237,7 +237,7 @@ export default function InputArea({
               ) {
                 event.preventDefault();
 
-                if (!disabled) {
+                if (!disabled && !isSendingMessage) {
                   submitForm();
                 }
               }

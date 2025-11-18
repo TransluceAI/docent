@@ -1,9 +1,7 @@
 import { FileTextIcon, Quote } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Citation } from '../app/types/experimentViewerTypes';
-import { useAppSelector } from '../app/store/hooks';
-import { selectIsCitationHighlighted } from '../lib/citationUtils';
-import { useCitationNavigation } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
+import { CitationTarget, InlineCitation } from '../app/types/citationTypes';
+import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import React, { useRef } from 'react';
 import { useTextSelection } from '../providers/use-text-selection';
 
@@ -71,8 +69,8 @@ const MARKDOWN_PATTERNS = [
  */
 function processTextWithMarkdownAndCitations(
   text: string,
-  citations: Citation[],
-  onCitationClick: (citation: Citation) => void,
+  citations: InlineCitation[],
+  onCitationClick: (citation: InlineCitation) => void,
   keyBase: string
 ): JSX.Element[] {
   if (!text) return [];
@@ -264,21 +262,50 @@ function processMarkdownText(text: string, keyBase: string): JSX.Element[] {
   return elements;
 }
 
+function extraShortUUID(uuid: string): string {
+  return uuid.slice(0, 4);
+}
+
+function formatCitationTarget(target: CitationTarget): string {
+  // TODO(ryanbloom) Maybe omit the transcript ID if there's only one in context
+  switch (target.item.item_type) {
+    case 'block_content':
+      return `Transcript ${extraShortUUID(target.item.transcript_id)} Block ${target.item.block_idx}`;
+    case 'block_metadata':
+      return `Transcript ${extraShortUUID(target.item.transcript_id)} Block ${target.item.block_idx} metadata`;
+    case 'transcript_metadata':
+      return `Transcript ${extraShortUUID(target.item.transcript_id)} metadata`;
+    case 'agent_run_metadata':
+      return `Agent run ${extraShortUUID(target.item.agent_run_id)} metadata`;
+  }
+}
+
+const citationTargetsEqual = (
+  a: CitationTarget,
+  b: CitationTarget
+): boolean => {
+  return JSON.stringify(a) === JSON.stringify(b);
+};
+
 /**
  * Individual citation span - clickable text with highlighting support
  * Used internally by CitationRenderer and TextWithCitations
  */
 export const CitationButton: React.FC<{
-  citation: Citation;
+  citation: InlineCitation;
   text: string;
-  onClick: (citation: Citation) => void;
+  onClick: (citation: InlineCitation) => void;
 }> = ({ citation, text, onClick }) => {
-  const isHighlighted = useAppSelector((state) =>
-    selectIsCitationHighlighted(state, citation)
-  );
-  // Server-side validation ensures that any citation with start_pattern is valid
-  const isMetadataCitation = citation.metadata_key != null;
-  const hasMatches = Boolean(citation.start_pattern);
+  text = formatCitationTarget(citation.target);
+
+  const citationNav = useCitationNavigation();
+  const isHighlighted =
+    citationNav?.selectedCitation &&
+    citationTargetsEqual(citation.target, citationNav.selectedCitation);
+
+  const isMetadataCitation =
+    citation.target.item.item_type.includes('metadata');
+  const hasMatches = Boolean(citation.target.text_range?.start_pattern);
 
   return (
     <button
@@ -321,13 +348,13 @@ export const CitationButton: React.FC<{
  * TextWithCitations - Renders text with embedded clickable citations
  */
 export type NavigateToCitation = (args: {
-  citation: Citation;
+  target: CitationTarget;
   source?: string;
 }) => void;
 
 interface TextWithCitationsProps {
   text: string;
-  citations: Citation[];
+  citations: InlineCitation[];
   setSelectedText?: (text: string) => void;
 }
 
@@ -347,9 +374,9 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
   let lastIndex = 0;
   let lastWasCitation = false;
 
-  const handleCitationClick = (citation: Citation) => {
+  const handleCitationClick = (citation: InlineCitation) => {
     if (citationNav?.navigateToCitation) {
-      citationNav.navigateToCitation({ citation });
+      citationNav.navigateToCitation({ target: citation.target });
     }
   };
 
@@ -412,7 +439,7 @@ export const TextWithCitations: React.FC<TextWithCitationsProps> = ({
  */
 interface MarkdownWithCitationsProps {
   text: string;
-  citations: Citation[];
+  citations: InlineCitation[];
 }
 
 export const MarkdownWithCitations: React.FC<MarkdownWithCitationsProps> = ({
@@ -421,9 +448,9 @@ export const MarkdownWithCitations: React.FC<MarkdownWithCitationsProps> = ({
 }) => {
   const citationNav = useCitationNavigation();
 
-  const handleCitationClick = (citation: Citation) => {
+  const handleCitationClick = (citation: InlineCitation) => {
     if (citationNav?.navigateToCitation) {
-      citationNav.navigateToCitation({ citation });
+      citationNav.navigateToCitation({ target: citation.target });
     }
   };
 

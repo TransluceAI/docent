@@ -1,10 +1,8 @@
 'use client';
 
-import React from 'react';
-
 import { CitationNavigationProvider } from '@/providers/CitationNavigationProvider';
 
-export default function AgentRunLayout({
+export default function ChatLayout({
   children,
 }: {
   children: React.ReactNode;

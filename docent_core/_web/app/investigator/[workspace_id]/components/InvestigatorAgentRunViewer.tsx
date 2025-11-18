@@ -288,10 +288,10 @@ export default function InvestigatorAgentRunViewer({
                 index={index}
                 blockId={blockId}
                 isHighlighted={false}
-                citedRanges={[]}
+                citedTargets={[]}
                 prettyPrintJsonMessages={prettyPrintJsonMessages}
                 setPrettyPrintJsonMessages={setPrettyPrintJsonMessages}
-                transcriptIdx={0}
+                transcriptId={transcript.id}
               />
             );
           })}

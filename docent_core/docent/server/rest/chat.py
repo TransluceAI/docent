@@ -1,3 +1,6 @@
+from typing import Any, Literal
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -32,6 +35,7 @@ from docent_core.docent.server.dependencies.user import (
 from docent_core.docent.services.chat import ChatService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES
 from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.utils.llm_context import enrich_llm_context_metadata
 
 logger = get_logger(__name__)
 
@@ -190,3 +194,133 @@ async def get_chat_sessions_for_run(
 ) -> list[ChatSession]:
     """Get all chat sessions for an agent run, excluding judge result sessions."""
     return await chat_svc.get_chat_sessions_for_run(collection_id, agent_run_id)
+
+
+class CreateConversationRequest(BaseModel):
+    context_serialized: dict[str, Any]
+    model_string: str | None = None
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+
+
+@chat_router.post("/start")
+async def create_conversation(
+    request: CreateConversationRequest,
+    user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+) -> dict[str, str]:
+    """Create a new chat session with multiple objects via LLMContext.
+
+    This endpoint creates a multi-object chat session for the "chat with anything" feature.
+    Unlike the single-run chat endpoint, this accepts a serialized LLMContext containing
+    multiple agent runs, transcripts, or other objects.
+    """
+
+    chat_model: ModelOption | None = None
+    if request.model_string is not None:
+        provider, model_name = request.model_string.split("/", 1)
+        chat_model = ModelOption(
+            provider=provider,
+            model_name=model_name,
+            reasoning_effort=request.reasoning_effort,
+        )
+
+    # Enrich the serialized context with metadata from the database
+    await enrich_llm_context_metadata(request.context_serialized, session)
+
+    sqla_session = SQLAChatSession(
+        id=str(uuid4()),
+        user_id=user.id,
+        agent_run_id=None,
+        judge_result_id=None,
+        context_serialized=request.context_serialized,
+        messages=[],
+        chat_model=chat_model.model_dump() if chat_model else None,
+    )
+    session.add(sqla_session)
+    await session.commit()
+
+    # Track analytics
+    analytics.track_event(
+        "conversation_created",
+        properties={
+            "session_id": sqla_session.id,
+            "num_items": len(request.context_serialized.get("items", [])),
+            "chat_model": chat_model.model_dump() if chat_model else None,
+        },
+    )
+
+    return {"session_id": sqla_session.id}
+
+
+@chat_router.get("/conversation/{session_id}/state")
+async def get_conversation_state(
+    session_id: str,
+    sq_rsession: SQLAChatSession = Depends(get_chat_session),
+    chat_svc: ChatService = Depends(get_chat_service),
+) -> ChatSession:
+    """Get the current state of a conversation chat session."""
+    return await chat_svc.get_current_state(None, sq_rsession)
+
+
+@chat_router.get("/conversation/{session_id}/active-job")
+async def get_active_conversation_job(
+    session_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+):
+    """Return the active job id for this conversation chat session if one exists, else null."""
+    active_job = await chat_svc.get_active_job_for_session(session_id)
+    return {"job_id": active_job.id if active_job is not None else None}
+
+
+@chat_router.get("/conversation/job/{job_id}/listen")
+async def listen_to_conversation_job(
+    job_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+) -> StreamingResponse:
+    """Listen to SSE updates for a conversation chat job."""
+    return StreamingResponse(
+        generator_to_sse_stream(chat_svc.listen_for_job_state(job_id)),
+        media_type="text/event-stream",
+    )
+
+
+@chat_router.post("/conversation/{session_id}/message")
+async def post_message_to_conversation(
+    session_id: str,
+    request: PostMessageRequest,
+    chat_svc: ChatService = Depends(get_chat_service),
+    session: AsyncSession = Depends(get_session),
+    sq_rsession: SQLAChatSession = Depends(get_chat_session),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+) -> dict[str, str | ChatSession]:
+    """Post a message to a conversation chat session."""
+    # Check whether there's an active job for this session
+    active_job = await chat_svc.get_active_job_for_session(session_id)
+    if active_job is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot post message to session {session_id} because there's a job already running",
+        )
+
+    # Update the chat model if provided
+    if request.chat_model is not None:
+        await chat_svc.update_session_chat_model(sq_rsession, request.chat_model)
+
+    # Add the message to the session
+    await chat_svc.add_user_message(sq_rsession, request.message)
+    await session.commit()
+
+    # Track analytics for message post
+    analytics.track_event(
+        "conversation_post_message",
+        properties={
+            "session_id": session_id,
+            "message": request.message,
+            "chat_model": request.chat_model,
+        },
+    )
+
+    # Trigger a new turn of the agent (no ViewContext needed for multi-object conversations)
+    job_id = await chat_svc.start_or_get_chat_job(None, sq_rsession)
+    return {"job_id": job_id, "session": sq_rsession.to_pydantic()}

@@ -1,19 +1,23 @@
 import React, { useMemo, useRef } from 'react';
 import jsonStringFormatter from 'json-string-formatter';
-import { useAppSelector } from '@/app/store/hooks';
 import { ChatMessage, Content, ToolCall } from '@/app/types/transcriptTypes';
 import { cn } from '@/lib/utils';
-import { Citation } from '@/app/types/experimentViewerTypes';
 import {
-  computeCitationIntervals,
+  CitationTarget,
+  CitationTargetTextRange,
+} from '@/app/types/citationTypes';
+import {
+  computeIntervalsForCitationTargets,
   sliceIntervals,
   TextSpanWithCitations,
   transformCitationIntervalsForPrettyPrintJson,
 } from '@/lib/citationMatch';
+import { citationTargetToId } from '@/lib/citationId';
 import { SegmentedText } from '@/lib/SegmentedText';
 import { MetadataPopover } from '@/components/metadata/MetadataPopover';
 import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { useTextSelection } from '@/providers/use-text-selection';
+import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 
 function stringify(x: any): string {
   if (typeof x === 'string') return x;
@@ -200,15 +204,15 @@ interface MessageBoxProps {
   index: number;
   blockId?: string;
   isHighlighted: boolean;
-  citedRanges: Citation[];
+  citedTargets: CitationTarget[];
   prettyPrintJsonMessages: Set<number>;
   setPrettyPrintJsonMessages: React.Dispatch<React.SetStateAction<Set<number>>>;
-  transcriptIdx?: number;
+  transcriptId?: string;
   metadataDialogControl?: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     citedKey?: string;
-    citedTextRange?: string;
+    citedTextRange?: CitationTargetTextRange;
   };
 }
 
@@ -217,10 +221,10 @@ export function MessageBox({
   index,
   blockId: id,
   isHighlighted,
-  citedRanges,
+  citedTargets,
   prettyPrintJsonMessages,
   setPrettyPrintJsonMessages,
-  transcriptIdx,
+  transcriptId,
   metadataDialogControl,
 }: MessageBoxProps) {
   const containerRef = useRef<HTMLSpanElement | null>(null);
@@ -228,14 +232,17 @@ export function MessageBox({
     containerRef:
       containerRef as unknown as React.RefObject<HTMLElement | null>,
     selectionItem: {
-      transcriptIdx,
+      transcriptId,
       blockIdx: index,
       text: '',
     },
   });
-  const highlightedCitationId = useAppSelector(
-    (state) => state.transcript.highlightedCitationId
-  );
+  const citationNav = useCitationNavigation();
+  const selectedConversationCitation = citationNav?.selectedCitation ?? null;
+
+  const highlightedCitationId = selectedConversationCitation
+    ? citationTargetToId(selectedConversationCitation)
+    : null;
 
   // Helper function to detect and pretty-print JSON
   const prettyPrintJson = (text: string): string => {
@@ -267,9 +274,20 @@ export function MessageBox({
     () => getMessageContentForCitations(message),
     [message]
   );
-  const allCitationIntervals = computeCitationIntervals(
+
+  // Filter citation targets for block content citations with text ranges
+  const citationTargetsWithRanges: CitationTarget[] = useMemo(() => {
+    return citedTargets.filter(
+      (target) =>
+        target.item.item_type === 'block_content' &&
+        target.text_range !== null &&
+        target.text_range.start_pattern !== null
+    );
+  }, [citedTargets]);
+
+  const allCitationIntervals = computeIntervalsForCitationTargets(
     textForCitations as string,
-    citedRanges
+    citationTargetsWithRanges
   );
 
   const renderMainMessageContent = () => {
@@ -459,7 +477,7 @@ export function MessageBox({
                       <MetadataBlock
                         metadata={md}
                         citedKey={metadataDialogControl?.citedKey}
-                        citedTextRange={metadataDialogControl?.citedTextRange}
+                        textRange={metadataDialogControl?.citedTextRange}
                       />
                     )}
                   </MetadataPopover.Body>

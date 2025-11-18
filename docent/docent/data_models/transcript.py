@@ -1,11 +1,11 @@
 import sys
 import textwrap
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_core import to_jsonable_python
 
 from docent.data_models._tiktoken_util import (
@@ -51,15 +51,8 @@ BLOCK_CITE_INSTRUCTION = """Each transcript and each block has a unique index. C
 
 def format_chat_message(
     message: ChatMessage,
-    block_idx: int,
-    transcript_idx: int = 0,
-    agent_run_idx: int | None = None,
+    index_label: str,
 ) -> str:
-    if agent_run_idx is not None:
-        index_label = f"R{agent_run_idx}T{transcript_idx}B{block_idx}"
-    else:
-        index_label = f"T{transcript_idx}B{block_idx}"
-
     cur_content = ""
 
     # Add reasoning at beginning if applicable
@@ -173,7 +166,6 @@ class Transcript(BaseModel):
 
     messages: list[ChatMessage]
     metadata: dict[str, Any] = Field(default_factory=dict)
-    _units_of_action: list[list[int]] | None = PrivateAttr(default=None)
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -182,126 +174,8 @@ class Transcript(BaseModel):
             raise ValueError(f"metadata must be a dict, got {type(v).__name__}")
         return v  # type: ignore
 
-    @property
-    def units_of_action(self) -> list[list[int]]:
-        """Get the units of action in the transcript.
-
-        A unit of action represents a logical group of messages, such as a system message
-        on its own or a user message followed by assistant responses and tool outputs.
-
-        For precise details on how action units are determined, refer to the _compute_units_of_action method implementation.
-
-        Returns:
-            list[list[int]]: List of units of action, where each unit is a list of message indices.
-        """
-        if self._units_of_action is None:
-            self._units_of_action = self._compute_units_of_action()
-        return self._units_of_action
-
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self._units_of_action = self._compute_units_of_action()
-
-    def _compute_units_of_action(self) -> list[list[int]]:
-        """Compute the units of action in the transcript.
-
-        A unit of action is defined as:
-        - A system prompt by itself
-        - A group consisting of a user message, assistant response, and any associated tool outputs
-
-        Returns:
-            list[list[int]]: A list of units of action, where each unit is a list of message indices.
-        """
-        if not self.messages:
-            return []
-
-        units: list[list[int]] = []
-        current_unit: list[int] = []
-
-        def _start_new_unit():
-            nonlocal current_unit
-            if current_unit:
-                units.append(current_unit.copy())
-            current_unit = []
-
-        for i, message in enumerate(self.messages):
-            role = message.role
-            prev_message = self.messages[i - 1] if i > 0 else None
-
-            # System messages are their own unit
-            if role == "system":
-                # Start a new unit if there's a current unit in progress
-                if current_unit:
-                    _start_new_unit()
-                units.append([i])
-
-            # User message always starts a new unit UNLESS the previous message was a user message
-            elif role == "user":
-                if current_unit and prev_message and prev_message.role != "user":
-                    _start_new_unit()
-                current_unit.append(i)
-
-            # Start a new unit if the previous message was not a user or assistant message
-            elif role == "assistant":
-                if (
-                    current_unit
-                    and prev_message
-                    and prev_message.role != "user"
-                    and prev_message.role != "assistant"
-                ):
-                    _start_new_unit()
-                current_unit.append(i)
-
-            # Tool messages are part of the current unit
-            elif role == "tool":
-                current_unit.append(i)
-
-            else:
-                raise ValueError(f"Unknown message role: {role}")
-
-        # Add the last unit if it exists
-        _start_new_unit()
-
-        return units
-
-    def get_first_block_in_action_unit(self, action_unit_idx: int) -> int | None:
-        """Get the index of the first message in a given action unit.
-
-        Args:
-            action_unit_idx: The index of the action unit.
-
-        Returns:
-            int | None: The index of the first message in the action unit,
-                        or None if the action unit doesn't exist.
-
-        Raises:
-            IndexError: If the action unit index is out of range.
-        """
-        if not self._units_of_action:
-            self._units_of_action = self._compute_units_of_action()
-
-        if 0 <= action_unit_idx < len(self._units_of_action):
-            unit = self._units_of_action[action_unit_idx]
-            return unit[0] if unit else None
-        return None
-
-    def get_action_unit_for_block(self, block_idx: int) -> int | None:
-        """Find the action unit that contains the specified message block.
-
-        Args:
-            block_idx: The index of the message block to find.
-
-        Returns:
-            int | None: The index of the action unit containing the block,
-                        or None if no action unit contains the block.
-        """
-        if not self._units_of_action:
-            self._units_of_action = self._compute_units_of_action()
-
-        for unit_idx, unit in enumerate(self._units_of_action):
-            if block_idx in unit:
-                return unit_idx
-        return None
 
     def set_messages(self, messages: list[ChatMessage]):
         """Set the messages in the transcript and recompute units of action.
@@ -310,14 +184,10 @@ class Transcript(BaseModel):
             messages: The new list of chat messages to set.
         """
         self.messages = messages
-        self._units_of_action = self._compute_units_of_action()
 
     def _generate_formatted_blocks(
         self,
         transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-        use_action_units: bool = True,
-        highlight_action_unit: int | None = None,
     ) -> list[str]:
         """Generate formatted blocks for transcript representation.
 
@@ -325,54 +195,19 @@ class Transcript(BaseModel):
             transcript_idx: Index of the transcript
             agent_run_idx: Optional agent run index
             use_action_units: If True, group messages into action units. If False, use individual blocks.
-            highlight_action_unit: Optional action unit to highlight (only used with action units)
 
         Returns:
             list[str]: List of formatted blocks
         """
-        if use_action_units:
-            if highlight_action_unit is not None and not (
-                0 <= highlight_action_unit < len(self._units_of_action or [])
-            ):
-                raise ValueError(f"Invalid action unit index: {highlight_action_unit}")
-
-            blocks: list[str] = []
-            for unit_idx, unit in enumerate(self._units_of_action or []):
-                unit_blocks: list[str] = []
-                for msg_idx in unit:
-                    unit_blocks.append(
-                        format_chat_message(
-                            self.messages[msg_idx],
-                            msg_idx,
-                            transcript_idx,
-                            agent_run_idx,
-                        )
-                    )
-
-                unit_content = "\n".join(unit_blocks)
-
-                # Add highlighting if requested
-                if highlight_action_unit and unit_idx == highlight_action_unit:
-                    blocks_str_template = "<HIGHLIGHTED>\n{}\n</HIGHLIGHTED>"
-                else:
-                    blocks_str_template = "{}"
-                blocks.append(
-                    blocks_str_template.format(
-                        f"<action unit {unit_idx}>\n{unit_content}\n</action unit {unit_idx}>"
-                    )
+        # Individual message blocks
+        blocks: list[str] = []
+        for msg_idx, message in enumerate(self.messages):
+            blocks.append(
+                format_chat_message(
+                    message,
+                    index_label=f"T{transcript_idx}B{msg_idx}",
                 )
-        else:
-            # Individual message blocks
-            blocks = []
-            for msg_idx, message in enumerate(self.messages):
-                blocks.append(
-                    format_chat_message(
-                        message,
-                        msg_idx,
-                        transcript_idx,
-                        agent_run_idx,
-                    )
-                )
+            )
 
         return blocks
 
@@ -380,25 +215,17 @@ class Transcript(BaseModel):
         self,
         token_limit: int = sys.maxsize,
         transcript_idx: int = 0,
-        agent_run_idx: int | None = None,
-        use_action_units: bool = True,
-        highlight_action_unit: int | None = None,
     ) -> list[str]:
         """Core implementation for string representation with token limits.
 
         Args:
             token_limit: Maximum tokens per returned string
             transcript_idx: Index of the transcript
-            agent_run_idx: Optional agent run index
-            use_action_units: If True, group messages into action units. If False, use individual blocks.
-            highlight_action_unit: Optional action unit to highlight (only used with action units)
 
         Returns:
             list[str]: List of strings, each within token limit
         """
-        blocks = self._generate_formatted_blocks(
-            transcript_idx, agent_run_idx, use_action_units, highlight_action_unit
-        )
+        blocks: list[str] = self._generate_formatted_blocks(transcript_idx)
         blocks_str = "\n".join(blocks)
 
         # Gather metadata
@@ -440,26 +267,39 @@ class Transcript(BaseModel):
     # New text rendering methods #
     ##############################
 
-    def to_text_new(self, transcript_idx: int = 0, indent: int = 0) -> str:
+    def _enumerate_messages(self) -> Iterable[tuple[int, ChatMessage]]:
+        """Yield (index, message) tuples for rendering.
+
+        Override in subclasses to customize index assignment.
+        """
+        return enumerate(self.messages)
+
+    def to_text_new(self, transcript_alias: int | str = 0, indent: int = 0) -> str:
+
+        if isinstance(transcript_alias, int):
+            transcript_alias = f"T{transcript_alias}"
+
         # Format individual message blocks
         blocks: list[str] = []
-        for msg_idx, message in enumerate(self.messages):
-            block_text = format_chat_message(message, msg_idx, transcript_idx)
+        for msg_idx, message in self._enumerate_messages():
+            block_label = f"{transcript_alias}B{msg_idx}"
+            block_text = format_chat_message(message, block_label)
             blocks.append(block_text)
         blocks_str = "\n".join(blocks)
         if indent > 0:
             blocks_str = textwrap.indent(blocks_str, " " * indent)
 
-        content_str = f"<|T{transcript_idx} blocks|>\n{blocks_str}\n</|T{transcript_idx} blocks|>"
+        content_str = f"<|{transcript_alias} blocks|>\n{blocks_str}\n</|{transcript_alias} blocks|>"
 
         # Gather metadata and add to content
         metadata_text = dump_metadata(self.metadata)
         if metadata_text is not None:
             if indent > 0:
                 metadata_text = textwrap.indent(metadata_text, " " * indent)
-            content_str += f"\n<|T{transcript_idx} metadata|>\n{metadata_text}\n</|T{transcript_idx} metadata|>"
+            metadata_label = f"{transcript_alias}M"
+            content_str += f"\n<|transcript metadata {metadata_label}|>\n{metadata_text}\n</|transcript metadata {metadata_label}|>"
 
         # Format content and return
         if indent > 0:
             content_str = textwrap.indent(content_str, " " * indent)
-        return f"<|T{transcript_idx}|>\n{content_str}\n</|T{transcript_idx}|>\n"
+        return f"<|transcript {transcript_alias}|>\n{content_str}\n</|transcript {transcript_alias}|>\n"

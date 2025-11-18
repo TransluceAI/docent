@@ -911,8 +911,7 @@ class MonoService:
 
     async def get_agent_runs(
         self,
-        # ctx: ViewContext | None = None,
-        ctx: ViewContext,
+        ctx: ViewContext | None = None,
         agent_run_ids: list[str] | None = None,
         limit: int | None = None,
         apply_base_where_clause: bool = True,
@@ -921,9 +920,16 @@ class MonoService:
         """
         Get all agent runs for a given Collection ID.
         """
+        # If we don't have agent_run_ids or need to apply base where clause, ctx is required
+        if agent_run_ids is None and ctx is None:
+            raise ValueError("ctx is required when agent_run_ids is not provided")
+        if apply_base_where_clause and ctx is None:
+            raise ValueError("ctx is required when apply_base_where_clause is True")
+
         async with self.db.session() as session:
             # If we don't have the agent run ids, get them first
             if agent_run_ids is None:
+                assert ctx is not None  # Already checked above, but helps type checker
                 agent_run_ids = await self.get_agent_run_ids(ctx, limit=limit)
 
             # Limit the agent_run_ids to the limit
@@ -940,6 +946,7 @@ class MonoService:
 
                 query = select(SQLAAgentRun).where(SQLAAgentRun.id.in_(batch_ids))
                 if apply_base_where_clause:
+                    assert ctx is not None  # Already checked above
                     query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
 
                 result = await session.execute(query)
@@ -987,6 +994,26 @@ class MonoService:
         ]
 
         return final_result
+
+    async def get_transcripts_by_ids(
+        self, transcript_ids: Sequence[str] | None, batch_size: int = 10_000
+    ) -> list[Transcript]:
+        """Fetch transcripts by their IDs without loading parent agent runs."""
+        if not transcript_ids:
+            return []
+
+        unique_ids = list(dict.fromkeys(transcript_ids))
+        transcripts_raw: list[SQLATranscript] = []
+
+        async with self.db.session() as session:
+            for i in range(0, len(unique_ids), batch_size):
+                batch_ids = unique_ids[i : i + batch_size]
+                result = await session.execute(
+                    select(SQLATranscript).where(SQLATranscript.id.in_(batch_ids))
+                )
+                transcripts_raw.extend(result.scalars().all())
+
+        return [t_raw.to_transcript() for t_raw in transcripts_raw]
 
     async def get_metadata_for_agent_runs(
         self,

@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 import ExperimentViewer from '../../../../components/ExperimentViewer';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 
 import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
@@ -20,7 +20,10 @@ import AgentRunViewer, {
 } from '../components/AgentRunViewer';
 import TranscriptChat from '@/components/TranscriptChat';
 import AgentRunLabels from '../components/AgentRunLabels';
-import { useCitationNavigation } from '../../rubric/[rubric_id]/NavigateToCitationContext';
+import {
+  useCitationNavigation,
+  wrapCitationHandlerWithRouting,
+} from '@/providers/CitationNavigationProvider';
 
 export default function AgentRunLayout() {
   const { collection_id: collectionId, agent_run_id: agentRunId } = useParams<{
@@ -47,39 +50,28 @@ export default function AgentRunLayout() {
   );
 
   const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
-
-  const alreadyScrolledRef = useRef(false);
-  const blockIdxParam = searchParams.get('block_idx');
-  const blockIdx = blockIdxParam ? parseInt(blockIdxParam, 10) : undefined;
-  const transcriptIdxParam = searchParams.get('transcript_idx');
-  const transcriptIdx = transcriptIdxParam
-    ? parseInt(transcriptIdxParam, 10)
-    : undefined;
-  const setViewerRef = useCallback(
-    (node: AgentRunViewerHandle | null) => {
-      agentRunViewerRef.current = node;
-      if (node && blockIdx !== undefined && !alreadyScrolledRef.current) {
-        alreadyScrolledRef.current = true;
-        node.scrollToBlock({
-          blockIdx,
-          transcriptIdx: transcriptIdx || 0,
-          agentRunIdx: 0,
-          highlightDuration: 500,
-          citation: undefined,
-        });
-      }
-    },
-    [blockIdx, transcriptIdx]
-  );
+  const router = useRouter();
 
   const citationNav = useCitationNavigation();
   useEffect(() => {
     if (citationNav) {
-      citationNav.registerHandler(({ citation }) => {
-        agentRunViewerRef.current?.focusCitation(citation);
-      });
+      const baseHandler = ({ target }: { target: any }) => {
+        agentRunViewerRef.current?.focusCitationTarget(target);
+      };
+
+      const wrappedHandler = wrapCitationHandlerWithRouting(
+        baseHandler,
+        router,
+        {
+          collectionId,
+          currentAgentRunId: agentRunId,
+        },
+        citationNav.setPendingCitation
+      );
+
+      citationNav.registerHandler(wrappedHandler);
     }
-  }, [citationNav]);
+  }, [citationNav, router, collectionId, agentRunId]);
 
   return (
     <ResizablePanelGroup
@@ -108,7 +100,7 @@ export default function AgentRunLayout() {
         className="flex-1 min-w-0 min-h-0 p-3 !mx-0"
       >
         <div className="h-full space-y-2 flex flex-col min-h-0">
-          <AgentRunViewer agentRunId={agentRunId} ref={setViewerRef} />
+          <AgentRunViewer agentRunId={agentRunId} ref={agentRunViewerRef} />
         </div>
       </ResizablePanel>
 

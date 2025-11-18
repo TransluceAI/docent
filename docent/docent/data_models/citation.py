@@ -1,51 +1,79 @@
-import re
-from dataclasses import dataclass
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Discriminator
 
 
-@dataclass
-class ParsedCitation:
-    """Represents a parsed citation before conversion to full Citation object."""
-
-    transcript_idx: int | None
-    block_idx: int | None
-    metadata_key: str | None = None
+class CitationTargetTextRange(BaseModel):
     start_pattern: str | None = None
+    end_pattern: str | None = None
 
 
-class Citation(BaseModel):
+class ResolvedCitationItem(BaseModel):
+    pass
+
+
+class CitationTarget(BaseModel):
+    item: "ResolvedCitationItemUnion"
+    text_range: CitationTargetTextRange | None = None
+
+
+class ParsedCitation(BaseModel):
     start_idx: int
     end_idx: int
-    agent_run_idx: int | None = None
-    transcript_idx: int | None = None
-    block_idx: int | None = None
-    action_unit_idx: int | None = None
-    metadata_key: str | None = None
-    start_pattern: str | None = None
+    item_alias: str
+    text_range: CitationTargetTextRange | None = None
 
+
+class InlineCitation(BaseModel):
+    start_idx: int
+    end_idx: int
+    target: CitationTarget
+
+
+class AgentRunMetadataItem(ResolvedCitationItem):
+    item_type: Literal["agent_run_metadata"] = "agent_run_metadata"
+    agent_run_id: str
+    collection_id: str
+    metadata_key: str
+
+
+class TranscriptMetadataItem(ResolvedCitationItem):
+    item_type: Literal["transcript_metadata"] = "transcript_metadata"
+    agent_run_id: str
+    collection_id: str
+    transcript_id: str
+    metadata_key: str
+
+
+class TranscriptBlockMetadataItem(ResolvedCitationItem):
+    item_type: Literal["block_metadata"] = "block_metadata"
+    agent_run_id: str
+    collection_id: str
+    transcript_id: str
+    block_idx: int
+    metadata_key: str
+
+
+class TranscriptBlockContentItem(ResolvedCitationItem):
+    item_type: Literal["block_content"] = "block_content"
+    agent_run_id: str
+    collection_id: str
+    transcript_id: str
+    block_idx: int
+
+
+ResolvedCitationItemUnion = Annotated[
+    Union[
+        AgentRunMetadataItem,
+        TranscriptMetadataItem,
+        TranscriptBlockMetadataItem,
+        TranscriptBlockContentItem,
+    ],
+    Discriminator("item_type"),
+]
 
 RANGE_BEGIN = "<RANGE>"
 RANGE_END = "</RANGE>"
-
-_SINGLE_RE = re.compile(r"T(\d+)B(\d+)")
-_METADATA_RE = re.compile(r"^M\.([^:]+)$")  # [M.key]
-_TRANSCRIPT_METADATA_RE = re.compile(r"^T(\d+)M\.([^:]+)$")  # [T0M.key]
-_MESSAGE_METADATA_RE = re.compile(r"^T(\d+)B(\d+)M\.([^:]+)$")  # [T0B1M.key]
-_RANGE_CONTENT_RE = re.compile(r":\s*" + re.escape(RANGE_BEGIN) + r".*?" + re.escape(RANGE_END))
-
-
-def _extract_range_pattern(range_part: str) -> str | None:
-    start_pattern: str | None = None
-
-    if RANGE_BEGIN in range_part and RANGE_END in range_part:
-        range_begin_idx = range_part.find(RANGE_BEGIN)
-        range_end_idx = range_part.find(RANGE_END)
-        if range_begin_idx != -1 and range_end_idx != -1:
-            range_content = range_part[range_begin_idx + len(RANGE_BEGIN) : range_end_idx]
-            start_pattern = range_content if range_content else None
-
-    return start_pattern
 
 
 def scan_brackets(text: str) -> list[tuple[int, int, str]]:
@@ -85,7 +113,19 @@ def scan_brackets(text: str) -> list[tuple[int, int, str]]:
     return matches
 
 
-def parse_single_citation(part: str) -> ParsedCitation | None:
+def _extract_range_pattern(range_part: str) -> CitationTargetTextRange | None:
+    if RANGE_BEGIN in range_part and RANGE_END in range_part:
+        range_begin_idx = range_part.find(RANGE_BEGIN)
+        range_end_idx = range_part.find(RANGE_END)
+        if range_begin_idx != -1 and range_end_idx != -1:
+            range_content = range_part[range_begin_idx + len(RANGE_BEGIN) : range_end_idx]
+            start_pattern = range_content if range_content else None
+            return CitationTargetTextRange(start_pattern=start_pattern)
+
+    return None
+
+
+def parse_single_citation(part: str) -> tuple[str, CitationTargetTextRange | None] | None:
     """
     Parse a single citation token inside a bracket and return its components.
 
@@ -98,70 +138,17 @@ def parse_single_citation(part: str) -> ParsedCitation | None:
         return None
 
     # Extract optional range part
-    start_pattern: str | None = None
-    citation_part = token
+    item_alias = token
+    text_range: CitationTargetTextRange | None = None
     if ":" in token:
         left, right = token.split(":", 1)
-        citation_part = left.strip()
-        start_pattern = _extract_range_pattern(right)
+        item_alias = left.strip()
+        text_range = _extract_range_pattern(right)
 
-    # Try matches in order of specificity
-    # 1) Message metadata [T0B0M.key]
-    m = _MESSAGE_METADATA_RE.match(citation_part)
-    if m:
-        transcript_idx = int(m.group(1))
-        block_idx = int(m.group(2))
-        metadata_key = m.group(3)
-        # Disallow nested keys like status.code per instruction
-        if "." in metadata_key:
-            return None
-        return ParsedCitation(
-            transcript_idx=transcript_idx,
-            block_idx=block_idx,
-            metadata_key=metadata_key,
-            start_pattern=start_pattern,
-        )
-
-    # 2) Transcript metadata [T0M.key]
-    m = _TRANSCRIPT_METADATA_RE.match(citation_part)
-    if m:
-        transcript_idx = int(m.group(1))
-        metadata_key = m.group(2)
-        if "." in metadata_key:
-            return None
-        return ParsedCitation(
-            transcript_idx=transcript_idx,
-            block_idx=None,
-            metadata_key=metadata_key,
-            start_pattern=start_pattern,
-        )
-
-    # 3) Agent run metadata [M.key]
-    m = _METADATA_RE.match(citation_part)
-    if m:
-        metadata_key = m.group(1)
-        if "." in metadata_key:
-            return None
-        return ParsedCitation(
-            transcript_idx=None,
-            block_idx=None,
-            metadata_key=metadata_key,
-            start_pattern=start_pattern,
-        )
-
-    # 4) Regular transcript block [T0B0]
-    m = _SINGLE_RE.match(citation_part)
-    if m:
-        transcript_idx = int(m.group(1))
-        block_idx = int(m.group(2))
-        return ParsedCitation(
-            transcript_idx=transcript_idx, block_idx=block_idx, start_pattern=start_pattern
-        )
-
-    return None
+    return item_alias, text_range
 
 
-def parse_citations(text: str) -> tuple[str, list[Citation]]:
+def parse_citations(text: str) -> tuple[str, list[ParsedCitation]]:
     """
     Parse citations from text in the format described by TEXT_RANGE_CITE_INSTRUCTION.
 
@@ -181,53 +168,20 @@ def parse_citations(text: str) -> tuple[str, list[Citation]]:
         and citations have start_idx and end_idx representing character positions
         in the cleaned text
     """
-    citations: list[Citation] = []
-    cleaned_text = ""
+    citations: list[ParsedCitation] = []
 
     bracket_matches = scan_brackets(text)
 
-    last_end = 0
     for start, end, bracket_content in bracket_matches:
-        # Append non-bracket text segment as-is
-        cleaned_text += text[last_end:start]
-
         # Parse a single citation token inside the bracket
         parsed = parse_single_citation(bracket_content)
-        if parsed:
-            # Create appropriate replacement text based on citation type
-            if parsed.metadata_key:
-                if parsed.transcript_idx is None:
-                    # Agent run metadata [M.key]
-                    replacement = "run metadata"
-                elif parsed.block_idx is None:
-                    # Transcript metadata [T0M.key]
-                    replacement = f"T{parsed.transcript_idx}"
-                else:
-                    # Message metadata [T0B1M.key]
-                    replacement = f"T{parsed.transcript_idx}B{parsed.block_idx}"
-            else:
-                # Regular transcript block [T0B1]
-                replacement = f"T{parsed.transcript_idx}B{parsed.block_idx}"
+        if not parsed:
+            continue
+        label, text_range = parsed
 
-            # Current absolute start position for this replacement in the cleaned text
-            start_idx = len(cleaned_text)
-            end_idx = start_idx + len(replacement)
-            citations.append(
-                Citation(
-                    start_idx=start_idx,
-                    end_idx=end_idx,
-                    agent_run_idx=None,
-                    transcript_idx=parsed.transcript_idx,
-                    block_idx=parsed.block_idx,
-                    action_unit_idx=None,
-                    metadata_key=parsed.metadata_key,
-                    start_pattern=parsed.start_pattern,
-                )
-            )
-            cleaned_text += replacement
-        last_end = end
+        citations.append(
+            ParsedCitation(start_idx=start, end_idx=end, item_alias=label, text_range=text_range)
+        )
 
-    # Append any remaining tail after the last bracket
-    cleaned_text += text[last_end:]
-
-    return cleaned_text, citations
+    # We're not cleaning the text right now but may do that later
+    return text, citations

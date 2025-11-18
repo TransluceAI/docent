@@ -54,7 +54,9 @@ def _resolve_job_completion_wait_seconds() -> int:
     return value
 
 
-async def run_job(_: Any, ctx: ViewContext | WorkspaceContext | TelemetryContext, job_id: str):
+async def run_job(
+    _: Any, ctx: ViewContext | WorkspaceContext | TelemetryContext | None, job_id: str
+):
     mono_svc = await MonoService.init()
     canceled = False
 

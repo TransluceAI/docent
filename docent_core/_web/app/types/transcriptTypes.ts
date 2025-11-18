@@ -1,4 +1,4 @@
-import { Citation } from './experimentViewerTypes';
+import { InlineCitation } from './citationTypes';
 
 export interface AgentRun {
   id: string;
@@ -35,7 +35,7 @@ interface UserMessage extends BaseChatMessage {
 interface AssistantMessage extends BaseChatMessage {
   role: 'assistant';
   tool_calls?: ToolCall[];
-  citations?: Citation[];
+  citations?: InlineCitation[];
   suggested_messages?: string[];
 }
 

@@ -2,6 +2,7 @@ import json
 import traceback
 
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import select
 
 from docent._log_util import get_logger
 from docent_core._db_service.db import DocentDB
@@ -11,7 +12,8 @@ from docent_core._server._broker.redis_client import (
     get_redis_client,
 )
 from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.schemas.tables import SQLAJob
+from docent_core.docent.db.schemas.chat import SQLAChatSession
+from docent_core.docent.db.schemas.tables import SQLAJob, SQLAUser
 from docent_core.docent.services.chat import (
     ChatService,
     ChatSession,
@@ -25,23 +27,39 @@ from docent_core.docent.services.usage import UsageService
 logger = get_logger(__name__)
 
 
-async def chat_job(ctx: ViewContext, job: SQLAJob):
+async def chat_job(ctx: ViewContext | None, job: SQLAJob):
     db = await DocentDB.init()
     mono_svc = await MonoService.init()
 
-    if ctx.user is None:
-        raise ValueError("User is required to run a chat job")
-
     async with db.session() as session:
+        # Get the chat session to determine the user
+        sqla_chat_session = await session.execute(
+            select(SQLAChatSession).where(SQLAChatSession.id == job.job_json["session_id"])
+        )
+        sqla_chat_session = sqla_chat_session.scalar_one_or_none()
+        if sqla_chat_session is None:
+            raise ValueError(f"Chat session {job.job_json['session_id']} not found")
+
+        # Get user from context or from the session
+        if ctx is not None:
+            user = ctx.user
+            if user is None:
+                raise ValueError("User is required to run a chat job")
+        else:
+            # For multi-object conversations, get user from the session
+            result = await session.execute(
+                select(SQLAUser).where(SQLAUser.id == sqla_chat_session.user_id)
+            )
+            sqla_user = result.scalar_one_or_none()
+            if sqla_user is None:
+                raise ValueError(f"User {sqla_chat_session.user_id} not found")
+            user = sqla_user.to_user()
+
         usage_svc = UsageService(db.session)
-        llm_svc = LLMService(db.session, ctx.user, usage_svc)
+        llm_svc = LLMService(db.session, user, usage_svc)
         label_svc = LabelService(session, db.session, mono_svc)
         rubric_svc = RubricService(session, db.session, mono_svc, llm_svc)
         chat_svc = ChatService(session, db.session, mono_svc, rubric_svc, label_svc, llm_svc)
-
-        sqla_chat_session = await chat_svc.get_session_by_id(job.job_json["session_id"])
-        if sqla_chat_session is None:
-            raise ValueError(f"Chat session {job.job_json['session_id']} not found")
 
         # Notify updates via a Redis stream and keep authoritative state in a separate key
         REDIS = await get_redis_client()

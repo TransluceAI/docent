@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._llm_util.providers.preference_types import merge_models_with_byok
 from docent._log_util.logger import get_logger
+from docent.data_models.agent_run import AgentRun
 from docent.judges import JudgeResultWithCitations, ResultType, Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.ai_tools.rubric.reflect import JudgeReflection
@@ -149,6 +150,8 @@ async def get_result_by_id(
     collection_id: str,
     result_id: str,
     rubric_svc: RubricService = Depends(get_rubric_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> JudgeResultWithCitations:
     """Get the full judge result (with citations parsed) by result ID."""
@@ -161,7 +164,14 @@ async def get_result_by_id(
     if sqla_rubric is None:
         raise HTTPException(status_code=404, detail="Rubric version not found for result")
 
-    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
+    # Fetch the agent run to resolve citation aliases
+    agent_run = await mono_svc.get_agent_run(
+        ctx, result.agent_run_id, apply_base_where_clause=False
+    )
+    if agent_run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+
+    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema, agent_run)
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/metrics")
@@ -192,6 +202,8 @@ async def get_result_by_agent_run(
     agent_run_id: str,
     version: int,
     rubric_svc: RubricService = Depends(get_rubric_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> JudgeResultWithCitations:
     """Get a single judge result by agent run, rubric id, and rubric version.
@@ -210,7 +222,12 @@ async def get_result_by_agent_run(
     if sqla_rubric is None:
         raise HTTPException(status_code=404, detail="Rubric version not found")
 
-    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema)
+    # Fetch the agent run to resolve citation aliases
+    agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
+    if agent_run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+
+    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema, agent_run)
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/agent_run/{agent_run_id}/reflection")
@@ -415,6 +432,8 @@ async def get_rubric_run_state(
     label_set_id: str | None = None,
     sqla_rubric_latest: SQLARubric = Depends(get_rubric),
     rubric_svc: RubricService = Depends(get_rubric_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> RubricRunStateResponse:
     if version is not None:
@@ -447,9 +466,20 @@ async def get_rubric_run_state(
     # Get current results for the specified version (defaults to latest inside service)
     results = await rubric_svc.get_rubric_results(rubric_id, version)
 
+    # Batch fetch all agent runs needed for citation parsing
+    agent_run_ids_in_results = list({result.agent_run_id for result in results})
+    agent_runs_map: dict[str, AgentRun] = {}
+    for agent_run_id in agent_run_ids_in_results:
+        agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
+        if agent_run:
+            agent_runs_map[agent_run_id] = agent_run
+
     results_parsed = [
-        JudgeResultWithCitations.from_judge_result(result, sqla_rubric_for_schema.output_schema)
+        JudgeResultWithCitations.from_judge_result(
+            result, sqla_rubric_for_schema.output_schema, agent_runs_map[result.agent_run_id]
+        )
         for result in results
+        if result.agent_run_id in agent_runs_map
     ]
 
     # Group results by agent_run_id

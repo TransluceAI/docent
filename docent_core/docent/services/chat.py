@@ -10,17 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.providers.preference_types import ModelOption
 from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun
 from docent.data_models.chat.message import (
     AssistantMessage,
-    ChatMessage,
+    DocentAssistantMessage,
+    DocentChatMessage,
     SystemMessage,
     UserMessage,
 )
-from docent.data_models.citation import (
-    parse_citations,
-)
-from docent.data_models.remove_invalid_citation_ranges import remove_invalid_citation_ranges
+from docent.sdk.llm_context import LLMContext, resolve_citations_with_context
 from docent_core._server._broker.redis_client import (
     STATE_KEY_FORMAT,
     STREAM_KEY_FORMAT,
@@ -38,6 +35,7 @@ from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
+from docent_core.docent.utils.llm_context import deserialize_llm_context
 
 logger = get_logger(__name__)
 
@@ -92,11 +90,18 @@ def parse_suggestions(content: str, streaming: bool) -> tuple[str, list[str]]:
 
 
 def _parse_citations_in_messages(
-    messages: list[ChatMessage], run: AgentRun, streaming: bool = False
-) -> list[ChatMessage]:
-    """Parse citations and suggestions in assistant messages and return updated messages."""
+    messages: list[DocentChatMessage],
+    context: LLMContext,
+    streaming: bool = False,
+) -> list[DocentChatMessage]:
+    """Parse citations and suggestions in assistant messages and return updated messages.
 
-    parsed_messages: list[ChatMessage] = []
+    Args:
+        messages: List of messages to parse
+        context: LLMContext for resolving citations
+        streaming: Whether messages are being streamed
+    """
+    parsed_messages: list[DocentChatMessage] = []
 
     for message in messages:
         if message.role == "assistant":
@@ -104,10 +109,14 @@ def _parse_citations_in_messages(
                 # Parse suggestions first, then citations from the content
                 content_text = message.text
                 cleaned_text_suggestions, suggestions = parse_suggestions(content_text, streaming)
-                cleaned_text, citations = parse_citations(cleaned_text_suggestions)
+
+                # Parse citations based on context type
+                cleaned_text, citations = resolve_citations_with_context(
+                    cleaned_text_suggestions, context
+                )
 
                 # Create new message with parsed citations and suggestions
-                updated_message = AssistantMessage(
+                updated_message = DocentAssistantMessage(
                     id=message.id,
                     content=cleaned_text,
                     model=message.model,
@@ -252,15 +261,32 @@ class ChatService:
         return [sqla_session.to_pydantic() for sqla_session in result.scalars().all()]
 
     async def get_current_state(
-        self, ctx: ViewContext, sqla_session: SQLAChatSession
+        self, ctx: ViewContext | None, sqla_session: SQLAChatSession
     ) -> ChatSession:
-        """Return the current state of the chat session as a pydantic model with parsed citations."""
+        """Return the current state of the chat session as a pydantic model.
+
+        For "chat with anything" sessions (context_serialized != None), citations are already
+        parsed and stored in the database.
+        For existing single-run chats (context_serialized == None), citations need to be parsed.
+        """
         session = sqla_session.to_pydantic()
-        parsed_session = await self._parse_citations_in_session(ctx, session)
-        if parsed_session.estimated_input_tokens is not None or sqla_session.agent_run_id is None:
-            return parsed_session
+
+        # Parse citations for existing single-run chats (not for "chat with anything")
+        if (
+            session.context_serialized is None
+            and session.agent_run_id is not None
+            and ctx is not None
+        ):
+            session = await self._parse_citations_in_session(ctx, session)
+
+        if session.estimated_input_tokens is not None or sqla_session.agent_run_id is None:
+            return session
 
         # If we have a run but no token usage data, estimate token count
+        # (only for single-run sessions with a view context)
+        if ctx is None:
+            return session
+
         try:
             estimated_tokens = await self.estimate_input_tokens(ctx, sqla_session)
         except Exception as e:
@@ -268,12 +294,16 @@ class ChatService:
             estimated_tokens = None
 
         # Add estimated tokens to response
-        return parsed_session.model_copy(update={"estimated_input_tokens": estimated_tokens})
+        return session.model_copy(update={"estimated_input_tokens": estimated_tokens})
 
     async def _parse_citations_in_session(
         self, ctx: ViewContext, session: ChatSession
     ) -> ChatSession:
-        """Helper to parse citations in a chat session."""
+        """Helper to parse citations for existing single-run chat sessions.
+
+        Only used for sessions where context_serialized is None (existing single-run chats).
+        """
+        # Single-run session
         if not session.agent_run_id:
             return session
 
@@ -283,10 +313,9 @@ class ChatService:
         if agent_run is None:
             return session
 
-        # Parse citations in assistant messages
-        parsed_messages = _parse_citations_in_messages(
-            session.messages, run=agent_run, streaming=False
-        )
+        context = LLMContext(items=[agent_run])
+        parsed_messages = _parse_citations_in_messages(session.messages, context)
+
         return session.model_copy(update={"messages": parsed_messages})
 
     @staticmethod
@@ -303,7 +332,7 @@ class ChatService:
     async def get_active_job_for_session(self, session_id: str) -> SQLAJob | None:
         return await self._get_active_chat_job(self.session, session_id)
 
-    async def start_or_get_chat_job(self, ctx: ViewContext, sqla_session: SQLAChatSession):
+    async def start_or_get_chat_job(self, ctx: ViewContext | None, sqla_session: SQLAChatSession):
         """This job is responsible for running the chat for one turn.
         Uses an advisory lock to avoid races where multiple jobs are started for the same session.
         """
@@ -405,13 +434,31 @@ class ChatService:
 
     async def _get_chat_context(
         self,
-        ctx: ViewContext,
+        ctx: ViewContext | None,
         sqla_session: SQLAChatSession,
-        messages: list[ChatMessage],
-    ) -> tuple[list[ChatMessage], AgentRun]:
-        """Get chat context including system prompt, context messages, and related objects."""
+        messages: list[DocentChatMessage],
+    ) -> tuple[list[DocentChatMessage], LLMContext]:
+        """Get chat context including system prompt, context messages, and related objects.
+
+        Returns either (messages, AgentRun) for single-run sessions or (messages, LLMContext) for multi-object sessions.
+        """
+        # Multi-object session with LLMContext
+        if sqla_session.context_serialized is not None:
+            context = await deserialize_llm_context(sqla_session.context_serialized, self.mono_svc)
+            system_prompt = context.get_system_message()
+            context_messages = [
+                SystemMessage(content=system_prompt),
+                UserMessage(content=context.to_str()),
+            ] + messages
+            return context_messages, context
+
+        # Single-run session
         if sqla_session.agent_run_id is None:
-            raise ValueError(f"Session {sqla_session.id} has no agent run")
+            raise ValueError(f"Session {sqla_session.id} has neither agent run nor context")
+
+        # Context is required for single-run sessions
+        if ctx is None:
+            raise ValueError(f"ViewContext is required for single-run chat sessions")
 
         # Get agent run for system prompt and citation parsing
         agent_run = await self.mono_svc.get_agent_run(
@@ -444,11 +491,13 @@ class ChatService:
         # Create context messages
         context_messages = [SystemMessage(content=system_prompt)] + messages
 
-        return context_messages, agent_run
+        context = LLMContext(items=[agent_run])
+
+        return context_messages, context
 
     async def one_turn(
         self,
-        ctx: ViewContext,
+        ctx: ViewContext | None,
         sqla_session: SQLAChatSession,
         sse_callback: ChatEventCallback | None = None,
     ):
@@ -458,35 +507,44 @@ class ChatService:
 
         raw_chat_session = sqla_session.to_pydantic()
 
-        if ctx.user is None:
-            raise ValueError("User is required to run a chat job")
-
-        context_messages, agent_run = await self._get_chat_context(
+        context_messages, context = await self._get_chat_context(
             ctx, sqla_session, raw_chat_session.messages
         )
 
         # Local working copy of raw messages (persisted form)
-        # TODO(ryanbloom): maybe we should have separate types for raw + parsed messages
         raw_messages = raw_chat_session.messages.copy()
 
         async def _llm_streaming_callback(batch_index: int, llm_output: LLMOutput):
             if sse_callback and (completion := llm_output.first):
                 if not completion.text:
                     return
-                cleaned_text = remove_invalid_citation_ranges(completion.text, agent_run)
-                assistant_msg = AssistantMessage(
+
+                # Parse citations and suggestions for streaming display
+                content_text = completion.text or ""
+                cleaned_text_suggestions, suggestions = parse_suggestions(
+                    content_text, streaming=True
+                )
+                cleaned_text, citations = resolve_citations_with_context(
+                    cleaned_text_suggestions, context
+                )
+
+                assistant_msg = DocentAssistantMessage(
                     content=cleaned_text,
                     tool_calls=completion.tool_calls,
+                    citations=citations,
+                    suggested_messages=suggestions if suggestions else None,
                 )
 
-                # Derive parsed view for streaming without mutating/persisting parsed data
-                parsed_for_stream = _parse_citations_in_messages(
-                    raw_messages + [assistant_msg], run=agent_run, streaming=True
-                )
+                # For existing single-run chats, parse citations in prior messages for consistent display
+                # For "chat with anything", citations are already parsed in raw_messages
+                if sqla_session.context_serialized is None:
+                    prior_messages = _parse_citations_in_messages(raw_messages, context)
+                else:
+                    prior_messages = raw_messages
 
-                await sse_callback(
-                    raw_chat_session.model_copy(update={"messages": parsed_for_stream})
-                )
+                all_messages = prior_messages + [assistant_msg]
+
+                await sse_callback(raw_chat_session.model_copy(update={"messages": all_messages}))
 
         logger.info(f"Running one turn of chat session: {sqla_session}")
 
@@ -548,11 +606,32 @@ class ChatService:
                         await sse_callback(error_state)
                     return error_state
 
-                # Append the assistant message to the raw messages
-                cleaned_text = remove_invalid_citation_ranges(completion.text or "", agent_run)
-                assistant_msg = AssistantMessage(
-                    content=cleaned_text, tool_calls=completion.tool_calls
+                # For "chat with anything" sessions, parse citations before storing
+                # For existing single-run chats, store raw content with citation markers
+                content_text = completion.text or ""
+                cleaned_text_suggestions, suggestions = parse_suggestions(
+                    content_text, streaming=False
                 )
+
+                if sqla_session.context_serialized is not None:
+                    # "Chat with anything": parse and store citations
+                    cleaned_text, citations = resolve_citations_with_context(
+                        cleaned_text_suggestions, context
+                    )
+                    assistant_msg = DocentAssistantMessage(
+                        content=cleaned_text,
+                        tool_calls=completion.tool_calls,
+                        citations=citations,
+                        suggested_messages=suggestions if suggestions else None,
+                    )
+                else:
+                    # Existing single-run chats: store raw content, parse on load
+                    assistant_msg = DocentAssistantMessage(
+                        content=cleaned_text_suggestions,
+                        tool_calls=completion.tool_calls,
+                        citations=None,
+                        suggested_messages=suggestions if suggestions else None,
+                    )
                 raw_messages.append(assistant_msg)
 
                 # Store real token count from API response if available
@@ -569,18 +648,30 @@ class ChatService:
             await self._update_session(sqla_session, [m.model_dump() for m in raw_messages])
             await self.session.commit()
 
-            # Push current state with parsed citations
+            # Push current state
+            # For "chat with anything", citations are already parsed in raw_messages
+            # For existing chats, we need to parse them for display
             if sse_callback:
-                parsed_messages = _parse_citations_in_messages(
-                    raw_messages, run=agent_run, streaming=False
-                )
+                if sqla_session.context_serialized is not None:
+                    # "Chat with anything": citations already parsed
+                    messages_to_send = raw_messages
+                else:
+                    # Existing single-run chats: parse citations for display
+                    messages_to_send = _parse_citations_in_messages(raw_messages, context)
+
                 await sse_callback(
-                    raw_chat_session.model_copy(update={"messages": parsed_messages})
+                    raw_chat_session.model_copy(update={"messages": messages_to_send})
                 )
 
-        # Final state (parsed for presentation)
-        parsed_messages = _parse_citations_in_messages(raw_messages, run=agent_run, streaming=False)
-        return raw_chat_session.model_copy(update={"messages": parsed_messages})
+        # Final state
+        # For "chat with anything", citations are already parsed and stored
+        # For existing chats, parse them for the return value
+        if sqla_session.context_serialized is not None:
+            final_messages = raw_messages
+        else:
+            final_messages = _parse_citations_in_messages(raw_messages, context)
+
+        return raw_chat_session.model_copy(update={"messages": final_messages})
 
 
 async def cleanup_old_chat_sessions(session: AsyncSession, days_old: int = 7) -> int:

@@ -4,12 +4,15 @@ import React, { Suspense, useEffect, useRef } from 'react';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 
 import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
-import { useCitationNavigation } from '../../NavigateToCitationContext';
+import {
+  useCitationNavigation,
+  wrapCitationHandlerWithRouting,
+} from '@/providers/CitationNavigationProvider';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import { useLabelSets } from '@/providers/use-label-sets';
 
@@ -27,6 +30,7 @@ export default function JudgeResultPage() {
   }>();
 
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const citationNav = useCitationNavigation();
   const { version } = useRubricVersion();
   const { activeLabelSet } = useLabelSets(rubricId);
@@ -87,26 +91,39 @@ export default function JudgeResultPage() {
     const citation = citations && citations.length > 0 ? citations[0] : null;
     if (!citation) return;
 
-    agentRunViewerRef.current?.focusCitation(citation);
+    agentRunViewerRef.current?.focusCitationTarget(citation.target);
     alreadyScrolledRef.current = true;
   }, [agentRunId, result, citations]);
 
   // Register the handler with the route-scoped provider so other components can invoke it
   // Only register when agentRun is loaded so AgentRunViewer is ready
   useEffect(() => {
-    if (!agentRunId) return;
+    if (!agentRunId || !collectionId) return;
 
     if (citationNav?.registerHandler) {
-      citationNav.registerHandler(({ citation }) => {
-        agentRunViewerRef.current?.focusCitation(citation);
-      });
+      const baseHandler = ({ target }: { target: any }) => {
+        agentRunViewerRef.current?.focusCitationTarget(target);
+      };
+
+      const wrappedHandler = wrapCitationHandlerWithRouting(
+        baseHandler,
+        router,
+        {
+          collectionId,
+          currentAgentRunId: agentRunId,
+          rubricId,
+        },
+        citationNav.setPendingCitation
+      );
+
+      citationNav.registerHandler(wrappedHandler);
     }
     return () => {
       if (citationNav?.registerHandler) {
         citationNav.registerHandler(null);
       }
     };
-  }, [citationNav, agentRunId]);
+  }, [citationNav, agentRunId, collectionId, rubricId, router]);
 
   let agentRunViewerContent = null;
   if (agentRunId) {

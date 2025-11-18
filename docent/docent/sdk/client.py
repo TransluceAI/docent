@@ -1,7 +1,8 @@
 import itertools
 import os
+import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import requests
@@ -13,6 +14,7 @@ from docent.data_models.collection import Collection
 from docent.data_models.judge import Label
 from docent.judges.util.meta_schema import validate_judge_result_schema
 from docent.loaders import load_inspect
+from docent.sdk.llm_context import LLMContext, LLMContextItem
 
 logger = get_logger(__name__)
 
@@ -749,3 +751,68 @@ class Docent:
         logger.info(
             f"Successfully ingested {total_runs_added} total agent runs from {len(eval_files)} files"
         )
+
+    def start_chat(
+        self,
+        context: LLMContext | list[LLMContextItem],
+        model_string: str | None = None,
+        reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
+    ) -> str:
+        """Start a chat session with multiple objects and open it in the browser.
+
+        This method creates a new chat session with the provided objects (agent runs,
+        transcripts, or formatted versions) and opens the chat UI in your default browser.
+
+        Args:
+            objects: List of objects to include in the chat context. Can include:
+                    - AgentRun or FormattedAgentRun instances
+                    - Transcript or FormattedTranscript instances
+            chat_model: Optional model to use for the chat. If None, uses default.
+
+        Returns:
+            str: The session ID of the created chat session.
+
+        Raises:
+            ValueError: If objects list is empty or contains unsupported types.
+            requests.exceptions.HTTPError: If the API request fails.
+
+        Example:
+            ```python
+            from docent.sdk import Docent
+
+            client = Docent()
+            run1 = client.get_agent_run(collection_id, run_id_1)
+            run2 = client.get_agent_run(collection_id, run_id_2)
+
+            session_id = client.start_chat([run1, run2])
+            # Opens browser to chat UI
+            ```
+        """
+        if isinstance(context, list):
+            context = LLMContext(items=context)
+        else:
+            context = context
+
+        serialized_context = context.to_dict()
+
+        url = f"{self._server_url}/chat/start"
+        payload = {
+            "context_serialized": serialized_context,
+            "model_string": model_string,
+            "reasoning_effort": reasoning_effort,
+        }
+
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+
+        response_data = response.json()
+        session_id = response_data.get("session_id")
+        if not session_id:
+            raise ValueError("Failed to create chat session: 'session_id' missing in response")
+
+        chat_url = f"{self._web_url}/chat/{session_id}"
+        logger.info(f"Chat session created. Opening browser to: {chat_url}")
+
+        webbrowser.open(chat_url)
+
+        return session_id

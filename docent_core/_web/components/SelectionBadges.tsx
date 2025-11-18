@@ -25,11 +25,8 @@ export default function SelectionBadges({
   return (
     <div className={cn('flex flex-wrap gap-2 items-center', className)}>
       {selections.map((item, idx) => {
-        const { text, transcriptIdx, blockIdx } = item;
-        const meta =
-          transcriptIdx != null && blockIdx != null
-            ? `T${transcriptIdx}·B${blockIdx}`
-            : undefined;
+        const { text, blockIdx } = item;
+        const meta = blockIdx != null ? `Block ${blockIdx}` : undefined;
         return (
           <Badge
             key={idx}

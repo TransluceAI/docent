@@ -6,7 +6,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import { AgentRun, SolutionSummary } from '../types/transcriptTypes';
-import { Citation } from '../types/experimentViewerTypes';
+import { InlineCitation } from '../types/citationTypes';
 
 import { RootState } from './store';
 // Utility functions for TA session localStorage keys
@@ -25,9 +25,7 @@ export interface TranscriptState {
   loadingSolutionSummaryForTranscriptId?: string;
   solutionSummaryTaskId?: string;
   // All citations
-  allCitations: Record<string, Citation[]>;
-  // Citation highlighting
-  highlightedCitationId: string | null;
+  allCitations: Record<string, InlineCitation[]>;
   // Agent run sidebar state
   agentRunSidebarTab?: string;
   // Sidebar visibility states for different routes
@@ -43,7 +41,6 @@ const initialState: TranscriptState = {
   judgeLeftSidebarOpen: true,
   judgeRightSidebarOpen: true,
   allCitations: {},
-  highlightedCitationId: null,
 };
 
 export const transcriptSlice = createSlice({
@@ -94,17 +91,11 @@ export const transcriptSlice = createSlice({
     },
     setRunCitations: (
       state,
-      action: PayloadAction<Record<string, Citation[]>>
+      action: PayloadAction<Record<string, InlineCitation[]>>
     ) => {
       for (const [key, value] of Object.entries(action.payload)) {
         state.allCitations[key] = value;
       }
-    },
-    setHighlightedCitation: (state, action: PayloadAction<string | null>) => {
-      state.highlightedCitationId = action.payload;
-    },
-    clearHighlightedCitation: (state) => {
-      state.highlightedCitationId = null;
     },
     setAgentRunSidebarTab: (state, action: PayloadAction<string>) => {
       state.agentRunSidebarTab = action.payload;
@@ -139,8 +130,6 @@ export const {
   clearDashboardAgentRunView,
   resetTranscriptSlice,
   setRunCitations,
-  setHighlightedCitation,
-  clearHighlightedCitation,
   setAgentRunSidebarTab,
 
   // Various sidebar states
@@ -150,8 +139,11 @@ export const {
   toggleJudgeRightSidebar,
 } = transcriptSlice.actions;
 
-export const selectRunCitationsById = (state: RootState, runId?: string) => {
-  if (!runId) return [] as Citation[];
+export const selectRunCitationsById = (
+  state: RootState,
+  runId?: string
+): InlineCitation[] => {
+  if (!runId) return [];
   return state.transcript.allCitations[runId] || [];
 };
 

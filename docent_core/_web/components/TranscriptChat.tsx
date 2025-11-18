@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils';
 import JudgeResultWithReflection from './JudgeResultWithReflection';
 import ModelPicker from './ModelPicker';
 import SelectionBadges from './SelectionBadges';
-import { Citation } from '@/app/types/experimentViewerTypes';
+import { InlineCitation } from '@/app/types/citationTypes';
 import { useTextSelection } from '@/providers/use-text-selection';
-import { useCitationNavigation } from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
+import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import Link from 'next/link';
 
 const ESTIMATED_CHAT_MESSAGE_OUTPUT_TOKENS = 8192;
@@ -299,17 +299,32 @@ export default function TranscriptChat({
                 selections={selections}
                 onRemove={handleRemoveSelectedText}
                 onNavigate={(item) => {
-                  const { transcriptIdx, blockIdx } = item;
-                  if (transcriptIdx == null || blockIdx == null) return;
-                  const citation: Citation = {
-                    transcript_idx: transcriptIdx,
-                    block_idx: blockIdx,
+                  const { transcriptId, blockIdx } = item;
+                  if (
+                    !transcriptId ||
+                    !collectionId ||
+                    !agentRunId ||
+                    blockIdx == null
+                  )
+                    return;
+
+                  const citation: InlineCitation = {
                     start_idx: 0,
                     end_idx: 0,
-                    metadata_key: undefined,
-                    start_pattern: undefined,
+                    target: {
+                      item: {
+                        item_type: 'block_content',
+                        agent_run_id: agentRunId,
+                        collection_id: collectionId,
+                        transcript_id: transcriptId,
+                        block_idx: blockIdx,
+                      },
+                      text_range: null,
+                    },
                   };
-                  citationNav?.navigateToCitation?.({ citation });
+                  citationNav?.navigateToCitation?.({
+                    target: citation.target,
+                  });
                 }}
               />
             ) : null

@@ -1,5 +1,3 @@
-import { Citation } from './experimentViewerTypes';
-
 export interface Bins {
   [dimId: string]: {
     [filterId: string]: Judgment[] | string[];
@@ -107,19 +105,6 @@ export type CollectionFilter =
 // Simple dimension representation - just a string key
 export type Dimension = string;
 
-// For backward compatibility, we'll keep CollectionDimension as a simple interface
-// but it's now just a wrapper around a string
-export interface CollectionDimension {
-  id: string; // This is now the metadata key
-  name: string | null; // This is now the metadata key
-  search_query?: string | null; // For search query dimensions
-  metadata_key?: string | null; // For metadata dimensions
-  maintain_mece?: boolean | null; // For metadata dimensions
-  loading_clusters: boolean; // Loading state
-  loading_bins: boolean; // Loading state
-  bins?: CollectionFilter[] | null; // Optional field for when bins are fetched separately
-}
-
 export interface Collection {
   id: string;
   name?: string | null;
@@ -128,93 +113,9 @@ export interface Collection {
   created_by?: string | null;
 }
 
-export interface AgentRunMetadataField {
-  key: string;
-  type: 'string' | 'number' | 'boolean';
-  description?: string;
-}
-
 export interface BaseAgentRunMetadata {
   [key: string]: any;
 }
 
-export interface SearchResult {
-  id: string;
-  collection_id: string;
-  agent_run_id: string;
-  search_query: string;
-  search_result_idx?: number | null;
-  value?: string | null;
-}
-
-export interface SearchResultWithCitations extends SearchResult {
-  citations: Citation[] | null;
-}
-
-export interface SearchQuery {
-  id: string;
-  collection_id: string;
-  search_query: string;
-  created_at: string;
-}
-
 // Metadata type for transcript metadata fields
 export type MetadataType = 'str' | 'int' | 'float' | 'bool';
-
-export interface View {
-  id: string;
-  collection_id: string;
-  name?: string | null;
-  is_default: boolean;
-  base_filter_id?: string | null;
-  inner_bin_key?: string | null;
-  outer_bin_key?: string | null;
-}
-
-export interface Job {
-  id: string;
-  type: string;
-  created_at: string;
-  job_json: any;
-  status: 'pending' | 'running' | 'canceled' | 'completed';
-}
-
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-  is_anonymous: boolean;
-  organization_ids?: string[];
-}
-
-export interface Organization {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-
-export interface Session {
-  id: string;
-  user_id: string;
-  created_at: string;
-  expires_at: string;
-  is_active: boolean;
-}
-
-export interface AccessControlEntry {
-  id: string;
-  user_id?: string | null;
-  organization_id?: string | null;
-  is_public: boolean;
-  collection_id?: string | null;
-  view_id?: string | null;
-  permission: string;
-}
-
-export interface CollectionState {
-  collectionId?: string;
-  filtersMap?: Record<string, CollectionFilter>;
-  baseFilter?: ComplexFilter;
-  inner_bin_key?: string | null;
-  outer_bin_key?: string | null;
-}

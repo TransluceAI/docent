@@ -28,11 +28,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { Citation } from '@/app/types/experimentViewerTypes';
-import {
-  useCitationNavigation,
-  CitationNavigationContext,
-} from '@/app/dashboard/[collection_id]/rubric/[rubric_id]/NavigateToCitationContext';
+import { InlineCitation } from '@/app/types/citationTypes';
+import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
 import { cn } from '@/lib/utils';
@@ -555,7 +552,7 @@ const TextWithCitationsInput = ({
   const resultValue = judgeResult.output[propertyKey]?.text || '';
 
   const navigateToCitation = React.useCallback(
-    ({ citation }: { citation: Citation }) => {
+    ({ citation }: { citation: InlineCitation }) => {
       const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`;
       const isOnTargetPage = pathname === url;
 
@@ -565,7 +562,7 @@ const TextWithCitationsInput = ({
       }
 
       citationNav?.navigateToCitation?.({
-        citation,
+        target: citation.target,
         source: 'judge_result',
       });
     },
@@ -585,15 +582,6 @@ const TextWithCitationsInput = ({
       `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`
     );
   };
-
-  const citationNavValue = React.useMemo(
-    () => ({
-      registerHandler: citationNav?.registerHandler ?? (() => {}),
-      navigateToCitation,
-      prepareForNavigation: citationNav?.prepareForNavigation ?? (() => {}),
-    }),
-    [citationNav, navigateToCitation]
-  );
 
   //****************
   // Popover state *
@@ -641,9 +629,7 @@ const TextWithCitationsInput = ({
           </span>
           :
         </span>{' '}
-        <CitationNavigationContext.Provider value={citationNavValue}>
-          <TextWithCitations text={resultValue} citations={citations} />
-        </CitationNavigationContext.Provider>
+        <TextWithCitations text={resultValue} citations={citations} />
       </div>
       <div className="flex items-center gap-1 flex-wrap">
         <Popover
@@ -718,7 +704,7 @@ const TextWithCitationsInput = ({
 /**
  * Normalizes label state by extracting text from citation objects.
  * If a property is defined as a string in the schema but the value is an object
- * with a 'text' property (e.g., {text: string, citations: Citation[]}),
+ * with a 'text' property (e.g., {text: string, citations: InlineCitation[]}),
  * this function extracts just the text value.
  */
 const normalizeLabelsWithCitations = (

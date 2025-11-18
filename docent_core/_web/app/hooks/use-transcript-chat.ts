@@ -1,3 +1,7 @@
+/**
+ * React hook for legacy chat sessions. For new chat, see use-conversation.ts
+ */
+
 import { useCallback, useEffect, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import {
@@ -12,6 +16,7 @@ import { useAppDispatch } from '@/app/store/hooks';
 import { setRunCitations } from '@/app/store/transcriptSlice';
 import { JudgeResultWithCitations, ModelOption } from '@/app/store/rubricSlice';
 import { ChatMessage } from '../types/transcriptTypes';
+import { InlineCitation } from '../types/citationTypes';
 
 export interface UseTranscriptChatOptions {
   agentRunId: string;
@@ -109,7 +114,7 @@ export function useTranscriptChat({
   // Auto-populate citations from chat messages to enable transcript highlighting
   useEffect(() => {
     if (messages.length > 0) {
-      // Extract citations from all assistant messages
+      // Extract citations from all assistant messages (InlineCitation[])
       const chatCitations = messages
         .filter(
           (msg) =>
@@ -118,7 +123,7 @@ export function useTranscriptChat({
             msg.citations &&
             msg.citations.length > 0
         )
-        .flatMap((msg) => (msg as any).citations!);
+        .flatMap((msg) => (msg as { citations: InlineCitation[] }).citations);
 
       // Merge with existing judge result citations if they exist
       const allCitationsArray = [...chatCitations];
@@ -131,7 +136,7 @@ export function useTranscriptChat({
         dispatch(setRunCitations({ [agentRunId]: allCitationsArray }));
       }
     }
-  }, [messages, judgeResultCitations, dispatch]);
+  }, [messages, judgeResultCitations, dispatch, agentRunId]);
 
   // Handle sending messages
   const [postMessage] = usePostChatMessageMutation();
