@@ -162,7 +162,7 @@ class LLMContext:
 
             You may cite a specific range of text within an item. Use {RANGE_BEGIN} and {RANGE_END} to mark the specific range of text. Add it after the item ID separated by a colon. For example, to cite the part of T0B1 where the agent says "I understand the task", write [T0B1:{RANGE_BEGIN}I understand the task{RANGE_END}]. Citations must follow this exact format. The markers {RANGE_BEGIN} and {RANGE_END} must be used ONLY inside the brackets of a citation.
 
-            - When citing metadata (that is, an item whose ID ends with M), you may cite a top-level key with dot syntax. For example, for agent run 0 metadata: [R0M.task_description].
+            - When citing metadata (that is, an item whose ID ends with M), you must cite a top-level key with dot syntax. For example, for agent run 0 metadata: [R0M.task_description].
             - You may not cite nested keys. For example, [T0B1M.status.code] is invalid.
             - Within a top-level metadata key you may cite a range of text that appears in the value. For example, [T0B1M.status:{RANGE_BEGIN}\"running\":false{RANGE_END}].
 
