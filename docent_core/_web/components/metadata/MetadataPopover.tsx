@@ -152,7 +152,9 @@ function Body({
 }: BodyProps) {
   if (isEmptyObject(metadata)) {
     return (
-      <div className="text-center py-8 text-muted-foreground">{emptyText}</div>
+      <div className="text-center py-8 text-muted-foreground text-xs">
+        {emptyText}
+      </div>
     );
   }
   return <div className="space-y-3">{children(metadata)}</div>;
