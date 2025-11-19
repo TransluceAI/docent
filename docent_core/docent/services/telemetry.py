@@ -185,19 +185,27 @@ class TelemetryService:
         start_time = time.monotonic()
 
         # Atomically get agent runs that need processing and mark them as processing
+        mark_start = time.monotonic()
         agent_run_versions = await self.get_and_mark_agent_runs_for_processing(
             collection_id, limit=limit
         )
+        mark_duration = time.monotonic() - mark_start
 
         if not agent_run_versions:
             logger.info(
-                "No agent runs need processing for collection %s after marking query completed",
+                "telemetry_processing phase=mark_runs collection_id=%s duration=%.3fs status=no_work limit=%s",
                 collection_id,
+                mark_duration,
+                limit if limit is not None else "none",
             )
             return []
 
         logger.info(
-            f"Found and marked {len(agent_run_versions)} agent runs for processing in collection {collection_id}"
+            "telemetry_processing phase=mark_runs collection_id=%s duration=%.3fs status=marked count=%s limit=%s",
+            collection_id,
+            mark_duration,
+            len(agent_run_versions),
+            limit if limit is not None else "none",
         )
 
         redis_client = await get_redis_client()
@@ -206,6 +214,7 @@ class TelemetryService:
         processed_count = 0
         successfully_processed_agent_run_ids: List[str] = []
         successfully_processed_versions: dict[str, int] = {}
+        lock_contention_count = 0
 
         for agent_run_id, current_version in agent_run_versions.items():
             if time_budget_seconds is not None:
@@ -220,6 +229,7 @@ class TelemetryService:
                     )
                     break
 
+            per_run_start = time.monotonic()
             lock = redis_client.lock(
                 self._agent_run_lock_key(collection_id, agent_run_id),
                 timeout=AGENT_RUN_LOCK_TIMEOUT_SECONDS,
@@ -245,11 +255,23 @@ class TelemetryService:
                             processed_count += 1
                             successfully_processed_agent_run_ids.append(agent_run_id)
                             successfully_processed_versions[agent_run_id] = current_version
+                            run_elapsed = time.monotonic() - per_run_start
                             logger.info(
-                                f"Successfully processed agent run {agent_run_id} (version {current_version})"
+                                "telemetry_processing phase=process_agent_run collection_id=%s agent_run_id=%s version=%s duration=%.3fs status=success",
+                                collection_id,
+                                agent_run_id,
+                                current_version,
+                                run_elapsed,
                             )
                         else:
-                            logger.error(f"Failed to process agent run {agent_run_id}")
+                            run_elapsed = time.monotonic() - per_run_start
+                            logger.error(
+                                "telemetry_processing phase=process_agent_run collection_id=%s agent_run_id=%s version=%s duration=%.3fs status=failed reason=unknown",
+                                collection_id,
+                                agent_run_id,
+                                current_version,
+                                run_elapsed,
+                            )
                             # Mark agent run as errored on failure
                             await self._mark_agent_runs_as_errored(
                                 collection_id,
@@ -264,22 +286,47 @@ class TelemetryService:
                             {agent_run_id: current_version},
                             str(e),
                         )
-                        logger.error(f"Error processing agent run {agent_run_id}: {str(e)}")
+                        run_elapsed = time.monotonic() - per_run_start
+                        logger.error(
+                            "telemetry_processing phase=process_agent_run collection_id=%s agent_run_id=%s version=%s duration=%.3fs status=failed reason=exception error=%s",
+                            collection_id,
+                            agent_run_id,
+                            current_version,
+                            run_elapsed,
+                            str(e),
+                        )
                         continue
             except LockError:
-                logger.info(
-                    "Agent run %s in collection %s is already being processed, skipping",
-                    agent_run_id,
+                lock_contention_count += 1
+                run_elapsed = time.monotonic() - per_run_start
+                logger.warning(
+                    "telemetry_processing phase=process_agent_run collection_id=%s agent_run_id=%s duration=%.3fs status=skipped reason=lock_contention",
                     collection_id,
+                    agent_run_id,
+                    run_elapsed,
                 )
                 continue
 
         # Mark all successfully processed agent runs as completed with their versions
         if successfully_processed_versions:
+            completion_start = time.monotonic()
             await self._mark_agent_runs_as_completed(collection_id, successfully_processed_versions)
+            completion_duration = time.monotonic() - completion_start
+            logger.info(
+                "telemetry_processing phase=mark_completed collection_id=%s duration=%.3fs count=%s",
+                collection_id,
+                completion_duration,
+                len(successfully_processed_versions),
+            )
 
+        total_elapsed = time.monotonic() - start_time
         logger.info(
-            f"Successfully processed {processed_count} out of {len(agent_run_versions)} agent runs in collection {collection_id}"
+            "telemetry_processing phase=summary collection_id=%s duration=%.3fs processed=%s attempted=%s lock_contention=%s",
+            collection_id,
+            total_elapsed,
+            processed_count,
+            len(agent_run_versions),
+            lock_contention_count,
         )
 
         # Track with analytics if available
@@ -352,6 +399,7 @@ class TelemetryService:
 
             accumulation_service = TelemetryAccumulationService(self.session)
 
+            accumulation_fetch_start = time.monotonic()
             agent_run_spans = await accumulation_service.get_agent_run_spans(
                 collection_id, agent_run_id
             )
@@ -369,6 +417,17 @@ class TelemetryService:
                 await accumulation_service.get_agent_run_transcript_group_metadata(
                     collection_id, agent_run_id
                 )
+            )
+            accumulation_fetch_duration = time.monotonic() - accumulation_fetch_start
+            logger.info(
+                "telemetry_processing phase=load_accumulation collection_id=%s agent_run_id=%s duration=%.3fs spans=%s scores=%s metadata_entries=%s transcript_group_entries=%s",
+                collection_id,
+                agent_run_id,
+                accumulation_fetch_duration,
+                len(agent_run_spans),
+                len(agent_run_scores),
+                len(agent_run_metadata),
+                len(agent_run_transcript_group_metadata or {}),
             )
 
             # Organize spans by transcript_id -> spans[]
@@ -398,11 +457,20 @@ class TelemetryService:
             collection_metadata = {agent_run_id: agent_run_metadata}
 
             # Create agent run from spans
+            transform_start = time.monotonic()
             collection_agent_runs = await self._create_agent_runs_from_spans(
                 agent_run_spans_dict,
                 transcript_groups_by_agent_run,
                 collection_scores,
                 collection_metadata,
+            )
+            transform_duration = time.monotonic() - transform_start
+            logger.info(
+                "telemetry_processing phase=transform_spans collection_id=%s agent_run_id=%s duration=%.3fs agent_runs=%s",
+                collection_id,
+                agent_run_id,
+                transform_duration,
+                len(collection_agent_runs),
             )
 
             if not collection_agent_runs:
@@ -413,7 +481,15 @@ class TelemetryService:
             # Get or create default view context for this collection
             ctx = await self.mono_svc.get_default_view_ctx(collection_id, user)
             # Store the agent run in the database
+            persist_start = time.monotonic()
             await self.update_agent_runs_for_telemetry(ctx, collection_agent_runs)
+            persist_duration = time.monotonic() - persist_start
+            logger.info(
+                "telemetry_processing phase=persist_agent_run collection_id=%s agent_run_id=%s duration=%.3fs",
+                collection_id,
+                agent_run_id,
+                persist_duration,
+            )
 
             logger.info(
                 f"Successfully created agent run {agent_run_id} with {len(spans_by_transcript)} transcripts"
@@ -943,28 +1019,6 @@ class TelemetryService:
             )
         )
 
-        log_sql: str | None = None
-        bind = self.session.get_bind()
-        if hasattr(bind, "dialect"):
-            try:
-                compiled_stmt = update_stmt.compile(
-                    dialect=bind.dialect,  # type: ignore[attr-defined]
-                    compile_kwargs={"literal_binds": True},
-                )
-                log_sql = str(compiled_stmt)
-            except Exception as compile_error:
-                logger.warning(
-                    "Failed to compile telemetry mark query for collection %s: %s",
-                    collection_id,
-                    compile_error,
-                )
-
-        logger.info(
-            "Executing telemetry agent-run mark query for collection %s (limit=%s): %s",
-            collection_id,
-            limit if limit is not None else "all",
-            log_sql or update_stmt,
-        )
         result = await self.session.execute(update_stmt)
         rows = result.fetchall()
         logger.info(

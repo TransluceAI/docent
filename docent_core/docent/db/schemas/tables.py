@@ -886,7 +886,6 @@ class SQLATelemetryAccumulation(SQLABase):
 
     # Composite index for efficient queries by key and data type
     __table_args__ = (
-        Index("idx_telemetry_accumulation_key_type", "key", "data_type"),
         Index(
             "idx_telemetry_accumulation_key_type_like",
             "key",
