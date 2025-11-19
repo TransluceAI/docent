@@ -365,9 +365,11 @@ export const FilterControls = ({
             commandInputClassName="h-8 text-xs"
             commandListClassName="custom-scrollbar"
             optionClassName="font-mono text-xs"
-            popoverClassName="min-w-[320px]"
+            popoverClassName="max-w-[640px]"
             popoverStyle={{
-              width: 'var(--radix-popover-trigger-width)',
+              width: 'auto',
+              minWidth: 'var(--radix-popover-trigger-width)',
+              maxWidth: '640px',
             }}
           />
         </div>

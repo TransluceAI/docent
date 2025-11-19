@@ -306,6 +306,11 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       return map;
     }, [canonicalTree]);
 
+    const transcriptCount = canonicalTree?.transcript_ids_ordered?.length ?? 0;
+    const hasTranscriptGroups = Boolean(agentRun?.transcript_groups?.length);
+    const shouldShowTranscriptNavigator =
+      transcriptCount >= 2 || hasTranscriptGroups;
+
     const runCitations = useAppSelector((state) =>
       selectRunCitationsById(state, agentRun?.id)
     );
@@ -958,8 +963,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
               style={{ overflow: 'visible' }} // need style attr to override style attr
             >
               {/* Floating Sidebar - shows when sidebar is hidden and hovering */}
-              {canonicalTree?.transcript_ids_ordered &&
-                canonicalTree.transcript_ids_ordered.length >= 2 &&
+              {shouldShowTranscriptNavigator &&
                 !sidebarVisible &&
                 sidebarHovering && (
                   <div
@@ -991,50 +995,49 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   </div>
                 )}
               {/* Transcript Groups and Transcripts Sidebar */}
-              {canonicalTree?.transcript_ids_ordered &&
-                canonicalTree.transcript_ids_ordered.length >= 2 && (
-                  <>
-                    <ResizablePanel
-                      defaultSize={sidebarVisible ? 25 : 0}
-                      minSize={sidebarVisible ? 20 : 0}
-                      maxSize={sidebarVisible ? 50 : 0}
-                      className={
-                        sidebarVisible ? 'flex flex-col min-h-0' : 'hidden'
+              {shouldShowTranscriptNavigator && (
+                <>
+                  <ResizablePanel
+                    defaultSize={sidebarVisible ? 25 : 0}
+                    minSize={sidebarVisible ? 20 : 0}
+                    maxSize={sidebarVisible ? 50 : 0}
+                    className={
+                      sidebarVisible ? 'flex flex-col min-h-0' : 'hidden'
+                    }
+                  >
+                    <TranscriptNavigator
+                      nodes={nodeTree}
+                      selectedTranscriptId={selectedTranscriptId}
+                      selectedTranscriptGroupId={selectedTranscriptGroupId}
+                      expandedGroups={expandedGroups}
+                      agentRun={agentRun}
+                      transcriptsById={transcriptsById}
+                      transcriptGroupsById={transcriptGroupsById}
+                      onTranscriptSelect={handleTranscriptSelect}
+                      onGroupToggle={handleGroupToggle}
+                      className="flex-1 overflow-y-auto min-h-0 pr-1"
+                      showHeader
+                      headerLeft={
+                        <button
+                          onClick={() => setSidebarVisible(false)}
+                          className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          aria-label="Hide transcript hierarchy"
+                        >
+                          <FolderTree className="h-4 w-4" />
+                        </button>
                       }
-                    >
-                      <TranscriptNavigator
-                        nodes={nodeTree}
-                        selectedTranscriptId={selectedTranscriptId}
-                        selectedTranscriptGroupId={selectedTranscriptGroupId}
-                        expandedGroups={expandedGroups}
-                        agentRun={agentRun}
-                        transcriptsById={transcriptsById}
-                        transcriptGroupsById={transcriptGroupsById}
-                        onTranscriptSelect={handleTranscriptSelect}
-                        onGroupToggle={handleGroupToggle}
-                        className="flex-1 overflow-y-auto min-h-0 pr-1"
-                        showHeader
-                        headerLeft={
-                          <button
-                            onClick={() => setSidebarVisible(false)}
-                            className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-                            aria-label="Hide transcript hierarchy"
-                          >
-                            <FolderTree className="h-4 w-4" />
-                          </button>
-                        }
-                        fullTree={fullTree}
-                        onFullTreeChange={(v) => setFullTree(!!v)}
-                        onToggleAllGroups={handleToggleAllGroups}
-                        allGroupsExpanded={allGroupsExpanded}
-                      />
-                    </ResizablePanel>
-                    <ResizableHandle
-                      withHandle={false}
-                      className={cn('mx-2', sidebarVisible ? '' : 'hidden')}
+                      fullTree={fullTree}
+                      onFullTreeChange={(v) => setFullTree(!!v)}
+                      onToggleAllGroups={handleToggleAllGroups}
+                      allGroupsExpanded={allGroupsExpanded}
                     />
-                  </>
-                )}
+                  </ResizablePanel>
+                  <ResizableHandle
+                    withHandle={false}
+                    className={cn('mx-2', sidebarVisible ? '' : 'hidden')}
+                  />
+                </>
+              )}
 
               {transcript && (
                 <ResizablePanel
@@ -1047,25 +1050,23 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       {selectedTranscriptId && (
                         <div className="flex items-center space-x-1">
                           {/* Only show toggle button if there are multiple transcripts and sidebar is hidden */}
-                          {canonicalTree?.transcript_ids_ordered &&
-                            canonicalTree.transcript_ids_ordered.length >= 2 &&
-                            !sidebarVisible && (
-                              <div
-                                onMouseEnter={() => setSidebarHovering(true)}
-                                onMouseLeave={() => setSidebarHovering(false)}
-                                className="relative z-20"
+                          {shouldShowTranscriptNavigator && !sidebarVisible && (
+                            <div
+                              onMouseEnter={() => setSidebarHovering(true)}
+                              onMouseLeave={() => setSidebarHovering(false)}
+                              className="relative z-20"
+                            >
+                              <button
+                                onClick={() =>
+                                  setSidebarVisible(!sidebarVisible)
+                                }
+                                className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                                aria-label="Show transcript hierarchy"
                               >
-                                <button
-                                  onClick={() =>
-                                    setSidebarVisible(!sidebarVisible)
-                                  }
-                                  className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-                                  aria-label="Show transcript hierarchy"
-                                >
-                                  <FolderTree className="h-4 w-4" />
-                                </button>
-                              </div>
-                            )}
+                                <FolderTree className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
                           <div className="font-semibold text-sm">
                             Transcript
                           </div>

@@ -33,6 +33,7 @@ export interface SegmentedTextProps {
   role?: string;
   highlightedCitationId?: string | null;
   className?: string;
+  highlightClassName?: string;
 }
 
 export const SegmentedText: React.FC<SegmentedTextProps> = ({
@@ -41,6 +42,7 @@ export const SegmentedText: React.FC<SegmentedTextProps> = ({
   role = undefined,
   highlightedCitationId = null,
   className,
+  highlightClassName,
 }) => {
   const segments = computeSegmentsFromIntervals(text, intervals);
 
@@ -56,7 +58,8 @@ export const SegmentedText: React.FC<SegmentedTextProps> = ({
 
         // Use role-based colors if role is provided and highlightedCitationId exists,
         // otherwise use simple yellow highlighting for metadata
-        const colorClass = getCitationColors(role, isHighlighted);
+        const colorClass =
+          highlightClassName ?? getCitationColors(role, isHighlighted);
 
         return (
           <span

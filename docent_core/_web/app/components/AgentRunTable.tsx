@@ -701,7 +701,14 @@ export const AgentRunTable = memo(function AgentRunTable({
                 Columns
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-72 p-0" align="end">
+            <DropdownMenuContent
+              className="min-w-[288px] max-w-[640px] p-0"
+              align="end"
+              style={{
+                width: 'fit-content',
+                maxWidth: '640px',
+              }}
+            >
               <Command>
                 <CommandInput
                   placeholder="Search columns..."
