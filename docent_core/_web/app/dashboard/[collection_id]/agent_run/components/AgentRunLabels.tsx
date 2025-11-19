@@ -38,6 +38,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { useLabelSets } from '@/providers/use-label-sets';
 
 interface AgentRunLabelsProps {
@@ -92,6 +93,8 @@ export default function AgentRunLabels({
   // Fetch the active label set from local storage
   const { activeLabelSet, setLabelSet: setActiveLabelSet } =
     useLabelSets(collectionId);
+
+  const hasWritePermission = useHasCollectionWritePermission();
 
   //****************************//
   // Label data transformations //
@@ -186,6 +189,7 @@ export default function AgentRunLabels({
                 variant="outline"
                 className="h-7 px-2 gap-1 w-full text-xs"
                 disabled={
+                  !hasWritePermission ||
                   disableAddLabels ||
                   (activeLabelSet ? activeLabelSetHasLabel : false)
                 }
