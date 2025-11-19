@@ -181,19 +181,15 @@ class TelemetryAccumulationService:
         """Get all accumulated spans for a collection."""
         # Use pattern matching to find all spans for this collection
         key = self._build_key(collection_id)
-        stmt = (
-            select(SQLATelemetryAccumulation)
-            .where(
-                and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
-                    SQLATelemetryAccumulation.data_type == "spans",
-                )
+        stmt = select(SQLATelemetryAccumulation).where(
+            and_(
+                SQLATelemetryAccumulation.key.like(f"{key}%"),
+                SQLATelemetryAccumulation.data_type == "spans",
             )
-            .order_by(SQLATelemetryAccumulation.created_at)
         )
 
         result = await self.session.execute(stmt)
-        entries = result.scalars().all()
+        entries = sorted(result.scalars().all(), key=lambda entry: entry.created_at)
 
         spans: List[Dict[str, Any]] = []
         for entry in entries:
@@ -212,19 +208,15 @@ class TelemetryAccumulationService:
         # Build key for the agent run
         key = self._build_key(collection_id, agent_run_id=agent_run_id)
 
-        stmt = (
-            select(SQLATelemetryAccumulation)
-            .where(
-                and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
-                    SQLATelemetryAccumulation.data_type == "spans",
-                )
+        stmt = select(SQLATelemetryAccumulation).where(
+            and_(
+                SQLATelemetryAccumulation.key.like(f"{key}%"),
+                SQLATelemetryAccumulation.data_type == "spans",
             )
-            .order_by(SQLATelemetryAccumulation.created_at)
         )
 
         result = await self.session.execute(stmt)
-        entries = result.scalars().all()
+        entries = sorted(result.scalars().all(), key=lambda entry: entry.created_at)
 
         spans: List[Dict[str, Any]] = []
         for entry in entries:

@@ -867,7 +867,7 @@ class SQLATelemetryAccumulation(SQLABase):
     Key-value storage for telemetry accumulation data.
     """
 
-    __tablename__ = "telemetry_accumulation"
+    __tablename__ = TABLE_TELEMETRY_ACCUMULATION
 
     id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
 
