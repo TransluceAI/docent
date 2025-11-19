@@ -79,6 +79,20 @@ class TelemetryAccumulationService:
 
         return ":".join(key_parts)
 
+    def _escape_like_pattern(self, pattern: str) -> str:
+        """
+        Escape special characters in a LIKE pattern to treat them as literals.
+
+        Escapes underscores and percent signs so they match literally rather than as wildcards.
+
+        Args:
+            pattern: The pattern string to escape
+
+        Returns:
+            The escaped pattern string
+        """
+        return pattern.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
+
     async def add_ingestion_status(
         self,
         telemetry_log_id: str,
@@ -181,9 +195,10 @@ class TelemetryAccumulationService:
         """Get all accumulated spans for a collection."""
         # Use pattern matching to find all spans for this collection
         key = self._build_key(collection_id)
+        escaped_key = self._escape_like_pattern(key)
         stmt = select(SQLATelemetryAccumulation).where(
             and_(
-                SQLATelemetryAccumulation.key.like(f"{key}%"),
+                SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                 SQLATelemetryAccumulation.data_type == "spans",
             )
         )
@@ -207,10 +222,11 @@ class TelemetryAccumulationService:
         """Get accumulated spans for a specific agent run in a collection."""
         # Build key for the agent run
         key = self._build_key(collection_id, agent_run_id=agent_run_id)
+        escaped_key = self._escape_like_pattern(key)
 
         stmt = select(SQLATelemetryAccumulation).where(
             and_(
-                SQLATelemetryAccumulation.key.like(f"{key}%"),
+                SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                 SQLATelemetryAccumulation.data_type == "spans",
             )
         )
@@ -267,11 +283,12 @@ class TelemetryAccumulationService:
         """Get all scores for a collection, grouped by agent_run_id."""
         # Use pattern matching to find all scores for this collection
         key = self._build_key(collection_id)
+        escaped_key = self._escape_like_pattern(key)
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "scores",
                 )
             )
@@ -301,12 +318,13 @@ class TelemetryAccumulationService:
         """Get scores for a specific agent run in a collection, returning a flat list of score data."""
         # Build key for the agent run to find its scores
         key = self._build_key(collection_id, agent_run_id=agent_run_id)
+        escaped_key = self._escape_like_pattern(key)
 
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "scores",
                 )
             )
@@ -365,11 +383,12 @@ class TelemetryAccumulationService:
         """Get all agent run metadata for a collection, grouped by agent_run_id."""
         # Use pattern matching to find all agent run metadata for this collection
         key = self._build_key(collection_id)
+        escaped_key = self._escape_like_pattern(key)
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "metadata",
                 )
             )
@@ -401,12 +420,13 @@ class TelemetryAccumulationService:
         """Get agent run metadata for a specific agent run in a collection, returning a flat list of metadata."""
         # Build key for the agent run to find its metadata
         key = self._build_key(collection_id, agent_run_id=agent_run_id)
+        escaped_key = self._escape_like_pattern(key)
 
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "metadata",
                 )
             )
@@ -509,11 +529,12 @@ class TelemetryAccumulationService:
         """Get all transcript group metadata for a collection, merging multiple calls with recent data taking precedence."""
         # Use pattern matching to find all transcript group metadata for this collection
         key = self._build_key(collection_id)
+        escaped_key = self._escape_like_pattern(key)
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "transcript_group_metadata",
                 )
             )
@@ -556,12 +577,13 @@ class TelemetryAccumulationService:
         """Get transcript group metadata for a specific agent run in a collection, merging multiple calls with recent data taking precedence."""
         # Build key for the agent run to find its transcript group metadata
         key = self._build_key(collection_id, agent_run_id=agent_run_id)
+        escaped_key = self._escape_like_pattern(key)
 
         stmt = (
             select(SQLATelemetryAccumulation)
             .where(
                 and_(
-                    SQLATelemetryAccumulation.key.like(f"{key}%"),
+                    SQLATelemetryAccumulation.key.like(f"{escaped_key}%"),
                     SQLATelemetryAccumulation.data_type == "transcript_group_metadata",
                 )
             )
@@ -625,10 +647,11 @@ class TelemetryAccumulationService:
             transcript_group_id=transcript_group_id,
             transcript_id=transcript_id,
         )
+        escaped_key_pattern = self._escape_like_pattern(key_pattern)
 
         result = await self.session.execute(
             delete(SQLATelemetryAccumulation).where(
-                SQLATelemetryAccumulation.key.like(f"{key_pattern}%")
+                SQLATelemetryAccumulation.key.like(f"{escaped_key_pattern}%")
             )
         )
 
@@ -659,7 +682,10 @@ class TelemetryAccumulationService:
 
             # Chunking keeps the generated predicate below common parameter limits when deleting large batches.
             predicate = or_(
-                *[SQLATelemetryAccumulation.key.like(f"{key_prefix}%") for key_prefix in chunk]
+                *[
+                    SQLATelemetryAccumulation.key.like(f"{self._escape_like_pattern(key_prefix)}%")
+                    for key_prefix in chunk
+                ]
             )
             result = await self.session.execute(delete(SQLATelemetryAccumulation).where(predicate))
             deleted_count += result.rowcount or 0

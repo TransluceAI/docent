@@ -885,7 +885,16 @@ class SQLATelemetryAccumulation(SQLABase):
     user_id = mapped_column(String(36), ForeignKey(f"{TABLE_USER}.id"), nullable=True, index=True)
 
     # Composite index for efficient queries by key and data type
-    __table_args__ = (Index("idx_telemetry_accumulation_key_type", "key", "data_type"),)
+    __table_args__ = (
+        Index("idx_telemetry_accumulation_key_type", "key", "data_type"),
+        Index(
+            "idx_telemetry_accumulation_key_type_like",
+            "key",
+            "data_type",
+            "created_at",
+            postgresql_ops={"key": "varchar_pattern_ops"},
+        ),
+    )
 
 
 class SQLAModelUsage(SQLABase):
