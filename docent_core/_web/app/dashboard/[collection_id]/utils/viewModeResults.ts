@@ -45,7 +45,7 @@ export function applyGeneralFilters(
 ): boolean {
   return filters.every((filter) => {
     let value = result.output[filter.path];
-    if (value.text) value = value.text;
+    if (value?.text) value = value.text;
     return compareValues(value, filter.value, filter.op);
   });
 }

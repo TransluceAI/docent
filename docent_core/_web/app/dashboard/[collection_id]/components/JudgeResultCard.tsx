@@ -28,7 +28,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { InlineCitation } from '@/app/types/citationTypes';
 import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
@@ -551,32 +550,6 @@ const TextWithCitationsInput = ({
   const citations = judgeResult.output[propertyKey]?.citations || [];
   const resultValue = judgeResult.output[propertyKey]?.text || '';
 
-  const navigateToCitation = React.useCallback(
-    ({ citation }: { citation: InlineCitation }) => {
-      const url = `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`;
-      const isOnTargetPage = pathname === url;
-
-      if (!isOnTargetPage) {
-        citationNav?.prepareForNavigation?.();
-        router.push(url, { scroll: false } as any);
-      }
-
-      citationNav?.navigateToCitation?.({
-        target: citation.target,
-        source: 'judge_result',
-      });
-    },
-    [
-      citationNav,
-      collectionId,
-      judgeResult.id,
-      judgeResult.rubric_id,
-      judgeResult.agent_run_id,
-      pathname,
-      router,
-    ]
-  );
-
   const navigateToAgentRun = () => {
     router.push(
       `/dashboard/${collectionId}/rubric/${judgeResult.rubric_id}/agent_run/${judgeResult.agent_run_id}/result/${judgeResult.id}`
@@ -969,7 +942,7 @@ const JudgeResultCard = ({
         }
 
         if (
-          property.type === 'integer' &&
+          (property.type === 'integer' || property.type === 'number') &&
           'maximum' in property &&
           'minimum' in property
         ) {

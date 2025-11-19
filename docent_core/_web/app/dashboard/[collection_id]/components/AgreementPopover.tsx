@@ -41,6 +41,7 @@ export const AgreementPopover = ({
         case 'string':
           return 'enum' in schema.properties[key] ? true : false;
         case 'integer':
+        case 'number':
           return true;
         case 'boolean':
           return true;
