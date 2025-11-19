@@ -293,6 +293,11 @@ export const AgentRunTable = memo(function AgentRunTable({
     null
   );
   const skipNextRowClickRef = useRef(false);
+  const columnSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const handleColumnsMenuOpenAutoFocus = useCallback((event: Event) => {
+    event.preventDefault();
+    columnSearchInputRef.current?.focus();
+  }, []);
 
   const combinedScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -695,7 +700,7 @@ export const AgentRunTable = memo(function AgentRunTable({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0"
+                className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0 mx-1"
               >
                 <Columns3 className="h-3 w-3" />
                 Columns
@@ -704,6 +709,7 @@ export const AgentRunTable = memo(function AgentRunTable({
             <DropdownMenuContent
               className="min-w-[288px] max-w-[640px] p-0"
               align="end"
+              onOpenAutoFocus={handleColumnsMenuOpenAutoFocus}
               style={{
                 width: 'fit-content',
                 maxWidth: '640px',
@@ -711,6 +717,7 @@ export const AgentRunTable = memo(function AgentRunTable({
             >
               <Command>
                 <CommandInput
+                  ref={columnSearchInputRef}
                   placeholder="Search columns..."
                   className="h-8 text-xs"
                 />
