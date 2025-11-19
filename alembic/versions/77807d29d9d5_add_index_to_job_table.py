@@ -25,6 +25,7 @@ def upgrade() -> None:
             "jobs",
             ["job_json"],
             unique=False,
+            if_not_exists=True,
             postgresql_using="gin",
             postgresql_ops={"job_json": "jsonb_path_ops"},
             postgresql_concurrently=True,
@@ -34,6 +35,7 @@ def upgrade() -> None:
             "jobs",
             ["type", "status", "created_at"],
             unique=False,
+            if_not_exists=True,
             postgresql_concurrently=True,
         )
 
