@@ -294,9 +294,13 @@ export const AgentRunTable = memo(function AgentRunTable({
   );
   const skipNextRowClickRef = useRef(false);
   const columnSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const handleColumnsMenuOpenAutoFocus = useCallback((event: Event) => {
-    event.preventDefault();
-    columnSearchInputRef.current?.focus();
+  const handleColumnsMenuOpenChange = useCallback((open: boolean) => {
+    if (open) {
+      // Focus the search input when the menu opens
+      requestAnimationFrame(() => {
+        columnSearchInputRef.current?.focus();
+      });
+    }
   }, []);
 
   const combinedScrollRef = useCallback(
@@ -695,7 +699,7 @@ export const AgentRunTable = memo(function AgentRunTable({
           </div>
 
           {/* Columns selection */}
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={handleColumnsMenuOpenChange}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
@@ -709,7 +713,6 @@ export const AgentRunTable = memo(function AgentRunTable({
             <DropdownMenuContent
               className="min-w-[288px] max-w-[640px] p-0"
               align="end"
-              onOpenAutoFocus={handleColumnsMenuOpenAutoFocus}
               style={{
                 width: 'fit-content',
                 maxWidth: '640px',
