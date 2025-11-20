@@ -474,6 +474,7 @@ export const FilterControls = ({
               value={metadataValue}
               onValueChange={setMetadataValue}
               onEnter={() => onUpdateMetadataFilter(metadataValue)}
+              onSelect={(value) => onUpdateMetadataFilter(value)}
               placeholder="Enter value..."
             />
           ) : (

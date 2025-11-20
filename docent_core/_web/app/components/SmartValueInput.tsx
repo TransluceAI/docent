@@ -41,6 +41,7 @@ interface SmartValueInputProps {
   value: string;
   onValueChange: (value: string) => void;
   onEnter?: () => void;
+  onSelect?: (value: string) => void;
   placeholder?: string;
   className?: string;
   type?: 'text' | 'number';
@@ -72,6 +73,7 @@ export const SmartValueInput = React.forwardRef<
       value,
       onValueChange,
       onEnter,
+      onSelect,
       placeholder = 'Enter value...',
       className,
       type = 'text',
@@ -301,6 +303,8 @@ export const SmartValueInput = React.forwardRef<
       setInputValue(selectedValue);
       onValueChange(selectedValue);
       setOpen(false);
+      // Notify parent that a suggestion was selected
+      onSelect?.(selectedValue);
       // Focus back to input after selection
       requestAnimationFrame(() => {
         const currentRef =
