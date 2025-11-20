@@ -81,7 +81,7 @@ export default function RunRubricDialog({
         <div className="space-y-4">
           {/* Filter */}
           <div className="space-y-2">
-            <Label>Filter runs</Label>
+            <Label>Filter agent runs</Label>
             <div className="border rounded-md p-2">
               <FilterControls
                 filters={filter}
@@ -97,7 +97,7 @@ export default function RunRubricDialog({
 
           {/* Number of runs */}
           <div className="space-y-2">
-            <Label>Number of runs</Label>
+            <Label>Number of agent runs</Label>
             <RadioGroup
               value={runMode}
               onValueChange={(value) => setRunMode(value as 'all' | 'first-n')}
