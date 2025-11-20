@@ -272,11 +272,11 @@ class ProviderPreferences(PublicProviderPreferences):
             ),
             ModelOption(
                 provider="anthropic",
-                model_name="claude-sonnet-4-20250514",
+                model_name="claude-sonnet-4-5",
             ),
             ModelOption(
                 provider="anthropic",
-                model_name="claude-sonnet-4-20250514",
+                model_name="claude-sonnet-4-5",
                 reasoning_effort="medium",
             ),
         ]
