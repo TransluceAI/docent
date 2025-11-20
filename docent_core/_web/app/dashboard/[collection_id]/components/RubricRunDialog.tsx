@@ -48,7 +48,11 @@ export default function RunRubricDialog({
       skip: !collectionId,
     }
   );
-  const agentRunMetadataFields = metadataFieldsData?.fields || [];
+
+  // Don't allow filtering a rubric run on outputs of other rubrics - backend doesn't support this
+  const agentRunMetadataFields = (metadataFieldsData?.fields || []).filter(
+    (field) => !field.name.startsWith('rubric.')
+  );
 
   const handleRun = async () => {
     const maxResultsNum =
@@ -89,7 +93,7 @@ export default function RunRubricDialog({
                 metadataFields={agentRunMetadataFields}
                 collectionId={collectionId}
                 showFilterChips={true}
-                showStepFilter={true}
+                showStepFilter={false}
                 allowToggleFilters={false}
               />
             </div>
