@@ -89,7 +89,9 @@ async def telemetry_processing_job(ctx: ViewContext, job: SQLAJob) -> None:
             telemetry_svc = TelemetryService(session, mono_svc)
             ensure_start = time.monotonic()
             new_job_id = await telemetry_svc.ensure_telemetry_processing_for_collection(
-                collection_id, user
+                collection_id,
+                user,
+                force=True,
             )
             ensure_duration = time.monotonic() - ensure_start
 

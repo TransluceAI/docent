@@ -1375,7 +1375,9 @@ class MonoService:
             logger.info(f"Added job with ID: {job_id}")
         return job_id
 
-    async def add_telemetry_processing_job(self, collection_id: str, user: User) -> str | None:
+    async def add_telemetry_processing_job(
+        self, collection_id: str, user: User, *, force: bool = False
+    ) -> str | None:
         """
         Adds a telemetry processing job for the given collection.
         Only adds the job if there isn't already a pending job for this collection.
@@ -1383,16 +1385,21 @@ class MonoService:
         Args:
             collection_id: The collection ID to process
             user: The user who initiated the processing
+            force: When True, permit creating a new job even if an existing one is running
 
         Returns:
             The job ID if created, None if job already exists
         """
         async with self.db.session() as session:
             # Check if there's already a pending job for this collection
+            statuses_to_block: list[JobStatus] = [JobStatus.PENDING]
+            if not force:
+                statuses_to_block.append(JobStatus.RUNNING)
+
             existing_job_query = select(SQLAJob).where(
                 SQLAJob.type == "telemetry_processing_job",
                 SQLAJob.job_json.contains({"collection_id": collection_id}),
-                SQLAJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
+                SQLAJob.status.in_(statuses_to_block),
             )
 
             existing_job_result = await session.execute(existing_job_query)
@@ -1513,7 +1520,7 @@ class MonoService:
         return job_id
 
     async def add_and_enqueue_telemetry_processing_job(
-        self, collection_id: str, user: User
+        self, collection_id: str, user: User, *, force: bool = False
     ) -> str | None:
         """
         Adds a telemetry processing job for the given collection and enqueues it to Redis.
@@ -1522,12 +1529,13 @@ class MonoService:
         Args:
             collection_id: The collection ID to process
             user: The user who initiated the processing
+            force: When True, allow scheduling another job even if one is currently running
 
         Returns:
             The job ID if created and enqueued, None if job already exists
         """
         # Create or reuse a job in the database
-        job_id = await self.add_telemetry_processing_job(collection_id, user)
+        job_id = await self.add_telemetry_processing_job(collection_id, user, force=force)
         if job_id is None:
             # Verify if an existing pending job is already enqueued; if not, enqueue it
             async with self.db.session() as session:

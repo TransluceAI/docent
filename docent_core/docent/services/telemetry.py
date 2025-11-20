@@ -1083,7 +1083,7 @@ class TelemetryService:
         return result.scalar_one_or_none() is not None
 
     async def ensure_telemetry_processing_for_collection(
-        self, collection_id: str, user: User
+        self, collection_id: str, user: User, *, force: bool = False
     ) -> str | None:
         """
         Check if a collection has remaining telemetry work and queue a job if needed.
@@ -1092,6 +1092,7 @@ class TelemetryService:
         Args:
             collection_id: The collection ID to check and potentially process
             user: The user who initiated the check
+            force: When True, skip the guard that blocks scheduling while a job is still running.
 
         Returns:
             The job ID if a job was created and enqueued, None if no work was found or job already exists
@@ -1108,7 +1109,9 @@ class TelemetryService:
         logger.info(
             f"Found remaining telemetry work for collection {collection_id}, queueing processing job"
         )
-        return await self.mono_svc.add_and_enqueue_telemetry_processing_job(collection_id, user)
+        return await self.mono_svc.add_and_enqueue_telemetry_processing_job(
+            collection_id, user, force=force
+        )
 
     async def _mark_agent_runs_as_completed(
         self, collection_id: str, agent_run_versions: dict[str, int]
