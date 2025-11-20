@@ -285,7 +285,7 @@ class Docent:
                 "We have transitioned to a new batching strategy based on the size of the payload."
             )
 
-        url = f"{self._server_url}/{collection_id}/agent_runs"
+        url = f"{self._server_url}/{collection_id}/agent_runs_compressed"
         total_runs = len(agent_runs)
 
         # Process agent runs in batches
