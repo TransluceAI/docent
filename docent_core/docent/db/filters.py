@@ -311,8 +311,8 @@ def parse_filter_dict(filter_dict: dict[str, Any]) -> CollectionFilter:
     elif filter_type == "complex":
         # Recursively parse nested filters
         nested_filters = [parse_filter_dict(f) for f in filter_dict.get("filters", [])]
-        filter_dict["filters"] = nested_filters
-        return ComplexFilter(**filter_dict)
+        complex_filter_dict: dict[str, Any] = {**filter_dict, "filters": nested_filters}
+        return ComplexFilter(**complex_filter_dict)
     elif filter_type == "agent_run_id":
         return AgentRunIdFilter(**filter_dict)
     elif filter_type == "search_result_predicate":
