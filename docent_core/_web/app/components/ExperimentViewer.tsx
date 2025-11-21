@@ -901,18 +901,24 @@ export default function ExperimentViewer({
         className="flex-1 flex flex-col space-y-3 min-h-0 mt-3"
       >
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <div className="flex flex-col hidden lg:block">
+          <div className="flex flex-col">
             <div className="text-sm font-semibold">
-              {activeTab === 'filters' ? 'Agent Run List' : 'DQL Explorer'}
+              {activeTab === 'filters' && activeRunId
+                ? `${agentRunIds?.length || 0} Runs`
+                : activeTab === 'filters'
+                  ? 'Agent Run List'
+                  : 'DQL Explorer'}
             </div>
-            <div className="text-xs text-muted-foreground">
-              {activeTab === 'filters'
-                ? `${agentRunIds?.length || 0} agent runs matching the current view`
-                : 'Query collection data with Docent Query Language'}
-            </div>
+            {!activeRunId && (
+              <div className="text-xs text-muted-foreground">
+                {activeTab === 'filters'
+                  ? `${agentRunIds?.length || 0} agent runs matching the current view`
+                  : 'Query collection data with Docent Query Language'}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden 2xl:block">
+            <div>
               <UploadRunsButton
                 onImportSuccess={handleUploadSuccess}
                 disabled={!hasWritePermission}
