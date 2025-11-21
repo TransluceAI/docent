@@ -2,7 +2,10 @@
 Make sure to clean up any Redis streams and state keys after the job is finished!
 """
 
+import asyncio
 import traceback
+from contextlib import suppress
+from functools import partial
 from typing import Any
 
 import anyio
@@ -13,8 +16,13 @@ from arq.worker import run_worker
 from docent._log_util import get_logger
 from docent_core._env_util import ENV, get_deployment_id, init_sentry_or_raise
 from docent_core._server._broker.redis_client import get_redis_client
-from docent_core._worker.constants import JOB_TIMEOUT_SECONDS, WORKER_QUEUE_NAME
+from docent_core._worker.constants import (
+    JOB_TIMEOUT_SECONDS,
+    WORKER_QUEUE_NAME,
+    validate_worker_queue_name,
+)
 from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
+from docent_core._worker.queue_metrics import queue_depth_metrics_loop
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.services.monoservice import MonoService
@@ -24,6 +32,8 @@ logger = get_logger(__name__)
 
 JOB_COMPLETION_WAIT_ENV_VAR = "DOCENT_WORKER_SHUTDOWN_WAIT_SECONDS"
 DEFAULT_JOB_COMPLETION_WAIT_SECONDS = 3600
+QUEUE_NAME_ENV_VAR = "DOCENT_WORKER_QUEUE_NAME"
+QUEUE_METRICS_TASK_KEY = "queue_metrics_task"
 
 
 def _resolve_job_completion_wait_seconds() -> int:
@@ -52,6 +62,34 @@ def _resolve_job_completion_wait_seconds() -> int:
         return DEFAULT_JOB_COMPLETION_WAIT_SECONDS
 
     return value
+
+
+def _resolve_worker_queue_name() -> str:
+    override = ENV.get(QUEUE_NAME_ENV_VAR)
+    if override:
+        return validate_worker_queue_name(override)
+    return validate_worker_queue_name(WORKER_QUEUE_NAME)
+
+
+async def _worker_on_startup(queue_name: str, deployment_id: str | None, ctx: dict[str, Any]):
+    """Start background tasks for the worker process."""
+    try:
+        ctx[QUEUE_METRICS_TASK_KEY] = asyncio.create_task(
+            queue_depth_metrics_loop(queue_name, deployment_id)
+        )
+    except Exception as exc:
+        logger.warning("Unable to start queue metrics for %s: %s", queue_name, exc)
+
+
+async def _worker_on_shutdown(ctx: dict[str, Any]):
+    """Shut down background tasks started in _worker_on_startup."""
+    task = ctx.get(QUEUE_METRICS_TASK_KEY)
+    if task is None:
+        return
+
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 async def run_job(
@@ -188,14 +226,18 @@ def run():
         "Worker shutdown waits up to %s seconds for in-flight jobs",
         job_completion_wait_seconds,
     )
+    queue_name = _resolve_worker_queue_name()
+    logger.info("Worker will consume queue %s", queue_name)
 
     run_worker(
         {
             "functions": [run_job],
             "redis_settings": redis_settings,
-            "queue_name": WORKER_QUEUE_NAME,
+            "queue_name": queue_name,
             "max_jobs": 1,  # per worker
             "job_timeout": JOB_TIMEOUT_SECONDS,
             "job_completion_wait": job_completion_wait_seconds,
+            "on_startup": partial(_worker_on_startup, queue_name, deployment_id),
+            "on_shutdown": _worker_on_shutdown,
         }
     )

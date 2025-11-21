@@ -237,7 +237,7 @@ class RubricService:
         # Exception to rule of not committing inside the service:
         #   commit so that the enqueued job is visible to the worker
         await self.session.commit()
-        await enqueue_job(ctx, job_id)
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.RUBRIC_JOB)
 
         return job_id
 
@@ -816,7 +816,7 @@ class RubricService:
             # Session commits when context exits
 
         # Job is now committed to DB, safe to enqueue
-        await enqueue_job(ctx, job_id)
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.REFLECTION_JOB)
 
         return job_id
 
@@ -980,7 +980,7 @@ class RubricService:
         )
 
         # Enqueue the job
-        await enqueue_job(ctx, job_id)
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.CLUSTERING_JOB)
 
         return job_id
 

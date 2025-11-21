@@ -76,18 +76,71 @@ resource "aws_iam_role" "ecs_task" {
   }
 }
 
+resource "aws_iam_role_policy" "ecs_task_metrics" {
+  name = "${var.project_name}-${var.deployment}-ecs-task-metrics"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "cloudwatch:PutMetricData",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Docent/Workers"
+          }
+        }
+      }
+    ]
+  })
+}
+
+locals {
+  worker_queue_configs = {
+    default = {
+      service_suffix = "worker"
+      container_name = "worker"
+      queue_name     = "docent_worker_queue"
+      desired_count  = var.ecs_desired_count
+      min_size       = var.ecs_min_size
+      max_size       = var.ecs_max_size
+    }
+    telemetry_processing = {
+      service_suffix = "telemetry-processing-worker"
+      container_name = "telemetry-processing-worker"
+      queue_name     = "docent_worker_queue:telemetry_processing"
+      desired_count  = var.telemetry_processing_ecs_desired_count
+      min_size       = var.telemetry_processing_ecs_min_size
+      max_size       = var.telemetry_processing_ecs_max_size
+    }
+    telemetry_ingest = {
+      service_suffix = "telemetry-ingest-worker"
+      container_name = "telemetry-ingest-worker"
+      queue_name     = "docent_worker_queue:telemetry_ingest"
+      desired_count  = var.telemetry_ingest_ecs_desired_count
+      min_size       = var.telemetry_ingest_ecs_min_size
+      max_size       = var.telemetry_ingest_ecs_max_size
+    }
+  }
+}
+
 resource "aws_ecs_task_definition" "worker" {
-  family                   = "${var.project_name}-${var.deployment}-worker"
+  for_each                = local.worker_queue_configs
+  family                   = "${var.project_name}-${var.deployment}-${each.value.service_suffix}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_cpu
   memory                   = var.ecs_memory
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  task_role_arn           = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
     {
-      name  = "worker"
+      name  = each.value.container_name
       image = "${aws_ecr_repository.backend.repository_url}:latest"
 
       command = ["docent_core", "worker", "--workers", tostring(var.ecs_num_workers)]
@@ -144,6 +197,10 @@ resource "aws_ecs_task_definition" "worker" {
         {
           name  = "DD_AGENT_PORT"
           value = "8126"
+        },
+        {
+          name  = "DOCENT_WORKER_QUEUE_NAME"
+          value = each.value.queue_name
         }
       ]
 
@@ -152,7 +209,7 @@ resource "aws_ecs_task_definition" "worker" {
         options = {
           awslogs-group         = aws_cloudwatch_log_group.ecs.name
           awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "worker"
+          awslogs-stream-prefix = each.value.service_suffix
         }
       }
 
@@ -161,16 +218,18 @@ resource "aws_ecs_task_definition" "worker" {
   ])
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-worker-task"
+    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-task"
     Deployment = var.deployment
+    Queue       = each.value.queue_name
   }
 }
 
 resource "aws_ecs_service" "worker" {
-  name            = "${var.project_name}-${var.deployment}-worker"
+  for_each        = local.worker_queue_configs
+  name            = "${var.project_name}-${var.deployment}-${each.value.service_suffix}"
   cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.worker.arn
-  desired_count   = var.ecs_desired_count
+  task_definition = aws_ecs_task_definition.worker[each.key].arn
+  desired_count   = each.value.desired_count
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -180,8 +239,9 @@ resource "aws_ecs_service" "worker" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-worker-service"
+    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-service"
     Deployment = var.deployment
+    Queue       = each.value.queue_name
   }
 }
 
@@ -338,45 +398,48 @@ resource "aws_ecs_task_definition" "datadog_agent" {
 }
 
 resource "aws_appautoscaling_target" "ecs_worker" {
-  max_capacity       = var.ecs_max_size
-  min_capacity       = var.ecs_min_size
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.worker.name}"
+  for_each           = local.worker_queue_configs
+  max_capacity       = each.value.max_size
+  min_capacity       = each.value.min_size
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.worker[each.key].name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-worker-autoscaling-target"
+    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-autoscaling-target"
     Deployment = var.deployment
+    Queue       = each.value.queue_name
   }
 }
 
-resource "aws_appautoscaling_policy" "ecs_worker_cpu" {
-  name               = "${var.project_name}-${var.deployment}-worker-cpu-scaling"
+resource "aws_appautoscaling_policy" "ecs_worker_queue_depth" {
+  for_each           = local.worker_queue_configs
+  name               = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-queue-depth"
   policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs_worker.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs_worker.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs_worker.service_namespace
+  resource_id        = aws_appautoscaling_target.ecs_worker[each.key].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_worker[each.key].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_worker[each.key].service_namespace
 
   target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageCPUUtilization"
-    }
-    target_value = 50.0
-  }
-}
+    customized_metric_specification {
+      metric_name = "QueueDepth"
+      namespace   = "Docent/Workers"
+      statistic   = "Average"
+      unit        = "Count"
 
-resource "aws_appautoscaling_policy" "ecs_worker_memory" {
-  name               = "${var.project_name}-${var.deployment}-worker-memory-scaling"
-  policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs_worker.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs_worker.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs_worker.service_namespace
+      dimensions {
+        name  = "QueueName"
+        value = each.value.queue_name
+      }
 
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+      dimensions {
+        name  = "Deployment"
+        value = var.deployment
+      }
     }
-    target_value = 50.0
+    target_value       = var.worker_queue_target_depth
+    scale_in_cooldown  = var.worker_queue_scale_in_cooldown
+    scale_out_cooldown = var.worker_queue_scale_out_cooldown
   }
 }
 

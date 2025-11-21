@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 
 from docent._log_util import get_logger
 from docent_core._env_util import ENV
-from docent_core._worker.constants import WORKER_QUEUE_NAME
+from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.investigator.db.contexts import WorkspaceContext
 
@@ -143,10 +143,14 @@ async def _enqueue_job(
 
 
 async def enqueue_job(
-    ctx: ViewContext | WorkspaceContext | TelemetryContext | None, job_id: str
+    ctx: ViewContext | WorkspaceContext | TelemetryContext | None,
+    job_id: str,
+    *,
+    job_type: WorkerFunction | str,
 ) -> None:
     """Enqueue a job to the worker."""
-    await _enqueue_job(WORKER_QUEUE_NAME, "run_job", ctx, job_id, job_id=job_id)
+    queue_name = get_queue_name_for_job_type(job_type)
+    await _enqueue_job(queue_name, "run_job", ctx, job_id, job_id=job_id)
 
 
 async def cancel_job(job_id: str) -> None:

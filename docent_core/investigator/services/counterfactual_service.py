@@ -113,7 +113,9 @@ class CounterfactualService:
                 await session.commit()
 
                 # Enqueue the job to Redis
-                await enqueue_job(ctx, job_id)
+                await enqueue_job(
+                    ctx, job_id, job_type=WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB
+                )
 
                 logger.info(
                     f"Created and enqueued new job {job_id} for experiment {experiment_config_id}"

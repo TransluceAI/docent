@@ -132,6 +132,60 @@ variable "ecs_num_workers" {
   type        = number
 }
 
+variable "telemetry_processing_ecs_min_size" {
+  description = "Minimum number of telemetry processing ECS tasks"
+  type        = number
+  default     = 0
+}
+
+variable "telemetry_processing_ecs_max_size" {
+  description = "Maximum number of telemetry processing ECS tasks"
+  type        = number
+  default     = 1
+}
+
+variable "telemetry_processing_ecs_desired_count" {
+  description = "Desired number of telemetry processing ECS tasks"
+  type        = number
+  default     = 0
+}
+
+variable "telemetry_ingest_ecs_min_size" {
+  description = "Minimum number of telemetry ingest ECS tasks"
+  type        = number
+  default     = 0
+}
+
+variable "telemetry_ingest_ecs_max_size" {
+  description = "Maximum number of telemetry ingest ECS tasks"
+  type        = number
+  default     = 1
+}
+
+variable "telemetry_ingest_ecs_desired_count" {
+  description = "Desired number of telemetry ingest ECS tasks"
+  type        = number
+  default     = 0
+}
+
+variable "worker_queue_target_depth" {
+  description = "Target queue depth per worker when autoscaling"
+  type        = number
+  default     = 1
+}
+
+variable "worker_queue_scale_in_cooldown" {
+  description = "Scale-in cooldown (seconds) for queue depth autoscaling"
+  type        = number
+  default     = 60
+}
+
+variable "worker_queue_scale_out_cooldown" {
+  description = "Scale-out cooldown (seconds) for queue depth autoscaling"
+  type        = number
+  default     = 60
+}
+
 variable "bastion_public_key" {
   description = "SSH public key for bastion host access (e.g., contents of ~/.ssh/id_rsa.pub). If empty, bastion host will not be created."
   type        = string

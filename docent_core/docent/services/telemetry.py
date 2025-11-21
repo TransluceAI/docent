@@ -189,9 +189,7 @@ class TelemetryService:
 
         # Atomically get agent runs that need processing and mark them as processing
         mark_start = time.monotonic()
-        agent_run_versions = await self.get_and_mark_agent_runs_for_processing(
-            collection_id, limit=limit
-        )
+        agent_run_versions = await self.get_agent_runs_to_process(collection_id, limit=limit)
         mark_duration = time.monotonic() - mark_start
 
         if not agent_run_versions:
@@ -921,7 +919,7 @@ class TelemetryService:
             else:
                 logger.error("Accumulation service not found, skipping accumulation")
 
-    async def get_and_mark_agent_runs_for_processing(
+    async def get_agent_runs_to_process(
         self,
         collection_id: str,
         *,

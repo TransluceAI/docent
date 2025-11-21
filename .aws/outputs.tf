@@ -67,8 +67,8 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_service_name" {
-  description = "ECS service name"
-  value       = aws_ecs_service.worker.name
+  description = "ECS service names keyed by worker type"
+  value       = { for key, svc in aws_ecs_service.worker : key => svc.name }
 }
 
 output "bastion_public_ip" {

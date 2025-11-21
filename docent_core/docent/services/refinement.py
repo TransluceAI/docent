@@ -280,7 +280,7 @@ class RefinementService:
             # Exception to rule of not committing inside the service:
             #   commit so that the enqueued job is visible to the worker
             await self.session.commit()
-            await enqueue_job(ctx, job_id)
+            await enqueue_job(ctx, job_id, job_type=WorkerFunction.REFINEMENT_AGENT_JOB)
 
             return job_id
 

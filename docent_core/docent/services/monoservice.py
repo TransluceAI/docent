@@ -44,7 +44,7 @@ from docent.data_models.agent_run import AgentRun, FilterableField
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job, get_redis_client
-from docent_core._worker.constants import WORKER_QUEUE_NAME
+from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.dql import (
     DQLExecutionError,
@@ -1510,7 +1510,7 @@ class MonoService:
             return None
 
         ctx = await self.get_telemetry_ctx_for_user(user)
-        await enqueue_job(ctx, job_id)  # type: ignore
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.TELEMETRY_INGEST_JOB)  # type: ignore
         logger.info(
             "Enqueued telemetry ingest job %s for telemetry_log_id %s (request_id=%s)",
             job_id,
@@ -1557,7 +1557,10 @@ class MonoService:
                 # Check if already enqueued in Redis
                 try:
                     redis_client = await get_redis_client()
-                    if await redis_client.zscore(WORKER_QUEUE_NAME, job_id) is not None:  # type: ignore[arg-type]
+                    queue_name = get_queue_name_for_job_type(
+                        WorkerFunction.TELEMETRY_PROCESSING_JOB
+                    )
+                    if await redis_client.zscore(queue_name, job_id) is not None:  # type: ignore[arg-type]
                         logger.info(
                             "Telemetry processing job %s for collection %s is already enqueued",
                             job_id,
@@ -1574,7 +1577,7 @@ class MonoService:
         ctx = await self.get_default_view_ctx(collection_id, user)
 
         try:
-            await enqueue_job(ctx, job_id)  # type: ignore
+            await enqueue_job(ctx, job_id, job_type=WorkerFunction.TELEMETRY_PROCESSING_JOB)  # type: ignore
             logger.info(
                 f"Enqueued telemetry processing job {job_id} for collection {collection_id}"
             )

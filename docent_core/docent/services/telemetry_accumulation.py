@@ -189,7 +189,7 @@ class TelemetryAccumulationService:
 
         # Mark agent runs for processing
         if agent_run_ids:
-            await self._mark_agent_runs_for_processing(collection_id, agent_run_ids)
+            await self._mark_agent_runs_as_needs_processing(collection_id, agent_run_ids)
 
     async def get_accumulated_spans(self, collection_id: str) -> List[Dict[str, Any]]:
         """Get all accumulated spans for a collection."""
@@ -277,7 +277,7 @@ class TelemetryAccumulationService:
         )
 
         # Mark agent run for processing
-        await self._mark_agent_runs_for_processing(collection_id, {agent_run_id})
+        await self._mark_agent_runs_as_needs_processing(collection_id, {agent_run_id})
 
     async def get_collection_scores(self, collection_id: str) -> Dict[str, List[Dict[str, Any]]]:
         """Get all scores for a collection, grouped by agent_run_id."""
@@ -375,7 +375,7 @@ class TelemetryAccumulationService:
         )
 
         # Mark agent run for processing
-        await self._mark_agent_runs_for_processing(collection_id, {agent_run_id})
+        await self._mark_agent_runs_as_needs_processing(collection_id, {agent_run_id})
 
     async def get_collection_agent_run_metadata(
         self, collection_id: str
@@ -523,7 +523,7 @@ class TelemetryAccumulationService:
         )
 
         # Mark agent run for processing
-        await self._mark_agent_runs_for_processing(collection_id, {agent_run_id})
+        await self._mark_agent_runs_as_needs_processing(collection_id, {agent_run_id})
 
     async def get_transcript_group_metadata(self, collection_id: str) -> Dict[str, Dict[str, Any]]:
         """Get all transcript group metadata for a collection, merging multiple calls with recent data taking precedence."""
@@ -697,7 +697,7 @@ class TelemetryAccumulationService:
         )
         return deleted_count
 
-    async def _mark_agent_runs_for_processing(
+    async def _mark_agent_runs_as_needs_processing(
         self, collection_id: str, agent_run_ids: set[str]
     ) -> None:
         """
@@ -718,7 +718,9 @@ class TelemetryAccumulationService:
         # This prevents race conditions where some agent runs get marked but others don't
         # Create status records for all agent runs atomically
         status_records: list[dict[str, Any]] = []
-        for agent_run_id in agent_run_ids:
+        # Keep lock acquisition order deterministic to reduce Postgres deadlocks when multiple
+        # workers update overlapping agent runs.
+        for agent_run_id in sorted(agent_run_ids):
             status_records.append(
                 {
                     "id": str(uuid4()),

@@ -66,8 +66,14 @@ def server(
 @app.command(help="Run a background job runner worker")
 def worker(
     workers: int = typer.Option(1, help="Number of worker processes"),
+    queue: str | None = typer.Option(
+        None, help="Worker queue to consume (defaults to DOCENT_WORKER_QUEUE_NAME env var)"
+    ),
 ):
     from docent_core._worker import worker as docent_worker
+
+    if queue:
+        os.environ["DOCENT_WORKER_QUEUE_NAME"] = queue
 
     if workers == 1:
         docent_worker.run()
