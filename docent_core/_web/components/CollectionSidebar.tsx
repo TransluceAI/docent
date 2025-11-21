@@ -3,10 +3,10 @@
 import {
   Home,
   Tags,
-  Search,
   Layers,
   PanelLeftOpen,
   PanelLeftClose,
+  Scale,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -56,7 +56,7 @@ export function CollectionSidebar() {
     {
       title: 'Rubrics',
       url: `/dashboard/${collectionId}/rubric`,
-      icon: Search,
+      icon: Scale,
     },
     {
       title: 'Label Sets',
