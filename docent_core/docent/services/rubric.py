@@ -14,6 +14,7 @@ from docent.data_models.agent_run import AgentRun
 from docent.data_models.judge import Label
 from docent.judges import JudgeResult, ResultType, Rubric
 from docent.judges.runner import run_rubric
+from docent.judges.types import JudgeResultWithCitations
 from docent_core._db_service.batched_writer import BatchedWriter
 from docent_core._server._broker.redis_client import (
     STREAM_KEY_FORMAT,
@@ -398,20 +399,24 @@ class RubricService:
                     if judge_results is None:
                         return
 
+                    resolved_results = await self.resolve_result_citations(
+                        judge_results, rubric.output_schema, ctx, persist=False
+                    )
+
                     await writer.add_all(
                         [
                             SQLAJudgeResult.from_pydantic(judge_result)
-                            for judge_result in judge_results
+                            for judge_result in resolved_results
                         ]
                     )
 
                     # Spawn reflection task for this agent_run
                     # Pass new results directly; reflection will merge with existing DB results
                     # This handles race conditions where new results may not be committed yet
-                    if judge_results:
+                    if resolved_results:
                         tg.start_soon(
                             self._create_reflection_background,
-                            judge_results,
+                            resolved_results,
                             rubric.to_pydantic(),
                             label_set_id,
                         )
@@ -494,6 +499,99 @@ class RubricService:
         if sqla_direct is None:
             return None
         return sqla_direct.to_pydantic()
+
+    @staticmethod
+    def _output_has_unresolved_citations(output: Any, schema: dict[str, Any]) -> bool:
+        """Check if output has any unresolved citation strings.
+
+        A citation is considered unresolved if a field marked with 'citations': true
+        in the schema contains a string instead of a dict with 'text' and 'citations' keys.
+
+        Args:
+            output: The output data to check
+            schema: The schema defining which fields should have citations
+
+        Returns:
+            True if any citations are unresolved, False otherwise
+        """
+        if schema.get("type") == "string" and schema.get("citations"):  # type: ignore
+            # Should be a dict with text/citations, but is a string = unresolved
+            return isinstance(output, str)
+        elif schema.get("type") == "object":
+            properties: dict[str, Any] = schema.get("properties", {})
+            for key in properties:
+                if key in output and RubricService._output_has_unresolved_citations(
+                    output[key], properties[key]
+                ):
+                    return True
+        elif schema.get("type") == "array":
+            item_schema: dict[str, Any] = schema.get("items", {})
+            for item in output:
+                if RubricService._output_has_unresolved_citations(item, item_schema):
+                    return True
+        return False
+
+    async def resolve_result_citations(
+        self,
+        results: list[JudgeResult],
+        schema: dict[str, Any],
+        ctx: ViewContext,
+        persist: bool = True,
+    ) -> list[JudgeResultWithCitations]:
+        """Efficiently resolve citations for multiple results.
+
+        Args:
+            results: List of judge results to resolve
+            schema: The output schema used to validate results
+            ctx: View context for fetching agent runs
+            persist: If True, update existing DB records with resolved output.
+                     If False, only resolve in memory (for new records about to be written).
+
+        Returns:
+            List of judge results with citations resolved, in original order
+        """
+        needs_resolution = {
+            r.id: r for r in results if self._output_has_unresolved_citations(r.output, schema)
+        }
+
+        if not needs_resolution:
+            return [JudgeResultWithCitations(**r.model_dump()) for r in results]
+
+        # Batch fetch agent runs (only unique IDs needed for resolution)
+        agent_run_ids = {r.agent_run_id for r in needs_resolution.values()}
+        agent_runs_map: dict[str, AgentRun] = {}
+        for agent_run_id in agent_run_ids:
+            agent_run = await self.service.get_agent_run(
+                ctx, agent_run_id, apply_base_where_clause=False
+            )
+            if agent_run:
+                agent_runs_map[agent_run_id] = agent_run
+
+        # Resolve citations
+        resolved_map: dict[str, JudgeResultWithCitations] = {}
+        for result_id, result in needs_resolution.items():
+            agent_run = agent_runs_map.get(result.agent_run_id)
+            if agent_run:
+                resolved = JudgeResultWithCitations.from_judge_result(result, schema, agent_run)
+                resolved_map[result_id] = resolved
+
+        # Batch update DB records if persisting (single SELECT query for all results)
+        if persist and resolved_map:
+            sqla_results = await self.session.execute(
+                select(SQLAJudgeResult).where(SQLAJudgeResult.id.in_(resolved_map.keys()))
+            )
+            sqla_map = {sqla.id: sqla for sqla in sqla_results.scalars().all()}
+
+            # Update all records
+            for result_id, resolved in resolved_map.items():
+                if sqla := sqla_map.get(result_id):
+                    sqla.output = resolved.output
+
+            # Single flush for all updates
+            await self.session.flush()
+
+        # Return results in original order
+        return [resolved_map.get(r.id, JudgeResultWithCitations(**r.model_dump())) for r in results]
 
     async def cancel_active_rubric_eval_job(self, rubric_id: str):
         job = await self.get_active_job_for_rubric(rubric_id)
@@ -596,7 +694,7 @@ class RubricService:
 
     async def _create_reflection_background(
         self,
-        new_judge_results: list[JudgeResult],
+        new_judge_results: Sequence[JudgeResult],
         rubric: Rubric,
         label_set_id: str | None = None,
     ):

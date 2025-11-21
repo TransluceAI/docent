@@ -271,7 +271,6 @@ class ChatService:
         """
         session = sqla_session.to_pydantic()
 
-        # Parse citations for existing single-run chats (not for "chat with anything")
         if (
             session.context_serialized is None
             and session.agent_run_id is not None
@@ -299,12 +298,18 @@ class ChatService:
     async def _parse_citations_in_session(
         self, ctx: ViewContext, session: ChatSession
     ) -> ChatSession:
-        """Helper to parse citations for existing single-run chat sessions.
-
-        Only used for sessions where context_serialized is None (existing single-run chats).
-        """
-        # Single-run session
+        """Helper to parse citations for existing single-run chat sessions."""
         if not session.agent_run_id:
+            return session
+
+        # Skip the db query if no messages are missing citations
+        has_unparsed_citations = False
+        for message in session.messages:
+            if message.role == "assistant" and getattr(message, "citations", None) is None:
+                has_unparsed_citations = True
+                break
+
+        if not has_unparsed_citations:
             return session
 
         agent_run = await self.mono_svc.get_agent_run(
@@ -606,32 +611,16 @@ class ChatService:
                         await sse_callback(error_state)
                     return error_state
 
-                # For "chat with anything" sessions, parse citations before storing
-                # For existing single-run chats, store raw content with citation markers
                 content_text = completion.text or ""
-                cleaned_text_suggestions, suggestions = parse_suggestions(
-                    content_text, streaming=False
-                )
+                cleaned_text, suggestions = parse_suggestions(content_text, streaming=False)
 
-                if sqla_session.context_serialized is not None:
-                    # "Chat with anything": parse and store citations
-                    cleaned_text, citations = resolve_citations_with_context(
-                        cleaned_text_suggestions, context
-                    )
-                    assistant_msg = DocentAssistantMessage(
-                        content=cleaned_text,
-                        tool_calls=completion.tool_calls,
-                        citations=citations,
-                        suggested_messages=suggestions if suggestions else None,
-                    )
-                else:
-                    # Existing single-run chats: store raw content, parse on load
-                    assistant_msg = DocentAssistantMessage(
-                        content=cleaned_text_suggestions,
-                        tool_calls=completion.tool_calls,
-                        citations=None,
-                        suggested_messages=suggestions if suggestions else None,
-                    )
+                cleaned_text, citations = resolve_citations_with_context(cleaned_text, context)
+                assistant_msg = DocentAssistantMessage(
+                    content=cleaned_text,
+                    tool_calls=completion.tool_calls,
+                    citations=citations,
+                    suggested_messages=suggestions if suggestions else None,
+                )
                 raw_messages.append(assistant_msg)
 
                 # Store real token count from API response if available
