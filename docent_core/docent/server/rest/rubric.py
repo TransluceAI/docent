@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._llm_util.providers.preference_types import merge_models_with_byok
 from docent._log_util.logger import get_logger
-from docent.data_models.agent_run import AgentRun
 from docent.judges import JudgeResultWithCitations, ResultType, Rubric
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.ai_tools.rubric.reflect import JudgeReflection
@@ -166,14 +165,10 @@ async def get_result_by_id(
     if sqla_rubric is None:
         raise HTTPException(status_code=404, detail="Rubric version not found for result")
 
-    # Fetch the agent run to resolve citation aliases
-    agent_run = await mono_svc.get_agent_run(
-        ctx, result.agent_run_id, apply_base_where_clause=False
+    results = await rubric_svc.resolve_result_citations(
+        [result], sqla_rubric.output_schema, ctx, persist=True
     )
-    if agent_run is None:
-        raise HTTPException(status_code=404, detail="Agent run not found")
-
-    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema, agent_run)
+    return results[0]
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/metrics")
@@ -224,12 +219,10 @@ async def get_result_by_agent_run(
     if sqla_rubric is None:
         raise HTTPException(status_code=404, detail="Rubric version not found")
 
-    # Fetch the agent run to resolve citation aliases
-    agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
-    if agent_run is None:
-        raise HTTPException(status_code=404, detail="Agent run not found")
-
-    return JudgeResultWithCitations.from_judge_result(result, sqla_rubric.output_schema, agent_run)
+    results = await rubric_svc.resolve_result_citations(
+        [result], sqla_rubric.output_schema, ctx, persist=True
+    )
+    return results[0]
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/agent_run/{agent_run_id}/reflection")
@@ -474,21 +467,10 @@ async def get_rubric_run_state(
     # Get current results for the specified version (defaults to latest inside service)
     results = await rubric_svc.get_rubric_results(rubric_id, version)
 
-    # Batch fetch all agent runs needed for citation parsing
-    agent_run_ids_in_results = list({result.agent_run_id for result in results})
-    agent_runs_map: dict[str, AgentRun] = {}
-    for agent_run_id in agent_run_ids_in_results:
-        agent_run = await mono_svc.get_agent_run(ctx, agent_run_id, apply_base_where_clause=False)
-        if agent_run:
-            agent_runs_map[agent_run_id] = agent_run
-
-    results_parsed = [
-        JudgeResultWithCitations.from_judge_result(
-            result, sqla_rubric_for_schema.output_schema, agent_runs_map[result.agent_run_id]
-        )
-        for result in results
-        if result.agent_run_id in agent_runs_map
-    ]
+    # Resolve and store citations for old judge results that don't have them
+    results_parsed = await rubric_svc.resolve_result_citations(
+        results, sqla_rubric_for_schema.output_schema, ctx, persist=True
+    )
 
     # Group results by agent_run_id
     from collections import defaultdict
