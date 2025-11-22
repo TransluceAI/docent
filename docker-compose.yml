@@ -36,7 +36,7 @@ services:
       - ENV_RESOLUTION_STRATEGY=os_environ
       - DOCENT_PG_HOST=postgres
       - DOCENT_REDIS_HOST=redis
-    command: bash -c "docent_core worker --workers 2"
+    command: bash -c "docent_core worker --workers 2 --queue all"
     restart: unless-stopped
 
   frontend:

@@ -131,7 +131,7 @@ Docker Compose is the easiest way to get started, but you may want a manual inst
 
     === "Prod"
         ```bash
-        docent_core worker --workers 4
+        docent_core worker --workers 4 --queue all
         ```
 
     to start the worker, which handles background work, and

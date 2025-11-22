@@ -15,11 +15,6 @@ from docent.data_models.formatted_objects import FormattedAgentRun, FormattedTra
 from docent.sdk.llm_context import LLMContext
 from docent_core._env_util import ENV
 
-# DOCENT_API_KEY = ENV.get("DOCENT_API_KEY")
-# DOCENT_SERVER_URL = ENV.get("NEXT_PUBLIC_API_HOST")
-# if not DOCENT_SERVER_URL or not DOCENT_API_KEY:
-#     raise ValueError("DOCENT_API_KEY and DOCENT_SERVER_URL must be set")
-
 DOCENT_API_KEY = ENV.get("DOCENT_API_KEY")
 DOCENT_DOMAIN = ENV.get("DOCENT_DOMAIN")
 if not DOCENT_DOMAIN or not DOCENT_API_KEY:
@@ -360,7 +355,7 @@ for idx, (_, row) in enumerate(unique_combos.iterrows()):
     ax.scatter(
         df_filtered["mean_indep_brier_score"],
         df_filtered["consistency_brier_score"],
-        alpha=0.5,
+        alpha=0.4,
         zorder=2,
     )
 
