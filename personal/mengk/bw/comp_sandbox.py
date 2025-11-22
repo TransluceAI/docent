@@ -42,11 +42,11 @@ SELECT
     a.metadata_json ->> 'base_llm_name' AS llm,
     a.metadata_json ->> 'llm_reasoning_effort' AS reasoning_effort,
     a.metadata_json ->> 'llm_verbosity' AS verbosity,
-    a.metadata_json ->> 'pre_platt_scaling_probability' AS unscaled_prob,
-    a.metadata_json ->> 'post_platt_scaling_probability' AS final_prob,
+    a.metadata_json ->> 'pre_platt_scaling_probability' AS consistency_prob,
+    a.metadata_json ->> 'post_platt_scaling_probability' AS scaled_prob,
     a.metadata_json ->> 'resolved_to' AS gold_prob,
     a.metadata_json ->> 'question' AS question,
-    ARRAY_AGG(tg.metadata_json ->> 'post_calibration_probability') AS indiv_probs
+    ARRAY_AGG(tg.metadata_json ->> 'post_calibration_probability') AS indep_probs
 FROM agent_runs a
 JOIN transcript_groups tg ON a.id = tg.agent_run_id
 WHERE
@@ -76,19 +76,19 @@ def _f(x: list[str | None]):
     return sum(filtered) / len(filtered) if filtered else None
 
 
-df["pre_prob"] = df["indiv_probs"].apply(_f)
+df["mean_indep_prob"] = df["indep_probs"].apply(_f)
 
-df["brier_score"] = (df["final_prob"] - df["gold_prob"]) ** 2
-df["pre_brier_score"] = (df["pre_prob"] - df["gold_prob"]) ** 2
-df["unscaled_brier_score"] = (df["unscaled_prob"] - df["gold_prob"]) ** 2
-df["accuracy"] = ((df["final_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
-    (df["final_prob"] < 0.5) & (df["gold_prob"] < 0.5)
+df["scaled_brier_score"] = (df["scaled_prob"] - df["gold_prob"]) ** 2
+df["mean_indep_brier_score"] = (df["mean_indep_prob"] - df["gold_prob"]) ** 2
+df["consistency_brier_score"] = (df["consistency_prob"] - df["gold_prob"]) ** 2
+df["scaled_accuracy"] = ((df["scaled_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
+    (df["scaled_prob"] < 0.5) & (df["gold_prob"] < 0.5)
 )
-df["pre_accuracy"] = ((df["pre_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
-    (df["pre_prob"] < 0.5) & (df["gold_prob"] < 0.5)
+df["mean_indep_accuracy"] = ((df["mean_indep_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
+    (df["mean_indep_prob"] < 0.5) & (df["gold_prob"] < 0.5)
 )
-df["unscaled_accuracy"] = ((df["unscaled_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
-    (df["unscaled_prob"] < 0.5) & (df["gold_prob"] < 0.5)
+df["consistency_accuracy"] = ((df["consistency_prob"] >= 0.5) & (df["gold_prob"] >= 0.5)) | (
+    (df["consistency_prob"] < 0.5) & (df["gold_prob"] < 0.5)
 )
 
 df = df[
@@ -98,18 +98,20 @@ df = df[
         "reasoning_effort",
         "verbosity",
         "question",
-        "pre_prob",
-        "final_prob",
+        "mean_indep_prob",
+        "consistency_prob",
+        "scaled_prob",
         "gold_prob",
-        "brier_score",
-        "pre_brier_score",
-        "accuracy",
-        "pre_accuracy",
-        "unscaled_prob",
+        "scaled_brier_score",
+        "mean_indep_brier_score",
+        "consistency_brier_score",
+        "scaled_accuracy",
+        "mean_indep_accuracy",
+        "consistency_accuracy",
     ]
 ]
 # df = df.drop_duplicates(subset=["question", "llm", "reasoning_effort"], keep="first")
-df = df.sort_values(by="brier_score", ascending=False)
+df = df.sort_values(by="scaled_brier_score", ascending=False)
 df
 
 # %%
@@ -145,42 +147,64 @@ for _, row in unique_combos.iterrows():
     )
     df_filtered = df[mask]
 
-    mean_accuracy = df_filtered["accuracy"].mean()
-    mean_brier = df_filtered["brier_score"].mean()
+    mean_scaled_accuracy = df_filtered["scaled_accuracy"].mean()
+    mean_scaled_brier = df_filtered["scaled_brier_score"].mean()
+    mean_indep_accuracy = df_filtered["mean_indep_accuracy"].mean()
+    mean_indep_brier = df_filtered["mean_indep_brier_score"].mean()
+    mean_consistency_accuracy = df_filtered["consistency_accuracy"].mean()
+    mean_consistency_brier = df_filtered["consistency_brier_score"].mean()
 
     plot_data.append(
         {
             "config": f"{llm}\n{reasoning_effort}\n{verbosity}",
-            "accuracy": mean_accuracy,
-            "brier_score": mean_brier,
+            "scaled_accuracy": mean_scaled_accuracy,
+            "scaled_brier_score": mean_scaled_brier,
+            "mean_indep_accuracy": mean_indep_accuracy,
+            "mean_indep_brier_score": mean_indep_brier,
+            "consistency_accuracy": mean_consistency_accuracy,
+            "consistency_brier_score": mean_consistency_brier,
         }
     )
 
 # Create bar charts
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
 configs = [d["config"] for d in plot_data]
 x = np.arange(len(configs))
+width = 0.25  # Width of bars
 
-# Accuracy bar chart
-accuracies = [d["accuracy"] for d in plot_data]
-ax1.bar(x, accuracies, alpha=0.8)
+# Accuracy bar chart (mean_indep, consistency, and scaled)
+mean_indep_accuracies = [d["mean_indep_accuracy"] for d in plot_data]
+consistency_accuracies = [d["consistency_accuracy"] for d in plot_data]
+scaled_accuracies = [d["scaled_accuracy"] for d in plot_data]
+ax1.bar(x - width, mean_indep_accuracies, width, alpha=0.8, label="Mean Independent")
+ax1.bar(x, consistency_accuracies, width, alpha=0.8, label="Consistency")
+ax1.bar(x + width, scaled_accuracies, width, alpha=0.8, label="Scaled")
 ax1.set_xlabel("Model Configuration")
-ax1.set_ylabel("Accuracy")
+ax1.set_ylabel("consistency_accuracy")
 ax1.set_title("Accuracy by Model Configuration")
 ax1.set_xticks(x)
 ax1.set_xticklabels(configs, rotation=45, ha="right")
+ax1.set_ylim(0.8, 0.9)
 ax1.grid(True, alpha=0.3, axis="y")
+ax1.legend()
 
-# Brier score bar chart
-brier_scores = [d["brier_score"] for d in plot_data]
-ax2.bar(x, brier_scores, alpha=0.8, color="orange")
+# Brier score bar chart (mean_indep, consistency, and scaled)
+mean_indep_brier_scores = [d["mean_indep_brier_score"] for d in plot_data]
+consistency_brier_scores = [d["consistency_brier_score"] for d in plot_data]
+scaled_brier_scores = [d["scaled_brier_score"] for d in plot_data]
+ax2.bar(
+    x - width, mean_indep_brier_scores, width, alpha=0.8, color="orange", label="Mean Independent"
+)
+ax2.bar(x, consistency_brier_scores, width, alpha=0.8, color="darkorange", label="Consistency")
+ax2.bar(x + width, scaled_brier_scores, width, alpha=0.8, color="red", label="Scaled")
 ax2.set_xlabel("Model Configuration")
 ax2.set_ylabel("Brier Score")
 ax2.set_title("Brier Score by Model Configuration")
 ax2.set_xticks(x)
 ax2.set_xticklabels(configs, rotation=45, ha="right")
 ax2.grid(True, alpha=0.3, axis="y")
+ax2.legend()
 
 plt.tight_layout()
 plt.show()
@@ -197,22 +221,22 @@ plt.show()
 # Group by (llm, reasoning_effort, question) and aggregate brier scores and accuracies
 grouped_df = (
     df.groupby(["llm", "reasoning_effort", "verbosity", "question"])
-    .agg({"brier_score": list, "accuracy": list})
+    .agg({"scaled_brier_score": list})
     .reset_index()
 )
 
-# Create pivot tables for average brier score and accuracy by question and (llm, reasoning_effort)
+# Create pivot tables for average scaled brier score and accuracy by question and (llm, reasoning_effort)
 import numpy as np
 
 # Create a combined column for (llm, reasoning_effort)
 df["model_config"] = df["llm"] + "_" + df["reasoning_effort"] + "_" + df["verbosity"]
 
-# Pivot table for average brier score with count
+# Pivot table for average scaled brier score with count
 brier_pivot_mean = df.pivot_table(
-    values="brier_score", index="question", columns="model_config", aggfunc="mean"
+    values="scaled_brier_score", index="question", columns="model_config", aggfunc="mean"
 )
 brier_pivot_count = df.pivot_table(
-    values="brier_score", index="question", columns="model_config", aggfunc="count"
+    values="scaled_brier_score", index="question", columns="model_config", aggfunc="count"
 )
 
 # Combine mean and count into a single display
@@ -243,13 +267,13 @@ for _, row in unique_combos.iterrows():
     print(f"Model: {llm}, Reasoning Effort: {effort}, Verbosity: {verbosity}")
     print(f"{'='*80}")
 
-    # Calculate relative performance (this model's brier score minus average of all others)
+    # Calculate relative performance (this model's scaled brier score minus average of all others)
     other_cols = [
         col for col in brier_pivot_mean.columns if col != model_config and col != "variance"
     ]
 
     if model_config in brier_pivot_mean.columns:
-        # Calculate average brier score of other models for each question
+        # Calculate average scaled brier score of other models for each question
         brier_pivot_mean["others_avg"] = brier_pivot_mean[other_cols].mean(axis=1)
 
         # Calculate relative performance (negative means this model is better)
@@ -259,7 +283,7 @@ for _, row in unique_combos.iterrows():
 
         # Questions where this model performs BEST (most negative relative performance)
         print(f"\nTop 10 questions where {model_config} performs BEST relative to others:")
-        print("(Negative values = better performance, i.e., lower Brier score)")
+        print("(Negative values = better performance, i.e., lower scaled Brier score)")
         best_questions = brier_pivot_mean.nsmallest(10, "relative_performance")[
             [model_config, "others_avg", "relative_performance"]
         ]
@@ -267,7 +291,7 @@ for _, row in unique_combos.iterrows():
 
         # Questions where this model performs WORST (most positive relative performance)
         print(f"\nTop 10 questions where {model_config} performs WORST relative to others:")
-        print("(Positive values = worse performance, i.e., higher Brier score)")
+        print("(Positive values = worse performance, i.e., higher scaled Brier score)")
         worst_questions = brier_pivot_mean.nlargest(10, "relative_performance")[
             [model_config, "others_avg", "relative_performance"]
         ]
@@ -317,24 +341,37 @@ for idx, (_, row) in enumerate(unique_combos.iterrows()):
     df_filtered = df[mask]
 
     # Calculate average brier scores
-    avg_pre_brier = df_filtered["pre_brier_score"].mean()
-    avg_post_brier = df_filtered["brier_score"].mean()
+    avg_pre_brier = df_filtered["mean_indep_brier_score"].mean()
+    avg_post_brier = df_filtered["consistency_brier_score"].mean()
     avg_diff = avg_post_brier - avg_pre_brier
 
-    # Print the differences
-    print(f"{llm} | {reasoning_effort} | {verbosity}:")
-    print(f"  Avg Pre-Brier:  {avg_pre_brier:.4f}")
-    print(f"  Avg Post-Brier: {avg_post_brier:.4f}")
-    print(f"  Difference:     {avg_diff:.4f} {'(worse)' if avg_diff > 0 else '(better)'}")
-    print()
-
     ax = axes[idx]
-    ax.scatter(df_filtered["pre_brier_score"], df_filtered["brier_score"], alpha=0.3)
+
+    # Add shaded regions to show good/bad quadrants
+    # Green: pre > 0.25 and post < 0.25 (lower right quadrant - good)
+    ax.axhspan(0, 0.25, xmin=0.25, xmax=1, alpha=0.1, color="green", zorder=0)
+    # Red: pre < 0.25 and post > 0.25 (upper left quadrant - bad)
+    ax.axhspan(0.25, 1, xmin=0, xmax=0.25, alpha=0.1, color="red", zorder=0)
+
+    # Add reference lines at 0.25
+    ax.axhline(y=0.25, color="gray", linestyle=":", alpha=0.5, linewidth=1)
+    ax.axvline(x=0.25, color="gray", linestyle=":", alpha=0.5, linewidth=1)
+
+    ax.scatter(
+        df_filtered["mean_indep_brier_score"],
+        df_filtered["consistency_brier_score"],
+        alpha=0.5,
+        zorder=2,
+    )
 
     # Add diagonal line (where pre = post)
-    min_val = min(df_filtered["pre_brier_score"].min(), df_filtered["brier_score"].min())
-    max_val = max(df_filtered["pre_brier_score"].max(), df_filtered["brier_score"].max())
-    ax.plot([min_val, max_val], [min_val, max_val], "r--", alpha=0.5, label="x=y")
+    min_val = min(
+        df_filtered["mean_indep_brier_score"].min(), df_filtered["consistency_brier_score"].min()
+    )
+    max_val = max(
+        df_filtered["mean_indep_brier_score"].max(), df_filtered["consistency_brier_score"].max()
+    )
+    ax.plot([min_val, max_val], [min_val, max_val], "r--", alpha=0.5, label="x=y", zorder=1)
 
     ax.set_xlabel("Pre-Brier Score")
     ax.set_ylabel("Post-Brier Score")
@@ -376,34 +413,26 @@ for idx, (_, row) in enumerate(unique_combos.iterrows()):
     # Row 0 = Post Correct, Row 1 = Post Incorrect
     confusion = np.zeros((2, 2))
     confusion[0, 0] = (
-        (df_filtered["pre_accuracy"] == False) & (df_filtered["accuracy"] == True)
+        (df_filtered["mean_indep_accuracy"] == False)
+        & (df_filtered["consistency_accuracy"] == True)
     ).sum()  # Pre incorrect, Post correct
     confusion[0, 1] = (
-        (df_filtered["pre_accuracy"] == True) & (df_filtered["accuracy"] == True)
+        (df_filtered["mean_indep_accuracy"] == True) & (df_filtered["consistency_accuracy"] == True)
     ).sum()  # Both correct
     confusion[1, 0] = (
-        (df_filtered["pre_accuracy"] == False) & (df_filtered["accuracy"] == False)
+        (df_filtered["mean_indep_accuracy"] == False)
+        & (df_filtered["consistency_accuracy"] == False)
     ).sum()  # Both incorrect
     confusion[1, 1] = (
-        (df_filtered["pre_accuracy"] == True) & (df_filtered["accuracy"] == False)
+        (df_filtered["mean_indep_accuracy"] == True)
+        & (df_filtered["consistency_accuracy"] == False)
     ).sum()  # Pre correct, Post incorrect
 
     # Calculate percentage changes
     total = len(df_filtered)
-    avg_pre_acc = df_filtered["pre_accuracy"].mean()
-    avg_post_acc = df_filtered["accuracy"].mean()
+    avg_pre_acc = df_filtered["mean_indep_accuracy"].mean()
+    avg_post_acc = df_filtered["consistency_accuracy"].mean()
     acc_diff = avg_post_acc - avg_pre_acc
-
-    # Print the accuracy differences
-    print(f"{llm} | {reasoning_effort} | {verbosity}:")
-    print(f"  Avg Pre-Accuracy:  {avg_pre_acc:.4f}")
-    print(f"  Avg Post-Accuracy: {avg_post_acc:.4f}")
-    print(f"  Difference:        {acc_diff:.4f} {'(better)' if acc_diff > 0 else '(worse)'}")
-    print(f"  Stayed correct:    {int(confusion[1,1])} ({confusion[1,1]/total*100:.1f}%)")
-    print(f"  Improved:          {int(confusion[0,1])} ({confusion[0,1]/total*100:.1f}%)")
-    print(f"  Degraded:          {int(confusion[1,0])} ({confusion[1,0]/total*100:.1f}%)")
-    print(f"  Stayed incorrect:  {int(confusion[0,0])} ({confusion[0,0]/total*100:.1f}%)")
-    print()
 
     ax = axes[idx]
 
