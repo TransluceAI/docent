@@ -19,8 +19,17 @@ ecs_cpu = 2048
 ecs_memory = 6144
 ecs_min_size = 1
 ecs_max_size = 10
-ecs_desired_count = 1
-ecs_num_workers = 2
+ecs_default_workers = 2
+ecs_workers_per_queue = {
+  default              = 2
+  telemetry_processing = 2
+  telemetry_ingest     = 2
+}
+worker_queue_target_depths = {
+  default              = 1
+  telemetry_processing = 1
+  telemetry_ingest     = 1
+}
 
 enable_frontend_app_runner = true
 frontend_app_runner_cpu = 1024
