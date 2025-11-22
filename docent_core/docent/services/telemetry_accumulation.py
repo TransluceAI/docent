@@ -115,7 +115,16 @@ class TelemetryAccumulationService:
             user_id=user_id,
         )
         self.session.add(entry)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit ingestion status for telemetry_log_id=%s: %s",
+                telemetry_log_id,
+                exc,
+            )
+            raise
 
     async def get_latest_ingestion_status(
         self, telemetry_log_id: str
@@ -182,7 +191,17 @@ class TelemetryAccumulationService:
             )
             self.session.add(accumulation_entry)
 
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit spans for collection_id=%s agent_run_ids=%s: %s",
+                collection_id,
+                sorted(agent_run_ids),
+                exc,
+            )
+            raise
         logger.info(
             f"Added {len(spans)} spans to accumulation for collection {collection_id}, span_ids={', '.join([span.get('raw_span_id', '') for span in spans])}"
         )
@@ -270,7 +289,18 @@ class TelemetryAccumulationService:
             user_id=user_id,
         )
         self.session.add(accumulation_entry)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit score %s for agent_run_id=%s collection_id=%s: %s",
+                score_name,
+                agent_run_id,
+                collection_id,
+                exc,
+            )
+            raise
 
         logger.info(
             f"Added score {score_name}={score_value} for agent_run_id {agent_run_id} in collection {collection_id}"
@@ -368,7 +398,17 @@ class TelemetryAccumulationService:
             user_id=user_id,
         )
         self.session.add(accumulation_entry)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit agent run metadata for agent_run_id=%s collection_id=%s: %s",
+                agent_run_id,
+                collection_id,
+                exc,
+            )
+            raise
 
         logger.info(
             f"Added agent run metadata for agent_run_id {agent_run_id} in collection {collection_id}"
@@ -478,7 +518,17 @@ class TelemetryAccumulationService:
             user_id=user_id,
         )
         self.session.add(accumulation_entry)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit transcript metadata for transcript_id=%s collection_id=%s: %s",
+                transcript_id,
+                collection_id,
+                exc,
+            )
+            raise
 
         logger.info(
             f"Added transcript metadata for transcript_id {transcript_id} in collection {collection_id}"
@@ -516,7 +566,17 @@ class TelemetryAccumulationService:
             user_id=user_id,
         )
         self.session.add(accumulation_entry)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            logger.error(
+                "Failed to commit transcript group metadata for transcript_group_id=%s collection_id=%s: %s",
+                transcript_group_id,
+                collection_id,
+                exc,
+            )
+            raise
 
         logger.info(
             f"Added transcript group metadata for transcript_group_id {transcript_group_id} in collection {collection_id}"
