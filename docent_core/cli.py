@@ -6,18 +6,26 @@ import typer
 
 from docent._log_util import get_logger
 from docent_core._env_util import ENV
+from docent_core._worker.constants import (
+    KNOWN_WORKER_QUEUES,
+    WORKER_QUEUE_NAME,
+    validate_worker_queue_name,
+)
 
 logger = get_logger(__name__)
 app = typer.Typer(add_completion=False)
 
 
-def _run_worker_process(worker_id: int) -> None:
+def _run_worker_process(worker_id: int, queue_name: str | None = None) -> None:
     """Spawnable worker entrypoint.
 
-    Defined at module top-level so it is picklable under the 'spawn' start method
-    used by macOS. Sets WORKER_ID in the environment and executes the worker loop.
+    Defined at module top-level so it is picklable under the 'spawn' start method used by macOS.
+    Configures process-local environment to keep queue selection isolated per worker.
     """
     os.environ["WORKER_ID"] = str(worker_id)
+    if queue_name:
+        os.environ["DOCENT_WORKER_QUEUE_NAME"] = queue_name
+
     from docent_core._worker import worker as docent_worker
 
     docent_worker.run()
@@ -71,52 +79,74 @@ def server(
 def worker(
     workers: int = typer.Option(1, help="Number of worker processes"),
     queue: str | None = typer.Option(
-        None, help="Worker queue to consume (defaults to DOCENT_WORKER_QUEUE_NAME env var)"
+        None,
+        help=(
+            "Worker queue to consume (defaults to DOCENT_WORKER_QUEUE_NAME env var). "
+            "Use 'all' to start the requested worker count for every known queue."
+        ),
     ),
 ):
     from docent_core._worker import worker as docent_worker
 
-    if queue:
-        os.environ["DOCENT_WORKER_QUEUE_NAME"] = queue
-
-    if workers == 1:
-        docent_worker.run()
+    if queue == "all":
+        queue_names: list[str | None] = [
+            WORKER_QUEUE_NAME,
+            *sorted(q for q in KNOWN_WORKER_QUEUES if q != WORKER_QUEUE_NAME),
+        ]
+    elif queue:
+        queue_names = [validate_worker_queue_name(queue)]
     else:
-        import signal
-        import sys
-        from multiprocessing import Process
+        queue_names = [None]
 
-        processes: list[Process] = []
+    total_workers = workers * len(queue_names)
 
-        def signal_handler(signum: int, frame: object):
-            logger.info("Stopping workers")
-            for p in processes:
-                if p.is_alive():
-                    p.terminate()
-            for p in processes:
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.kill()
-            sys.exit(0)
+    if total_workers <= 1:
+        queue_name = queue_names[0]
+        if queue_name:
+            os.environ["DOCENT_WORKER_QUEUE_NAME"] = queue_name
+        docent_worker.run()
+        return
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+    import signal
+    import sys
+    from multiprocessing import Process
 
-        logger.info(f"Starting {workers} worker processes")
+    processes: list[Process] = []
 
-        for i in range(workers):
-            worker_id = i + 1
+    def signal_handler(signum: int, frame: object | None):
+        logger.info("Stopping workers")
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+        for p in processes:
+            p.join(timeout=5)
+            if p.is_alive():
+                p.kill()
+        sys.exit(0)
 
-            p = Process(target=_run_worker_process, args=(worker_id,))
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    logger.info(
+        "Starting %s worker processes across %s queue(s)",
+        total_workers,
+        len(queue_names),
+    )
+
+    for queue_name in queue_names:
+        for _ in range(workers):
+            worker_id = len(processes) + 1
+            p = Process(target=_run_worker_process, args=(worker_id, queue_name))
             p.start()
             processes.append(p)
-            logger.info(f"Started worker {worker_id} (PID: {p.pid})")
+            queue_label = queue_name or ENV.get("DOCENT_WORKER_QUEUE_NAME", WORKER_QUEUE_NAME)
+            logger.info("Started worker %s for queue %s (PID: %s)", worker_id, queue_label, p.pid)
 
-        try:
-            for p in processes:
-                p.join()
-        except KeyboardInterrupt:
-            signal_handler(signal.SIGINT, None)
+    try:
+        for p in processes:
+            p.join()
+    except KeyboardInterrupt:
+        signal_handler(signal.SIGINT, None)
 
 
 @app.command(help="Run the website")
