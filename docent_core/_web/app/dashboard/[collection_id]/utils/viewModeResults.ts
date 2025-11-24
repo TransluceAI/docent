@@ -8,8 +8,8 @@ import {
 import { Label } from '@/app/api/labelApi';
 
 function compareValues(
-  itemValue: string | number,
-  filterValue: string | number,
+  itemValue: string | number | boolean,
+  filterValue: string | number | boolean,
   op: Operator
 ): boolean {
   const itemType = typeof itemValue;
@@ -32,6 +32,10 @@ function compareValues(
         return (itemValue as string)
           .toLowerCase()
           .includes((filterValue as string).toLowerCase());
+      break;
+    case 'boolean-boolean':
+      if (op === '==') return itemValue === filterValue;
+      if (op === '!=') return itemValue !== filterValue;
       break;
     default:
       return false;

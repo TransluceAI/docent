@@ -93,6 +93,8 @@ export function ResultFilterControls({
     let filterValue: any = value;
     if (property?.type === 'number' || property?.type === 'integer') {
       filterValue = Number(value);
+    } else if (property?.type === 'boolean') {
+      filterValue = value === 'true';
     }
 
     const existingFilter = filters.find(
