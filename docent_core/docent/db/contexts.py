@@ -24,9 +24,6 @@ class ViewContext(BaseModel):
 
         This replaces the old pattern of the caller manually managing this flow.
         """
-        if self.base_filter is None:
-            return query
-
         # Process the base filter to get the WHERE clause _and_ necessary JOINs
         # Note: `to_sqla_where_clause` mutates the filter context to track this information.
         filter_ctx = FilterSQLContext(SQLAAgentRun)
