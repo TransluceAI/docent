@@ -1,14 +1,17 @@
 'use client';
 
 import React, { Suspense, useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import SingleRubricArea from '../../components/SingleRubricArea';
 import { ResultFilterControlsProvider } from '@/providers/use-result-filters';
 import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RefinementChat from './components/RefinementChat';
 import TranscriptChat from '@/components/TranscriptChat';
-import { CitationNavigationProvider } from '@/providers/CitationNavigationProvider';
+import {
+  CitationNavigationProvider,
+  useCitationNavigation,
+} from '@/providers/CitationNavigationProvider';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';
@@ -43,6 +46,8 @@ function RubricLayoutBody({
     result_id?: string;
   }>();
   const isOnResultRoute = !!resultId || !!agentRunId;
+  const router = useRouter();
+  const citationNav = useCitationNavigation();
 
   const { version } = useRubricVersion();
   const { activeLabelSet } = useLabelSets(rubricId);
@@ -148,6 +153,22 @@ function RubricLayoutBody({
     rightSizePanelRef.current?.resize(rightPanelSize);
     middlePanelRef.current?.resize(middlePanelSize);
   }, [isOnResultRoute]);
+
+  // Register a citation navigation handler when NOT on an agent run page.
+  // When on an agent run page, that page registers its own handler.
+  useEffect(() => {
+    if (!citationNav || agentRunId) return;
+
+    const handler = ({ target }: { target: any; source?: string }) => {
+      citationNav.setPendingCitation(target);
+      router.push(
+        `/dashboard/${collectionId}/rubric/${rubricId}/agent_run/${target.item.agent_run_id}`
+      );
+    };
+    citationNav.registerHandler(handler);
+
+    return () => citationNav.registerHandler(null);
+  }, [citationNav, agentRunId, collectionId, rubricId, router]);
 
   return (
     <ResizablePanelGroup
