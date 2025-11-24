@@ -58,3 +58,33 @@ def test_primitive_filter_generates_rubric_clause() -> None:
     assert "label" in sql
     assert "match" in sql
     assert len(context.required_joins()) == 1
+
+
+def test_filter_sql_context_creates_join_for_tag() -> None:
+    context = FilterSQLContext(SQLAAgentRun)
+
+    join_spec = context.get_tag_alias()
+
+    assert join_spec.alias is not None
+    compiled = join_spec.onclause.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    )
+    sql = str(compiled)
+    assert "tag_filter" in sql
+
+
+def test_primitive_filter_generates_tag_clause() -> None:
+    context = FilterSQLContext(SQLAAgentRun)
+    filter_obj = PrimitiveFilter(
+        key_path=["tag"],
+        value="priority",
+        op="==",
+    )
+
+    clause = filter_obj.to_sqla_where_clause(SQLAAgentRun, context=context)
+    assert clause is not None
+    compiled = clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    sql = str(compiled)
+    assert "tag_filter" in sql
+    assert "priority" in sql
+    assert len(context.required_joins()) == 1

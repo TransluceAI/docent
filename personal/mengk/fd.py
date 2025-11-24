@@ -53,7 +53,46 @@ cfg = Rubric(
 
 j = MajorityVotingJudge(cfg=cfg, llm_svc=BaseLLMService())
 prompt = [SystemMessage(content=cfg.materialize_system_prompt(agent_runs[0]))]
-await j.agent_one_turn(prompt, max_steps_per_turn=10)
+# await j.agent_one_turn(prompt, max_steps_per_turn=10)
+
+# %%
+
+cfg.materialize_system_prompt(agent_runs[0])
+
+# %%
+
+result = await j(agent_runs[0])
+
+# %%
+
+# Dummy training loop
+inputs = []
+judge = build_judge(cfg, BaseLLMService())
+for batch in batched(inputs):
+    rollouts = model(batch)
+
+    # Convert to agent runs and judge with Docent
+    agent_runs = [convert_to_agent_run(rollout) for rollout in rollouts]
+    judge_outputs = judge(agent_runs)
+
+    # Compute rewards and update the model
+    rewards = f(judge_outputs, rollouts)
+    model.update(rewards, rollouts)
+
+"""
+Constraints:
+* Minimize overhead to core codepath
+* Agent runs and associated judge outputs end up tracked in Docent properly, where we can
+    review, label, optimize against them
+* The data model that is tracked is roughly: judge results point to agent runs, which cite transcripts properly
+"""
+
+
+# %%
+
+print(result.model_dump_json(indent=1))
+
+# %%
 
 # %%
 

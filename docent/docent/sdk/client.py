@@ -546,6 +546,43 @@ class Docent:
         self._handle_response_errors(response)
         return response.json()
 
+    def tag_transcript(self, collection_id: str, agent_run_id: str, value: str) -> None:
+        """Add a tag to an agent run transcript.
+
+        Args:
+            collection_id: ID of the Collection.
+            agent_run_id: The agent run to tag.
+            value: The tag value (max length enforced by the server).
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/label/{collection_id}/tag"
+        payload = {"agent_run_id": agent_run_id, "value": value}
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+
+    def get_tags(self, collection_id: str, value: str | None = None) -> list[dict[str, Any]]:
+        """Get all tags in a collection, optionally filtered by value."""
+        url = f"{self._server_url}/label/{collection_id}/tags"
+        params = {"value": value} if value is not None else None
+        response = self._session.get(url, params=params)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def get_tags_for_agent_run(self, collection_id: str, agent_run_id: str) -> list[dict[str, Any]]:
+        """Get all tags attached to a specific agent run."""
+        url = f"{self._server_url}/label/{collection_id}/agent_run/{agent_run_id}/tags"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def delete_tag(self, collection_id: str, tag_id: str) -> None:
+        """Delete a tag by ID."""
+        url = f"{self._server_url}/label/{collection_id}/tag/{tag_id}"
+        response = self._session.delete(url)
+        self._handle_response_errors(response)
+
     def get_agent_run(self, collection_id: str, agent_run_id: str) -> AgentRun | None:
         """Get a specific agent run by its ID.
 

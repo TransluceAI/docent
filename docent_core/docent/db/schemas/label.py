@@ -2,23 +2,18 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import (
-    DateTime,
-    ForeignKey,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from docent.data_models.judge import Label
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
+from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION, TABLE_USER
 
 TABLE_LABEL = "labels"
 TABLE_LABEL_SET = "label_sets"
 TABLE_LABEL_SET_RUBRIC = "label_set_rubrics"
+TABLE_TAG = "tags"
 
 
 class SQLALabel(SQLABase):
@@ -111,3 +106,42 @@ class SQLALabelSet(SQLABase):
             description=self.description,
             label_schema=self.label_schema,
         )
+
+
+class SQLATag(SQLABase):
+    """Tags table - stores quick tags on agent runs."""
+
+    __tablename__ = TABLE_TAG
+    __table_args__ = (
+        Index("ix_tags_collection_value", "collection_id", "value"),
+        Index("ix_tags_collection_agent_run", "collection_id", "agent_run_id"),
+        UniqueConstraint(
+            "agent_run_id",
+            "value",
+            name="uq_tags_agent_run_value",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_COLLECTION}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    agent_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_USER}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )

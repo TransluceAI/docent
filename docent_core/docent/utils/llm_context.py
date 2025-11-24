@@ -118,7 +118,7 @@ async def deserialize_llm_context(data: dict[str, Any], mono_svc: MonoService) -
     # Step 3: Fetch missing objects from database
     if agent_run_ids_to_fetch:
         agent_runs = await mono_svc.get_agent_runs(
-            ctx=None, agent_run_ids=agent_run_ids_to_fetch, apply_base_where_clause=False
+            ctx=None, agent_run_ids=agent_run_ids_to_fetch, apply_base_filter=False
         )
         for agent_run in agent_runs:
             object_cache[agent_run.id] = agent_run

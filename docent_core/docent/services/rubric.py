@@ -5,7 +5,7 @@ from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -305,20 +305,22 @@ class RubricService:
             .subquery()
         )
 
-        filter_clause = SQLAAgentRun.collection_id == ctx.collection_id
+        # NOTE(mengk): we are intentionally excluding the ctx.base_filter here,
+        #   as we are currently transitioning off of using the base ViewContext.
+        job_ctx: ViewContext | None = None
         if filter_dict:
-            job_filter_clause = parse_filter_dict(filter_dict).to_sqla_where_clause(SQLAAgentRun)
-            if job_filter_clause is not None:
-                filter_clause = and_(filter_clause, job_filter_clause)
+            job_filter = parse_filter_dict(filter_dict)
+            job_ctx = ViewContext(
+                collection_id=ctx.collection_id,
+                view_id="doesn't matter",
+                user=ctx.user,
+                base_filter=job_filter,
+            )
 
         # Select agent runs with their result counts, ordered by: labeled first, then UUID
-        query = (
-            select(SQLAAgentRun.id, result_counts_subquery.c.result_count)
-            .where(filter_clause)
-            .outerjoin(
-                result_counts_subquery,
-                SQLAAgentRun.id == result_counts_subquery.c.agent_run_id,
-            )
+        query = select(SQLAAgentRun.id, result_counts_subquery.c.result_count).outerjoin(
+            result_counts_subquery,
+            SQLAAgentRun.id == result_counts_subquery.c.agent_run_id,
         )
 
         # Join to labels to prioritize labeled runs
@@ -338,6 +340,13 @@ class RubricService:
             SQLALabel.id.is_(None).asc(),  # Labeled runs first
             SQLAAgentRun.id.asc(),  # Deterministic ordering
         )
+
+        if job_ctx:
+            # If exists, apply the filter dict that came in through the job
+            query = job_ctx.apply_base_filter(query)
+        else:
+            # Otherwise, make sure to apply the collection ID filter!
+            query = query.where(SQLAAgentRun.collection_id == ctx.collection_id)
 
         # Apply limit if max_agent_runs specified
         if max_agent_runs is not None:
@@ -1434,7 +1443,7 @@ class RubricService:
 
         # Get sample agent runs using the service (which properly loads transcripts)
         sample_agent_runs = await self.service.get_agent_runs(
-            ctx, agent_run_ids=sample_ids, apply_base_where_clause=False
+            ctx, agent_run_ids=sample_ids, apply_base_filter=False
         )
 
         if not sample_agent_runs:

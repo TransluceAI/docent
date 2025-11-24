@@ -18,9 +18,8 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class FilterJoinSpec:
-    """Describes a join that must be applied for rubric-backed filters."""
+    """Describes a join that must be applied for filters that reference related tables."""
 
-    rubric_id: str
     alias: Any
     onclause: ColumnElement[bool]
 
@@ -34,6 +33,7 @@ class FilterSQLContext:
     ) -> None:
         self._base_table = base_table
         self._rubric_aliases: dict[str, FilterJoinSpec] = {}
+        self._tag_alias: FilterJoinSpec | None = None
 
     def ensure_rubric_join(self, rubric_id: str) -> FilterJoinSpec:
         spec = self._rubric_aliases.get(rubric_id)
@@ -47,15 +47,35 @@ class FilterSQLContext:
             getattr(alias, "agent_run_id") == getattr(self._base_table, "id"),
             getattr(alias, "rubric_id") == rubric_id,
         )
-        spec = FilterJoinSpec(rubric_id=rubric_id, alias=alias, onclause=onclause)
+        spec = FilterJoinSpec(alias=alias, onclause=onclause)
         self._rubric_aliases[rubric_id] = spec
         return spec
 
     def get_rubric_alias(self, rubric_id: str) -> FilterJoinSpec:
         return self.ensure_rubric_join(rubric_id)
 
+    def ensure_tag_join(self) -> FilterJoinSpec:
+        if self._tag_alias is not None:
+            return self._tag_alias
+
+        from docent_core.docent.db.schemas.label import SQLATag
+
+        alias = aliased(SQLATag, name="tag_filter")
+        onclause = and_(
+            getattr(alias, "agent_run_id") == getattr(self._base_table, "id"),
+            getattr(alias, "collection_id") == getattr(self._base_table, "collection_id"),
+        )
+        self._tag_alias = FilterJoinSpec(alias=alias, onclause=onclause)
+        return self._tag_alias
+
+    def get_tag_alias(self) -> FilterJoinSpec:
+        return self.ensure_tag_join()
+
     def required_joins(self) -> tuple[FilterJoinSpec, ...]:
-        return tuple(self._rubric_aliases.values())
+        joins: list[FilterJoinSpec] = list(self._rubric_aliases.values())
+        if self._tag_alias is not None:
+            joins.append(self._tag_alias)
+        return tuple(joins)
 
 
 def safe_bool(col: Any) -> Any:
@@ -119,8 +139,6 @@ class PrimitiveFilter(BaseCollectionFilter):
         json_keys: list[str] | None = None
 
         # Extract value from appropriate source
-        # if mode == "text":
-        #     sqla_value = table.text_for_search  # type: ignore
         if mode == "created_at":
             sqla_value = cast(table.created_at, String)  # type: ignore
         elif mode == "agent_run_id":
@@ -136,6 +154,13 @@ class PrimitiveFilter(BaseCollectionFilter):
             join_spec = context.get_rubric_alias(self.key_path[1])
             sqla_value = join_spec.alias.output  # type: ignore[attr-defined]
             json_keys = self.key_path[2:]
+        elif mode == "tag":
+            if context is None:
+                raise ValueError("Tag filters require a SQL compilation context.")
+            if len(self.key_path) != 1:
+                raise ValueError("Tag filters do not support nested paths.")
+            join_spec = context.get_tag_alias()
+            sqla_value = join_spec.alias.value  # type: ignore[attr-defined]
         else:
             raise ValueError(f"Unsupported mode: {mode}")
 

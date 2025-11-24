@@ -10,9 +10,7 @@ class Label(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
 
     label_set_id: str
-
     label_value: dict[str, Any]
-
     agent_run_id: str
 
 

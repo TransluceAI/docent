@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util.logger import get_logger
 from docent.data_models.judge import Label
+from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.label import LabelSet
 from docent_core.docent.server.dependencies.database import get_session
 from docent_core.docent.server.dependencies.permissions import (
@@ -50,6 +51,11 @@ class UpdateLabelSetRequest(BaseModel):
     name: str
     description: str | None = None
     label_schema: dict[str, Any]
+
+
+class CreateTagRequest(BaseModel):
+    agent_run_id: str
+    value: str
 
 
 ################
@@ -177,9 +183,77 @@ async def delete_labels_by_label_set(
     return {"message": "Labels deleted successfully"}
 
 
-####################
-# Label Set CRUD
-####################
+############
+# Tag CRUD #
+############
+
+
+@label_router.post("/{collection_id}/tag")
+async def create_tag(
+    collection_id: str,
+    request: CreateTagRequest,
+    label_svc: LabelService = Depends(get_label_service),
+    user: User = Depends(get_user_anonymous_ok),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Create a tag for an agent run."""
+    try:
+        await label_svc.create_tag(
+            collection_id=collection_id,
+            agent_run_id=request.agent_run_id,
+            value=request.value,
+            created_by=user.id,
+        )
+    except LabelService.AgentRunCollectionMismatchError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IntegrityError as e:
+        if getattr(e.orig, "pgcode", None) == "23505":  # Unique constraint violation
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tag values must be unique per agent run; value {request.value} already exists for agent run {request.agent_run_id}",
+            )
+        raise
+
+
+@label_router.delete("/{collection_id}/tag/{tag_id}")
+async def delete_tag(
+    tag_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Delete a tag by ID."""
+    if not await label_svc.delete_tag(tag_id):
+        raise HTTPException(status_code=404, detail=f"Tag {tag_id} not found")
+
+
+@label_router.get("/{collection_id}/tags")
+async def get_tags_by_value(
+    collection_id: str,
+    value: str | None = Query(default=None, max_length=255),
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """Get all tags in a collection, optionally filtered by value."""
+    return [sqla_tag.dict() for sqla_tag in await label_svc.get_tags_by_value(collection_id, value)]
+
+
+@label_router.get("/{collection_id}/agent_run/{agent_run_id}/tags")
+async def get_tags_for_agent_run(
+    collection_id: str,
+    agent_run_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """Get all tags for a specific agent run in a collection."""
+    return [
+        sqla_tag.dict()
+        for sqla_tag in await label_svc.get_tags_for_agent_run(collection_id, agent_run_id)
+    ]
+
+
+##################
+# Label Set CRUD #
+##################
 
 
 @label_router.post("/{collection_id}/label_set")
@@ -198,7 +272,6 @@ async def create_label_set(
 
 @label_router.get("/{collection_id}/label_set/{label_set_id}")
 async def get_label_set(
-    collection_id: str,
     label_set_id: str,
     label_svc: LabelService = Depends(get_label_service),
     _: None = Depends(require_collection_permission(Permission.READ)),

@@ -94,9 +94,11 @@ export const SmartValueInput = React.forwardRef<
     // Debounce search to avoid too many API calls
     const debouncedSearch = useDebounce(inputValue, 300);
 
-    // Only enable dropdown/search for metadata fields
-    const isMetadataField =
-      fieldName.startsWith('metadata.') || fieldName.startsWith('rubric.');
+    // Only enable dropdown/search for certain field types
+    const isDropdownField =
+      fieldName.startsWith('metadata.') ||
+      // fieldName.startsWith('rubric.') || // NOTE(mengk): I think these aren't supported yet?
+      fieldName === 'tag';
 
     const { data: fieldValuesData, isFetching } = useGetFieldValuesQuery(
       {
@@ -105,7 +107,7 @@ export const SmartValueInput = React.forwardRef<
         search: debouncedSearch || undefined,
       },
       {
-        skip: !collectionId || !fieldName || !isMetadataField,
+        skip: !collectionId || !fieldName || !isDropdownField,
       }
     );
 
@@ -126,10 +128,10 @@ export const SmartValueInput = React.forwardRef<
 
     // Close dropdown immediately if field is not a metadata field
     useEffect(() => {
-      if (!isMetadataField) {
+      if (!isDropdownField) {
         setOpen(false);
       }
-    }, [isMetadataField]);
+    }, [isDropdownField]);
 
     // Reset field changing state when new data loads
     useEffect(() => {
@@ -237,7 +239,7 @@ export const SmartValueInput = React.forwardRef<
     // Open dropdown when data finishes loading and input is focused, or show loading state
     useEffect(() => {
       // Don't open dropdown for non-metadata fields
-      if (!isMetadataField) {
+      if (!isDropdownField) {
         return;
       }
 
@@ -263,7 +265,7 @@ export const SmartValueInput = React.forwardRef<
       fieldName,
       inputValue,
       debouncedSearch,
-      isMetadataField,
+      isDropdownField,
     ]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,7 +279,7 @@ export const SmartValueInput = React.forwardRef<
       }
 
       // Don't open dropdown for non-metadata fields
-      if (!isMetadataField) {
+      if (!isDropdownField) {
         setOpen(false);
         return;
       }
@@ -315,7 +317,7 @@ export const SmartValueInput = React.forwardRef<
 
     const handleInputFocus = () => {
       // Don't open dropdown for non-metadata fields
-      if (!isMetadataField) {
+      if (!isDropdownField) {
         return;
       }
 

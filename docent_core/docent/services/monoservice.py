@@ -70,6 +70,7 @@ from docent_core.docent.db.schemas.auth_models import (
 )
 from docent_core.docent.db.schemas.chart import SQLAChart
 from docent_core.docent.db.schemas.chat import SQLAChatSession
+from docent_core.docent.db.schemas.label import SQLATag
 from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 from docent_core.docent.db.schemas.rubric import SQLAJudgeResult, SQLARubric
 from docent_core.docent.db.schemas.tables import (
@@ -778,7 +779,8 @@ class MonoService:
             sort_direction: Sort direction ("asc" or "desc")
         """
         async with self.db.session() as session:
-            query = select(SQLAAgentRun.id).where(ctx.get_base_where_clause(SQLAAgentRun))
+            query = select(SQLAAgentRun.id)
+            query = ctx.apply_base_filter(query)
 
             # Add sorting if specified
             if sort_field:
@@ -916,7 +918,7 @@ class MonoService:
         ctx: ViewContext | None = None,
         agent_run_ids: list[str] | None = None,
         limit: int | None = None,
-        apply_base_where_clause: bool = True,
+        apply_base_filter: bool = True,
         batch_size: int = 10_000,
     ) -> list[AgentRun]:
         """
@@ -925,8 +927,6 @@ class MonoService:
         # If we don't have agent_run_ids or need to apply base where clause, ctx is required
         if agent_run_ids is None and ctx is None:
             raise ValueError("ctx is required when agent_run_ids is not provided")
-        if apply_base_where_clause and ctx is None:
-            raise ValueError("ctx is required when apply_base_where_clause is True")
 
         async with self.db.session() as session:
             # If we don't have the agent run ids, get them first
@@ -946,10 +946,13 @@ class MonoService:
             for i in range(0, len(agent_run_ids), batch_size):
                 batch_ids = agent_run_ids[i : i + batch_size]
 
-                query = select(SQLAAgentRun).where(SQLAAgentRun.id.in_(batch_ids))
-                if apply_base_where_clause:
-                    assert ctx is not None  # Already checked above
-                    query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
+                query = select(SQLAAgentRun)
+                if apply_base_filter:
+                    if ctx is None:
+                        raise ValueError("ctx is required when apply_base_where_clause is True")
+                    query = ctx.apply_base_filter(query)
+                # TODO(mengk): use LIMIT and OFFSET instead of the IDs
+                query = query.where(SQLAAgentRun.id.in_(batch_ids))
 
                 result = await session.execute(query)
                 agent_runs_raw.extend(result.scalars().all())
@@ -1021,7 +1024,7 @@ class MonoService:
         self,
         ctx: ViewContext,
         agent_run_ids: list[str],
-        apply_base_where_clause: bool = True,
+        apply_base_filter: bool = True,
     ) -> dict[str, dict[str, Any]]:
         """
         Efficiently fetch only metadata for the specified agent run IDs.
@@ -1050,11 +1053,11 @@ class MonoService:
             for i in range(0, len(agent_run_ids), batch_size):
                 batch_ids = agent_run_ids[i : i + batch_size]
 
-                query = select(
-                    SQLAAgentRun.id, SQLAAgentRun.metadata_json, SQLAAgentRun.created_at
-                ).where(SQLAAgentRun.id.in_(batch_ids))
-                if apply_base_where_clause:
-                    query = query.where(ctx.get_base_where_clause(SQLAAgentRun))
+                query = select(SQLAAgentRun.id, SQLAAgentRun.metadata_json, SQLAAgentRun.created_at)
+                if apply_base_filter:
+                    query = ctx.apply_base_filter(query)
+                # TODO(mengk): use LIMIT and OFFSET instead of the IDs
+                query = query.where(SQLAAgentRun.id.in_(batch_ids))
 
                 result = await session.execute(query)
                 for run_id, metadata, created_at in result.all():
@@ -1140,7 +1143,7 @@ class MonoService:
             The agent run.
         """
         agent_runs = await self.get_agent_runs(
-            ctx, agent_run_ids=[agent_run_id], apply_base_where_clause=apply_base_where_clause
+            ctx, agent_run_ids=[agent_run_id], apply_base_filter=apply_base_where_clause
         )
         assert len(agent_runs) <= 1, f"Found {len(agent_runs)} AgentRuns with ID {agent_run_id}"
         return agent_runs[0] if agent_runs else None
@@ -1150,6 +1153,8 @@ class MonoService:
     ) -> list[str]:
         """
         Get unique values for a specific metadata field from agent runs in the collection.
+
+        TODO(mengk, gregor): support rubrics here
 
         Args:
             ctx: The ViewContext to use for the query.
@@ -1163,6 +1168,7 @@ class MonoService:
         async with self.db.session() as session:
             field_parts = field_name.split(".")
 
+            # Metadata
             if field_parts[0] == "metadata" and len(field_parts) > 1:
                 json_path_parts = field_parts[1:]
                 for part in json_path_parts:
@@ -1174,31 +1180,50 @@ class MonoService:
                     field_expr = field_expr.op("->")(part)
                 field_expr = field_expr.op("->>")(json_path_parts[-1])
 
-                where_conditions = [
-                    ctx.get_base_where_clause(SQLAAgentRun),
-                    field_expr.isnot(None),
-                ]
+                query = select(func.distinct(field_expr)).where(field_expr.isnot(None))
+                query = ctx.apply_base_filter(query)
 
-                # Add search filter if provided
                 if search:
-                    where_conditions.append(field_expr.ilike(func.concat("%", search, "%")))
+                    query = query.where(field_expr.ilike(func.concat("%", search, "%")))
 
-                query = select(func.distinct(field_expr)).where(*where_conditions).limit(limit)
+                # Limit number of results to prevent excessive output
+                query = query.limit(limit)
 
                 result = await session.execute(query)
                 values = [row[0] for row in result.fetchall() if row[0] is not None]
                 return sorted(values)
+
+            # Tags
+            elif field_parts[0] == "tag" and len(field_parts) == 1:
+                tag_value_expr = SQLATag.value
+                query = (
+                    select(func.distinct(tag_value_expr))
+                    .select_from(SQLATag)
+                    .join(SQLAAgentRun, SQLAAgentRun.id == SQLATag.agent_run_id)
+                    .where(
+                        SQLATag.collection_id == ctx.collection_id,
+                        tag_value_expr.isnot(None),
+                    )
+                )
+                query = ctx.apply_base_filter(query)
+
+                if search:
+                    query = query.where(tag_value_expr.ilike(func.concat("%", search, "%")))
+
+                query = query.limit(limit)
+
+                result = await session.execute(query)
+                values = [row[0] for row in result.fetchall() if row[0] is not None]
+                return sorted(values)
+
+            # Rubrics (+others) are not supported yet
             else:
                 return []
 
     async def count_base_agent_runs(self, ctx: ViewContext) -> int:
-
         async with self.db.session() as session:
-            query = (
-                select(func.count())
-                .select_from(SQLAAgentRun)
-                .where(ctx.get_base_where_clause(SQLAAgentRun))
-            )
+            query = select(func.count()).select_from(SQLAAgentRun)
+            query = ctx.apply_base_filter(query)
 
             result = await session.execute(query)
             count = result.scalar_one()
@@ -2469,6 +2494,7 @@ class MonoService:
             all_fields[field_name] = {"name": field_name, "type": info.value_type}
 
         all_fields["agent_run_id"] = {"name": "agent_run_id", "type": "str"}
+        all_fields["tag"] = {"name": "tag", "type": "str"}
         # all_fields["text"] = {"name": "text", "type": "str"}
 
         return sorted(all_fields.values(), key=lambda f: f["name"])

@@ -9,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
 from docent.data_models.judge import Label
-from docent_core.docent.db.schemas.label import (
-    SQLALabel,
-    SQLALabelSet,
-)
+from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet, SQLATag
+from docent_core.docent.db.schemas.tables import SQLAAgentRun
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
@@ -51,6 +49,11 @@ class LabelService:
         self.session = session
         self.session_cm_factory = session_cm_factory
         self.service = service
+
+    @staticmethod
+    def _validate_tag_value(value: str) -> None:
+        if len(value) > 255:
+            raise ValueError("Tag value must be at most 255 characters long")
 
     ################
     # Label CRUD #
@@ -371,3 +374,72 @@ class LabelService:
         )
         sqla_labels = result.scalars().all()
         return [sqla_label.to_pydantic() for sqla_label in sqla_labels]
+
+    #############
+    # Tag CRUD  #
+    #############
+
+    class AgentRunCollectionMismatchError(ValueError):
+        """Raised when an agent run is missing or belongs to another collection."""
+
+    async def create_tag(self, collection_id: str, agent_run_id: str, value: str, created_by: str):
+        """Create a tag for an agent run."""
+        self._validate_tag_value(value)
+
+        # Ensure the agent run belongs to the collection before tagging
+        result = await self.session.execute(
+            select(SQLAAgentRun.collection_id).where(SQLAAgentRun.id == agent_run_id)
+        )
+        agent_run_collection_id = result.scalar_one_or_none()
+        if agent_run_collection_id is None or agent_run_collection_id != collection_id:
+            raise self.AgentRunCollectionMismatchError(
+                f"Agent run {agent_run_id} not found in collection {collection_id}"
+            )
+
+        sqla_tag = SQLATag(
+            id=str(uuid4()),
+            collection_id=collection_id,
+            agent_run_id=agent_run_id,
+            value=value,
+            created_by=created_by,
+        )
+        self.session.add(sqla_tag)
+
+        # Flush to surface FK violations and populate defaults like created_at
+        await self.session.flush()
+        await self.session.refresh(sqla_tag)
+
+    async def delete_tag(self, tag_id: str) -> bool:
+        """Delete a tag by ID."""
+        result = await self.session.execute(select(SQLATag).where(SQLATag.id == tag_id))
+        tag_to_delete = result.scalar_one_or_none()
+        if tag_to_delete is None:
+            return False
+
+        await self.session.delete(tag_to_delete)
+        return True
+
+    async def get_tags_by_value(self, collection_id: str, value: str | None) -> list[SQLATag]:
+        """Get tags in a collection, optionally filtered by value."""
+        if value is not None:
+            self._validate_tag_value(value)
+
+        query = select(SQLATag).where(SQLATag.collection_id == collection_id)
+        if value is not None:
+            query = query.where(SQLATag.value == value)
+
+        result = await self.session.execute(query.order_by(SQLATag.created_at.desc()))
+        return list(result.scalars().all())
+
+    async def get_tags_for_agent_run(self, collection_id: str, agent_run_id: str) -> list[SQLATag]:
+        """Get all tags for a specific agent run in a collection."""
+
+        result = await self.session.execute(
+            select(SQLATag)
+            .where(
+                SQLATag.collection_id == collection_id,
+                SQLATag.agent_run_id == agent_run_id,
+            )
+            .order_by(SQLATag.created_at.desc())
+        )
+        return list(result.scalars().all())
