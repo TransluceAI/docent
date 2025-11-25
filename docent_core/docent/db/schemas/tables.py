@@ -62,6 +62,7 @@ TABLE_MODEL_API_KEYS = "model_api_keys"
 TABLE_TELEMETRY_ACCUMULATION = "telemetry_accumulation"
 TABLE_TELEMETRY_AGENT_RUN_STATUS = "telemetry_agent_run_status"
 TABLE_MODEL_USAGE = "model_usage"
+TABLE_INGESTION_PAYLOAD = "ingestion_payloads"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -580,6 +581,30 @@ class SQLAJob(SQLABase):
             postgresql_using="gin",
             postgresql_ops={"job_json": "jsonb_path_ops"},
         ),
+    )
+
+
+class SQLAIngestionPayload(SQLABase):
+    """
+    Stores compressed payloads for background ingestion processing.
+    Separates large payloads from job metadata to avoid bloating the jobs table.
+    """
+
+    __tablename__ = TABLE_INGESTION_PAYLOAD
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_JOB}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Store raw bytes (possibly compressed) to avoid encoding issues
+    payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # Content encoding (e.g., "gzip", "identity", "") to tell the worker how to decompress
+    content_encoding: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
 
 

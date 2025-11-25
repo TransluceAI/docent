@@ -36,6 +36,19 @@ interface AgentRunMetadataRequest {
   agent_run_ids: string[];
 }
 
+export interface AgentRunIngestJob {
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'canceled';
+  type: string;
+  created_at: string;
+  collection_id: string;
+}
+
+interface AgentRunIngestJobsResponse {
+  jobs: AgentRunIngestJob[];
+  count: number;
+}
+
 interface AgentRunMetadataFieldsResponse {
   fields: TranscriptMetadataField[];
 }
@@ -63,6 +76,7 @@ export const collectionApi = createApi({
     'BaseFilter',
     'AgentRunIds',
     'DqlSchema',
+    'Jobs',
   ],
   endpoints: (build) => ({
     getCollectionName: build.query<{ name: string | null }, string>({
@@ -199,6 +213,20 @@ export const collectionApi = createApi({
         method: 'GET',
       }),
     }),
+    getAgentRunIngestJobs: build.query<AgentRunIngestJob[], string>({
+      query: (collectionId) => `/${collectionId}/agent_run_ingest_jobs`,
+      providesTags: ['Jobs'],
+      transformResponse: (response: AgentRunIngestJobsResponse) =>
+        response.jobs,
+    }),
+    getAgentRunIngestJob: build.query<
+      AgentRunIngestJob,
+      { collectionId: string; jobId: string }
+    >({
+      query: ({ collectionId, jobId }) =>
+        `/${collectionId}/agent_runs/jobs/${jobId}`,
+      providesTags: ['Jobs'],
+    }),
     getDqlSchema: build.query<DqlSchemaResponse, string>({
       query: (collectionId) => `/dql/${collectionId}/schema`,
       providesTags: ['DqlSchema'],
@@ -311,6 +339,8 @@ export const {
   useGetFieldValuesQuery,
   useGetAgentRunMetadataQuery,
   useGetAgentRunIdsQuery,
+  useGetAgentRunIngestJobsQuery,
+  useGetAgentRunIngestJobQuery,
   useGetDqlSchemaQuery,
   useExecuteDqlQueryMutation,
   usePreviewImportRunsFromFileMutation,

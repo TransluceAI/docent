@@ -7,6 +7,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   Scale,
+  ListChecks,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -62,6 +63,11 @@ export function CollectionSidebar() {
       title: 'Label Sets',
       url: `/dashboard/${collectionId}/labels`,
       icon: Tags,
+    },
+    {
+      title: 'Jobs',
+      url: `/dashboard/${collectionId}/jobs`,
+      icon: ListChecks,
     },
   ];
 

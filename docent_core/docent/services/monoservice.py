@@ -81,6 +81,7 @@ from docent_core.docent.db.schemas.tables import (
     SQLAApiKey,
     SQLACollection,
     SQLAFilter,
+    SQLAIngestionPayload,
     SQLAJob,
     SQLAModelApiKey,
     SQLASearchCluster,
@@ -1739,6 +1740,47 @@ class MonoService:
             result = await session.execute(select(SQLAJob).where(SQLAJob.id == job_id))
             return result.scalar_one_or_none()
 
+    async def get_jobs(self, job_ids: list[str]) -> list[SQLAJob]:
+        """
+        Retrieve multiple jobs by their IDs.
+
+        Args:
+            job_ids: List of job IDs to retrieve.
+
+        Returns:
+            List of jobs found (may be fewer than requested if some don't exist).
+        """
+        if not job_ids:
+            return []
+        async with self.db.session() as session:
+            result = await session.execute(select(SQLAJob).where(SQLAJob.id.in_(job_ids)))
+            return list(result.scalars().all())
+
+    async def get_agent_run_ingest_jobs(
+        self, collection_id: str, limit: int = 100
+    ) -> list[SQLAJob]:
+        """
+        Retrieve agent run ingestion jobs for a collection.
+
+        Args:
+            collection_id: The collection ID to filter jobs by.
+            limit: Maximum number of jobs to return (default 100).
+
+        Returns:
+            List of agent run ingest jobs for the collection, ordered by creation time (newest first).
+        """
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLAJob)
+                .where(
+                    SQLAJob.type == WorkerFunction.AGENT_RUN_INGEST_JOB.value,
+                    SQLAJob.job_json["collection_id"].astext == collection_id,
+                )
+                .order_by(SQLAJob.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
     async def set_job_status(self, job_id: str, status: JobStatus):
         async with self.db.session() as session:
             await session.execute(
@@ -1750,6 +1792,61 @@ class MonoService:
             await session.execute(
                 update(SQLAJob).filter(SQLAJob.id == job_id).values(job_json=job_json)
             )
+
+    async def enqueue_agent_run_ingest(
+        self,
+        collection_id: str,
+        raw_body: bytes,
+        content_encoding: str,
+        ctx: ViewContext,
+    ) -> str:
+        """
+        Create a job and payload for agent run ingestion, enqueue it for background processing.
+
+        Args:
+            collection_id: The collection to ingest agent runs into.
+            raw_body: The raw request body (possibly compressed).
+            content_encoding: The content encoding (e.g., "gzip" or "").
+            ctx: The view context for enqueueing.
+
+        Returns:
+            The job_id for tracking the ingestion.
+        """
+        job_id = str(uuid4())
+        payload_id = str(uuid4())
+
+        job = SQLAJob(
+            id=job_id,
+            type=WorkerFunction.AGENT_RUN_INGEST_JOB.value,
+            status=JobStatus.PENDING,
+            job_json={
+                "collection_id": collection_id,
+                "payload_id": payload_id,
+            },
+        )
+        payload = SQLAIngestionPayload(
+            id=payload_id,
+            job_id=job_id,
+            payload=raw_body,
+            content_encoding=content_encoding,
+        )
+
+        async with self.db.session() as session:
+            session.add(job)
+            await session.flush()  # Ensure the FK is available
+            session.add(payload)
+            await session.commit()
+
+        # Enqueue the job for background processing
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.AGENT_RUN_INGEST_JOB)
+
+        logger.info(
+            "Enqueued agent run ingest job %s for collection %s",
+            job_id,
+            collection_id,
+        )
+
+        return job_id
 
     #########
     # Users #

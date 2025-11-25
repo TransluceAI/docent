@@ -5,6 +5,8 @@ import pytest
 
 from docent.data_models import AgentRun, Transcript
 from docent.data_models.chat import parse_chat_message
+from docent_core.docent.db.schemas.auth_models import User
+from docent_core.docent.services.monoservice import MonoService
 
 transcript_raw = [
     {"role": "user", "content": "What's the weather like in New York today?"},
@@ -64,6 +66,8 @@ async def test_default_chart(
 async def test_available_metadata_keys(
     authed_client: httpx.AsyncClient,
     test_collection_id: str,
+    mono_service: MonoService,
+    test_user: User,
 ):
     metadata_1 = {
         "agent_scaffold": "foo",
@@ -84,13 +88,9 @@ async def test_available_metadata_keys(
 
     agent_runs = runs_with_metadata([metadata_1, metadata_2, metadata_3, metadata_4])
 
-    # Upload agent runs data directly via API
-    payload = {"agent_runs": [ar.model_dump(mode="json") for ar in agent_runs]}
-    response = await authed_client.post(
-        f"/rest/{test_collection_id}/agent_runs",
-        json=payload,
-    )
-    assert response.status_code == 200
+    # Insert agent runs directly via MonoService (bypasses async worker queue)
+    ctx = await mono_service.get_default_view_ctx(test_collection_id, test_user)
+    await mono_service.add_agent_runs(ctx=ctx, agent_runs=agent_runs)
 
     # Create a rubric with a custom output schema
     rubric_payload = {
@@ -157,6 +157,8 @@ async def test_available_metadata_keys(
 async def test_chart_stats_simple(
     authed_client: httpx.AsyncClient,
     test_collection_id: str,
+    mono_service: MonoService,
+    test_user: User,
 ):
     metadata_1 = {
         "agent_scaffold": "foo",
@@ -177,12 +179,9 @@ async def test_chart_stats_simple(
 
     agent_runs = runs_with_metadata([metadata_1, metadata_2, metadata_3, metadata_4])
 
-    payload = {"agent_runs": [ar.model_dump(mode="json") for ar in agent_runs]}
-    response = await authed_client.post(
-        f"/rest/{test_collection_id}/agent_runs",
-        json=payload,
-    )
-    assert response.status_code == 200
+    # Insert agent runs directly via MonoService (bypasses async worker queue)
+    ctx = await mono_service.get_default_view_ctx(test_collection_id, test_user)
+    await mono_service.add_agent_runs(ctx=ctx, agent_runs=agent_runs)
 
     # Create a chart, leave default settings
     response = await authed_client.post(
@@ -218,6 +217,8 @@ async def test_chart_stats_simple(
 async def test_chart_stats_negative_numbers(
     authed_client: httpx.AsyncClient,
     test_collection_id: str,
+    mono_service: MonoService,
+    test_user: User,
 ):
     """Regression test: negative numbers should be included in count and mean calculations."""
     metadata_1 = {
@@ -239,12 +240,9 @@ async def test_chart_stats_negative_numbers(
 
     agent_runs = runs_with_metadata([metadata_1, metadata_2, metadata_3, metadata_4])
 
-    payload = {"agent_runs": [ar.model_dump(mode="json") for ar in agent_runs]}
-    response = await authed_client.post(
-        f"/rest/{test_collection_id}/agent_runs",
-        json=payload,
-    )
-    assert response.status_code == 200
+    # Insert agent runs directly via MonoService (bypasses async worker queue)
+    ctx = await mono_service.get_default_view_ctx(test_collection_id, test_user)
+    await mono_service.add_agent_runs(ctx=ctx, agent_runs=agent_runs)
 
     response = await authed_client.post(
         f"/rest/chart/{test_collection_id}/create",

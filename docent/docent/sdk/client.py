@@ -2,6 +2,7 @@ import gzip
 import itertools
 import json
 import os
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Iterator, Literal
@@ -257,6 +258,8 @@ class Docent:
         agent_runs: list[AgentRun],
         *,
         compression: Literal["gzip", "none"] = "gzip",
+        wait: bool = True,
+        poll_interval: float = 1.0,
         # Deprecated
         batch_size: int | None = None,
     ) -> dict[str, Any]:
@@ -270,13 +273,20 @@ class Docent:
             agent_runs: List of AgentRun objects to add.
             compression: Compression algorithm for request bodies. Defaults to gzip.
                 Set to "none" to retain legacy behavior.
+            wait: If True (default), wait for all ingestion jobs to complete before returning.
+                If False, return immediately after enqueuing jobs.
+            poll_interval: Seconds between status checks when wait=True. Defaults to 1.0.
 
         Returns:
-            dict: API response data.
+            dict: API response data containing:
+                - status: "success" if all jobs completed, "enqueued" if wait=False
+                - total_runs_added: Number of agent runs submitted
+                - job_ids: List of job IDs for tracking
 
         Raises:
             ValueError: If any single agent run exceeds the maximum payload size.
             requests.exceptions.HTTPError: If the API request fails.
+            RuntimeError: If any job fails during processing (when wait=True).
         """
 
         if batch_size is not None:
@@ -287,9 +297,10 @@ class Docent:
 
         url = f"{self._server_url}/{collection_id}/agent_runs"
         total_runs = len(agent_runs)
+        job_ids: list[str] = []
 
         # Process agent runs in batches
-        desc = f"Adding agent runs (compression={compression})"
+        desc = f"Uploading agent runs (compression={compression})"
         with tqdm(total=total_runs, desc=desc, unit="runs") as pbar:
             for batch_size, payload_bytes in _yield_agent_run_batches_by_size(
                 agent_runs, MAX_AGENT_RUN_PAYLOAD_BYTES
@@ -310,10 +321,131 @@ class Docent:
                 response = self._session.post(url, **request_kwargs)
                 self._handle_response_errors(response)
 
+                # Server returns 202 with job_id for async processing
+                response_data = response.json()
+                job_id = response_data.get("job_id")
+                if job_id:
+                    job_ids.append(job_id)
+
                 pbar.update(batch_size)
 
-        logger.info(f"Successfully added {total_runs} agent runs to Collection '{collection_id}'")
-        return {"status": "success", "total_runs_added": total_runs}
+        if not wait:
+            logger.info(
+                f"Enqueued {total_runs} agent runs to Collection '{collection_id}' "
+                f"({len(job_ids)} job(s)). Use get_agent_run_job_status() to check progress."
+            )
+            return {
+                "status": "enqueued",
+                "total_runs_added": total_runs,
+                "job_ids": job_ids,
+            }
+
+        # Wait for all jobs to complete
+        if job_ids:
+            logger.info(
+                f"Uploaded {total_runs} agent runs in {len(job_ids)} batch(es). "
+                f"Waiting for server-side processing to complete... "
+                f"(set wait=False to skip waiting)"
+            )
+            self._wait_for_jobs(collection_id, job_ids, poll_interval)
+
+        logger.info(
+            f"Successfully added {total_runs} agent runs to Collection '{collection_id}'. "
+            f"All {len(job_ids)} job(s) completed."
+        )
+        return {"status": "success", "total_runs_added": total_runs, "job_ids": job_ids}
+
+    def _wait_for_jobs(
+        self,
+        collection_id: str,
+        job_ids: list[str],
+        poll_interval: float = 1.0,
+    ) -> None:
+        """Wait for all jobs to complete, showing progress.
+
+        Args:
+            collection_id: ID of the Collection.
+            job_ids: List of job IDs to wait for.
+            poll_interval: Seconds between status checks.
+
+        Raises:
+            RuntimeError: If any job fails or is canceled.
+        """
+        pending_jobs = set(job_ids)
+        failed_jobs: dict[str, str] = {}
+
+        with tqdm(total=len(job_ids), desc="Waiting for server processing", unit="jobs") as pbar:
+            while pending_jobs:
+                statuses = self.get_agent_run_job_statuses(collection_id, list(pending_jobs))
+
+                for job_status in statuses:
+                    job_id = job_status["job_id"]
+                    status = job_status["status"]
+
+                    if status == "completed":
+                        pending_jobs.discard(job_id)
+                        pbar.update(1)
+                    elif status == "canceled":
+                        pending_jobs.discard(job_id)
+                        failed_jobs[job_id] = "Job was canceled"
+                        pbar.update(1)
+
+                if pending_jobs:
+                    time.sleep(poll_interval)
+
+        if failed_jobs:
+            failed_msg = ", ".join(f"{k}: {v}" for k, v in failed_jobs.items())
+            raise RuntimeError(f"Some jobs failed: {failed_msg}")
+
+    def get_agent_run_job_statuses(
+        self, collection_id: str, job_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        """Get the status of multiple agent run ingestion jobs.
+
+        Args:
+            collection_id: ID of the Collection.
+            job_ids: List of job IDs to check (max 100).
+
+        Returns:
+            list: List of job status dictionaries, each containing:
+                - job_id: The job ID
+                - status: One of "pending", "running", "completed", "canceled"
+                - type: The job type
+                - created_at: ISO timestamp of job creation
+
+        Raises:
+            ValueError: If more than 100 job IDs are provided.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        if len(job_ids) > 100:
+            raise ValueError("Cannot request more than 100 job IDs at once")
+
+        url = f"{self._server_url}/{collection_id}/agent_runs/jobs/batch_status"
+        response = self._session.post(url, json={"job_ids": job_ids})
+        self._handle_response_errors(response)
+        return response.json()["jobs"]
+
+    def get_agent_run_job_status(self, collection_id: str, job_id: str) -> dict[str, Any]:
+        """Get the status of an agent run ingestion job.
+
+        Args:
+            collection_id: ID of the Collection.
+            job_id: The ID of the job to check.
+
+        Returns:
+            dict: Job status information including:
+                - job_id: The job ID
+                - status: One of "pending", "running", "completed", "canceled"
+                - type: The job type
+                - created_at: ISO timestamp of job creation
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/agent_runs/jobs/{job_id}"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
 
     def list_collections(self) -> list[Collection]:
         """Lists all available Collections.

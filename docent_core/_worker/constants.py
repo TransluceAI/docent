@@ -8,21 +8,27 @@ JOB_TIMEOUT_SECONDS = 20 * 60  # 20 minutes
 
 
 class WorkerFunction(str, Enum):
+    # Rubrics and clustering
     RUBRIC_JOB = "rubric_job"
     CENTROID_ASSIGNMENT_JOB = "centroid_assignment_job"  # Deprecated
     REFINEMENT_AGENT_JOB = "refinement_agent_job"
     CLUSTERING_JOB = "clustering_job"
+    REFLECTION_JOB = "reflection_job"
+    # Chat
     CHAT_JOB = "chat_job"
+    # Ingestion
     TELEMETRY_PROCESSING_JOB = "telemetry_processing_job"
     TELEMETRY_INGEST_JOB = "telemetry_ingest_job"
+    AGENT_RUN_INGEST_JOB = "agent_run_ingest_job"
+    # IUI (deprecated)
     COUNTERFACTUAL_EXPERIMENT_JOB = "counterfactual_experiment_job"
     SIMPLE_ROLLOUT_EXPERIMENT_JOB = "simple_rollout_experiment_job"
-    REFLECTION_JOB = "reflection_job"
 
 
 JOB_QUEUE_OVERRIDES: dict[str, str] = {
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: TELEMETRY_PROCESSING_QUEUE_NAME,
     WorkerFunction.TELEMETRY_INGEST_JOB.value: TELEMETRY_INGEST_QUEUE_NAME,
+    WorkerFunction.AGENT_RUN_INGEST_JOB.value: TELEMETRY_INGEST_QUEUE_NAME,
 }
 
 KNOWN_WORKER_QUEUES: frozenset[str] = frozenset([WORKER_QUEUE_NAME, *JOB_QUEUE_OVERRIDES.values()])

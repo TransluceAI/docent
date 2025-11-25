@@ -1,4 +1,3 @@
-import gzip
 import itertools
 import os
 import tempfile
@@ -20,7 +19,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ValidationError, model_validator
+from pydantic import BaseModel, model_validator
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 from sqlalchemy.inspection import inspect as sqla_inspect
@@ -49,7 +48,10 @@ from docent_core.docent.db.schemas.auth_models import (
     User,
 )
 from docent_core.docent.db.schemas.collab_models import CollectionCollaborator
-from docent_core.docent.db.schemas.tables import SQLAAccessControlEntry, SQLAFilter
+from docent_core.docent.db.schemas.tables import (
+    SQLAAccessControlEntry,
+    SQLAFilter,
+)
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import (
     get_mono_svc,
@@ -720,28 +722,16 @@ class DeleteAgentRunsRequest(BaseModel):
     agent_run_ids: list[str]
 
 
-def _decode_agent_runs_body(raw_body: bytes, content_encoding: str | None) -> tuple[bytes, str]:
-    """Decode request body for /agent_runs uploads, applying gzip when requested."""
-
-    normalized = (content_encoding or "").strip().lower()
-    if normalized in ("", "identity"):
-        return raw_body, normalized
-
-    if normalized == "gzip":
-        try:
-            return gzip.decompress(raw_body), normalized
-        except OSError as exc:
-            raise HTTPException(
-                status_code=400, detail="Unable to decompress gzip-compressed request body"
-            ) from exc
-
-    raise HTTPException(
-        status_code=415,
-        detail=f"Unsupported Content-Encoding '{content_encoding}'. Supported encodings: gzip.",
-    )
+class EnqueuedJobResponse(BaseModel):
+    job_id: str
+    status: str
+    status_url: str
+    message: str
 
 
-@user_router.post("/{collection_id}/agent_runs")
+@user_router.post(
+    "/{collection_id}/agent_runs", status_code=202, response_model=EnqueuedJobResponse
+)
 async def post_agent_runs_compressed(
     collection_id: str,
     request: Request,
@@ -750,44 +740,195 @@ async def post_agent_runs_compressed(
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
+    """
+    Enqueue agent runs for background processing.
+
+    This endpoint:
+    1. Accepts the raw request body and validates Content-Encoding
+    2. Creates a job record in the database
+    3. Stores the payload in a separate table (to avoid bloating job metadata)
+    4. Enqueues the job for background processing
+    5. Returns 202 Accepted with a job_id for tracking
+
+    All heavy processing happens in the worker to keep the endpoint fast.
+    """
     raw_body = await request.body()
     if not raw_body:
         raise HTTPException(status_code=400, detail="Request body is empty")
 
-    decoded_body, encoding_used = _decode_agent_runs_body(
-        raw_body, request.headers.get("content-encoding")
-    )
-    if encoding_used == "gzip":
-        original_size = len(raw_body)
-        decoded_size = len(decoded_body)
-        compression_ratio = decoded_size / max(original_size, 1)
-        logger.info(
-            "Received gzip-compressed agent runs upload size_bytes=%s decoded_bytes=%s ratio=%.2f",
-            original_size,
-            decoded_size,
-            compression_ratio,
+    # Normalize and validate content-encoding header (case-insensitive per HTTP spec)
+    content_encoding = request.headers.get("content-encoding")
+    normalized_encoding = (content_encoding or "").strip().lower()
+
+    # Validate encoding is supported
+    if normalized_encoding and normalized_encoding not in ("", "identity", "gzip"):
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported Content-Encoding '{content_encoding}'. Supported encodings: gzip.",
         )
 
-    try:
-        runs_request = PostAgentRunsRequest.model_validate_json(decoded_body)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        try:
-            await mono_svc.check_space_for_runs(ctx, len(runs_request.agent_runs))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Cannot add agent runs: {str(e)}")
-        await mono_svc.add_agent_runs(ctx, runs_request.agent_runs)
+    # Create job, payload, and enqueue for processing
+    job_id = await mono_svc.enqueue_agent_run_ingest(
+        collection_id=collection_id,
+        raw_body=raw_body,
+        content_encoding=normalized_encoding,
+        ctx=ctx,
+    )
 
     # Track with PostHog
     analytics.track_event(
-        "agent_runs_ingested",
+        "agent_runs_ingestion_enqueued",
         properties={
             "collection_id": collection_id,
-            "num_runs": len(runs_request.agent_runs),
+            "job_id": job_id,
         },
     )
+
+    status_url = f"/rest/{collection_id}/agent_runs/jobs/{job_id}"
+    return EnqueuedJobResponse(
+        job_id=job_id,
+        status="enqueued",
+        status_url=status_url,
+        message="Agent runs accepted for processing. Check status at status_url.",
+    )
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    type: str
+    created_at: datetime
+    collection_id: str | None
+
+
+@user_router.get("/{collection_id}/agent_runs/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_agent_run_job_status(
+    collection_id: str,
+    job_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """
+    Get the status of an agent run ingestion job.
+
+    Returns job status and metadata. Status can be:
+    - pending: Job is queued but not yet started
+    - running: Job is currently being processed by a worker
+    - completed: Job finished successfully
+    - canceled: Job failed or was canceled
+    """
+    job = await mono_svc.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Verify the job belongs to this collection
+    job_collection_id = job.job_json.get("collection_id") if job.job_json else None
+    if job_collection_id != collection_id:
+        raise HTTPException(
+            status_code=404, detail=f"Job {job_id} not found in collection {collection_id}"
+        )
+
+    return JobStatusResponse(
+        job_id=job.id,
+        status=job.status.value,
+        type=job.type,
+        created_at=job.created_at,
+        collection_id=job_collection_id,
+    )
+
+
+class BatchJobStatusRequest(BaseModel):
+    job_ids: list[str]
+
+    @model_validator(mode="after")
+    def validate_job_ids_limit(self):
+        if len(self.job_ids) > 100:
+            raise ValueError("Cannot request more than 100 job IDs at once")
+        return self
+
+
+class BatchJobStatusResponse(BaseModel):
+    jobs: list[JobStatusResponse]
+
+
+@user_router.post(
+    "/{collection_id}/agent_runs/jobs/batch_status", response_model=BatchJobStatusResponse
+)
+async def get_agent_run_job_statuses(
+    collection_id: str,
+    request: BatchJobStatusRequest,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """
+    Get the status of multiple agent run ingestion jobs in a single request.
+
+    Args:
+        collection_id: The collection ID to filter jobs by.
+        request: BatchJobStatusRequest containing up to 100 job_ids.
+
+    Returns:
+        Dict with "jobs" list containing status for each found job that belongs to
+        this collection. Jobs not found or belonging to other collections are omitted.
+    """
+    jobs = await mono_svc.get_jobs(request.job_ids)
+
+    # Filter to only jobs belonging to this collection and build response
+    results: list[JobStatusResponse] = []
+    for job in jobs:
+        job_collection_id = job.job_json.get("collection_id") if job.job_json else None
+        if job_collection_id == collection_id:
+            results.append(
+                JobStatusResponse(
+                    job_id=job.id,
+                    status=job.status.value,
+                    type=job.type,
+                    created_at=job.created_at,
+                    collection_id=job_collection_id,
+                )
+            )
+
+    return BatchJobStatusResponse(jobs=results)
+
+
+@user_router.get("/{collection_id}/agent_run_ingest_jobs")
+async def get_agent_run_ingest_jobs(
+    collection_id: str,
+    limit: int = 100,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """
+    Get agent run ingestion jobs for a collection.
+
+    Returns a list of agent run ingest jobs with their status and metadata,
+    ordered by creation time (newest first).
+
+    Args:
+        collection_id: The collection ID to filter jobs by.
+        limit: Maximum number of jobs to return (default 100, max 1000).
+
+    Returns:
+        List of jobs with status, type, and timestamps.
+    """
+    # Cap limit at 1000 to prevent excessive queries
+    limit = min(limit, 1000)
+
+    jobs = await mono_svc.get_agent_run_ingest_jobs(collection_id, limit)
+
+    return {
+        "jobs": [
+            {
+                "job_id": job.id,
+                "status": job.status.value,
+                "type": job.type,
+                "created_at": job.created_at.isoformat(),
+                "collection_id": collection_id,
+            }
+            for job in jobs
+        ],
+        "count": len(jobs),
+    }
 
 
 @user_router.delete("/{collection_id}/agent_runs")

@@ -37,7 +37,12 @@ const Breadcrumbs: React.FC = () => {
   const {
     collection_id: collectionId,
     agent_run_id: agentRunId,
-  }: { collection_id?: string; agent_run_id?: string } = allParams;
+    job_id: jobId,
+  }: {
+    collection_id?: string;
+    agent_run_id?: string;
+    job_id?: string;
+  } = allParams;
 
   const pathname = usePathname();
   const { data } = useGetCollectionNameQuery(
@@ -58,6 +63,9 @@ const Breadcrumbs: React.FC = () => {
     rubric: {
       title: 'Rubric',
     },
+    jobs: {
+      title: `Job ${jobId?.split('-')[0]}`,
+    },
   };
 
   const pageCrumbs: Record<string, Crumb> = {
@@ -73,6 +81,10 @@ const Breadcrumbs: React.FC = () => {
     labels: {
       title: 'Label Sets',
       icon: Tags,
+    },
+    jobs: {
+      title: 'Jobs',
+      icon: Layers,
     },
     settings: {
       title: 'Settings',
