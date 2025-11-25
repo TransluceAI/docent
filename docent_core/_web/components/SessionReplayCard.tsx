@@ -50,8 +50,8 @@ export default function SessionReplayCard() {
     <div className="fixed bottom-4 right-4 z-50 w-full max-w-md p-4 bg-blue-bg border border-blue-border rounded-lg shadow-lg">
       <div className="flex flex-col gap-3">
         <p className="text-sm text-primary">
-          We use PostHog to catch bugs and understand which features you enjoy.
-          As a small team, we find these insights really helpful for
+          We use session recording to catch bugs and understand which features
+          you enjoy. As a small team, we find these insights really helpful for
           prioritizing what to build next. We anonymize all analytics and mask
           sensitive data.
         </p>
@@ -75,8 +75,8 @@ export default function SessionReplayCard() {
               </DialogHeader>
               <div className="space-y-4 text-sm">
                 <p>
-                  We use screen capture to see how you work with Docent and make
-                  it better for you.
+                  We use session recording to see how you work with Docent and
+                  make it better for you.
                 </p>
 
                 <p>
@@ -88,7 +88,7 @@ export default function SessionReplayCard() {
                 </p>
 
                 <div className="space-y-2">
-                  <p className="font-bold">Full Session Replay</p>
+                  <p className="font-bold">Full Session Recording</p>
                   <ul className="list-disc pl-5 space-y-1">
                     <li>
                       Included: transcripts, metadata, and rubrics visible on
@@ -99,7 +99,7 @@ export default function SessionReplayCard() {
                 </div>
 
                 <div className="space-y-2">
-                  <p className="font-bold">Masked Session Replay</p>
+                  <p className="font-bold">Masked Session Recording</p>
                   <ul className="list-disc pl-5 space-y-1">
                     <li>Included: rubrics and which features you click</li>
                     <li>
