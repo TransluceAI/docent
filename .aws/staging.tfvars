@@ -31,6 +31,19 @@ worker_queue_target_depths = {
   telemetry_ingest     = 1
 }
 
+# Telemetry processing worker service
+telemetry_processing_ecs_min_size     = 1
+telemetry_processing_ecs_max_size     = 8
+
+# Telemetry ingest worker service
+telemetry_ingest_ecs_min_size     = 1
+telemetry_ingest_ecs_max_size     = 8
+
+# Queue-depth target tracking (shared by all worker services)
+worker_queue_target_depth       = 1
+worker_queue_scale_in_cooldown  = 60
+worker_queue_scale_out_cooldown = 60
+
 enable_frontend_app_runner = true
 frontend_app_runner_cpu = 1024
 frontend_app_runner_memory = 2048
