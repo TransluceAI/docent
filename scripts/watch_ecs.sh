@@ -86,8 +86,10 @@ if [[ -z "$DEPLOYMENT_ID" ]]; then
     exit 1
 fi
 
-SELECTED_WORKERS=("${WORKER_ARGS[@]}")
-if [[ ${#SELECTED_WORKERS[@]} -eq 0 ]]; then
+SELECTED_WORKERS=()
+if [[ ${#WORKER_ARGS[@]} -gt 0 ]]; then
+    SELECTED_WORKERS=("${WORKER_ARGS[@]}")
+else
     SELECTED_WORKERS=("${WORKERS[@]}")
 fi
 
