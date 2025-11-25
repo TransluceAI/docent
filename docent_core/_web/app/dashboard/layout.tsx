@@ -1,6 +1,6 @@
 'use client';
 
-import SessionReplayBanner from '@/components/SessionReplayBanner';
+import SessionReplayCard from '@/components/SessionReplayCard';
 
 export default function DashboardLayout({
   children,
@@ -9,7 +9,7 @@ export default function DashboardLayout({
 }>) {
   return (
     <>
-      <SessionReplayBanner />
+      <SessionReplayCard />
       {children}
     </>
   );

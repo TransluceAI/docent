@@ -3,13 +3,12 @@ import { useEffect, useRef } from 'react';
 import posthogClient from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { Provider } from 'react-redux';
-import { useLocalStorage } from 'usehooks-ts';
 import store from './store/store';
 import { ReplayPreference } from './types/userTypes';
 import { SESSION_REPLAY_PREFERENCE_KEY } from './constants';
 import { useUserContext } from './contexts/UserContext';
 
-const maskInputFn = (text: string, element?: HTMLElement | null) => {
+export const maskInputFn = (text: string, element?: HTMLElement | null) => {
   // Do not mask rubric input areas
   // CodeMirror and Monaco components are not masked by default, ignore those
   if (element?.id === 'rubric-input') {
@@ -22,6 +21,12 @@ const maskInputFn = (text: string, element?: HTMLElement | null) => {
 export function CSPostHogProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef<boolean>(false);
   const { user } = useUserContext();
+
+  // NOTE(cadentj):
+  // This effect runs once after the user is loaded.
+  // It initializes the Posthog client if the API key and host are set.
+  // It will not update if the user changes their replay preferences from the privacy settings.
+  // The privacy settings directly update the posthog client configuration.
 
   useEffect(() => {
     // Only initialize the Posthog client once
@@ -88,31 +93,6 @@ export function CSPostHogProvider({ children }: { children: React.ReactNode }) {
       initialized.current = true;
     }
   }, [user]);
-
-  // Watch for changes in replay preference to update config dynamically
-  const [replayPreference] = useLocalStorage<ReplayPreference>(
-    user ? SESSION_REPLAY_PREFERENCE_KEY + '_' + user.id : 'temp_key',
-    'loading',
-    { initializeWithValue: false }
-  );
-
-  // Update session recording config when preference changes
-  useEffect(() => {
-    if (!initialized.current || !user || replayPreference === 'loading') return;
-
-    const maskTextSelector =
-      replayPreference !== 'full-opt-in'
-        ? '.agent-run-viewer, .metadata, .agent-run-table'
-        : '';
-
-    posthogClient.set_config({
-      session_recording: {
-        maskAllInputs: true,
-        maskInputFn,
-        maskTextSelector,
-      },
-    });
-  }, [replayPreference, user]);
 
   return <PostHogProvider client={posthogClient}>{children}</PostHogProvider>;
 }

@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ReplayPreference } from '@/app/types/userTypes';
 import { SESSION_REPLAY_PREFERENCE_KEY } from '@/app/constants';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
+import { maskInputFn } from '@/app/providers';
 
 export default function PrivacySettingsPage() {
   const posthog = usePostHog();
@@ -29,9 +30,23 @@ export default function PrivacySettingsPage() {
     const preference = value as ReplayPreference;
     setReplayPreference(preference);
 
-    if (preference === 'opted-out') {
-      posthog.stopSessionRecording();
-    } else {
+    const maskTextSelector =
+      preference !== 'full-opt-in'
+        ? '.agent-run-viewer, .metadata, .agent-run-table'
+        : '';
+
+    // Stop session recording before updating configuration to ensure changes take effect
+    posthog.stopSessionRecording();
+
+    posthog.set_config({
+      session_recording: {
+        maskAllInputs: true,
+        maskInputFn,
+        maskTextSelector,
+      },
+    });
+
+    if (preference !== 'opted-out') {
       posthog.startSessionRecording();
     }
   };
