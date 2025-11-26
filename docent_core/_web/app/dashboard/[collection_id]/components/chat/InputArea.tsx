@@ -113,6 +113,10 @@ export default function InputArea({
   };
 
   const submitForm = useCallback(() => {
+    if (!input.trim()) {
+      return;
+    }
+
     onSendMessage(input);
 
     setLocalStorageInput('');
@@ -127,6 +131,7 @@ export default function InputArea({
   const { isAtBottom, scrollToBottom } = useScrollToBottom();
 
   const sentButton = () => {
+    const isInputEmpty = !input.trim();
     return (
       <Button
         type="button"
@@ -148,7 +153,7 @@ export default function InputArea({
             submitForm();
           }
         }}
-        disabled={disabled}
+        disabled={disabled || (!isSendingMessage && isInputEmpty)}
       >
         {isSendingMessage && onCancelMessage ? (
           <Square size={12} />
