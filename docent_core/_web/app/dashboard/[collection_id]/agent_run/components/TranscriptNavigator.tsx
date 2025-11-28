@@ -220,7 +220,12 @@ const TreeNodeView: React.FC<{
                       )}
                     />
                     <MetadataPopover.Body metadata={group?.metadata || {}}>
-                      {(md) => <MetadataBlock metadata={md} />}
+                      {(md) => (
+                        <MetadataBlock
+                          metadata={md}
+                          showSearchControls={true}
+                        />
+                      )}
                     </MetadataPopover.Body>
                   </MetadataPopover.Content>
                 </MetadataPopover.Root>
@@ -333,7 +338,9 @@ const TranscriptListItem: React.FC<{
                   parents={parentGroups}
                 />
                 <MetadataPopover.Body metadata={transcriptMetadata}>
-                  {(md) => <MetadataBlock metadata={md} />}
+                  {(md) => (
+                    <MetadataBlock metadata={md} showSearchControls={true} />
+                  )}
                 </MetadataPopover.Body>
               </MetadataPopover.Content>
             </MetadataPopover.Root>

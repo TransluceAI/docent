@@ -22,7 +22,7 @@ export default function JudgeResultDetail({
             />
           </div>
           <div className="mt-2">
-            <MetadataBlock metadata={rest} />
+            <MetadataBlock metadata={rest} showSearchControls={false} />
           </div>
         </div>
       )}

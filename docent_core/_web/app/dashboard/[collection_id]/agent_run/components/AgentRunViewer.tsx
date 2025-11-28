@@ -919,6 +919,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           {(md) => (
                             <MetadataBlock
                               metadata={md}
+                              showSearchControls={true}
                               citedKey={
                                 metadataIntent?.type === 'run'
                                   ? metadataIntent.citedKey
@@ -1110,6 +1111,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                     {(md) => (
                                       <MetadataBlock
                                         metadata={md}
+                                        showSearchControls={true}
                                         citedKey={citedKey}
                                         textRange={textRange}
                                       />

@@ -476,6 +476,7 @@ export function MessageBox({
                     {(md) => (
                       <MetadataBlock
                         metadata={md}
+                        showSearchControls={true}
                         citedKey={metadataDialogControl?.citedKey}
                         textRange={metadataDialogControl?.citedTextRange}
                       />

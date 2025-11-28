@@ -127,13 +127,15 @@ export function MetadataBlock({
   metadata,
   citedKey,
   textRange,
+  showSearchControls = false,
 }: {
   metadata: BaseMetadata;
   citedKey?: string;
   textRange?: CitationTargetTextRange;
+  showSearchControls?: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<SearchType>('fuzzy');
+  const [searchType, setSearchType] = useState<SearchType>('exact');
 
   // Debounce search query to avoid overwhelming CPU with expensive operations
   const debouncedSearchQuery = useDebounce(searchQuery, 100);
@@ -281,40 +283,42 @@ export function MetadataBlock({
 
   return (
     <div className="space-y-3 metadata">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search metadata..."
-          className="h-7 text-xs bg-background flex-1 min-w-[180px] max-w-sm hover:bg-secondary hover:text-primary focus-visible:ring-0 focus-visible:border-ring"
-          aria-invalid={regexError ? true : undefined}
-          ref={searchInputRef}
-        />
-        <Select
-          value={searchType}
-          onValueChange={(v) => setSearchType(v as SearchType)}
-        >
-          <SelectTrigger className="h-7 w-[120px] text-xs bg-background flex-shrink-0 hover:bg-secondary hover:text-primary focus:ring-0 focus-visible:ring-0 focus-visible:border-ring focus-visible:shadow-[0_0_0_1px_hsl(var(--ring))]">
-            <SelectValue placeholder="Fuzzy" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="fuzzy" className="text-xs">
-              Fuzzy
-            </SelectItem>
-            <SelectItem value="exact" className="text-xs">
-              Exact
-            </SelectItem>
-            <SelectItem value="regex" className="text-xs">
-              Regex
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        {regexError && (
-          <span className="text-xs text-destructive font-mono">
-            {regexError}
-          </span>
-        )}
-      </div>
+      {showSearchControls ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search metadata..."
+            className="h-7 text-xs bg-background flex-1 min-w-[180px] max-w-sm hover:bg-secondary hover:text-primary focus-visible:ring-0 focus-visible:border-ring"
+            aria-invalid={regexError ? true : undefined}
+            ref={searchInputRef}
+          />
+          <Select
+            value={searchType}
+            onValueChange={(v) => setSearchType(v as SearchType)}
+          >
+            <SelectTrigger className="h-7 w-[120px] text-xs bg-background flex-shrink-0 hover:bg-secondary hover:text-primary focus:ring-0 focus-visible:ring-0 focus-visible:border-ring focus-visible:shadow-[0_0_0_1px_hsl(var(--ring))]">
+              <SelectValue placeholder="Fuzzy" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="exact" className="text-xs">
+                Exact
+              </SelectItem>
+              <SelectItem value="fuzzy" className="text-xs">
+                Fuzzy
+              </SelectItem>
+              <SelectItem value="regex" className="text-xs">
+                Regex
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {regexError && (
+            <span className="text-xs text-destructive font-mono">
+              {regexError}
+            </span>
+          )}
+        </div>
+      ) : null}
 
       <div className="bg-secondary rounded-lg border border-border overflow-hidden">
         {filteredEntries.length === 0 ? (
