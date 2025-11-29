@@ -103,6 +103,7 @@ df = df[
         "scaled_accuracy",
         "mean_indep_accuracy",
         "consistency_accuracy",
+        "indep_probs",
     ]
 ]
 # df = df.drop_duplicates(subset=["question", "llm", "reasoning_effort"], keep="first")
@@ -472,6 +473,25 @@ plt.show()
 
 # %%
 
-df[(df["mean_indep_brier_score"] < 0.25) & (df["consistency_brier_score"] > 0.25)]
+consistency_hurt = df[
+    (df["mean_indep_brier_score"] < 0.25) & (df["consistency_brier_score"] > 0.25)
+]
 
+# %%
+
+dc.open_agent_run(cid, consistency_hurt.iloc[0]["agent_run_id"])
+
+# %%
+
+from tqdm.auto import tqdm
+
+for ar_id in tqdm(consistency_hurt["agent_run_id"].tolist()):
+    dc.tag_transcript(cid, ar_id, "consistency_hurt")
+
+# %%
+
+consistency_hurt[consistency_hurt["agent_run_id"] == "5783eb6d-da44-4827-888d-faae6e255fc6"]
+# %%
+
+df[df["agent_run_id"] == "5783eb6d-da44-4827-888d-faae6e255fc6"]["indep_probs"].tolist()
 # %%

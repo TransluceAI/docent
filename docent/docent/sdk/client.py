@@ -1112,3 +1112,29 @@ class Docent:
         webbrowser.open(chat_url)
 
         return session_id
+
+    def open_agent_run(self, collection_id: str, agent_run_id: str) -> str:
+        """Open an agent run in the browser.
+
+        Args:
+            collection_id: ID of the Collection containing the agent run.
+            agent_run_id: ID of the agent run to open.
+
+        Returns:
+            str: The URL that was opened.
+
+        Example:
+            ```python
+            from docent.sdk import Docent
+
+            client = Docent()
+            client.open_agent_run(collection_id, agent_run_id)
+            # Opens browser to agent run page
+            ```
+        """
+        agent_run_url = f"{self._web_url}/dashboard/{collection_id}/agent_run/{agent_run_id}"
+        logger.info(f"Opening agent run in browser: {agent_run_url}")
+
+        webbrowser.open(agent_run_url)
+
+        return agent_run_url
