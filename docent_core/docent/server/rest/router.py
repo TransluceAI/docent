@@ -292,7 +292,7 @@ async def change_password(
 #############
 
 
-class CollectionRpw(BaseModel):
+class CollectionRow(BaseModel):
     """Represents a collection of agent runs.
 
     A Collection is a container for organizing and managing related agent runs.
@@ -318,7 +318,7 @@ class CollectionRpw(BaseModel):
     label_set_count: int | None = None
 
 
-@user_router.get("/collections", response_model=list[CollectionRpw])
+@user_router.get("/collections", response_model=list[CollectionRow])
 async def get_collections(
     user: User = Depends(get_user_anonymous_ok),
     mono_svc: MonoService = Depends(get_mono_svc),
@@ -348,7 +348,7 @@ async def get_collections(
     return result
 
 
-@user_router.get("/{collection_id}/collection_details", response_model=CollectionRpw | None)
+@user_router.get("/{collection_id}/collection_details", response_model=CollectionRow | None)
 async def get_collection_details(
     collection_id: str = Depends(require_collection_exists),
     mono_svc: MonoService = Depends(get_mono_svc),
