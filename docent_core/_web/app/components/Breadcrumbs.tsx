@@ -55,7 +55,7 @@ const Breadcrumbs: React.FC = () => {
       title: 'Collection',
     },
     agent_run: {
-      title: `Run ${agentRunId?.split('-')[0]}`,
+      title: `Agent Run`,
     },
     result: {
       title: 'Result',
@@ -64,7 +64,7 @@ const Breadcrumbs: React.FC = () => {
       title: 'Rubric',
     },
     jobs: {
-      title: `Job ${jobId?.split('-')[0]}`,
+      title: `Job`,
     },
   };
 
@@ -98,6 +98,11 @@ const Breadcrumbs: React.FC = () => {
     let resolvedParam: string = param;
     if (param === 'dashboard') {
       resolvedParam = 'Collection';
+    }
+
+    // Handle plural to singular conversion for jobs -> job_id
+    if (param === 'jobs') {
+      resolvedParam = 'job';
     }
 
     const slugLookup = resolvedParam.toLowerCase() + '_id';
@@ -140,14 +145,18 @@ const Breadcrumbs: React.FC = () => {
         // Add the crumb to the components
         return {
           url,
+          uuid, // Include the UUID so we can show a pill
           ...crumbToAdd,
         };
       }
     })
     .filter((crumb) => crumb !== undefined);
 
-  const getBreadcrumb = (crumb: Crumb & { url: string }, index: number) => {
-    const { url, title, icon: Icon } = crumb;
+  const getBreadcrumb = (
+    crumb: Crumb & { url: string; uuid?: string },
+    index: number
+  ) => {
+    const { url, title, icon: Icon, uuid } = crumb;
 
     if (index === 0 && collectionId && collectionName) {
       return (
@@ -179,6 +188,7 @@ const Breadcrumbs: React.FC = () => {
           {Icon && <Icon className="size-3.5" />}
           {title}
         </Link>
+        {uuid && <UuidPill uuid={uuid} />}
         {index < segments.length - 1 && <ChevronRight className="size-3.5" />}
       </div>
     );
