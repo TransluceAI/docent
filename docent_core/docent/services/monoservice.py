@@ -658,21 +658,53 @@ class MonoService:
             result = await session.execute(query)
             return result.scalar_one()
 
-    async def count_collection_rubrics(self, collection_id: str) -> int:
-        """Count all unique rubrics (by id) for a collection."""
+    async def batch_count_collection_agent_runs(self, collection_ids: list[str]) -> dict[str, int]:
+        """Count agent runs for multiple collections in a single query."""
+        if not collection_ids:
+            return {}
+
         async with self.db.session() as session:
-            query = select(func.count(distinct(SQLARubric.id))).where(
-                SQLARubric.collection_id == collection_id
+            query = (
+                select(SQLAAgentRun.collection_id, func.count().label("count"))
+                .where(SQLAAgentRun.collection_id.in_(collection_ids))
+                .group_by(SQLAAgentRun.collection_id)
             )
             result = await session.execute(query)
-            return result.scalar_one()
+            counts = {row.collection_id: cast(int, row.count) for row in result}
+            # Fill in zero counts for collections with no agent runs
+            return {cid: counts.get(cid, 0) if cid in counts else 0 for cid in collection_ids}
 
-    async def count_collection_label_sets(self, collection_id: str) -> int:
-        """Count all label sets for a collection."""
+    async def batch_count_collection_rubrics(self, collection_ids: list[str]) -> dict[str, int]:
+        """Count rubrics for multiple collections in a single query."""
+        if not collection_ids:
+            return {}
+
         async with self.db.session() as session:
-            query = select(func.count()).where(SQLALabelSet.collection_id == collection_id)
+            query = (
+                select(SQLARubric.collection_id, func.count(distinct(SQLARubric.id)).label("count"))
+                .where(SQLARubric.collection_id.in_(collection_ids))
+                .group_by(SQLARubric.collection_id)
+            )
             result = await session.execute(query)
-            return result.scalar_one()
+            counts = {row.collection_id: cast(int, row.count) for row in result}
+            # Fill in zero counts for collections with no rubrics
+            return {cid: counts.get(cid, 0) if cid in counts else 0 for cid in collection_ids}
+
+    async def batch_count_collection_label_sets(self, collection_ids: list[str]) -> dict[str, int]:
+        """Count label sets for multiple collections in a single query."""
+        if not collection_ids:
+            return {}
+
+        async with self.db.session() as session:
+            query = (
+                select(SQLALabelSet.collection_id, func.count().label("count"))
+                .where(SQLALabelSet.collection_id.in_(collection_ids))
+                .group_by(SQLALabelSet.collection_id)
+            )
+            result = await session.execute(query)
+            counts = {row.collection_id: cast(int, row.count) for row in result}
+            # Fill in zero counts for collections with no label sets
+            return {cid: counts.get(cid, 0) if cid in counts else 0 for cid in collection_ids}
 
     async def check_space_for_runs(self, ctx: ViewContext, new_runs: int):
         existing_runs = await self.count_collection_agent_runs(ctx.collection_id)

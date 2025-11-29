@@ -17,14 +17,23 @@ export const formatDateTime = (dateString: string) => {
 
 /**
  * Checks if a value is a valid date string.
+ * Only matches ISO 8601 format dates (YYYY-MM-DD or YYYY-MM-DD HH:mm:ss with optional timezone).
  */
 export const isDateString = (value: unknown): boolean => {
   if (typeof value !== 'string') {
     return false;
   }
-  // Check if it's an ISO date string or other common date formats
+  // Match ISO 8601 format with space separator: YYYY-MM-DD or YYYY-MM-DD HH:mm:ss or YYYY-MM-DD HH:mm:ss.sss
+  // This regex ensures we only match proper ISO date strings, not arbitrary text containing dates
+  const iso8601Regex = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2}(\.\d{3,6})?)?$/;
+
+  if (!iso8601Regex.test(value)) {
+    return false;
+  }
+
+  // Verify it's actually a valid date
   const date = new Date(value);
-  return !isNaN(date.getTime()) && value.length > 8; // Ensure it's not just a number
+  return !isNaN(date.getTime());
 };
 
 /**

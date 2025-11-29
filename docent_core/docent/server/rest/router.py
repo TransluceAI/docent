@@ -325,15 +325,23 @@ async def get_collections(
 ):
     sqla_collections = await mono_svc.get_collections(user)  # Filter to only the user's collections
 
+    # Extract collection IDs for batch queries
+    collection_ids = [obj.id for obj in sqla_collections]
+
+    # Batch query all counts at once
+    agent_run_counts = await mono_svc.batch_count_collection_agent_runs(collection_ids)
+    rubric_counts = await mono_svc.batch_count_collection_rubrics(collection_ids)
+    label_set_counts = await mono_svc.batch_count_collection_label_sets(collection_ids)
+
     # Build response with counts for each collection
     result: list[dict[str, Any]] = []
     for obj in sqla_collections:
         collection_data: dict[str, Any] = obj.dict()
 
-        # Add counts
-        collection_data["agent_run_count"] = await mono_svc.count_collection_agent_runs(obj.id)
-        collection_data["rubric_count"] = await mono_svc.count_collection_rubrics(obj.id)
-        collection_data["label_set_count"] = await mono_svc.count_collection_label_sets(obj.id)
+        # Add counts from batch query results
+        collection_data["agent_run_count"] = agent_run_counts[obj.id]
+        collection_data["rubric_count"] = rubric_counts[obj.id]
+        collection_data["label_set_count"] = label_set_counts[obj.id]
 
         result.append(collection_data)
 
@@ -356,10 +364,15 @@ async def get_collection_details(
         c.key: getattr(collection, c.key) for c in sqla_inspect(collection).mapper.column_attrs
     }
 
+    # Batch query all counts (batch functions work efficiently even with a single ID)
+    agent_run_counts = await mono_svc.batch_count_collection_agent_runs([collection.id])
+    rubric_counts = await mono_svc.batch_count_collection_rubrics([collection.id])
+    label_set_counts = await mono_svc.batch_count_collection_label_sets([collection.id])
+
     # Add counts
-    collection_data["agent_run_count"] = await mono_svc.count_collection_agent_runs(collection.id)
-    collection_data["rubric_count"] = await mono_svc.count_collection_rubrics(collection.id)
-    collection_data["label_set_count"] = await mono_svc.count_collection_label_sets(collection.id)
+    collection_data["agent_run_count"] = agent_run_counts[collection.id]
+    collection_data["rubric_count"] = rubric_counts[collection.id]
+    collection_data["label_set_count"] = label_set_counts[collection.id]
 
     return collection_data
 
