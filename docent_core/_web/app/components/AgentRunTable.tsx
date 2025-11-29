@@ -64,6 +64,7 @@ import { useParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from './Combobox';
 import { TableContainer } from './TableContainer';
+import { isDateString, formatDateValue } from '@/lib/dateUtils';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -168,6 +169,9 @@ export interface AgentRunTableProps {
 const formatMetadataValue = (value: unknown): string => {
   if (value === null || value === undefined) {
     return '';
+  }
+  if (typeof value === 'string' && isDateString(value)) {
+    return formatDateValue(value);
   }
   if (typeof value === 'object') {
     try {
@@ -462,18 +466,7 @@ export const AgentRunTable = memo(function AgentRunTable({
             value = processedData?.[columnKey];
           }
 
-          // Show raw value for created_at
-          if (columnKey === 'created_at') {
-            const text =
-              value === null || value === undefined ? '-' : String(value);
-            return (
-              <span className="text-xs text-foreground truncate block">
-                {text}
-              </span>
-            );
-          }
-
-          // Default formatting for other columns
+          // Format the value
           const text = formatMetadataValue(value);
           return (
             <span className="text-xs text-foreground truncate block">

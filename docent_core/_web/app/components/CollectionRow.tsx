@@ -12,6 +12,7 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import UuidPill from '@/components/UuidPill';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { formatDateValue } from '@/lib/dateUtils';
 
 import { useUpdateCollectionMutation } from '../api/collectionApi';
 
@@ -101,21 +102,6 @@ export default function CollectionRow({
     onDelete(collection);
   };
 
-  /* ------------------------------- Utilities ------------------------------- */
-  const formatDate = (dateString: string) => {
-    // dateString is in UTC
-    const date = new Date(dateString + 'Z');
-    // display in local time
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
   /* --------------------------------- Render -------------------------------- */
   return (
     <TableRow
@@ -196,7 +182,7 @@ export default function CollectionRow({
       {/* Created At */}
       <TableCell className="text-xs py-2">
         <div className="flex items-center text-muted-foreground">
-          {formatDate(collection.created_at)}
+          {formatDateValue(collection.created_at, true)}
         </div>
       </TableCell>
 
