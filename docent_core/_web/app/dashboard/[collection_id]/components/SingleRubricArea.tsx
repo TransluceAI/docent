@@ -36,6 +36,7 @@ import { useLabelSets } from '@/providers/use-label-sets';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { SchemaDefinition } from '@/app/types/schema';
 import { cn } from '@/lib/utils';
+import UuidPill from '@/components/UuidPill';
 
 interface AgreementWidgetProps {
   agentRunResults: AgentRunJudgeResults[];
@@ -293,22 +294,23 @@ export default function SingleRubricArea({
     <div className="space-y-2 flex flex-col flex-1 min-w-0">
       {/* Clickable header with disclosure triangle */}
       <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className="flex items-center gap-1 cursor-pointer hover:text-foreground/80"
-          onClick={() => setIsEditorCollapsed(!isEditorCollapsed)}
-          aria-expanded={!isEditorCollapsed}
-        >
-          <ChevronRight
-            className={cn(
-              'h-4 w-4 transition-transform',
-              !isEditorCollapsed && 'rotate-90'
-            )}
-          />
-          <span className="text-sm font-semibold">
-            {isEditable ? 'Rubric Editor' : 'Rubric Evaluation'}
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1 cursor-pointer hover:text-foreground/80"
+            onClick={() => setIsEditorCollapsed(!isEditorCollapsed)}
+            aria-expanded={!isEditorCollapsed}
+          >
+            <ChevronRight
+              className={cn(
+                'h-4 w-4 transition-transform',
+                !isEditorCollapsed && 'rotate-90'
+              )}
+            />
+            <span className="text-sm font-semibold">Rubric</span>
+          </button>
+          <UuidPill uuid={rubricId} stopPropagation={true} />
+        </div>
 
         <RubricVersionNavigator
           rubric={rubric}
