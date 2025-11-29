@@ -33,7 +33,11 @@ from sqlglot.optimizer.scope import (
 from docent._log_util import get_logger
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
 from docent_core.docent.db.schemas.label import SQLALabel
-from docent_core.docent.db.schemas.rubric import SQLAJudgeResult
+from docent_core.docent.db.schemas.rubric import (
+    SQLAJudgeResult,
+    SQLAJudgeResultCentroid,
+    SQLARubricCentroid,
+)
 from docent_core.docent.db.schemas.tables import (
     SQLAAgentRun,
     SQLATranscript,
@@ -446,6 +450,37 @@ def _label_collection_predicate(table_alias: str, collection_id: str) -> SqlGlot
     return exp.Exists(this=subquery)
 
 
+def _judge_result_centroid_collection_predicate(
+    table_alias: str, collection_id: str
+) -> SqlGlotExpression:
+    """Filter judge result centroids by ensuring their linked judge result belongs to the collection."""
+
+    subquery = (
+        exp.select(exp.Literal.string("1"))  # type: ignore[reportUnknownMemberType]
+        .from_(SQLAJudgeResult.__tablename__)  # type: ignore[reportUnknownMemberType]
+        .join(  # type: ignore[reportUnknownMemberType]
+            SQLAAgentRun.__tablename__,
+            on=exp.EQ(
+                this=exp.column("id", table=SQLAAgentRun.__tablename__),
+                expression=exp.column("agent_run_id", table=SQLAJudgeResult.__tablename__),
+            ),
+        )
+        .where(  # type: ignore[reportUnknownMemberType]
+            exp.and_(  # type: ignore[reportUnknownMemberType]
+                exp.EQ(
+                    this=exp.column("collection_id", table=SQLAAgentRun.__tablename__),
+                    expression=exp.Literal.string(collection_id),  # type: ignore[reportUnknownMemberType]
+                ),
+                exp.EQ(
+                    this=exp.column("id", table=SQLAJudgeResult.__tablename__),
+                    expression=exp.column("judge_result_id", table=table_alias),
+                ),
+            )
+        )
+    )
+    return exp.Exists(this=subquery)
+
+
 class DQLRegistry:
     """Keeps track of which database tables and columns DQL callers may access."""
 
@@ -614,6 +649,18 @@ def build_default_registry(
         table=SQLALabel.__table__,
         allowed_columns=_columns_for(SQLALabel.__table__),
         collection_predicate_factory=_label_collection_predicate,
+    )
+    registry.register_table(
+        name=SQLARubricCentroid.__tablename__,
+        table=SQLARubricCentroid.__table__,
+        allowed_columns=_columns_for(SQLARubricCentroid.__table__),
+        collection_predicate_factory=_column_equals_collection("collection_id"),
+    )
+    registry.register_table(
+        name=SQLAJudgeResultCentroid.__tablename__,
+        table=SQLAJudgeResultCentroid.__table__,
+        allowed_columns=_columns_for(SQLAJudgeResultCentroid.__table__),
+        collection_predicate_factory=_judge_result_centroid_collection_predicate,
     )
 
     if json_fields:

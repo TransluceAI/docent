@@ -62,7 +62,8 @@ export const formatDateValue = (
 
     // Add UTC offset indicator
     if (convertToLocal) {
-      const offset = -date.getTimezoneOffset() / 60;
+      // Use current date's offset instead of historical offset
+      const offset = -new Date().getTimezoneOffset() / 60;
       const offsetStr = offset >= 0 ? `+${offset}` : `${offset}`;
       return `${formatted} UTC${offsetStr}`;
     } else {
