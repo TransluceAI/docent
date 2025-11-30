@@ -62,6 +62,7 @@ TABLE_MODEL_API_KEYS = "model_api_keys"
 TABLE_TELEMETRY_ACCUMULATION = "telemetry_accumulation"
 TABLE_TELEMETRY_AGENT_RUN_STATUS = "telemetry_agent_run_status"
 TABLE_MODEL_USAGE = "model_usage"
+TABLE_TELEMETRY_LINEAGE = "telemetry_lineage"
 TABLE_INGESTION_PAYLOAD = "ingestion_payloads"
 
 
@@ -938,6 +939,56 @@ class SQLATelemetryAccumulation(SQLABase):
             "data_type",
             "created_at",
             postgresql_ops={"key": "varchar_pattern_ops"},
+        ),
+    )
+
+
+class SQLATelemetryLineage(SQLABase):
+    __tablename__ = TABLE_TELEMETRY_LINEAGE
+
+    id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+
+    collection_id = mapped_column(String(36), nullable=False, index=True)
+    agent_run_id = mapped_column(String(36), nullable=False, index=True)
+
+    derived_type = mapped_column(String(32), nullable=False)
+    derived_id = mapped_column(String(128), nullable=False, index=True)
+    derived_key = mapped_column(String(64), nullable=False, default="", server_default="")
+
+    source_type = mapped_column(String(32), nullable=False)
+    source_id = mapped_column(
+        String(128), nullable=False, default="", server_default="", index=True
+    )
+    source_idx = mapped_column(Integer, nullable=False, default=-1, server_default="(-1)")
+    source_transcript_id = mapped_column(String(64), nullable=True)
+    telemetry_log_id = mapped_column(String(36), nullable=True, index=True)
+    telemetry_accumulation_id = mapped_column(String(36), nullable=True, index=True)
+
+    attributes = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=sqlalchemy.text("'{}'::jsonb")
+    )
+
+    created_at = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_telemetry_lineage__derived_type__derived_id", "derived_type", "derived_id"),
+        Index("ix_telemetry_lineage__agent_run_id__derived_type", "agent_run_id", "derived_type"),
+        Index(
+            "ix_telemetry_lineage__telemetry_accumulation_id",
+            "telemetry_accumulation_id",
+        ),
+        UniqueConstraint(
+            "collection_id",
+            "agent_run_id",
+            "derived_type",
+            "derived_id",
+            "derived_key",
+            "source_type",
+            "source_id",
+            "source_idx",
+            name="uq_telemetry_lineage_composite",
         ),
     )
 

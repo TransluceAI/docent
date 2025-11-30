@@ -4,7 +4,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
+from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, cast
 from uuid import uuid4
 
 from asyncpg.exceptions import DeadlockDetectedError
@@ -14,6 +14,7 @@ from redis.exceptions import LockError
 from sqlalchemy import Integer, and_, case
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import delete, func, not_, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Result
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -43,6 +44,7 @@ from docent_core.docent.db.schemas.tables import (
     SQLAAgentRun,
     SQLACollection,
     SQLATelemetryAgentRunStatus,
+    SQLATelemetryLineage,
     SQLATelemetryLog,
     SQLATranscript,
     SQLATranscriptGroup,
@@ -59,6 +61,8 @@ from docent_core.docent.services.telemetry_accumulation import (
 )
 
 logger = get_logger(__name__)
+
+LineageEntry = Dict[str, Any]
 
 AGENT_RUN_LOCK_PREFIX = "telemetry_agent_run_lock"
 AGENT_RUN_LOCK_TIMEOUT_SECONDS = JOB_TIMEOUT_SECONDS + 60
@@ -456,14 +460,18 @@ class TelemetryService:
             transcript_groups_by_agent_run = {agent_run_id: transcript_groups}
             collection_scores = {agent_run_id: agent_run_scores}
             collection_metadata = {agent_run_id: agent_run_metadata}
+            existing_transcripts_by_agent_run = await self._load_existing_transcripts(
+                collection_id, [agent_run_id]
+            )
 
             # Create agent run from spans
             transform_start = time.monotonic()
-            collection_agent_runs = await self._create_agent_runs_from_spans(
+            collection_agent_runs, lineage_entries = await self._create_agent_runs_from_spans(
                 agent_run_spans_dict,
                 transcript_groups_by_agent_run,
                 collection_scores,
                 collection_metadata,
+                existing_transcripts_by_agent_run,
             )
             transform_duration = time.monotonic() - transform_start
             logger.info(
@@ -483,7 +491,9 @@ class TelemetryService:
             ctx = await self.mono_svc.get_default_view_ctx(collection_id, user)
             # Store the agent run in the database
             persist_start = time.monotonic()
-            await self.update_agent_runs_for_telemetry(ctx, collection_agent_runs)
+            await self.update_agent_runs_for_telemetry(
+                ctx, collection_agent_runs, lineage_entries=lineage_entries
+            )
             persist_duration = time.monotonic() - persist_start
             logger.info(
                 "telemetry_processing phase=persist_agent_run collection_id=%s agent_run_id=%s duration=%.3fs",
@@ -1488,7 +1498,11 @@ class TelemetryService:
         )
 
     async def update_agent_runs_for_telemetry(
-        self, ctx: ViewContext, agent_runs: Sequence[AgentRun]
+        self,
+        ctx: ViewContext,
+        agent_runs: Sequence[AgentRun],
+        *,
+        lineage_entries: Sequence[LineageEntry] | None = None,
     ):
         """
         Update agent runs - create if they don't exist, update if they do exist.
@@ -1705,20 +1719,62 @@ class TelemetryService:
                 agent_run_ids,
             )
         else:
+            new_transcript_ids = {t.id for t in transcript_data}
+            existing_id_result = await self.session.execute(
+                select(SQLATranscript.id).where(
+                    SQLATranscript.collection_id == ctx.collection_id,
+                    SQLATranscript.agent_run_id.in_(agent_run_ids),
+                )
+            )
+            existing_transcript_ids = set(existing_id_result.scalars().all())
+            ids_to_delete = existing_transcript_ids - new_transcript_ids
+
+            # Upsert transcripts
+            for sqla_transcript in transcript_data:
+                await self.session.merge(sqla_transcript)
+
+            if ids_to_delete:
+                await self.session.execute(
+                    delete(SQLATranscript).where(
+                        SQLATranscript.collection_id == ctx.collection_id,
+                        SQLATranscript.id.in_(ids_to_delete),
+                    )
+                )
+
+            if lineage_entries:
+                normalized_lineage_entries = [
+                    self._normalize_lineage_entry_for_upsert(entry) for entry in lineage_entries
+                ]
+                if normalized_lineage_entries:
+                    lineage_insert = insert(SQLATelemetryLineage).values(normalized_lineage_entries)
+                    conflict_columns = [
+                        SQLATelemetryLineage.collection_id,
+                        SQLATelemetryLineage.agent_run_id,
+                        SQLATelemetryLineage.derived_type,
+                        SQLATelemetryLineage.derived_id,
+                        SQLATelemetryLineage.derived_key,
+                        SQLATelemetryLineage.source_type,
+                        SQLATelemetryLineage.source_id,
+                        SQLATelemetryLineage.source_idx,
+                    ]
+                    upsert_update_columns = {
+                        "telemetry_log_id": lineage_insert.excluded.telemetry_log_id,
+                        "telemetry_accumulation_id": lineage_insert.excluded.telemetry_accumulation_id,
+                        "source_transcript_id": lineage_insert.excluded.source_transcript_id,
+                        "attributes": lineage_insert.excluded.attributes,
+                    }
+                    upsert_stmt = lineage_insert.on_conflict_do_update(
+                        index_elements=conflict_columns,
+                        set_=upsert_update_columns,
+                    )
+                    await self.session.execute(upsert_stmt)
             logger.info(
-                "Deleting and recreating %s transcripts for agent_run_ids=%s",
+                "Upserted %s transcripts for agent_run_ids=%s (new=%s updated=%s deleted=%s)",
                 len(transcript_data),
                 agent_run_ids,
-            )
-            delete_transcript_query = delete(SQLATranscript).where(
-                SQLATranscript.agent_run_id.in_(agent_run_ids)
-            )
-            await self.session.execute(delete_transcript_query)
-
-            # Insert new transcripts
-            self.session.add_all(transcript_data)
-            logger.info(
-                "Inserted %s transcripts for agent_run_ids=%s", len(transcript_data), agent_run_ids
+                len(new_transcript_ids - existing_transcript_ids),
+                len(new_transcript_ids & existing_transcript_ids),
+                len(ids_to_delete),
             )
 
             # Force a commit and verify from a fresh session to ensure transcripts are persisted
@@ -1971,13 +2027,54 @@ class TelemetryService:
 
         return transcript_groups
 
+    async def _load_existing_transcripts(
+        self, collection_id: str, agent_run_ids: Sequence[str]
+    ) -> dict[str, list[Transcript]]:
+        """
+        Load existing transcripts for the given agent runs so we can reuse IDs when content matches.
+        """
+        if not agent_run_ids:
+            return {}
+
+        stmt = (
+            select(SQLATranscript)
+            .where(SQLATranscript.collection_id == collection_id)
+            .where(SQLATranscript.agent_run_id.in_(agent_run_ids))
+        )
+        result = await self.session.execute(stmt)
+        transcripts_by_agent_run: dict[str, list[Transcript]] = {}
+        for row in result.scalars().all():
+            messages_value = cast(bytes | bytearray | memoryview, row.messages)
+            messages_blob: bytes = bytes(messages_value)
+            messages_raw = json.loads(messages_blob)
+            parsed_messages: list[ChatMessage] = []
+            for msg in messages_raw:
+                parsed_messages.append(parse_chat_message(msg))
+            metadata_value = cast(bytes | bytearray | memoryview, row.metadata_json)
+            metadata_blob: bytes = bytes(metadata_value)
+            metadata_raw = json.loads(metadata_blob)
+            metadata_dict: Dict[str, Any] = metadata_raw if isinstance(metadata_raw, dict) else {}
+            transcript = Transcript(
+                id=row.id,
+                name=row.name,
+                description=row.description,
+                transcript_group_id=row.transcript_group_id,
+                created_at=row.created_at,
+                messages=parsed_messages,
+                metadata=metadata_dict,
+            )
+            transcripts_by_agent_run.setdefault(row.agent_run_id, []).append(transcript)
+
+        return transcripts_by_agent_run
+
     async def _create_agent_runs_from_spans(
         self,
         agent_run_spans: Dict[str, Dict[str, List[Dict[str, Any]]]],
         transcript_groups_by_agent_run: Dict[str, List[TranscriptGroup]] | None = None,
         collection_scores: Dict[str, List[Dict[str, Any]]] | None = None,
         collection_metadata: Dict[str, List[Dict[str, Any]]] | None = None,
-    ) -> List[AgentRun]:
+        existing_transcripts_by_agent_run: dict[str, list[Transcript]] | None = None,
+    ) -> tuple[List[AgentRun], List[LineageEntry]]:
         """
         Create AgentRun objects from organized spans, incorporating stored scores and metadata.
 
@@ -1988,9 +2085,10 @@ class TelemetryService:
             collection_metadata: Stored metadata for the collection, organized by agent run ID
 
         Returns:
-            List of AgentRun objects
+            Tuple of (AgentRun objects, lineage entries)
         """
         collection_agent_runs: List[AgentRun] = []
+        lineage_entries: List[LineageEntry] = []
 
         for agent_run_id, transcripts in agent_run_spans.items():
             logger.info(f"Processing agent_run_id: {agent_run_id}")
@@ -2008,7 +2106,8 @@ class TelemetryService:
             agent_run_model: str | None = None
             agent_run_metadata_dict: Dict[str, Any] = {}
             agent_run_metadata_events: List[Dict[str, Any]] = []
-            transcript_group_events: dict[str, List[Dict[str, Any]]] = defaultdict(list)
+            transcript_group_events: DefaultDict[str, List[Dict[str, Any]]] = defaultdict(list)
+            collection_id: str | None = None
 
             # Process each transcript
             for transcript_id, transcript_spans in transcripts.items():
@@ -2046,6 +2145,10 @@ class TelemetryService:
 
                     # Extract model from span attributes
                     span_attrs = span.get("attributes", {})
+                    if collection_id is None:
+                        collection_attr = span_attrs.get("collection_id")
+                        if isinstance(collection_attr, str):
+                            collection_id = collection_attr
                     if not agent_run_model and "gen_ai.response.model" in span_attrs:
                         llm_request_type = (
                             span_attrs.get("llm", {}).get("request", {}).get("type", None)
@@ -2055,7 +2158,9 @@ class TelemetryService:
                             logger.info(f"    Found model: {agent_run_model}")
 
                 # Create transcripts from spans
-                transcripts_list = self._create_transcripts_from_spans(transcript_spans)
+                transcripts_list, transcript_lineage = self._create_transcripts_from_spans(
+                    transcript_id, transcript_spans
+                )
                 logger.info(
                     "    Transcript extraction summary: agent_run_id=%s transcript_id=%s "
                     "span_count=%s transcripts_created=%s",
@@ -2081,6 +2186,7 @@ class TelemetryService:
 
                 # Add transcripts to agent run
                 agent_run_transcripts.extend(transcripts_list)
+                lineage_entries.extend(transcript_lineage)
 
             # Create agent run if it has transcripts
             if agent_run_transcripts:
@@ -2136,6 +2242,43 @@ class TelemetryService:
                     event_transcript_groups = self._create_transcript_groups_from_accumulation_data(
                         metadata_map
                     )
+                    for group_id, events in transcript_group_events.items():
+                        for event_idx, event in enumerate(events):
+                            span_id = event.get("span_id")
+                            if not span_id:
+                                logger.error(
+                                    "Missing span_id for transcript_group_metadata event; skipping lineage entry (group_id=%s, event_idx=%s, agent_run_id=%s)",
+                                    group_id,
+                                    event_idx,
+                                    agent_run_id,
+                                )
+                                continue
+                            event_attrs = cast(Dict[str, Any], event.get("attributes", {}) or {})
+                            lineage_collection_id = (
+                                event_attrs.get("collection_id") or collection_id
+                            )
+                            lineage_agent_run_id = event_attrs.get("agent_run_id") or agent_run_id
+                            if isinstance(lineage_collection_id, str) and isinstance(
+                                lineage_agent_run_id, str
+                            ):
+                                lineage_entries.append(
+                                    {
+                                        "collection_id": lineage_collection_id,
+                                        "agent_run_id": lineage_agent_run_id,
+                                        "derived_type": "transcript_group",
+                                        "derived_id": group_id,
+                                        "derived_key": None,
+                                        "source_type": "span_event",
+                                        "source_id": span_id,
+                                        "source_idx": event_idx,
+                                        "source_transcript_id": event.get("raw_transcript_id"),
+                                        "telemetry_log_id": event.get("telemetry_log_id"),
+                                        "telemetry_accumulation_id": event.get(
+                                            "telemetry_accumulation_id"
+                                        ),
+                                        "attributes": None,
+                                    }
+                                )
                     for tg in event_transcript_groups:
                         if tg.agent_run_id == agent_run_id:
                             agent_run_transcript_groups_map[tg.id] = tg
@@ -2148,6 +2291,22 @@ class TelemetryService:
                         agent_run_transcript_groups_map[tg.id] = tg
 
                 agent_run_transcript_groups = list(agent_run_transcript_groups_map.values())
+
+                existing_transcripts_for_run = (
+                    existing_transcripts_by_agent_run.get(agent_run_id, [])
+                    if existing_transcripts_by_agent_run
+                    else []
+                )
+                if existing_transcripts_for_run:
+                    reused_map = self._reuse_existing_transcript_ids(
+                        agent_run_transcripts, existing_transcripts_for_run
+                    )
+                    if reused_map:
+                        for entry in lineage_entries:
+                            if entry.get("derived_type") == "transcript":
+                                derived_id = entry.get("derived_id")
+                                if isinstance(derived_id, str) and derived_id in reused_map:
+                                    entry["derived_id"] = reused_map[derived_id]
 
                 agent_run = AgentRun(
                     id=agent_run_id,
@@ -2164,23 +2323,71 @@ class TelemetryService:
             else:
                 logger.warning(f"  No transcripts created for agent_run_id: {agent_run_id}")
 
-        return collection_agent_runs
+        return collection_agent_runs, lineage_entries
+
+    def _reuse_existing_transcript_ids(
+        self, new_transcripts: list[Transcript], existing_transcripts: list[Transcript]
+    ) -> dict[str, str]:
+        """
+        Reuse transcript IDs when the content matches existing transcripts to avoid churn.
+        """
+        remaining_existing: dict[str, Transcript] = {t.id: t for t in existing_transcripts}
+        id_mapping: dict[str, str] = {}
+
+        def threads_match(existing: Transcript, new: Transcript) -> bool:
+            return self.matching_thread_start(
+                existing.messages, new.messages
+            ) or self.matching_thread_start(new.messages, existing.messages)
+
+        for transcript in new_transcripts:
+            preferred_candidates = [
+                t
+                for t in remaining_existing.values()
+                if t.transcript_group_id == transcript.transcript_group_id
+            ]
+            candidates = (
+                preferred_candidates if preferred_candidates else list(remaining_existing.values())
+            )
+
+            matched: Transcript | None = None
+            for candidate in candidates:
+                if threads_match(candidate, transcript):
+                    matched = candidate
+                    break
+
+            if not matched:
+                continue
+
+            old_id = transcript.id
+            transcript.id = matched.id
+            if not transcript.transcript_group_id:
+                transcript.transcript_group_id = matched.transcript_group_id
+            if matched.created_at and not transcript.created_at:
+                transcript.created_at = matched.created_at
+            if not transcript.metadata:
+                transcript.metadata = matched.metadata
+            id_mapping[old_id] = matched.id
+            remaining_existing.pop(matched.id, None)
+
+        return id_mapping
 
     def _create_transcripts_from_spans(
-        self, transcript_spans: List[Dict[str, Any]]
-    ) -> List[Transcript]:
+        self, raw_transcript_id: str, transcript_spans: List[Dict[str, Any]]
+    ) -> tuple[List[Transcript], List[LineageEntry]]:
         """
-        Create Transcript objects from spans.
+        Create Transcript objects from spans and track lineage back to the contributing spans.
 
         Args:
+            raw_transcript_id: transcript_id as sent in telemetry
             transcript_spans: List of spans for a transcript
 
         Returns:
-            List of Transcript objects
+            Tuple of (Transcript objects, lineage entries)
         """
         # Store all the chat threads and track which spans contributed to each
         chat_threads: List[List[ChatMessage]] = []
         thread_span_indices: List[List[int]] = []  # Track which spans contributed to each thread
+        span_lookup_by_id: Dict[str, Dict[str, Any]] = {}
 
         for span_idx, span in enumerate(transcript_spans):
             # Extract messages from this span
@@ -2188,6 +2395,10 @@ class TelemetryService:
 
             if not span_messages:
                 continue
+
+            raw_span_id = span.get("raw_span_id")
+            if isinstance(raw_span_id, str) and raw_span_id:
+                span_lookup_by_id.setdefault(raw_span_id, span)
 
             # Find or create chat thread
             thread_index, action = self._find_or_create_chat_thread(span_messages, chat_threads)
@@ -2218,6 +2429,7 @@ class TelemetryService:
 
         # Create transcripts from chat threads
         transcripts: List[Transcript] = []
+        lineage_entries: List[LineageEntry] = []
         logger.debug(
             f"    Created {len(chat_threads)} chat threads from {len(transcript_spans)} spans"
         )
@@ -2229,12 +2441,28 @@ class TelemetryService:
 
                 # Determine transcript_group_id for this thread based on contributing spans
                 thread_transcript_group_id = None
+                contributing_span_ids: set[str] = set()
+                contributing_log_ids: dict[str, str | None] = {}
+                contributing_accumulation_ids: dict[str, str | None] = {}
                 if thread_span_indices[i]:
                     # Use the transcript_group_id from the last span that contributed to this thread
                     last_contributing_span_idx = thread_span_indices[i][-1]
                     last_contributing_span = transcript_spans[last_contributing_span_idx]
                     last_span_attrs = last_contributing_span.get("attributes", {})
                     thread_transcript_group_id = last_span_attrs.get("transcript_group_id")
+                for idx in thread_span_indices[i]:
+                    span = transcript_spans[idx]
+                    raw_span_id = span.get("raw_span_id")
+                    telemetry_log_id = span.get("telemetry_log_id")
+                    telemetry_accumulation_id = span.get("telemetry_accumulation_id")
+                    if isinstance(raw_span_id, str) and raw_span_id:
+                        contributing_span_ids.add(raw_span_id)
+                        contributing_log_ids[raw_span_id] = telemetry_log_id
+                        contributing_accumulation_ids[raw_span_id] = (
+                            telemetry_accumulation_id
+                            if isinstance(telemetry_accumulation_id, str)
+                            else None
+                        )
 
                 transcript = Transcript(
                     id=thread_transcript_id,
@@ -2245,6 +2473,34 @@ class TelemetryService:
                 logger.info(
                     f"    Created transcript {thread_transcript_id} with {len(chat_thread)} messages and transcript_group_id: {thread_transcript_group_id}"
                 )
+
+                # Record transcript-level lineage to each contributing span
+                for raw_span_id in contributing_span_ids:
+                    span = span_lookup_by_id.get(raw_span_id)
+                    span_attrs: Dict[str, Any] = (
+                        cast(Dict[str, Any], span.get("attributes", {}) or {}) if span else {}
+                    )
+                    collection_id = span_attrs.get("collection_id")
+                    agent_run_id = span_attrs.get("agent_run_id")
+                    if isinstance(collection_id, str) and isinstance(agent_run_id, str):
+                        lineage_entries.append(
+                            {
+                                "collection_id": collection_id,
+                                "agent_run_id": agent_run_id,
+                                "derived_type": "transcript",
+                                "derived_id": thread_transcript_id,
+                                "derived_key": None,
+                                "source_type": "span",
+                                "source_id": raw_span_id,
+                                "source_transcript_id": raw_transcript_id,
+                                "telemetry_log_id": contributing_log_ids.get(raw_span_id),
+                                "telemetry_accumulation_id": contributing_accumulation_ids.get(
+                                    raw_span_id
+                                ),
+                                "attributes": None,
+                            }
+                        )
+
         else:
             logger.warning(f"    No messages extracted from {len(transcript_spans)} spans")
             # Log more details about why no chat threads were created
@@ -2255,7 +2511,20 @@ class TelemetryService:
                 logger.debug(f"      Span {span_idx}: extracted {len(span_messages)} messages")
             logger.debug(f"    Total messages extracted from all spans: {total_messages}")
 
-        return transcripts
+        return transcripts, lineage_entries
+
+    def _normalize_lineage_entry_for_upsert(self, entry: LineageEntry) -> LineageEntry:
+        """
+        Normalize optional fields so composite uniqueness and upserts work reliably.
+        """
+        normalized = dict(entry)
+        normalized["derived_key"] = normalized.get("derived_key") or ""
+        normalized["source_id"] = normalized.get("source_id") or ""
+        normalized["source_idx"] = (
+            normalized.get("source_idx") if normalized.get("source_idx") is not None else -1
+        )
+        normalized["attributes"] = normalized.get("attributes") or {}
+        return normalized
 
     def _find_or_create_chat_thread(
         self, span_messages: List[ChatMessage], existing_chat_threads: List[List[ChatMessage]]
@@ -2967,10 +3236,22 @@ class TelemetryService:
                 else:
                     event_metadata = unflattened_metadata
 
+            raw_span_id = span.get("raw_span_id")
+            telemetry_accumulation_id = span.get("telemetry_accumulation_id")
             metadata_events.append(
                 {
                     "name": name,
                     "timestamp": event.get("timestamp"),
+                    "span_id": (
+                        raw_span_id if isinstance(raw_span_id, str) and raw_span_id else None
+                    ),
+                    "telemetry_log_id": span.get("telemetry_log_id"),
+                    "telemetry_accumulation_id": (
+                        telemetry_accumulation_id
+                        if isinstance(telemetry_accumulation_id, str)
+                        else None
+                    ),
+                    "raw_transcript_id": span.get("attributes", {}).get("transcript_id"),
                     "attributes": non_metadata_attrs,
                     "metadata": event_metadata,
                 }

@@ -228,7 +228,9 @@ class TelemetryAccumulationService:
         spans: List[Dict[str, Any]] = []
         for entry in entries:
             try:
-                spans.append(entry.data)
+                span_payload = dict(entry.data)
+                span_payload["telemetry_accumulation_id"] = entry.id
+                spans.append(span_payload)
             except Exception as e:
                 logger.error(f"Failed to process span data for collection {collection_id}: {e}")
                 continue
@@ -256,7 +258,9 @@ class TelemetryAccumulationService:
         spans: List[Dict[str, Any]] = []
         for entry in entries:
             try:
-                spans.append(entry.data)
+                span_payload = dict(entry.data)
+                span_payload["telemetry_accumulation_id"] = entry.id
+                spans.append(span_payload)
             except Exception as e:
                 logger.error(f"Failed to process span data for collection {collection_id}: {e}")
                 continue
