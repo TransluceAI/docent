@@ -50,6 +50,7 @@ export const SmartValueInput = React.forwardRef<
   ) => {
     const [open, setOpen] = useState(false);
     const [inputValue, setInputValue] = useState(value);
+    const [selectedValue, setSelectedValue] = useState<string>('');
     const inputRef = useRef<HTMLInputElement>(null);
     const resolvedRef = (ref as React.RefObject<HTMLInputElement>) || inputRef;
 
@@ -90,6 +91,15 @@ export const SmartValueInput = React.forwardRef<
     useEffect(() => {
       setOpen(false);
     }, [fieldName]);
+
+    // Auto-select first item when filtered values change
+    useEffect(() => {
+      if (displayValues.length > 0) {
+        setSelectedValue(displayValues[0]);
+      } else {
+        setSelectedValue('');
+      }
+    }, [displayValues]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = e.target.value;
@@ -160,6 +170,8 @@ export const SmartValueInput = React.forwardRef<
     return (
       <CommandPrimitive
         shouldFilter={false}
+        value={selectedValue}
+        onValueChange={setSelectedValue}
         onKeyDown={(e) => {
           // Let cmdk handle arrow keys when dropdown is open
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
