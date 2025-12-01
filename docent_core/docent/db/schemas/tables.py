@@ -959,10 +959,12 @@ class SQLATelemetryLineage(SQLABase):
     source_id = mapped_column(
         String(128), nullable=False, default="", server_default="", index=True
     )
-    source_idx = mapped_column(Integer, nullable=False, default=-1, server_default="(-1)")
+    source_idx = mapped_column(
+        Integer, nullable=False, default=-1, server_default=sqlalchemy.text("-1")
+    )
     source_transcript_id = mapped_column(String(64), nullable=True)
     telemetry_log_id = mapped_column(String(36), nullable=True, index=True)
-    telemetry_accumulation_id = mapped_column(String(36), nullable=True, index=True)
+    telemetry_accumulation_id = mapped_column(String(36), nullable=True)
 
     attributes = mapped_column(
         JSONB, nullable=False, default=dict, server_default=sqlalchemy.text("'{}'::jsonb")
