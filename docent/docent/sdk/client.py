@@ -1136,3 +1136,51 @@ class Docent:
         webbrowser.open(agent_run_url)
 
         return agent_run_url
+
+    def open_rubric(
+        self,
+        collection_id: str,
+        rubric_id: str,
+        agent_run_id: str | None = None,
+        judge_result_id: str | None = None,
+    ) -> str:
+        """Open a rubric, agent run, or judge result in the browser.
+
+        Args:
+            collection_id: ID of the Collection.
+            rubric_id: ID of the rubric.
+            agent_run_id: Optional ID of the agent run to view within the rubric.
+            judge_result_id: Optional ID of the judge result to view. Requires agent_run_id.
+
+        Returns:
+            str: The URL that was opened.
+
+        Raises:
+            ValueError: If judge_result_id is provided without agent_run_id.
+
+        Example:
+            ```python
+            from docent.sdk import Docent
+
+            client = Docent()
+            # Open rubric overview
+            client.open_rubric(collection_id, rubric_id)
+            # Open specific agent run within rubric
+            client.open_rubric(collection_id, rubric_id, agent_run_id)
+            # Open specific judge result
+            client.open_rubric(collection_id, rubric_id, agent_run_id, judge_result_id)
+            ```
+        """
+        if judge_result_id is not None and agent_run_id is None:
+            raise ValueError("judge_result_id requires agent_run_id to be specified")
+
+        url = f"{self._web_url}/dashboard/{collection_id}/rubric/{rubric_id}"
+        if agent_run_id is not None:
+            url += f"/agent_run/{agent_run_id}"
+        if judge_result_id is not None:
+            url += f"/result/{judge_result_id}"
+
+        logger.info(f"Opening rubric in browser: {url}")
+        webbrowser.open(url)
+
+        return url
