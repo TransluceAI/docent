@@ -48,21 +48,6 @@ function FreeUsageCard({
   freeUsage: FreeUsageResponse | undefined;
   windowSeconds?: number;
 }) {
-  if (freeUsage && !freeUsage.has_cap) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Free usage</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-muted-foreground text-sm">
-            Your account is not subject to usage limits.
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-  const progress = freeUsage?.fraction_used ?? 0;
   const segmentColors = [
     'bg-blue-text',
     'bg-purple-text',
@@ -72,6 +57,45 @@ function FreeUsageCard({
     'bg-indigo-text',
     'bg-red-text',
   ];
+
+  if (freeUsage && !freeUsage.has_cap) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row justify-between items-center">
+          <CardTitle>Free usage</CardTitle>
+          {windowSeconds && (
+            <span className="text-sm text-muted-foreground">
+              {formatWindow(windowSeconds)}
+            </span>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="text-muted-foreground text-sm mb-2">
+            Your account is not subject to usage limits.
+          </div>
+          <div className="text-primary text-3xl font-regular">
+            ${(freeUsage.total_cents / 100).toFixed(2)} USD
+          </div>
+          {freeUsage.models.length > 0 ? (
+            <div className="grid gap-2">
+              {freeUsage.models.map((m) => (
+                <div key={m.model} className="flex justify-between text-sm">
+                  <div className="text-primary">{m.model}</div>
+                  <div className="text-muted-foreground">
+                    {(m.total_cents / 100).toFixed(2)} USD
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No usage yet.</div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const progress = freeUsage?.fraction_used ?? 0;
 
   return (
     <Card>
@@ -94,7 +118,7 @@ function FreeUsageCard({
                 <div className="h-2 w-0" />
               ) : (
                 freeUsage.models.map((m, idx) => {
-                  const pct = m.fraction_used * 100;
+                  const pct = (m.fraction_used ?? 0) * 100;
                   const color = segmentColors[idx % segmentColors.length];
                   return (
                     <div
@@ -122,7 +146,7 @@ function FreeUsageCard({
                       <div className="text-primary">{m.model}</div>
                     </div>
                     <div className="text-muted-foreground">
-                      {(m.fraction_used * 100).toFixed(2)}%
+                      {((m.fraction_used ?? 0) * 100).toFixed(2)}%
                     </div>
                   </div>
                 );

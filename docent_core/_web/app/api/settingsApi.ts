@@ -3,23 +3,16 @@ import { BASE_URL } from '@/app/constants';
 
 export interface FreeUsageModelBreakdown {
   model: string;
-  fraction_used: number;
+  total_cents: number;
+  fraction_used?: number;
 }
 
-interface FreeUsageResponseNoCap {
-  has_cap: false;
-}
-
-export interface FreeUsageResponseWithCap {
-  has_cap: true;
-  window_seconds: number;
-  fraction_used: number | null;
+export interface FreeUsageResponse {
+  has_cap: boolean;
+  total_cents: number;
   models: FreeUsageModelBreakdown[];
-  note: string;
+  fraction_used?: number;
 }
-export type FreeUsageResponse =
-  | FreeUsageResponseWithCap
-  | FreeUsageResponseNoCap;
 
 export interface ByokModelBreakdown {
   model: string;

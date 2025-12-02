@@ -30,17 +30,21 @@ async def get_usage_summary(
     user: User = Depends(get_authenticated_user),
     usage_svc: UsageService = Depends(get_usage_svc),
 ):
-    # Free usage
+    window_seconds = RATE_LIMIT_WINDOW_SECONDS
+    total_cents, models = await usage_svc.get_free_usage_breakdown(user.id, window_seconds)
+
     if FREE_CAP_CENTS is None:
-        free: dict[str, Any] | None = {"has_cap": False}
+        free: dict[str, Any] = {
+            "has_cap": False,
+            "total_cents": total_cents,
+            "models": models,
+        }
     else:
-        window_seconds = RATE_LIMIT_WINDOW_SECONDS
         cap_cents = FREE_CAP_CENTS
-        total_cents, models = await usage_svc.get_free_usage_breakdown(user.id, window_seconds)
         fraction_used = (total_cents / cap_cents) if cap_cents and cap_cents > 0 else 0.0
         free = {
             "has_cap": True,
-            "window_seconds": window_seconds,
+            "total_cents": total_cents,
             "fraction_used": fraction_used,
             "models": models,
         }

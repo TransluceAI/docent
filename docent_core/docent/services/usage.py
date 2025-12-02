@@ -168,18 +168,15 @@ class UsageService:
         # Build models list
         models: list[dict[str, Any]] = []
         for model_name, cost in by_model.items():
-            fraction_used = None
-            # Being defensive here—this function shouldn't be called if no usage cap
+            model_entry: dict[str, Any] = {
+                "model": model_name,
+                "total_cents": cost,
+            }
             if FREE_CAP_CENTS is not None:
-                fraction_used = cost / FREE_CAP_CENTS
-            models.append(
-                {
-                    "model": model_name,
-                    "fraction_used": fraction_used,
-                }
-            )
+                model_entry["fraction_used"] = cost / FREE_CAP_CENTS
+            models.append(model_entry)
 
-        models.sort(key=lambda m: m["fraction_used"] or 0, reverse=True)
+        models.sort(key=lambda m: m["total_cents"], reverse=True)
         return total_cents, models
 
     async def get_byok_usage_by_key(
