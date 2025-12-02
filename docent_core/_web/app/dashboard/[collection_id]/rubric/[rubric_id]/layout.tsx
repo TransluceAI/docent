@@ -3,7 +3,6 @@
 import React, { Suspense, useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import SingleRubricArea from '../../components/SingleRubricArea';
-import { ResultFilterControlsProvider } from '@/providers/use-result-filters';
 import { RubricVersionProvider } from '@/providers/use-rubric-version';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RefinementChat from './components/RefinementChat';
@@ -186,12 +185,7 @@ function RubricLayoutBody({
           !leftSidebarOpen && isOnResultRoute && 'hidden'
         )}
       >
-        <ResultFilterControlsProvider
-          collectionId={collectionId}
-          rubricId={rubricId}
-        >
-          <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
-        </ResultFilterControlsProvider>
+        <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
       </ResizablePanel>
 
       <ResizableHandle

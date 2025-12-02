@@ -1,58 +1,11 @@
-import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
-import {
-  JudgeFilter,
-  Operator,
-  ViewMode,
-} from '@/providers/use-result-filters';
 import { Label } from '@/app/api/labelApi';
 
-function compareValues(
-  itemValue: string | number | boolean,
-  filterValue: string | number | boolean,
-  op: Operator
-): boolean {
-  const itemType = typeof itemValue;
-  const filterType = typeof filterValue;
-
-  const typeKey = `${itemType}-${filterType}`;
-  switch (typeKey) {
-    case 'number-number':
-      if (op === '==') return itemValue === filterValue;
-      if (op === '!=') return itemValue !== filterValue;
-      if (op === '<') return itemValue < filterValue;
-      if (op === '<=') return itemValue <= filterValue;
-      if (op === '>') return itemValue > filterValue;
-      if (op === '>=') return itemValue >= filterValue;
-      break;
-    case 'string-string':
-      if (op === '==') return itemValue === filterValue;
-      if (op === '!=') return itemValue !== filterValue;
-      if (op === 'contains')
-        return (itemValue as string)
-          .toLowerCase()
-          .includes((filterValue as string).toLowerCase());
-      break;
-    case 'boolean-boolean':
-      if (op === '==') return itemValue === filterValue;
-      if (op === '!=') return itemValue !== filterValue;
-      break;
-    default:
-      return false;
-  }
-  return false;
-}
-
-export function applyGeneralFilters(
-  result: JudgeResultWithCitations,
-  filters: JudgeFilter[]
-): boolean {
-  return filters.every((filter) => {
-    let value = result.output[filter.path];
-    if (value?.text) value = value.text;
-    return compareValues(value, filter.value, filter.op);
-  });
-}
+export type ViewMode =
+  | 'all'
+  | 'labeled_disagreement'
+  | 'missing_labels'
+  | 'incomplete_labels';
 
 function calculateHumanMissFraction(agentRun: AgentRunJudgeResults): number {
   const { results, reflection } = agentRun;
@@ -116,20 +69,11 @@ export function applyViewModeResults(
   agentRunResults: AgentRunJudgeResults[],
   labels: Label[],
   viewMode: ViewMode,
-  generalFilters: JudgeFilter[],
   missingLabelsSnapshot?: Set<string> | null
 ): AgentRunJudgeResults[] {
   const labeledAgentRunIds = new Set(labels.map((label) => label.agent_run_id));
 
-  // Filter agent runs where at least one result passes the general filters
-  let filteredAgentRuns = agentRunResults
-    .map((agentRun) => ({
-      ...agentRun,
-      results: agentRun.results.filter((result) =>
-        applyGeneralFilters(result, generalFilters)
-      ),
-    }))
-    .filter((agentRun) => agentRun.results.length > 0);
+  let filteredAgentRuns = agentRunResults;
 
   switch (viewMode) {
     case 'all':

@@ -27,7 +27,7 @@ import {
   useGetChartMetadataQuery,
   useGetChartDataQuery,
 } from '../api/chartApi';
-import { FilterControls, toggleFilterDisabledState } from './FilterControls';
+import { FilterControls } from './FilterControls';
 import { FilterChips } from './FilterChips';
 import { useGetAgentRunMetadataFieldsQuery } from '../api/collectionApi';
 import {
@@ -227,61 +227,13 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
 
   function handleRunsFilterChange(runsFilter: ComplexFilter | null) {
     onChange({ ...chart, runs_filter: runsFilter });
-    // Clear the editing filter when filters change
     setEditingFilter(null);
+    setFilterPopoverOpen(false);
   }
 
-  const removeFilter = (filterId: string) => {
-    if (!runs_filter) return;
-
-    const updatedFilters = runs_filter.filters.filter((f) => f.id !== filterId);
-
-    if (updatedFilters.length === 0) {
-      handleRunsFilterChange(null);
-    } else {
-      handleRunsFilterChange({
-        ...runs_filter,
-        filters: updatedFilters,
-      });
-    }
-  };
-
-  const editFilter = (filter: PrimitiveFilter) => {
-    if (!runs_filter) return;
-
-    // Remove the filter first
-    const updatedFilters = runs_filter.filters.filter(
-      (f) => f.id !== filter.id
-    );
-
-    if (updatedFilters.length === 0) {
-      handleRunsFilterChange(null);
-    } else {
-      handleRunsFilterChange({
-        ...runs_filter,
-        filters: updatedFilters,
-      });
-    }
-
-    // Set the filter to edit and open the popover
+  const handleRequestEdit = (filter: PrimitiveFilter) => {
     setEditingFilter(filter);
     setFilterPopoverOpen(true);
-  };
-
-  const clearAllFilters = () => {
-    handleRunsFilterChange(null);
-  };
-
-  const handleToggleFilter = (filterId: string) => {
-    const updatedFilters = toggleFilterDisabledState(
-      runs_filter ?? null,
-      filterId
-    );
-    if (!runs_filter || !updatedFilters || updatedFilters === runs_filter) {
-      return;
-    }
-
-    handleRunsFilterChange(updatedFilters);
   };
 
   const handleDownloadPng = async () => {
@@ -406,10 +358,8 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
           {runs_filter && (
             <FilterChips
               filters={runs_filter}
-              onRemoveFilter={removeFilter}
-              onEditFilter={editFilter}
-              onClearAllFilters={clearAllFilters}
-              onToggleFilter={handleToggleFilter}
+              onFiltersChange={handleRunsFilterChange}
+              onRequestEdit={handleRequestEdit}
               className="mr-1"
               disabled={!hasWritePermission}
             />
@@ -438,7 +388,6 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                 onFiltersChange={handleRunsFilterChange}
                 metadataFields={agentRunMetadataFields}
                 collectionId={collectionId!}
-                showFilterChips={false}
                 showStepFilter={false}
                 initialFilter={editingFilter}
               />

@@ -10,13 +10,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tags, Split, AlertCircle } from 'lucide-react';
-import {
-  ViewMode,
-  useResultFilterControls,
-} from '@/providers/use-result-filters';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
 import { cn } from '@/lib/utils';
-import { applyViewModeResults } from '../utils/viewModeResults';
+import { applyViewModeResults, ViewMode } from '../utils/viewModeResults';
 import { Label } from '@/app/api/labelApi';
 
 interface ViewModeOption {
@@ -54,15 +50,17 @@ interface ViewModeDropdownProps {
   agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   className?: string;
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 export default function ViewModeDropdown({
   agentRunResults,
   labels,
   className,
+  viewMode,
+  setViewMode,
 }: ViewModeDropdownProps) {
-  const { viewMode, setViewMode, filters } = useResultFilterControls();
-
   const counts = useMemo(() => {
     const viewModes: ViewMode[] = [
       'all',
@@ -78,14 +76,13 @@ export default function ViewModeDropdown({
         agentRunResults,
         labels,
         mode,
-        filters,
         null
       );
       countsMap[mode] = filteredAgentRuns.length;
     }
 
     return countsMap;
-  }, [agentRunResults, labels, filters]);
+  }, [agentRunResults, labels]);
 
   const currentOption = VIEW_MODE_OPTIONS.find(
     (option) => option.value === viewMode

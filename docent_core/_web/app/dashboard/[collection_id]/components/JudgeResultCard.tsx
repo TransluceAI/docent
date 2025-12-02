@@ -354,6 +354,7 @@ interface BooleanInputProps {
   onClearLabel?: (labelSetId: string) => void;
   schema: SchemaDefinition;
   isRequiredWarning?: boolean;
+  agreement?: { agreed: number; total: number };
   canEditLabels: boolean;
 }
 
@@ -366,6 +367,7 @@ const BooleanInput = ({
   onClearLabel,
   schema,
   isRequiredWarning = false,
+  agreement,
   canEditLabels,
 }: BooleanInputProps) => {
   const hasLabel = labelValue !== undefined;
@@ -383,6 +385,9 @@ const BooleanInput = ({
       </label>
       <div className="flex items-center gap-1">
         <span>{String(resultValue)}</span>
+        {agreement && (
+          <AgreementDisplay agreed={agreement.agreed} total={agreement.total} />
+        )}
         <DropdownMenu
           open={disableEditing ? false : undefined}
           onOpenChange={(open) => {
@@ -1010,6 +1015,7 @@ const JudgeResultCard = ({
               onClearLabel={() => clearLabelField(key)}
               schema={schema}
               isRequiredWarning={isRequiredAndUnfilled(key)}
+              agreement={calculateAgreement(key)}
               canEditLabels={canEditLabels}
             />
           );

@@ -12,20 +12,20 @@ import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { SchemaDefinition } from '@/app/types/schema';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
-import { applyGeneralFilters } from '../utils/viewModeResults';
-import { useResultFilterControls } from '@/providers/use-result-filters';
 import { useParams } from 'next/navigation';
 
 interface AgreementPopoverProps {
   agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   schema?: SchemaDefinition;
+  activeFilters: any[];
 }
 
 export const AgreementPopover = ({
   agentRunResults,
   labels,
   schema,
+  activeFilters,
 }: AgreementPopoverProps) => {
   const { rubric_id: rubricId } = useParams<{
     rubric_id: string;
@@ -61,13 +61,6 @@ export const AgreementPopover = ({
     () => agentRunResults.map((arr) => arr.results[0]).filter(Boolean),
     [agentRunResults]
   );
-
-  // Apply the filters to the runs
-  const { filters } = useResultFilterControls();
-  const filteredFirstResults = useMemo(
-    () => firstResults.filter((result) => applyGeneralFilters(result, filters)),
-    [firstResults, filters]
-  );
   // Track the selected property for the visible selection
   const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
 
@@ -86,17 +79,19 @@ export const AgreementPopover = ({
 
   // Calculate agreement for each property
   const propertyStats = useMemo(() => {
-    if (!filteredFirstResults || !activeLabelSet) {
+    if (!firstResults || !activeLabelSet) {
       return {};
     }
 
     return calculatePropertyStats(
-      filteredFirstResults,
+      firstResults,
       labels,
       countableProperties,
       activeLabelSet.id
     );
-  }, [filteredFirstResults, labels, countableProperties, activeLabelSet]);
+  }, [firstResults, labels, countableProperties, activeLabelSet]);
+
+  const activeFiltersCount = activeFilters.filter((f) => !f.disabled).length;
 
   const statsContent = () => {
     if (!activeLabelSet) return null;
@@ -146,7 +141,7 @@ export const AgreementPopover = ({
   };
 
   const content = () => {
-    if (filteredFirstResults.length === 0) {
+    if (firstResults.length === 0) {
       return (
         <span className="text-xs text-muted-foreground">
           No judge results to compute stats.
@@ -203,7 +198,15 @@ export const AgreementPopover = ({
       </PopoverTrigger>
       <PopoverContent className="w-80 p-3" align="end" sideOffset={6}>
         <div className="space-y-3">
-          <div className="text-xs font-medium">Agreement</div>
+          <div className="text-xs font-medium flex justify-between">
+            <span>Agreement</span>
+            {activeFiltersCount > 0 && (
+              <span className="text-xs text-muted-foreground ml-1">
+                {activeFiltersCount} filter{activeFiltersCount > 1 ? 's' : ''}{' '}
+                active
+              </span>
+            )}
+          </div>
           {content()}
         </div>
       </PopoverContent>

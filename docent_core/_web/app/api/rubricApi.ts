@@ -5,7 +5,7 @@ import {
   JudgeResultWithCitations,
   ModelOption,
 } from '@/app/store/rubricSlice';
-import { ComplexFilter } from '@/app/types/collectionTypes';
+import { ComplexFilter, CollectionFilter } from '@/app/types/collectionTypes';
 
 // Types based on the backend models
 export interface CreateRubricRequest {
@@ -246,6 +246,16 @@ export const rubricApi = createApi({
         { type: 'JudgeResult', id: rubricId },
       ],
     }),
+    getJudgeResultFilterFields: build.query<
+      { fields: { name: string; type: 'str' | 'int' | 'float' | 'bool' }[] },
+      { collectionId: string; rubricId: string; version?: number | null }
+    >({
+      query: ({ collectionId, rubricId, version }) => ({
+        url: `/${collectionId}/rubric/${rubricId}/filter_fields`,
+        method: 'GET',
+        params: version != null ? { version } : undefined,
+      }),
+    }),
     createRubric: build.mutation<
       string,
       { collectionId: string; rubric: CreateRubricRequest['rubric'] }
@@ -377,14 +387,18 @@ export const rubricApi = createApi({
         rubricId: string;
         version?: number | null;
         labelSetId?: string | null;
+        filter?: CollectionFilter | null;
       }
     >({
-      query: ({ collectionId, rubricId, version, labelSetId }) => ({
+      query: ({ collectionId, rubricId, version, labelSetId, filter }) => ({
         url: `/${collectionId}/${rubricId}/rubric_run_state`,
-        method: 'GET',
+        method: 'POST',
         params: {
           version: version ?? undefined,
           label_set_id: labelSetId ?? undefined,
+        },
+        body: {
+          filter_dict: filter ?? undefined,
         },
       }),
       providesTags: (result, error, { rubricId, version, labelSetId }) => [
@@ -465,6 +479,7 @@ export const {
   useGetResultByIdQuery,
   useRecomputeAgentRunReflectionMutation,
   useGetRubricMetricsQuery,
+  useGetJudgeResultFilterFieldsQuery,
   useGetJudgeModelsQuery,
   useCreateRubricMutation,
   useUpdateRubricMutation,

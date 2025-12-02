@@ -7,11 +7,13 @@ import {
   JobStatus,
 } from '../api/rubricApi';
 import { useRubricVersion } from '@/providers/use-rubric-version';
+import { ComplexFilter } from '../types/collectionTypes';
 
 interface UseJobStatusProps {
   collectionId: string;
   rubricId: string;
   labelSetId: string | null;
+  filter?: ComplexFilter | null;
 }
 
 interface UseJobStatusResponse {
@@ -34,6 +36,7 @@ const useJobStatus = ({
   collectionId,
   rubricId,
   labelSetId,
+  filter = null,
 }: UseJobStatusProps): UseJobStatusResponse => {
   // Rubric run state
   const { version } = useRubricVersion();
@@ -50,6 +53,7 @@ const useJobStatus = ({
         rubricId,
         version,
         labelSetId,
+        filter,
       },
       {
         pollingInterval: rubricJobId !== null ? 1000 : 0,

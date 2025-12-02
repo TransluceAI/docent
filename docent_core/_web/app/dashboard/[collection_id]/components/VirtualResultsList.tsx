@@ -6,11 +6,7 @@ import JudgeResultCard from './JudgeResultCard';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
-import { applyViewModeResults } from '../utils/viewModeResults';
-import {
-  useResultFilterControls,
-  ViewMode,
-} from '@/providers/use-result-filters';
+import { applyViewModeResults, ViewMode } from '../utils/viewModeResults';
 import { cn } from '@/lib/utils';
 
 interface ViewSnapshot {
@@ -27,6 +23,7 @@ interface VirtualResultsListProps {
   labels?: Label[];
   activeLabelSet: any;
   canEditLabels?: boolean;
+  viewMode: ViewMode;
 }
 
 const VirtualResultsList = ({
@@ -37,9 +34,8 @@ const VirtualResultsList = ({
   labels,
   activeLabelSet,
   canEditLabels = false,
+  viewMode,
 }: VirtualResultsListProps) => {
-  const { filters, viewMode } = useResultFilterControls();
-
   const [viewSnapshot, setViewSnapshot] = useState<ViewSnapshot | null>(null);
 
   // Snapshot Management
@@ -62,7 +58,6 @@ const VirtualResultsList = ({
       agentRunResults,
       labels ?? [],
       viewMode,
-      filters,
       null
     );
 
@@ -84,7 +79,7 @@ const VirtualResultsList = ({
     }
     // Intentionally exclude agentRunResults/labels - we want a stable snapshot
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, filters]);
+  }, [viewMode]);
 
   // Effect 2: Merge newly-appeared unlabeled runs into existing snapshot
   useEffect(() => {
@@ -97,7 +92,6 @@ const VirtualResultsList = ({
         agentRunResults,
         labels ?? [],
         viewMode,
-        filters,
         null
       );
       const currentUnlabeledIds = new Set(
@@ -128,7 +122,6 @@ const VirtualResultsList = ({
       agentRunResults,
       labels ?? [],
       viewMode,
-      filters,
       viewSnapshot?.visibilitySet ?? null
     );
 
@@ -162,7 +155,7 @@ const VirtualResultsList = ({
     }
 
     return filtered;
-  }, [agentRunResults, labels, viewMode, filters, viewSnapshot]);
+  }, [agentRunResults, labels, viewMode, viewSnapshot]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Create agent_run_id -> label map

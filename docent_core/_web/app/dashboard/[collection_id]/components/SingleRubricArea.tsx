@@ -6,13 +6,14 @@ import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Loader2, Tags, ChevronRight } from 'lucide-react';
+import { Loader2, Tags, ChevronRight, FunnelPlus } from 'lucide-react';
 import RubricEditor, { RubricVersionNavigator } from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
 import {
   AgentRunJudgeResults,
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
+  useGetJudgeResultFilterFieldsQuery,
 } from '../../../api/rubricApi';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,8 +22,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import LabelSetsDialog from './LabelSetsDialog';
-import { ResultFilterControlsBadges } from '@/app/components/ResultFilterControls';
 import { AgreementPopover } from './AgreementPopover';
 import ClusterButton from './ClusterButton';
 import useJobStatus from '@/app/hooks/use-job-status';
@@ -37,6 +42,11 @@ import { skipToken } from '@reduxjs/toolkit/query';
 import { SchemaDefinition } from '@/app/types/schema';
 import { cn } from '@/lib/utils';
 import UuidPill from '@/components/UuidPill';
+import { FilterControls } from '@/app/components/FilterControls';
+import { FilterChips } from '@/app/components/FilterChips';
+import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
+import ViewModeDropdown from './ViewModeDropdown';
+import { ViewMode } from '../utils/viewModeResults';
 
 interface AgreementWidgetProps {
   agentRunResults: AgentRunJudgeResults[];
@@ -45,6 +55,7 @@ interface AgreementWidgetProps {
   labels: Label[];
   schema?: SchemaDefinition;
   className?: string;
+  activeFilters: any[];
 }
 
 function AgreementWidget({
@@ -54,6 +65,7 @@ function AgreementWidget({
   labels,
   schema,
   className,
+  activeFilters,
 }: AgreementWidgetProps) {
   return (
     <div className={cn('flex flex-row', className)}>
@@ -86,6 +98,7 @@ function AgreementWidget({
           agentRunResults={agentRunResults}
           labels={labels}
           schema={schema}
+          activeFilters={activeFilters}
         />
       )}
     </div>
@@ -126,6 +139,26 @@ export default function SingleRubricArea({
   const { version, setVersion } = useRubricVersion();
   const { setRefinementJobId } = useRefinementTab();
 
+  // Filter and view mode state
+  const [runsFilter, setRunsFilter] = useState<ComplexFilter | null>(null);
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+  const [editingFilter, setEditingFilter] = useState<PrimitiveFilter | null>(
+    null
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>('all');
+
+  const { data: filterFieldsData } = useGetJudgeResultFilterFieldsQuery(
+    {
+      collectionId: collectionId!,
+      rubricId,
+      version,
+    },
+    {
+      skip: !collectionId,
+    }
+  );
+  const agentRunMetadataFields = filterFieldsData?.fields ?? [];
+
   const {
     // Rubric job status
     rubricJobId,
@@ -149,6 +182,7 @@ export default function SingleRubricArea({
     collectionId,
     rubricId,
     labelSetId: activeLabelSetId ?? null,
+    filter: runsFilter,
   });
 
   // Get the remote rubric
@@ -218,14 +252,71 @@ export default function SingleRubricArea({
 
   const isClusteringActive = clusteringJobId !== null || centroids.length > 0;
 
+  const handleRunsFilterChange = (filters: ComplexFilter | null) => {
+    setRunsFilter(filters);
+    setEditingFilter(null);
+    setFilterPopoverOpen(false);
+  };
+
+  const handleRequestEditFilter = (filter: PrimitiveFilter) => {
+    setEditingFilter(filter);
+    setFilterPopoverOpen(true);
+  };
+
   const ResultsSection = (
     <>
       <div className="flex flex-wrap items-center gap-2 justify-between">
-        <ResultFilterControlsBadges
-          agentRunResults={agentRunResults}
-          labels={labels ?? []}
-          className="mr-auto"
-        />
+        <div className="flex flex-wrap gap-1.5 items-center mr-auto">
+          <div className="inline-flex items-center border border-border rounded-md overflow-hidden">
+            <ViewModeDropdown
+              agentRunResults={agentRunResults}
+              labels={labels ?? []}
+              className="!border-0 rounded-r-none rounded-l-md shadow-none"
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+            />
+            <div className="h-7 w-px bg-border" />
+            <Popover
+              open={filterPopoverOpen}
+              onOpenChange={setFilterPopoverOpen}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button className="inline-flex items-center h-7 gap-x-1 text-xs bg-background text-muted-foreground hover:text-primary px-1.5 hover:bg-accent transition-all duration-200 rounded-l-none rounded-r-md">
+                      <FunnelPlus size={14} className="stroke-[1.5]" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Add filter</p>
+                </TooltipContent>
+              </Tooltip>
+              <PopoverContent
+                align="start"
+                sideOffset={4}
+                className="w-[520px] overflow-x-auto"
+              >
+                <FilterControls
+                  filters={runsFilter}
+                  onFiltersChange={handleRunsFilterChange}
+                  metadataFields={agentRunMetadataFields}
+                  collectionId={collectionId!}
+                  showStepFilter={false}
+                  initialFilter={editingFilter}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          {runsFilter && (
+            <FilterChips
+              filters={runsFilter}
+              onFiltersChange={handleRunsFilterChange}
+              onRequestEdit={handleRequestEditFilter}
+              disabled={!hasWritePermission}
+            />
+          )}
+        </div>
         <div className="flex items-center gap-1.5 ml-auto">
           {!rubricJobId && hasWritePermission && !noJudgeResults && (
             <ClusterButton
@@ -244,6 +335,7 @@ export default function SingleRubricArea({
               setIsLabelSetsDialogOpen={setIsLabelSetsDialogOpen}
               schema={schema}
               labels={labels ?? []}
+              activeFilters={runsFilter?.filters ?? []}
             />
           )}
         </div>
@@ -285,6 +377,7 @@ export default function SingleRubricArea({
           activeAgentRunId={agentRunId}
           schema={schema}
           activeLabelSet={activeLabelSet}
+          viewMode={viewMode}
         />
       )}
     </>

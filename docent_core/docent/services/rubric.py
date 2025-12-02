@@ -34,8 +34,8 @@ from docent_core.docent.ai_tools.rubric.reflect import (
     run_reflection,
 )
 from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.filters import parse_filter_dict
-from docent_core.docent.db.schemas.label import SQLALabel
+from docent_core.docent.db.filters import CollectionFilter, filter_uses_tags, parse_filter_dict
+from docent_core.docent.db.schemas.label import SQLALabel, SQLATag
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeReflection,
     SQLAJudgeResult,
@@ -459,20 +459,60 @@ class RubricService:
     ##################
 
     async def get_rubric_results(
-        self, rubric_id: str, version: int | None = None
+        self,
+        rubric_id: str,
+        version: int | None = None,
+        filter_obj: CollectionFilter | None = None,
     ) -> list[JudgeResult]:
-        """Get the results of a rubric."""
+        """Get the results of a rubric, optionally filtered by agent run criteria."""
+        from docent_core.docent.db.schemas.tables import SQLAAgentRun
+
         if version is None:
-            # Get the latest version first
             latest_rubric = await self.get_rubric(rubric_id, version=None)
             if latest_rubric is None:
                 return []
             version = latest_rubric.version
 
-        search_query = select(SQLAJudgeResult).where(
-            SQLAJudgeResult.rubric_id == rubric_id,
-            SQLAJudgeResult.rubric_version == version,
+        # Structure query with agent_runs as the conceptual root.
+        # This aligns with how FilterSQLContext expects queries to be structured,
+        # so any filter-added joins connect through agent_runs
+
+        # Check if we'll need the tag join before building query
+        uses_tags = False
+        if filter_obj is not None:
+
+            uses_tags = filter_uses_tags(filter_obj)
+
+        # Use DISTINCT when joining tags to prevent duplicates from multiple tag matches
+        search_query = (
+            (select(SQLAJudgeResult).distinct() if uses_tags else select(SQLAJudgeResult))
+            .join(SQLAAgentRun, SQLAJudgeResult.agent_run_id == SQLAAgentRun.id)
+            .where(
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == version,
+            )
         )
+
+        if filter_obj is not None:
+            from docent_core.docent.db.filters import build_judge_result_filter_clause
+
+            # Only join tags table if the filter actually uses tags
+            tag_table = None
+            if uses_tags:
+                search_query = search_query.outerjoin(
+                    SQLATag, SQLATag.agent_run_id == SQLAAgentRun.id
+                )
+                tag_table = SQLATag
+
+            filter_clause = build_judge_result_filter_clause(
+                filter_obj,
+                rubric_id=rubric_id,
+                judge_result_table=SQLAJudgeResult,
+                agent_run_table=SQLAAgentRun,
+                tag_table=tag_table,
+            )
+            if filter_clause is not None:
+                search_query = search_query.where(filter_clause)
 
         result = await self.session.execute(search_query)
         sqla_results = result.scalars().all()

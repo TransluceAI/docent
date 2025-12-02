@@ -22,6 +22,7 @@ from passlib.context import CryptContext
 from sqlalchemy import (
     ColumnElement,
     Text,
+    and_,
     column,
     delete,
     distinct,
@@ -258,6 +259,7 @@ class MonoService:
         column_name: str,
         join_condition: ColumnElement[bool] | None = None,
         group_specs: Sequence[tuple[str, ColumnElement[Any]]] | None = None,
+        additional_where: ColumnElement[bool] | None = None,
     ) -> list[JsonFieldInfo]:
         """Discover JSON paths for a specific table column scoped to a collection."""
 
@@ -278,6 +280,9 @@ class MonoService:
                     join_condition,
                 )
                 where_clause = SQLAAgentRun.collection_id == collection_id
+
+            if additional_where is not None:
+                where_clause = and_(where_clause, additional_where)
 
             return await self._collect_json_field_records(
                 session,
@@ -2596,8 +2601,21 @@ class MonoService:
             await session.commit()
             return result.rowcount > 0
 
-    async def get_agent_run_metadata_fields(self, ctx: ViewContext) -> list[FilterableField]:
-        """Expose agent run filter fields derived from JSON metadata and related tables."""
+    async def get_agent_run_metadata_fields(
+        self,
+        ctx: ViewContext,
+        rubric_id: str | None = None,
+        rubric_version: int | None = None,
+        include_judge_result_metadata: bool = True,
+    ) -> list[FilterableField]:
+        """Expose agent run filter fields derived from JSON metadata and related tables.
+
+        Args:
+            ctx: The view context containing collection_id
+            rubric_id: If provided, only return rubric output fields for this rubric
+            rubric_version: If provided (along with rubric_id), only return fields from this version
+            include_judge_result_metadata: If False, skip discovering result_metadata fields
+        """
 
         all_fields: dict[str, FilterableField] = {}
 
@@ -2613,6 +2631,12 @@ class MonoService:
             field_name = "metadata." + ".".join(info.path)
             all_fields[field_name] = {"name": field_name, "type": info.value_type}
 
+        judge_where: ColumnElement[bool] | None = None
+        if rubric_id is not None:
+            judge_where = SQLAJudgeResult.rubric_id == rubric_id
+            if rubric_version is not None:
+                judge_where = and_(judge_where, SQLAJudgeResult.rubric_version == rubric_version)
+
         judge_infos = await self.get_json_metadata_fields_for_column(
             ctx.collection_id,
             table=SQLAJudgeResult.__table__,
@@ -2620,32 +2644,34 @@ class MonoService:
             column_name="output",
             join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
             group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
+            additional_where=judge_where,
         )
         for info in judge_infos:
-            rubric_id = info.labels.get("rubric_id")
-            if not rubric_id or info.value_type is None or not info.path:
+            info_rubric_id = info.labels.get("rubric_id")
+            if not info_rubric_id or info.value_type is None or not info.path:
                 continue
-            field_name = f"rubric.{rubric_id}." + ".".join(info.path)
+            field_name = f"rubric.{info_rubric_id}." + ".".join(info.path)
             all_fields[field_name] = {"name": field_name, "type": info.value_type}
 
-        judge_metadata_infos = await self.get_json_metadata_fields_for_column(
-            ctx.collection_id,
-            table=SQLAJudgeResult.__table__,
-            json_column=cast(ColumnElement[Any], SQLAJudgeResult.result_metadata),
-            column_name="result_metadata",
-            join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
-            group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
-        )
-        for info in judge_metadata_infos:
-            rubric_id = info.labels.get("rubric_id")
-            if not rubric_id or info.value_type is None or not info.path:
-                continue
-            field_name = f"rubric.{rubric_id}." + ".".join(info.path)
-            all_fields[field_name] = {"name": field_name, "type": info.value_type}
+        if include_judge_result_metadata:
+            judge_metadata_infos = await self.get_json_metadata_fields_for_column(
+                ctx.collection_id,
+                table=SQLAJudgeResult.__table__,
+                json_column=cast(ColumnElement[Any], SQLAJudgeResult.result_metadata),
+                column_name="result_metadata",
+                join_condition=SQLAJudgeResult.agent_run_id == SQLAAgentRun.id,
+                group_specs=(("rubric_id", cast(ColumnElement[Any], SQLAJudgeResult.rubric_id)),),
+                additional_where=judge_where,
+            )
+            for info in judge_metadata_infos:
+                info_rubric_id = info.labels.get("rubric_id")
+                if not info_rubric_id or info.value_type is None or not info.path:
+                    continue
+                field_name = f"rubric.{info_rubric_id}." + ".".join(info.path)
+                all_fields[field_name] = {"name": field_name, "type": info.value_type}
 
         all_fields["agent_run_id"] = {"name": "agent_run_id", "type": "str"}
         all_fields["tag"] = {"name": "tag", "type": "str"}
-        # all_fields["text"] = {"name": "text", "type": "str"}
 
         return sorted(all_fields.values(), key=lambda f: f["name"])
 

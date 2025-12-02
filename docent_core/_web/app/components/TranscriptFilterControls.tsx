@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../store/store';
 import {
@@ -8,8 +8,9 @@ import {
   useGetBaseFilterQuery,
 } from '../api/collectionApi';
 import { clearFilters, replaceFilters } from '../store/collectionSlice';
-import { ComplexFilter } from '@/app/types/collectionTypes';
+import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import { FilterControls } from './FilterControls';
+import { FilterChips } from './FilterChips';
 import { useParams } from 'next/navigation';
 import { skipToken } from '@reduxjs/toolkit/query';
 
@@ -21,7 +22,6 @@ export const TranscriptFilterControls = ({
   metadataData = {},
 }: TranscriptFilterControlsProps) => {
   const dispatch = useDispatch<AppDispatch>();
-  // Get the filter state
   const params = useParams();
   const collectionId = params.collection_id as string;
   const { data: baseFilter } = useGetBaseFilterQuery(
@@ -35,22 +35,35 @@ export const TranscriptFilterControls = ({
   );
   const agentRunMetadataFields = metadataFieldsData?.fields;
 
+  const [editingFilter, setEditingFilter] = useState<PrimitiveFilter | null>(
+    null
+  );
+
   const handleFiltersChange = (filters: ComplexFilter | null) => {
     if (!filters) {
       dispatch(clearFilters());
-      return;
+    } else {
+      dispatch(replaceFilters(filters.filters));
     }
-
-    dispatch(replaceFilters(filters.filters));
+    setEditingFilter(null);
   };
 
   return (
-    <FilterControls
-      filters={baseFilter ?? null}
-      onFiltersChange={handleFiltersChange}
-      metadataFields={agentRunMetadataFields ?? []}
-      collectionId={collectionId!}
-      metadataData={metadataData}
-    />
+    <div className="space-y-1.5">
+      <FilterControls
+        filters={baseFilter ?? null}
+        onFiltersChange={handleFiltersChange}
+        metadataFields={agentRunMetadataFields ?? []}
+        collectionId={collectionId!}
+        metadataData={metadataData}
+        initialFilter={editingFilter}
+      />
+      <FilterChips
+        filters={baseFilter ?? null}
+        onFiltersChange={handleFiltersChange}
+        onRequestEdit={setEditingFilter}
+        className="mb-1.5"
+      />
+    </div>
   );
 };

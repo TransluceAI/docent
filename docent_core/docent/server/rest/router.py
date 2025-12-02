@@ -1031,16 +1031,6 @@ async def join(
     return {"collection_id": collection_id, "view_id": ctx.view_id}
 
 
-class SetIODimsRequest(BaseModel):
-    inner_bin_key: str | None = None
-    outer_bin_key: str | None = None
-
-
-class SetIODimWithMetadataKeyRequest(BaseModel):
-    metadata_key: str
-    type: Literal["inner", "outer"]
-
-
 class PostBaseFilterRequest(BaseModel):
     filter: ComplexFilter | None
 

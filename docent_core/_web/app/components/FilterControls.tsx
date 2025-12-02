@@ -19,42 +19,10 @@ import {
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { v4 as uuid4 } from 'uuid';
-import { FilterChips } from './FilterChips';
 import { SmartValueInput } from './SmartValueInput';
 import { Combobox } from './Combobox';
 import { StepFilter } from './StepFilter';
 import { formatFilterFieldLabel } from '../utils/formatMetadataField';
-
-export const toggleFilterDisabledState = (
-  filterGroup: ComplexFilter | null,
-  filterId: string
-): ComplexFilter | null => {
-  if (!filterGroup) {
-    return null;
-  }
-
-  let changed = false;
-  const updatedFilters = filterGroup.filters.map((filterItem) => {
-    if (filterItem.id !== filterId) {
-      return filterItem;
-    }
-
-    changed = true;
-    return {
-      ...filterItem,
-      disabled: !(filterItem.disabled ?? false),
-    };
-  });
-
-  if (!changed) {
-    return filterGroup;
-  }
-
-  return {
-    ...filterGroup,
-    filters: updatedFilters,
-  };
-};
 
 const isStepEqualityPrimitiveFilter = (
   filterItem: CollectionFilter
@@ -77,9 +45,7 @@ interface FilterControlsProps {
   metadataFields: TranscriptMetadataField[];
   collectionId: string;
   metadataData?: Record<string, Record<string, unknown>>;
-  showFilterChips?: boolean;
   showStepFilter?: boolean;
-  allowToggleFilters?: boolean;
   initialFilter?: PrimitiveFilter | null;
 }
 
@@ -89,9 +55,7 @@ export const FilterControls = ({
   metadataFields,
   collectionId,
   metadataData = {},
-  showFilterChips = true,
   showStepFilter = true,
-  allowToggleFilters = true,
   initialFilter = null,
 }: FilterControlsProps) => {
   const [metadataKey, setMetadataKey] = useState('');
@@ -204,56 +168,6 @@ export const FilterControls = ({
     setMetadataOp('==');
   };
 
-  const removeFilter = (filterId: string) => {
-    if (!filters) return;
-
-    // Check if the removed filter is a step filter
-    const removedFilter = filters.filters.find((f) => f.id === filterId);
-    const isStepFilter = removedFilter
-      ? isStepEqualityPrimitiveFilter(removedFilter)
-      : false;
-
-    const updatedFilters = filters.filters.filter((f) => f.id !== filterId);
-
-    if (updatedFilters.length === 0) {
-      onFiltersChange(null);
-    } else {
-      onFiltersChange({
-        ...filters,
-        filters: updatedFilters,
-      });
-    }
-
-    // Clear step filter state if a step filter was removed
-    if (isStepFilter) {
-      setStepFilterValue(null);
-    }
-  };
-
-  const editFilter = (filter: PrimitiveFilter) => {
-    // Remove the filter first
-    removeFilter(filter.id);
-
-    // Populate the form with the filter's values
-    setMetadataKey(filter.key_path.join('.'));
-    setMetadataValue(String(filter.value));
-    setMetadataOp(filter.op || '==');
-
-    // Set the metadata type based on the value type
-    if (typeof filter.value === 'boolean') {
-      setMetadataType('bool');
-    } else if (typeof filter.value === 'number') {
-      setMetadataType(Number.isInteger(filter.value) ? 'int' : 'float');
-    } else {
-      setMetadataType('str');
-    }
-
-    // Focus the value field after a short delay to ensure the form is updated
-    setTimeout(() => {
-      valueFieldRef.current?.focus();
-    }, 100);
-  };
-
   const handleOperatorChange = (value: string) => {
     setMetadataOp(value);
 
@@ -261,20 +175,6 @@ export const FilterControls = ({
     setTimeout(() => {
       valueFieldRef.current?.focus();
     }, 100);
-  };
-
-  const clearAllFilters = () => {
-    setStepFilterValue(null);
-    onFiltersChange(null);
-  };
-
-  const handleToggleFilter = (filterId: string) => {
-    const updatedFilters = toggleFilterDisabledState(filters ?? null, filterId);
-    if (!filters || !updatedFilters || updatedFilters === filters) {
-      return;
-    }
-
-    onFiltersChange(updatedFilters);
   };
 
   // Handle step filter changes
@@ -528,18 +428,6 @@ export const FilterControls = ({
           onStepFilterChange={handleStepFilterChange}
           currentValue={stepFilterValue}
           disabled={false}
-        />
-      )}
-
-      {/* Current filters */}
-      {showFilterChips && (
-        <FilterChips
-          filters={filters}
-          onRemoveFilter={removeFilter}
-          onEditFilter={editFilter}
-          onClearAllFilters={clearAllFilters}
-          onToggleFilter={allowToggleFilters ? handleToggleFilter : undefined}
-          className="mb-1.5"
         />
       )}
     </div>

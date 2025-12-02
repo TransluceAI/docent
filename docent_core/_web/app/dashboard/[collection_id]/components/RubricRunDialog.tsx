@@ -13,6 +13,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useGetAgentRunMetadataFieldsQuery } from '@/app/api/collectionApi';
 import { FilterControls } from '@/app/components/FilterControls';
+import { FilterChips } from '@/app/components/FilterChips';
 import { ComplexFilter } from '@/app/types/collectionTypes';
 import { useStartEvaluationMutation } from '@/app/api/rubricApi';
 import { useGetUsageSummaryQuery } from '@/app/api/settingsApi';
@@ -86,15 +87,18 @@ export default function RunRubricDialog({
           {/* Filter */}
           <div className="space-y-2">
             <Label>Filter agent runs</Label>
-            <div className="border rounded-md p-2">
+            <div className="border rounded-md p-2 space-y-2">
               <FilterControls
                 filters={filter}
                 onFiltersChange={setFilter}
                 metadataFields={agentRunMetadataFields}
                 collectionId={collectionId}
-                showFilterChips={true}
                 showStepFilter={false}
-                allowToggleFilters={false}
+              />
+              <FilterChips
+                filters={filter}
+                onFiltersChange={setFilter}
+                allowToggle={false}
               />
             </div>
           </div>

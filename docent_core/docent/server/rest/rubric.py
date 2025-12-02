@@ -192,6 +192,31 @@ async def get_rubric_metrics(
     )
 
 
+@rubric_router.get("/{collection_id}/rubric/{rubric_id}/filter_fields")
+async def get_judge_result_filter_fields(
+    collection_id: str,
+    rubric_id: str,
+    version: int | None = None,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+):
+    """Get filterable fields for a rubric's judge results.
+
+    Returns metadata fields, tag, agent_run_id, and rubric output fields
+    scoped to the specified rubric and optional version.
+    """
+    from docent.data_models.agent_run import FilterableField
+
+    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(
+        ctx,
+        rubric_id=rubric_id,
+        rubric_version=version,
+        include_judge_result_metadata=False,
+    )
+    return {"fields": fields}
+
+
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/result/{agent_run_id}")
 async def get_result_by_agent_run(
     collection_id: str,
@@ -425,10 +450,15 @@ async def start_eval_rubric_job(
     return {"job_id": job_id}
 
 
-@rubric_router.get("/{collection_id}/{rubric_id}/rubric_run_state")
+class GetRubricRunStateRequest(BaseModel):
+    filter_dict: dict[str, Any] | None = None
+
+
+@rubric_router.post("/{collection_id}/{rubric_id}/rubric_run_state")
 async def get_rubric_run_state(
     collection_id: str,
     rubric_id: str,
+    request: GetRubricRunStateRequest,
     version: int | None = None,
     label_set_id: str | None = None,
     sqla_rubric_latest: SQLARubric = Depends(get_rubric),
@@ -464,8 +494,15 @@ async def get_rubric_run_state(
                 "agent_run_ids_being_processed", []
             )
 
-    # Get current results for the specified version (defaults to latest inside service)
-    results = await rubric_svc.get_rubric_results(rubric_id, version)
+    # Parse filter if provided
+    filter_obj = None
+    if request.filter_dict:
+        from docent_core.docent.db.filters import parse_filter_dict
+
+        filter_obj = parse_filter_dict(request.filter_dict)
+
+    # Get current results for the specified version, applying filter in SQL if provided
+    results = await rubric_svc.get_rubric_results(rubric_id, version, filter_obj=filter_obj)
 
     # Resolve and store citations for old judge results that don't have them
     results_parsed = await rubric_svc.resolve_result_citations(

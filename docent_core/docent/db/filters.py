@@ -11,6 +11,7 @@ from sqlalchemy.orm import aliased
 from docent._log_util import get_logger
 
 if TYPE_CHECKING:
+    from docent_core.docent.db.schemas.rubric import SQLAJudgeResult
     from docent_core.docent.db.schemas.tables import SQLAAgentRun
 
 logger = get_logger(__name__)
@@ -93,6 +94,55 @@ def safe_float(col: Any) -> Any:
     )
 
 
+def apply_comparison(
+    sqla_value: Any,
+    value: Any,
+    op: Literal[">", ">=", "<", "<=", "==", "!=", "~*", "!~*"],
+) -> ColumnElement[bool]:
+    """Apply a comparison operator to a SQLAlchemy column."""
+    if op == "==":
+        return sqla_value == value
+    elif op == "!=":
+        return sqla_value != value
+    elif op == ">":
+        return sqla_value > value
+    elif op == ">=":
+        return sqla_value >= value
+    elif op == "<":
+        return sqla_value < value
+    elif op == "<=":
+        return sqla_value <= value
+    elif op == "~*":
+        return sqla_value.op("~*")(value)
+    elif op == "!~*":
+        return sqla_value.op("!~*")(value)
+    else:
+        raise ValueError(f"Unsupported operation: {op}")
+
+
+def build_json_filter_clause(
+    json_column: Any,
+    json_keys: list[str],
+    value: Any,
+    op: Literal[">", ">=", "<", "<=", "==", "!=", "~*", "!~*"],
+) -> ColumnElement[bool]:
+    """Build a WHERE clause for filtering on a JSONB column."""
+    sqla_value = json_column
+    for key in json_keys:
+        sqla_value = sqla_value[key]
+
+    if isinstance(value, str):
+        sqla_value = sqla_value.as_string()
+    elif isinstance(value, bool):
+        sqla_value = safe_bool(sqla_value)
+    elif isinstance(value, (int, float)):
+        sqla_value = safe_float(sqla_value)
+    else:
+        raise ValueError(f"Unsupported value type: {type(value)}")
+
+    return apply_comparison(sqla_value, value, op)
+
+
 class BaseCollectionFilter(BaseModel):
     """Base class for all collection filters."""
 
@@ -170,35 +220,17 @@ class PrimitiveFilter(BaseCollectionFilter):
             for key in json_keys:
                 sqla_value = sqla_value[key]
 
-        # Cast JSONB values to the correct type
         if mode in {"metadata", "rubric"}:
             if isinstance(self.value, str):
                 sqla_value = sqla_value.as_string()
             elif isinstance(self.value, bool):
                 sqla_value = safe_bool(sqla_value)
-            elif isinstance(self.value, float) or isinstance(self.value, int):  # type: ignore warning about unnecessary comparison
-                # if self.value is an int, we may still need to do sql comparisons with floats
+            elif isinstance(self.value, (int, float)):
                 sqla_value = safe_float(sqla_value)
             else:
                 raise ValueError(f"Unsupported value type: {type(self.value)}")
 
-        # Handle different operations using SQLAlchemy expressions
-        if self.op == "==":
-            return sqla_value == self.value
-        elif self.op == "!=":
-            return sqla_value != self.value
-        elif self.op == ">":
-            return sqla_value > self.value
-        elif self.op == ">=":
-            return sqla_value >= self.value
-        elif self.op == "<":
-            return sqla_value < self.value
-        elif self.op == "<=":
-            return sqla_value <= self.value
-        elif self.op == "~*":
-            return sqla_value.op("~*")(self.value)
-        else:
-            raise ValueError(f"Unsupported operation: {self.op}")
+        return apply_comparison(sqla_value, self.value, self.op)
 
 
 class ComplexFilter(BaseCollectionFilter):
@@ -297,3 +329,124 @@ def parse_filter_dict(filter_dict: dict[str, Any]) -> CollectionFilter:
         return AgentRunIdFilter(**filter_dict)
     else:
         raise ValueError(f"Unknown filter type: {filter_type}")
+
+
+def filter_uses_tags(filter_obj: CollectionFilter) -> bool:
+    """Check if a filter tree contains any tag filters."""
+    if filter_obj.disabled:
+        return False
+
+    if isinstance(filter_obj, PrimitiveFilter):
+        return filter_obj.key_path[0] == "tag"
+    elif isinstance(filter_obj, ComplexFilter):
+        return any(filter_uses_tags(f) for f in filter_obj.filters)
+    elif isinstance(filter_obj, AgentRunIdFilter):  # type: ignore[unreachable]
+        return False
+
+    return False
+
+
+def build_judge_result_filter_clause(
+    filter_obj: CollectionFilter,
+    rubric_id: str,
+    judge_result_table: Type["SQLAJudgeResult"],
+    agent_run_table: Type["SQLAAgentRun"],
+    tag_table: Any | None = None,
+) -> ColumnElement[bool] | None:
+    """Build WHERE clause for judge result queries.
+
+    Unlike the generic FilterSQLContext, this applies filters directly to tables
+    already present in the query, avoiding aliased joins that don't constrain by version.
+
+    Supports:
+      - rubric.{rubric_id}.* filters -> applied to judge_result_table.output
+      - metadata.* filters -> applied to agent_run_table.metadata_json
+      - tag filters -> applied to tag_table.value
+      - agent_run_id mode -> applied to agent_run_table.id
+      - created_at mode -> applied to agent_run_table.created_at
+      - AgentRunIdFilter type -> applied to agent_run_table.id
+
+    Args:
+        filter_obj: The filter to apply
+        rubric_id: The rubric ID to match for rubric filters
+        judge_result_table: The SQLAJudgeResult table/alias in the query
+        agent_run_table: The SQLAAgentRun table/alias in the query
+        tag_table: The SQLATag table/alias for tag filters
+
+    Returns:
+        A SQLAlchemy WHERE clause, or None if the filter is disabled
+
+    Raises:
+        ValueError: If the filter references unsupported modes
+    """
+    if filter_obj.disabled:
+        return None
+
+    if isinstance(filter_obj, PrimitiveFilter):
+        mode = filter_obj.key_path[0]
+
+        if mode == "rubric":
+            if len(filter_obj.key_path) < 3:
+                raise ValueError("Rubric filters must include a JSON field path.")
+            filter_rubric_id = filter_obj.key_path[1]
+            if filter_rubric_id != rubric_id:
+                raise ValueError(
+                    f"Filter references rubric '{filter_rubric_id}' but query is for rubric '{rubric_id}'"
+                )
+            json_keys = filter_obj.key_path[2:]
+            return build_json_filter_clause(
+                judge_result_table.output,  # type: ignore[attr-defined]
+                json_keys,
+                filter_obj.value,
+                filter_obj.op,
+            )
+        elif mode == "metadata":
+            if len(filter_obj.key_path) < 2:
+                raise ValueError("Metadata filters must include a JSON field path.")
+            json_keys = filter_obj.key_path[1:]
+            return build_json_filter_clause(
+                agent_run_table.metadata_json,  # type: ignore[attr-defined]
+                json_keys,
+                filter_obj.value,
+                filter_obj.op,
+            )
+        elif mode == "tag":
+            if len(filter_obj.key_path) != 1:
+                raise ValueError("Tag filters do not support nested paths.")
+            return apply_comparison(tag_table.value, filter_obj.value, filter_obj.op)  # type: ignore[attr-defined]
+        elif mode == "agent_run_id":
+            sqla_value = cast(agent_run_table.id, String)  # type: ignore[attr-defined]
+            return apply_comparison(sqla_value, filter_obj.value, filter_obj.op)
+        elif mode == "created_at":
+            sqla_value = cast(agent_run_table.created_at, String)  # type: ignore[attr-defined]
+            return apply_comparison(sqla_value, filter_obj.value, filter_obj.op)
+        else:
+            raise ValueError(
+                f"Unsupported filter mode '{mode}' in judge result context. "
+                f"Only 'rubric', 'metadata', 'tag', 'agent_run_id', and 'created_at' filters are supported."
+            )
+
+    elif isinstance(filter_obj, ComplexFilter):
+        where_clauses: list[ColumnElement[bool]] = []
+        for sub_filter in filter_obj.filters:
+            clause = build_judge_result_filter_clause(
+                sub_filter, rubric_id, judge_result_table, agent_run_table, tag_table
+            )
+            if clause is not None:
+                where_clauses.append(clause)
+
+        if not where_clauses:
+            return None
+
+        if filter_obj.op == "and":
+            return and_(*where_clauses)
+        elif filter_obj.op == "or":
+            return or_(*where_clauses)
+        else:
+            raise ValueError(f"Unsupported operation: {filter_obj.op}")
+
+    elif isinstance(filter_obj, AgentRunIdFilter):  # type: ignore[unreachable]
+        return agent_run_table.id.in_(filter_obj.agent_run_ids)  # type: ignore[attr-defined]
+
+    else:
+        raise ValueError(f"Unknown filter type: {type(filter_obj)}")

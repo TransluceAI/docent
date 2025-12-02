@@ -8,6 +8,7 @@ import VirtualResultsList from './VirtualResultsList';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+import { ViewMode } from '../utils/viewModeResults';
 
 interface JudgeResultsListProps {
   centroids: RubricCentroid[];
@@ -19,6 +20,7 @@ interface JudgeResultsListProps {
   activeAgentRunId?: string;
   schema: SchemaDefinition;
   activeLabelSet: any;
+  viewMode: ViewMode;
 }
 
 export const JudgeResultsList = ({
@@ -31,6 +33,7 @@ export const JudgeResultsList = ({
   activeAgentRunId,
   schema,
   activeLabelSet,
+  viewMode,
 }: JudgeResultsListProps) => {
   const hasWritePermission = useHasCollectionWritePermission();
 
@@ -47,6 +50,7 @@ export const JudgeResultsList = ({
         labels={labels}
         activeLabelSet={activeLabelSet}
         canEditLabels={hasWritePermission}
+        viewMode={viewMode}
       />
     );
   }
@@ -61,6 +65,7 @@ export const JudgeResultsList = ({
       labels={labels}
       activeLabelSet={activeLabelSet}
       canEditLabels={hasWritePermission}
+      viewMode={viewMode}
     />
   );
 };
@@ -76,6 +81,7 @@ interface CentroidsListProps {
   labels: Label[];
   activeLabelSet: any;
   canEditLabels: boolean;
+  viewMode: ViewMode;
 }
 
 const CentroidsList = ({
@@ -89,6 +95,7 @@ const CentroidsList = ({
   labels,
   activeLabelSet,
   canEditLabels,
+  viewMode,
 }: CentroidsListProps) => {
   // Keep track of which IDs have been assigned (to later compute resids)
   const assignedResultIdsSet = useMemo(() => {
@@ -180,6 +187,7 @@ const CentroidsList = ({
           labels={labels}
           activeLabelSet={activeLabelSet}
           canEditLabels={canEditLabels}
+          viewMode={viewMode}
         />
       </div>
     );
