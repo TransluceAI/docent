@@ -545,6 +545,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const handleTranscriptSelect = useCallback(
       (transcriptId: string) => {
         setSelectedTranscriptId(transcriptId);
+        setPendingScrollTarget(null);
         // Close floating sidebar when transcript is selected
         if (!sidebarVisible) {
           setSidebarHovering(false);
