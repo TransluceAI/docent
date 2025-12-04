@@ -1563,7 +1563,7 @@ class RubricService:
         byte_result = await self.session.execute(byte_query)
         total_bytes = byte_result.scalar() or 0
 
-        BYTES_PER_TOKEN = 4.3
+        BYTES_PER_TOKEN = 4.3  # calculated from sample data
         transcript_tokens = int(total_bytes / BYTES_PER_TOKEN)
 
         avg_transcript_tokens = transcript_tokens / len(agent_run_ids)

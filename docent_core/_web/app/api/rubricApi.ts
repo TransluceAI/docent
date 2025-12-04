@@ -170,6 +170,7 @@ export const rubricApi = createApi({
     'Assignments',
     'RubricMetrics',
     'JudgeReflection',
+    'CostEstimate',
   ],
   endpoints: (build) => ({
     getRubrics: build.query<Rubric[], { collectionId: string }>({
@@ -348,6 +349,7 @@ export const rubricApi = createApi({
       invalidatesTags: (result, error, { rubricId }) => [
         { type: 'RubricJob', id: rubricId },
         { type: 'RubricMetrics', id: rubricId },
+        { type: 'CostEstimate', id: rubricId },
       ],
     }),
     cancelEvaluation: build.mutation<
@@ -483,6 +485,7 @@ export const rubricApi = createApi({
         rubricId: string;
         max_agent_runs?: number | null;
         n_rollouts_per_input?: number;
+        label_set_id?: string | null;
         filter?: ComplexFilter | null;
       }
     >({
@@ -491,6 +494,7 @@ export const rubricApi = createApi({
         rubricId,
         max_agent_runs,
         n_rollouts_per_input,
+        label_set_id,
         filter,
       }) => ({
         url: `/${collectionId}/${rubricId}/estimate_cost`,
@@ -498,9 +502,13 @@ export const rubricApi = createApi({
         body: {
           max_agent_runs: max_agent_runs ?? null,
           n_rollouts_per_input: n_rollouts_per_input ?? 1,
+          label_set_id: label_set_id ?? null,
           filter: filter ?? null,
         },
       }),
+      providesTags: (result, error, { rubricId }) => [
+        { type: 'CostEstimate', id: rubricId },
+      ],
     }),
   }),
 });
