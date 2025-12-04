@@ -397,17 +397,11 @@ class StartFilteredEvalJobRequest(BaseModel):
     filter: dict[str, Any] | None = None
 
 
-class EstimateCostRequest(BaseModel):
-    max_agent_runs: int | None = None
-    n_rollouts_per_input: int = 1
-    filter: dict[str, Any] | None = None
-
-
 @rubric_router.post("/{collection_id}/{rubric_id}/estimate_cost")
 async def estimate_rubric_cost(
     collection_id: str,
     rubric_id: str,
-    request: EstimateCostRequest,
+    request: StartFilteredEvalJobRequest,
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
@@ -418,6 +412,7 @@ async def estimate_rubric_cost(
         rubric_id=rubric_id,
         max_agent_runs=request.max_agent_runs,
         n_rollouts_per_input=request.n_rollouts_per_input,
+        label_set_id=request.label_set_id,
         filter_dict=request.filter,
     )
 

@@ -121,10 +121,16 @@ class RubricService:
                 (SQLALabel.agent_run_id == SQLAAgentRun.id)
                 & (SQLALabel.label_set_id == label_set_id),
             )
-            query = query.order_by(
-                SQLALabel.id.is_(None).asc(),
-                SQLAAgentRun.id.asc(),
+        else:
+            query = query.outerjoin(
+                SQLALabel,
+                SQLALabel.agent_run_id == SQLAAgentRun.id,
             )
+
+        query = query.order_by(
+            SQLALabel.id.is_(None).asc(),
+            SQLAAgentRun.id.asc(),
+        )
 
         query = query.where(SQLAAgentRun.collection_id == collection_id)
 
@@ -1509,6 +1515,7 @@ class RubricService:
         rubric_id: str,
         max_agent_runs: int | None,
         n_rollouts_per_input: int,
+        label_set_id: str | None,
         filter_dict: dict[str, Any] | None,
     ) -> EstimateCostResponse:
         """Fast cost estimation using SQL byte aggregation."""
@@ -1535,6 +1542,7 @@ class RubricService:
             n_rollouts_per_input=n_rollouts_per_input,
             filter_obj=filter_obj,
             max_agent_runs=max_agent_runs,
+            label_set_id=label_set_id,
         )
         agent_run_ids = list(rollouts_needed.keys())
         total_rollouts_needed = sum(rollouts_needed.values())

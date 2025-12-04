@@ -65,9 +65,18 @@ export default function RunRubricDialog({
             : null,
       n_rollouts_per_input:
         rolloutsPerInput !== '' ? parseInt(rolloutsPerInput, 10) : 1,
+      label_set_id: activeLabelSet?.id,
       filter,
     }),
-    [collectionId, rubricId, runMode, maxResults, rolloutsPerInput, filter]
+    [
+      collectionId,
+      rubricId,
+      runMode,
+      maxResults,
+      rolloutsPerInput,
+      activeLabelSet?.id,
+      filter,
+    ]
   );
 
   const debouncedParams = useDebounce(costEstimateParams, 1000);
@@ -92,10 +101,7 @@ export default function RunRubricDialog({
   );
 
   const handleRun = async () => {
-    await startEvaluation({
-      ...costEstimateParams,
-      label_set_id: activeLabelSet?.id,
-    });
+    await startEvaluation(costEstimateParams);
     onClose();
   };
 
@@ -203,7 +209,7 @@ export default function RunRubricDialog({
               {isCostLoading || !costEstimate
                 ? '—'
                 : costEstimate.rollouts_needed}{' '}
-              total rollouts needed
+              new rollouts needed
             </div>
           </div>
         </div>
