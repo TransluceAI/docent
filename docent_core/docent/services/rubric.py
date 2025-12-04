@@ -1557,17 +1557,26 @@ class RubricService:
 
         from docent_core.docent.db.schemas.tables import SQLATranscript
 
-        byte_query = select(func.sum(func.length(SQLATranscript.messages))).where(
-            SQLATranscript.agent_run_id.in_(agent_run_ids)
+        size_query = (
+            select(
+                SQLATranscript.agent_run_id,
+                func.sum(func.length(SQLATranscript.messages)),
+            )
+            .where(SQLATranscript.agent_run_id.in_(agent_run_ids))
+            .group_by(SQLATranscript.agent_run_id)
         )
-        byte_result = await self.session.execute(byte_query)
-        total_bytes = byte_result.scalar() or 0
+        size_result = await self.session.execute(size_query)
+        bytes_by_run: dict[str, int] = {row[0]: row[1] for row in size_result.all()}
 
         BYTES_PER_TOKEN = 4.3  # calculated from sample data
-        transcript_tokens = int(total_bytes / BYTES_PER_TOKEN)
-
-        avg_transcript_tokens = transcript_tokens / len(agent_run_ids)
-        total_input_tokens = int((avg_transcript_tokens + rubric_tokens) * total_rollouts_needed)
+        weighted_transcript_tokens = int(
+            sum(
+                bytes_by_run.get(run_id, 0) * n_rollouts
+                for run_id, n_rollouts in rollouts_needed.items()
+            )
+            / BYTES_PER_TOKEN
+        )
+        total_input_tokens = weighted_transcript_tokens + rubric_tokens * total_rollouts_needed
 
         avg_output_tokens = 300  # rough guess
         total_output_tokens = avg_output_tokens * total_rollouts_needed
