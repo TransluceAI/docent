@@ -128,6 +128,13 @@ export interface CopyRubricRequest {
   target_collection_id: string;
 }
 
+export interface EstimateCostResponse {
+  cost_cents: number;
+  rollouts_needed: number;
+  fraction_of_daily_limit: number | null;
+  provider: string;
+}
+
 export interface ReflectionSummary {
   rollout_indices: number[];
   text: string;
@@ -469,6 +476,32 @@ export const rubricApi = createApi({
       }),
       invalidatesTags: ['Rubric'],
     }),
+    estimateCost: build.query<
+      EstimateCostResponse,
+      {
+        collectionId: string;
+        rubricId: string;
+        max_agent_runs?: number | null;
+        n_rollouts_per_input?: number;
+        filter?: ComplexFilter | null;
+      }
+    >({
+      query: ({
+        collectionId,
+        rubricId,
+        max_agent_runs,
+        n_rollouts_per_input,
+        filter,
+      }) => ({
+        url: `/${collectionId}/${rubricId}/estimate_cost`,
+        method: 'POST',
+        body: {
+          max_agent_runs: max_agent_runs ?? null,
+          n_rollouts_per_input: n_rollouts_per_input ?? 1,
+          filter: filter ?? null,
+        },
+      }),
+    }),
   }),
 });
 
@@ -493,4 +526,5 @@ export const {
   useGetClusteringStateQuery,
   useGetRubricJobStatusQuery,
   useClearClustersMutation,
+  useEstimateCostQuery,
 } = rubricApi;

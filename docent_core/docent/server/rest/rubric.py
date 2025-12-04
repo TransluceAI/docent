@@ -35,7 +35,7 @@ from docent_core.docent.services import monoservice
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES
 from docent_core.docent.services.monoservice import MonoService
-from docent_core.docent.services.rubric import RubricService
+from docent_core.docent.services.rubric import EstimateCostResponse, RubricService
 
 rubric_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
@@ -395,6 +395,31 @@ class StartFilteredEvalJobRequest(BaseModel):
     n_rollouts_per_input: int = 1
     label_set_id: str | None = None
     filter: dict[str, Any] | None = None
+
+
+class EstimateCostRequest(BaseModel):
+    max_agent_runs: int | None = None
+    n_rollouts_per_input: int = 1
+    filter: dict[str, Any] | None = None
+
+
+@rubric_router.post("/{collection_id}/{rubric_id}/estimate_cost")
+async def estimate_rubric_cost(
+    collection_id: str,
+    rubric_id: str,
+    request: EstimateCostRequest,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> EstimateCostResponse:
+    """Estimate the cost of running a rubric evaluation."""
+    return await rubric_svc.estimate_rubric_cost(
+        ctx=ctx,
+        rubric_id=rubric_id,
+        max_agent_runs=request.max_agent_runs,
+        n_rollouts_per_input=request.n_rollouts_per_input,
+        filter_dict=request.filter,
+    )
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/evaluate")

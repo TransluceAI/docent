@@ -10,14 +10,17 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useGetAgentRunMetadataFieldsQuery } from '@/app/api/collectionApi';
 import { FilterControls } from '@/app/components/FilterControls';
 import { FilterChips } from '@/app/components/FilterChips';
 import { ComplexFilter } from '@/app/types/collectionTypes';
-import { useStartEvaluationMutation } from '@/app/api/rubricApi';
-import { useGetUsageSummaryQuery } from '@/app/api/settingsApi';
+import {
+  useStartEvaluationMutation,
+  useEstimateCostQuery,
+} from '@/app/api/rubricApi';
 import { useLabelSets } from '@/providers/use-label-sets';
+import { useDebounce } from '@/hooks/use-debounce';
 
 interface RunRubricDialogProps {
   isOpen: boolean;
@@ -37,7 +40,6 @@ export default function RunRubricDialog({
   const [rolloutsPerInput, setRolloutsPerInput] = useState<string>('1');
   const [startEvaluation, { isLoading: isStarting }] =
     useStartEvaluationMutation();
-  const { data: usageSummary } = useGetUsageSummaryQuery();
   const { activeLabelSet } = useLabelSets(rubricId);
 
   // Filter state
@@ -49,6 +51,33 @@ export default function RunRubricDialog({
       skip: !collectionId,
     }
   );
+
+  const costEstimateParams = useMemo(
+    () => ({
+      collectionId,
+      rubricId,
+      max_agent_runs:
+        runMode === 'all'
+          ? null
+          : maxResults !== ''
+            ? parseInt(maxResults, 10)
+            : null,
+      n_rollouts_per_input:
+        rolloutsPerInput !== '' ? parseInt(rolloutsPerInput, 10) : 1,
+      filter,
+    }),
+    [collectionId, rubricId, runMode, maxResults, rolloutsPerInput, filter]
+  );
+
+  const debouncedParams = useDebounce(costEstimateParams, 1000);
+
+  const { data: costEstimate, isFetching: isCostLoading } =
+    useEstimateCostQuery(debouncedParams, {
+      skip: !isOpen,
+    });
+
+  const isDebouncing =
+    JSON.stringify(costEstimateParams) !== JSON.stringify(debouncedParams);
 
   // Don't allow filtering a rubric run on outputs of other rubrics - backend doesn't support this
   const agentRunMetadataFields = (metadataFieldsData?.fields || []).filter(
@@ -154,13 +183,38 @@ export default function RunRubricDialog({
               onChange={(e) => setRolloutsPerInput(e.target.value)}
               className="h-8"
             />
-            {usageSummary?.free?.has_cap && (
-              <p className="text-xs text-muted-foreground">
-                Generating multiple rollouts per agent run consumes usage limits
-                faster.
-              </p>
-            )}
           </div>
+
+          {/* Cost estimate */}
+          {(() => {
+            const isLoading = isCostLoading || isDebouncing;
+
+            const costDisplay = isLoading
+              ? '—'
+              : costEstimate
+                ? costEstimate.fraction_of_daily_limit != null
+                  ? `${(costEstimate.fraction_of_daily_limit * 100).toFixed(1)}% of daily limit`
+                  : `$${(costEstimate.cost_cents / 100).toFixed(2)}`
+                : '—';
+
+            const rolloutsDisplay = isLoading
+              ? '—'
+              : costEstimate
+                ? String(costEstimate.rollouts_needed)
+                : '—';
+
+            return (
+              <div className="rounded-md bg-muted/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Estimated cost</span>
+                  <span className="text-sm font-semibold">{costDisplay}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {rolloutsDisplay} total rollouts needed
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <DialogFooter>

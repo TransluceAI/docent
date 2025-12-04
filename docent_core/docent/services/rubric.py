@@ -5,6 +5,7 @@ from typing import Any, AsyncContextManager, Callable, Sequence, cast
 from uuid import uuid4
 
 import anyio
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +56,13 @@ from docent_core.docent.services.monoservice import MonoService
 logger = get_logger(__name__)
 
 
+class EstimateCostResponse(BaseModel):
+    cost_cents: float
+    rollouts_needed: int
+    fraction_of_daily_limit: float | None
+    provider: str
+
+
 class RubricService:
     def __init__(
         self,
@@ -71,6 +79,70 @@ class RubricService:
         self.service = service
         self.llm_svc = llm_svc
         self.job_svc = JobService(session, session_cm_factory)
+
+    async def _plan_rubric_evaluation(
+        self,
+        collection_id: str,
+        rubric_id: str,
+        rubric_version: int,
+        n_rollouts_per_input: int,
+        filter_obj: CollectionFilter | None,
+        max_agent_runs: int | None,
+        label_set_id: str | None = None,
+    ) -> dict[str, int]:
+        """Determine which agent runs need evaluation and how many rollouts each needs.
+
+        Returns mapping of agent_run_id -> rollouts needed.
+        """
+        from docent_core.docent.db.filters import FilterSQLContext
+
+        result_counts_subquery = (
+            select(
+                SQLAJudgeResult.agent_run_id,
+                func.count(SQLAJudgeResult.id).label("result_count"),
+            )
+            .where(
+                SQLAJudgeResult.rubric_id == rubric_id,
+                SQLAJudgeResult.rubric_version == rubric_version,
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
+            )
+            .group_by(SQLAJudgeResult.agent_run_id)
+            .subquery()
+        )
+
+        query = select(SQLAAgentRun.id, result_counts_subquery.c.result_count).outerjoin(
+            result_counts_subquery,
+            SQLAAgentRun.id == result_counts_subquery.c.agent_run_id,
+        )
+
+        if label_set_id is not None:
+            query = query.outerjoin(
+                SQLALabel,
+                (SQLALabel.agent_run_id == SQLAAgentRun.id)
+                & (SQLALabel.label_set_id == label_set_id),
+            )
+            query = query.order_by(
+                SQLALabel.id.is_(None).asc(),
+                SQLAAgentRun.id.asc(),
+            )
+
+        query = query.where(SQLAAgentRun.collection_id == collection_id)
+
+        if filter_obj is not None:
+            sql_context = FilterSQLContext(base_table=SQLAAgentRun)
+            filter_clause = filter_obj.to_sqla_where_clause(SQLAAgentRun, context=sql_context)
+            if filter_clause is not None:
+                for join_spec in sql_context.required_joins():
+                    query = query.outerjoin(join_spec.alias, join_spec.onclause)
+                query = query.where(filter_clause)
+
+        if max_agent_runs is not None:
+            query = query.limit(max_agent_runs)
+
+        result = await self.session.execute(query)
+        rows = result.all()
+
+        return {row[0]: max(0, n_rollouts_per_input - (row[1] or 0)) for row in rows}
 
     ###############
     # Rubric CRUD #
@@ -289,6 +361,8 @@ class RubricService:
         n_rollouts_per_input = job.job_json.get("n_rollouts_per_input", 1)
         label_set_id = job.job_json.get("label_set_id", None)
         filter_dict = job.job_json.get("filter", None)
+
+        # TODO(ryanbloom): We can use _plan_rubric_evaluation for some of this logic
 
         # Subquery to count existing results per agent run for this rubric/version
         result_counts_subquery = (
@@ -1431,101 +1505,79 @@ class RubricService:
 
     async def estimate_rubric_cost(
         self,
-        rubric_id: str,
-        version: int | None,
-        agent_run_ids: list[str],
         ctx: ViewContext,
-    ) -> tuple[float, dict[str, Any]]:
-        """Estimate the cost in cents to evaluate a rubric on a set of agent runs.
-
-        Args:
-            ctx: View context for accessing agent runs
-            rubric_id: The rubric ID
-            version: The rubric version (None for latest)
-            agent_run_ids: List of agent run IDs to evaluate
-
-        Returns:
-            A tuple of (total_cents, details_dict) where details_dict contains:
-                - model_name: The judge model name
-                - num_runs: Number of agent runs
-                - avg_tokens_per_run: Average tokens per run
-                - total_input_tokens: Total estimated input tokens
-                - total_cost_cents: Total estimated cost in cents
-        """
+        rubric_id: str,
+        max_agent_runs: int | None,
+        n_rollouts_per_input: int,
+        filter_dict: dict[str, Any] | None,
+    ) -> EstimateCostResponse:
+        """Fast cost estimation using SQL byte aggregation."""
         from docent._llm_util.model_registry import estimate_cost_cents
-        from docent._log_util.logger import get_logger
         from docent.data_models._tiktoken_util import get_token_count
+        from docent_core.docent.services.usage import FREE_CAP_CENTS
 
-        logger = get_logger(__name__)
-
-        # Get the rubric
-        sqla_rubric = await self.get_rubric(rubric_id, version)
+        sqla_rubric = await self.get_rubric(rubric_id, version=None)
         if sqla_rubric is None:
-            raise ValueError(f"Rubric {rubric_id} (version={version}) not found")
+            raise ValueError(f"Rubric {rubric_id} not found")
 
-        if not agent_run_ids:
-            return 0.0, {
-                "model_name": "unknown",
-                "num_runs": 0,
-                "avg_tokens_per_run": 0,
-                "total_input_tokens": 0,
-                "total_cost_cents": 0.0,
-            }
-
-        # Extract model name from judge_model
         judge_model = sqla_rubric.judge_model
         model_name = judge_model.get("model_name", "unknown")
+        provider = judge_model.get("provider", "unknown")
 
-        # Sample a few agent runs to estimate average token count
-        # We'll sample up to 10 runs to get a reasonable estimate
-        sample_size = min(10, len(agent_run_ids))
-        sample_ids = agent_run_ids[:sample_size]
+        rubric_tokens = get_token_count(sqla_rubric.rubric_text or "")
 
-        # Get sample agent runs using the service (which properly loads transcripts)
-        sample_agent_runs = await self.service.get_agent_runs(
-            ctx, agent_run_ids=sample_ids, apply_base_filter=False
+        filter_obj = parse_filter_dict(filter_dict) if filter_dict else None
+
+        rollouts_needed = await self._plan_rubric_evaluation(
+            collection_id=ctx.collection_id,
+            rubric_id=rubric_id,
+            rubric_version=sqla_rubric.version,
+            n_rollouts_per_input=n_rollouts_per_input,
+            filter_obj=filter_obj,
+            max_agent_runs=max_agent_runs,
         )
+        agent_run_ids = list(rollouts_needed.keys())
+        total_rollouts_needed = sum(rollouts_needed.values())
 
-        if not sample_agent_runs:
-            logger.warning("No agent runs found for cost estimation")
-            return 0.0, {
-                "model_name": model_name,
-                "num_runs": len(agent_run_ids),
-                "avg_tokens_per_run": 0,
-                "total_input_tokens": 0,
-                "total_cost_cents": 0.0,
-            }
+        if total_rollouts_needed == 0:
+            return EstimateCostResponse(
+                cost_cents=0.0,
+                rollouts_needed=0,
+                fraction_of_daily_limit=None,
+                provider=provider,
+            )
 
-        # Estimate tokens for sample runs using the canonical prompt construction
-        rubric_pydantic = sqla_rubric.to_pydantic()
-        total_sample_tokens = 0
-        for agent_run in sample_agent_runs:
-            # Use the canonical prompt construction function
-            prompt = rubric_pydantic.materialize_system_prompt(agent_run)
-            tokens = get_token_count(prompt)
-            total_sample_tokens += tokens
+        from docent_core.docent.db.schemas.tables import SQLATranscript
 
-        avg_tokens_per_run = int(total_sample_tokens / len(sample_agent_runs))
+        byte_query = select(func.sum(func.length(SQLATranscript.messages))).where(
+            SQLATranscript.agent_run_id.in_(agent_run_ids)
+        )
+        byte_result = await self.session.execute(byte_query)
+        total_bytes = byte_result.scalar() or 0
 
-        # Estimate total tokens for all runs
-        total_input_tokens = avg_tokens_per_run * len(agent_run_ids)
+        BYTES_PER_TOKEN = 4.3
+        transcript_tokens = int(total_bytes / BYTES_PER_TOKEN)
 
-        avg_output_tokens = 300  # A very rough guess
-        total_output_tokens = avg_output_tokens * len(agent_run_ids)
+        avg_transcript_tokens = transcript_tokens / len(agent_run_ids)
+        total_input_tokens = int((avg_transcript_tokens + rubric_tokens) * total_rollouts_needed)
 
-        # Calculate costs
-        input_cost_cents = estimate_cost_cents(model_name, total_input_tokens, "input")
-        output_cost_cents = estimate_cost_cents(model_name, total_output_tokens, "output")
-        total_cost_cents = input_cost_cents + output_cost_cents
+        avg_output_tokens = 300  # rough guess
+        total_output_tokens = avg_output_tokens * total_rollouts_needed
 
-        return total_cost_cents, {
-            "model_name": model_name,
-            "num_runs": len(agent_run_ids),
-            "avg_tokens_per_run": avg_tokens_per_run,
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "total_cost_cents": total_cost_cents,
-        }
+        input_cost = estimate_cost_cents(model_name, total_input_tokens, "input")
+        output_cost = estimate_cost_cents(model_name, total_output_tokens, "output")
+        total_cost = input_cost + output_cost
+
+        fraction_of_daily_limit = None
+        if FREE_CAP_CENTS is not None and FREE_CAP_CENTS > 0:
+            fraction_of_daily_limit = total_cost / FREE_CAP_CENTS
+
+        return EstimateCostResponse(
+            cost_cents=total_cost,
+            rollouts_needed=total_rollouts_needed,
+            fraction_of_daily_limit=fraction_of_daily_limit,
+            provider=provider,
+        )
 
     #################
     # Label methods #
