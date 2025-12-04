@@ -48,6 +48,7 @@ from docent_core.docent.db.schemas.tables import (
     JobStatus,
     SQLAAgentRun,
     SQLAJob,
+    SQLAModelApiKey,
 )
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.llms import LLMService
@@ -1587,7 +1588,20 @@ class RubricService:
 
         fraction_of_daily_limit = None
         if FREE_CAP_CENTS is not None and FREE_CAP_CENTS > 0:
-            fraction_of_daily_limit = total_cost / FREE_CAP_CENTS
+            user_has_byok = False
+            if ctx.user is not None:
+                byok_result = await self.session.execute(
+                    select(SQLAModelApiKey.id)
+                    .where(
+                        SQLAModelApiKey.user_id == ctx.user.id,
+                        SQLAModelApiKey.provider == provider,
+                    )
+                    .limit(1)
+                )
+                user_has_byok = byok_result.scalar_one_or_none() is not None
+
+            if not user_has_byok:
+                fraction_of_daily_limit = total_cost / FREE_CAP_CENTS
 
         return EstimateCostResponse(
             cost_cents=total_cost,
