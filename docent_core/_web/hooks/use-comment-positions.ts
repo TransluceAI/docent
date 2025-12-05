@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useRef, RefObject } from 'react';
+import { useLayoutEffect, useEffect, useState, useRef } from 'react';
 import { Annotation } from '@/app/api/labelApi';
 
 const CARD_HEIGHT = 150;
@@ -121,14 +121,14 @@ function computePositions(
 
 interface UseCommentPositionsParams {
   sortedAnnotations: Annotation[];
-  scrollContainerRef: RefObject<HTMLElement>;
+  scrollContainer: HTMLElement | null;
   focusedAnnotationId: string | null;
   enabled: boolean;
 }
 
 export function useCommentPositions({
   sortedAnnotations,
-  scrollContainerRef,
+  scrollContainer,
   focusedAnnotationId,
   enabled,
 }: UseCommentPositionsParams): Map<string, number> {
@@ -146,7 +146,6 @@ export function useCommentPositions({
   // This runs synchronously after all DOM mutations but before paint,
   // ensuring highlight elements from sibling components exist
   useLayoutEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
     if (!enabled || !scrollContainer) {
       setPositions((prev) => (prev.size === 0 ? prev : new Map()));
       prevFocusedIdRef.current = focusedAnnotationId;
@@ -182,30 +181,26 @@ export function useCommentPositions({
       });
       return hasChanged ? newPositions : prev;
     });
-    // Note: scrollContainerRef is a ref (read .current at execution time, not a dependency)
     // sortedAnnotations content is tracked via annotationsKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [annotationsKey, focusedAnnotationId, enabled]);
+    // scrollContainer is a direct dependency - when it transitions from null to valid, effect re-runs
+  }, [annotationsKey, focusedAnnotationId, enabled, scrollContainer]);
 
   // Listen for window resize
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !scrollContainer) return;
     const handleResize = () => {
-      const scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        // Use lastAnchorRef to maintain the same anchor after deselection
-        const newPositions = computePositions(
-          sortedAnnotations,
-          scrollContainer,
-          lastAnchorRef.current
-        );
-        setPositions(newPositions);
-      }
+      // Use lastAnchorRef to maintain the same anchor after deselection
+      const newPositions = computePositions(
+        sortedAnnotations,
+        scrollContainer,
+        lastAnchorRef.current
+      );
+      setPositions(newPositions);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, annotationsKey]);
+  }, [enabled, annotationsKey, scrollContainer]);
 
   return positions;
 }

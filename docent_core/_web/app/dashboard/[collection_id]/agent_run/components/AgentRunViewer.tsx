@@ -1651,7 +1651,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                             <AnnotationSidebarContent
                               annotationsForTranscript={filteredAnnotations}
                               listModeAnnotations={filteredAnnotations}
-                              scrollContainerRef={{ current: scrollNode }}
+                              scrollContainer={scrollNode}
                               scrollToCitation={focusCitationTarget}
                               activeTab={activeAnnotationTab}
                             />

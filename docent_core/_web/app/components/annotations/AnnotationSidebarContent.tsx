@@ -3,7 +3,7 @@
 import { Annotation } from '@/app/api/labelApi';
 import { AnnotationCard } from './AnnotationCard';
 import { CitationTarget } from '@/app/types/citationTypes';
-import { useCallback, RefObject } from 'react';
+import { useCallback } from 'react';
 import { useCommentPositions } from '@/hooks/use-comment-positions';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import { setSelectedAnnotationId } from '@/app/store/transcriptSlice';
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 interface AnnotationSidebarContentProps {
   annotationsForTranscript: Annotation[];
   listModeAnnotations: Annotation[];
-  scrollContainerRef?: RefObject<HTMLElement>;
+  scrollContainer?: HTMLElement | null;
   scrollToCitation: (citation: CitationTarget) => void;
   activeTab: AnnotationTab;
 }
@@ -21,7 +21,7 @@ interface AnnotationSidebarContentProps {
 export const AnnotationSidebarContent = ({
   annotationsForTranscript,
   listModeAnnotations,
-  scrollContainerRef,
+  scrollContainer,
   scrollToCitation,
   activeTab,
 }: AnnotationSidebarContentProps) => {
@@ -60,7 +60,7 @@ export const AnnotationSidebarContent = ({
   // Use comment positions hook for inline mode
   const positions = useCommentPositions({
     sortedAnnotations,
-    scrollContainerRef: scrollContainerRef || { current: null },
+    scrollContainer: scrollContainer ?? null,
     focusedAnnotationId: selectedAnnotationId,
     enabled: activeTab === 'inline',
   });
