@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util import get_logger
+from docent.data_models import InlineCitation
 from docent.data_models.judge import Label
 from docent_core.docent.db.schemas.label import (
     Annotation,
@@ -385,13 +386,27 @@ class LabelService:
     # Annotation CRUD #
     ###################
 
-    async def create_annotation(self, user_id: str, annotation: Annotation) -> None:
+    async def create_annotation(
+        self,
+        user_id: str,
+        collection_id: str,
+        agent_run_id: str,
+        citations: list[InlineCitation],
+        content: str,
+    ) -> None:
         """Create an annotation.
 
         Args:
             annotation: The annotation to create
         """
-        sqla_annotation = SQLAAnnotation.from_pydantic(user_id, annotation)
+        sqla_annotation = SQLAAnnotation(
+            id=str(uuid4()),
+            user_id=user_id,
+            collection_id=collection_id,
+            agent_run_id=agent_run_id,
+            citations=[citation.model_dump() for citation in citations],
+            content=content,
+        )
         self.session.add(sqla_annotation)
 
     async def get_annotation(self, annotation_id: str) -> Annotation | None:
@@ -412,9 +427,7 @@ class LabelService:
         if row is None:
             return None
         sqla_annotation, user_email = row
-        annotation = sqla_annotation.to_pydantic()
-        annotation.user_email = user_email
-        return annotation
+        return sqla_annotation.to_pydantic(user_email=user_email)
 
     async def get_annotations_by_agent_run(self, agent_run_id: str) -> list[Annotation]:
         """Get all annotations for a specific agent run.
@@ -433,8 +446,7 @@ class LabelService:
 
         annotations: list[Annotation] = []
         for sqla_annotation, user_email in result.all():
-            annotation = sqla_annotation.to_pydantic()
-            annotation.user_email = user_email
+            annotation = sqla_annotation.to_pydantic(user_email=user_email)
             annotations.append(annotation)
         return annotations
 

@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from docent._log_util.logger import get_logger
+from docent.data_models import InlineCitation
 from docent.data_models.judge import Label
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.label import Annotation, LabelSet
@@ -55,7 +56,9 @@ class UpdateLabelSetRequest(BaseModel):
 
 
 class CreateAnnotationRequest(BaseModel):
-    annotation: Annotation
+    agent_run_id: str
+    citations: list[InlineCitation]
+    content: str
 
 
 class UpdateAnnotationRequest(BaseModel):
@@ -379,14 +382,14 @@ async def create_annotation(
 ) -> dict[str, str]:
     """Create an annotation."""
     # Validate that the annotation's collection_id matches the path parameter
-    if request.annotation.collection_id != collection_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Annotation collection_id ({request.annotation.collection_id}) does not match path collection_id ({collection_id})",
-        )
-
     logger.info(f"Creating annotation for user {user.email}")
-    await label_svc.create_annotation(user.id, request.annotation)
+    await label_svc.create_annotation(
+        user.id,
+        collection_id=collection_id,
+        agent_run_id=request.agent_run_id,
+        citations=request.citations,
+        content=request.content,
+    )
     return {"message": "Annotation created successfully"}
 
 

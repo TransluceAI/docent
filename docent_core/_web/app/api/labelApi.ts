@@ -62,7 +62,6 @@ export interface Annotation {
 }
 
 export interface NewAnnotation {
-  collection_id: string;
   agent_run_id: string;
   citations: InlineCitation[];
   content: string;
@@ -264,7 +263,7 @@ export const labelApi = createApi({
       query: ({ collectionId, annotation }) => ({
         url: `/${collectionId}/annotation`,
         method: 'POST',
-        body: { annotation },
+        body: annotation,
       }),
       invalidatesTags: (result, error, { annotation }) => [
         'Annotation',

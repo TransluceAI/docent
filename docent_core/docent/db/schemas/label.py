@@ -113,11 +113,11 @@ class SQLALabelSet(SQLABase):
 
 class Annotation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    user_email: str | None = None
+    user_email: str
     collection_id: str
     agent_run_id: str
     citations: list[InlineCitation]
-    created_at: datetime | None = None
+    created_at: datetime
     content: str
 
 
@@ -149,20 +149,10 @@ class SQLAAnnotation(SQLABase):
 
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
-    @classmethod
-    def from_pydantic(cls, user_id: str, annotation: Annotation) -> "SQLAAnnotation":
-        return cls(
-            id=annotation.id,
-            user_id=user_id,
-            collection_id=annotation.collection_id,
-            agent_run_id=annotation.agent_run_id,
-            citations=[citation.model_dump() for citation in annotation.citations],
-            content=annotation.content,
-        )
-
-    def to_pydantic(self) -> Annotation:
+    def to_pydantic(self, user_email: str) -> Annotation:
         return Annotation(
             id=self.id,
+            user_email=user_email,
             collection_id=self.collection_id,
             agent_run_id=self.agent_run_id,
             citations=[InlineCitation.model_validate(citation) for citation in self.citations],
