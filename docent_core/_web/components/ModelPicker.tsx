@@ -12,12 +12,7 @@ import { Combobox, type ComboboxOption } from '@/app/components/Combobox';
 
 function nameModel(model: ModelOption, shortenName = false) {
   if (shortenName) {
-    let shortName = model.model_name;
-
-    // TODO: more general/clean way to shorten names like this
-    if (model.model_name.startsWith('claude-sonnet-4-')) {
-      shortName = 'claude-sonnet-4';
-    }
+    const shortName = model.model_name;
 
     // Add reasoning effort if it exists
     if (model.reasoning_effort) {
