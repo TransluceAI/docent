@@ -31,7 +31,7 @@ class ViewContext(BaseModel):
 
         # Apply joins if necessary
         for join_spec in filter_ctx.required_joins():
-            query = query.join(join_spec.alias, join_spec.onclause)
+            query = query.outerjoin(join_spec.alias, join_spec.onclause)
 
         # Apply the where clause, after JOINs
         query = query.where(base_filter_clause)
