@@ -18,6 +18,9 @@ from docent_core._env_util import ENV
 
 logger = get_logger(__name__)
 
+DEFAULT_POOL_SIZE = 50
+DEFAULT_MAX_OVERFLOW = 25
+
 
 @dataclass
 class PGParams:
@@ -68,7 +71,8 @@ def get_sync_engine():
             port=int(p.port),
             database=p.database,
         ),
-        pool_size=75,
+        pool_size=int(ENV.get("DOCENT_PG_POOL_SIZE", DEFAULT_POOL_SIZE)),
+        max_overflow=int(ENV.get("DOCENT_PG_MAX_OVERFLOW", DEFAULT_MAX_OVERFLOW)),
     )
 
 
@@ -205,9 +209,8 @@ class DocentDB:
             logger.info(f"Using database connection: {connection_url}")
 
             # Specify size of persistent (+ overflow) connection pools
-            # Default to 25 (previous default) for backward compatibility.
-            pool_size = int(ENV.get("DOCENT_PG_POOL_SIZE", 25))
-            max_overflow = int(ENV.get("DOCENT_PG_MAX_OVERFLOW", 25))
+            pool_size = int(ENV.get("DOCENT_PG_POOL_SIZE", DEFAULT_POOL_SIZE))
+            max_overflow = int(ENV.get("DOCENT_PG_MAX_OVERFLOW", DEFAULT_MAX_OVERFLOW))
 
             engine_kwargs = dict(
                 pool_size=pool_size,
