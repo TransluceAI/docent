@@ -71,6 +71,7 @@ import {
 } from '@/app/components/annotations/AnnotationSidebarHeader';
 import { AnnotationSidebarContent } from '@/app/components/annotations/AnnotationSidebarContent';
 import { useTextSelection } from '@/providers/use-text-selection';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 // Export interface for use in other components
 interface ScrollToBlockParams {
@@ -281,6 +282,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const { rubric_id: rubricId } = useParams<{ rubric_id: string }>();
     const searchParams = useSearchParams();
     const initialAnnotationId = searchParams.get('annotation_id');
+
+    const hasWritePermission = useHasCollectionWritePermission();
 
     // Full tree toggle (default off)
     const [fullTree, setFullTree] = useState(false);
@@ -1246,11 +1249,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                   ? metadataIntent.textRange
                                   : undefined
                               }
-                              onAddComment={(key) =>
-                                handleAddComment({
-                                  type: 'agent_run',
-                                  metadataKey: key,
-                                })
+                              onAddComment={
+                                hasWritePermission
+                                  ? (key) =>
+                                      handleAddComment({
+                                        type: 'agent_run',
+                                        metadataKey: key,
+                                      })
+                                  : undefined
                               }
                             />
                           )}
@@ -1453,11 +1459,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                           showSearchControls={true}
                                           citedKey={citedKey}
                                           textRange={textRange}
-                                          onAddComment={(key) =>
-                                            handleAddComment({
-                                              type: 'transcript',
-                                              metadataKey: key,
-                                            })
+                                          onAddComment={
+                                            hasWritePermission
+                                              ? (key) =>
+                                                  handleAddComment({
+                                                    type: 'transcript',
+                                                    metadataKey: key,
+                                                  })
+                                              : undefined
                                           }
                                         />
                                       )}
@@ -1596,18 +1605,24 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                   citedTextRange: msgCitedRange,
                                 }}
                                 dataContext={transcriptBlockContentItem}
-                                onAddMetadataComment={(key) =>
-                                  handleAddComment({
-                                    type: 'block_metadata',
-                                    blockIdx: index,
-                                    metadataKey: key,
-                                  })
+                                onAddMetadataComment={
+                                  hasWritePermission
+                                    ? (key) =>
+                                        handleAddComment({
+                                          type: 'block_metadata',
+                                          blockIdx: index,
+                                          metadataKey: key,
+                                        })
+                                    : undefined
                                 }
-                                onAddBlockComment={() =>
-                                  handleAddComment({
-                                    type: 'block_content',
-                                    blockIdx: index,
-                                  })
+                                onAddBlockComment={
+                                  hasWritePermission
+                                    ? () =>
+                                        handleAddComment({
+                                          type: 'block_content',
+                                          blockIdx: index,
+                                        })
+                                    : undefined
                                 }
                                 onBlockClick={() =>
                                   hasAnnotations
@@ -1618,7 +1633,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                             );
                           })}
                           {/* Text selection menu for creating annotations */}
-                          {menuElement}
+                          {hasWritePermission && menuElement}
                         </div>
 
                         {/* Annotations column */}

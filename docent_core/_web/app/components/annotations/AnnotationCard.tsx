@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 interface AnnotationCardProps {
   annotation: Annotation;
@@ -52,6 +53,7 @@ export function AnnotationCard({
   const draftAnnotation = useAppSelector(
     (state) => state.transcript.draftAnnotation
   );
+  const hasWritePermission = useHasCollectionWritePermission();
 
   // Detect if this is a draft annotation
   const isDraft = annotation.id === 'draft';
@@ -235,10 +237,12 @@ export function AnnotationCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setIsEditing(true)}>
-              <Edit className="size-4 mr-2" />
-              Edit
-            </DropdownMenuItem>
+            {hasWritePermission && (
+              <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                <Edit className="size-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={() => {
                 const url = new URL(window.location.href);
@@ -249,13 +253,15 @@ export function AnnotationCard({
               <Share className="size-4 mr-2" />
               Copy Link
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-red-text focus:text-red-text"
-              onClick={handleDeleteAnnotation}
-            >
-              <Trash2 className="size-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
+            {hasWritePermission && (
+              <DropdownMenuItem
+                className="text-red-text focus:text-red-text"
+                onClick={handleDeleteAnnotation}
+              >
+                <Trash2 className="size-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
