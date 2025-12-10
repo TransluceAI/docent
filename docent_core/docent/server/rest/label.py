@@ -14,16 +14,91 @@ from docent_core.docent.db.schemas.label import Annotation, LabelSet
 from docent_core.docent.server.dependencies.database import get_session
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
+    require_agent_run_in_collection,
     require_collection_permission,
 )
-from docent_core.docent.server.dependencies.services import get_label_service, get_mono_svc
+from docent_core.docent.server.dependencies.services import get_label_service
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
 from docent_core.docent.services.label import BulkValidationError, LabelService, LabelSetWithCount
-from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
 
 label_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
+
+
+################
+# Dependencies #
+################
+
+
+async def require_label_set_in_collection(
+    collection_id: str,
+    label_set_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+) -> None:
+    """Validate that label_set belongs to collection. Raises 404 if not."""
+    label_set = await label_svc.get_label_set(label_set_id)
+    if label_set is None or label_set.collection_id != collection_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Label set {label_set_id} not found in collection {collection_id}",
+        )
+
+
+async def get_label_in_collection(
+    collection_id: str,
+    label_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Validate that label belongs to collection via its label_set and return it."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet
+
+    result = await session.execute(
+        select(SQLALabel)
+        .join(SQLALabelSet, SQLALabelSet.id == SQLALabel.label_set_id)
+        .where(SQLALabel.id == label_id)
+        .where(SQLALabelSet.collection_id == collection_id)
+    )
+    sqla_label = result.scalar_one_or_none()
+    if sqla_label is None:
+        raise HTTPException(
+            status_code=404, detail=f"Label {label_id} not found in collection {collection_id}"
+        )
+    return sqla_label.to_pydantic()
+
+
+async def require_tag_in_collection(
+    collection_id: str,
+    tag_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+) -> None:
+    """Validate that tag belongs to collection. Raises 404 if not."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.label import SQLATag
+
+    result = await label_svc.session.execute(select(SQLATag).where(SQLATag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if tag is None or tag.collection_id != collection_id:
+        raise HTTPException(
+            status_code=404, detail=f"Tag {tag_id} not found in collection {collection_id}"
+        )
+
+
+async def require_annotation_in_collection(
+    collection_id: str,
+    annotation_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+) -> None:
+    """Validate that annotation belongs to collection. Raises 404 if not."""
+    annotation = await label_svc.get_annotation(annotation_id)
+    if annotation is None or annotation.collection_id != collection_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Annotation {annotation_id} not found in collection {collection_id}",
+        )
 
 
 ################
@@ -56,7 +131,6 @@ class UpdateLabelSetRequest(BaseModel):
 
 
 class CreateAnnotationRequest(BaseModel):
-    agent_run_id: str
     citations: list[InlineCitation]
     content: str
 
@@ -138,13 +212,10 @@ async def create_labels(
 async def get_label(
     collection_id: str,
     label_id: str,
-    label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    label: Label = Depends(get_label_in_collection),
 ) -> Label:
     """Get a label by ID."""
-    label = await label_svc.get_label(label_id)
-    if label is None:
-        raise HTTPException(status_code=404, detail=f"Label {label_id} not found")
     return label
 
 
@@ -154,7 +225,8 @@ async def update_label(
     label_id: str,
     request: UpdateLabelRequest,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _label: Label = Depends(get_label_in_collection),
 ) -> dict[str, str]:
     """Update a label."""
     await label_svc.update_label(label_id, request.label_value)
@@ -166,7 +238,8 @@ async def delete_label(
     collection_id: str,
     label_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _label: Label = Depends(get_label_in_collection),
 ) -> dict[str, str]:
     """Delete a label."""
     await label_svc.delete_label(label_id)
@@ -178,19 +251,10 @@ async def delete_labels_by_label_set(
     collection_id: str,
     label_set_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _label_set: None = Depends(require_label_set_in_collection),
 ) -> dict[str, str]:
     """Delete all labels in a label set."""
-    # Verify the label set belongs to this collection
-    label_set = await label_svc.get_label_set(label_set_id)
-    if label_set is None:
-        raise HTTPException(status_code=404, detail=f"Label set {label_set_id} not found")
-    if label_set.collection_id != collection_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Label set {label_set_id} not found in collection {collection_id}",
-        )
-
     await label_svc.delete_labels_by_label_set(label_set_id)
     return {"message": "Labels deleted successfully"}
 
@@ -231,7 +295,8 @@ async def create_tag(
 async def delete_tag(
     tag_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _tag: None = Depends(require_tag_in_collection),
 ):
     """Delete a tag by ID."""
     if not await label_svc.delete_tag(tag_id):
@@ -254,7 +319,7 @@ async def get_tags_for_agent_run(
     collection_id: str,
     agent_run_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """Get all tags for a specific agent run in a collection."""
     return [
@@ -286,7 +351,8 @@ async def create_label_set(
 async def get_label_set(
     label_set_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _label_set: None = Depends(require_label_set_in_collection),
 ) -> LabelSet:
     """Get a label set by ID."""
     label_set = await label_svc.get_label_set(label_set_id)
@@ -318,11 +384,11 @@ async def get_label_sets_with_counts(
 
 @label_router.put("/{collection_id}/label_set/{label_set_id}")
 async def update_label_set(
-    collection_id: str,
     label_set_id: str,
     request: UpdateLabelSetRequest,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _label_set: None = Depends(require_label_set_in_collection),
 ) -> dict[str, str]:
     """Update a label set."""
     await label_svc.update_label_set(
@@ -333,11 +399,11 @@ async def update_label_set(
 
 @label_router.get("/{collection_id}/label_set/{label_set_id}/labels")
 async def get_labels_in_label_set(
-    collection_id: str,
     label_set_id: str,
     label_svc: LabelService = Depends(get_label_service),
     filter_valid_labels: bool = Query(default=False),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _label_set: None = Depends(require_label_set_in_collection),
 ) -> list[Label]:
     """Get all labels in a label set."""
     return await label_svc.get_labels_by_label_set(label_set_id, filter_valid_labels)
@@ -345,11 +411,10 @@ async def get_labels_in_label_set(
 
 @label_router.delete("/{collection_id}/label_set/{label_set_id}")
 async def delete_label_set(
-    collection_id: str,
     label_set_id: str,
-    session: AsyncSession = Depends(get_session),
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _label_set: None = Depends(require_label_set_in_collection),
 ) -> dict[str, str]:
     """Delete a label set."""
     await label_svc.delete_label_set(label_set_id)
@@ -358,10 +423,10 @@ async def delete_label_set(
 
 @label_router.get("/{collection_id}/agent_run/{agent_run_id}/labels")
 async def get_labels_for_agent_run(
-    collection_id: str,
     agent_run_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> list[Label]:
     """Get all labels for a specific agent run."""
     return await label_svc.get_labels_by_agent_run(agent_run_id)
@@ -372,21 +437,22 @@ async def get_labels_for_agent_run(
 ###################
 
 
-@label_router.post("/{collection_id}/annotation")
+@label_router.post("/{collection_id}/agent_run/{agent_run_id}/annotation")
 async def create_annotation(
     collection_id: str,
+    agent_run_id: str,
     request: CreateAnnotationRequest,
     label_svc: LabelService = Depends(get_label_service),
     user: User = Depends(get_user_anonymous_ok),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> dict[str, str]:
     """Create an annotation."""
-    # Validate that the annotation's collection_id matches the path parameter
     logger.info(f"Creating annotation for user {user.email}")
     await label_svc.create_annotation(
         user.id,
         collection_id=collection_id,
-        agent_run_id=request.agent_run_id,
+        agent_run_id=agent_run_id,
         citations=request.citations,
         content=request.content,
     )
@@ -399,58 +465,32 @@ async def update_annotation(
     annotation_id: str,
     request: UpdateAnnotationRequest,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _annotation: None = Depends(require_annotation_in_collection),
 ) -> dict[str, str]:
     """Update an annotation."""
-    # Verify that the annotation belongs to this collection
-    annotation = await label_svc.get_annotation(annotation_id)
-    if annotation is None:
-        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
-    if annotation.collection_id != collection_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Annotation {annotation_id} not found in collection {collection_id}",
-        )
-
     await label_svc.update_annotation(annotation_id, request.content)
     return {"message": "Annotation updated successfully"}
 
 
 @label_router.delete("/{collection_id}/annotation/{annotation_id}")
 async def delete_annotation(
-    collection_id: str,
     annotation_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _annotation: None = Depends(require_annotation_in_collection),
 ) -> dict[str, str]:
     """Delete an annotation."""
-    # Verify that the annotation belongs to this collection
-    annotation = await label_svc.get_annotation(annotation_id)
-    if annotation is None:
-        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
-    if annotation.collection_id != collection_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Annotation {annotation_id} not found in collection {collection_id}",
-        )
-
     await label_svc.delete_annotation(annotation_id)
     return {"message": "Annotation deleted successfully"}
 
 
 @label_router.get("/{collection_id}/agent_run/{agent_run_id}/annotations")
 async def get_annotations_by_agent_run(
-    collection_id: str,
     agent_run_id: str,
     label_svc: LabelService = Depends(get_label_service),
-    mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> list[Annotation]:
     """Get all annotations for a specific agent run."""
-    # Verify that the agent run belongs to this collection
-    try:
-        await mono_svc.check_agent_run_in_collection(collection_id, agent_run_id)
-    except LabelService.AgentRunCollectionMismatchError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
     return await label_svc.get_annotations_by_agent_run(agent_run_id)

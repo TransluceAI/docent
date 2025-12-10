@@ -261,7 +261,7 @@ export const labelApi = createApi({
       { collectionId: string; annotation: NewAnnotation }
     >({
       query: ({ collectionId, annotation }) => ({
-        url: `/${collectionId}/annotation`,
+        url: `/${collectionId}/agent_run/${annotation.agent_run_id}/annotation`,
         method: 'POST',
         body: annotation,
       }),

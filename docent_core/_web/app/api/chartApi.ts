@@ -45,7 +45,7 @@ export const chartApi = createApi({
       { collectionId: string; chart: ChartSpec }
     >({
       query: ({ collectionId, chart }) => ({
-        url: `/${collectionId}`,
+        url: `/${collectionId}/${chart.id}`,
         method: 'POST',
         body: chart,
       }),

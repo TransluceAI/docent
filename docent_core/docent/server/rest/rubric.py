@@ -20,6 +20,7 @@ from docent_core.docent.server.dependencies.database import get_session
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
     ResourceType,
+    require_agent_run_in_collection,
     require_collection_permission,
 )
 from docent_core.docent.server.dependencies.services import (
@@ -47,14 +48,40 @@ logger = get_logger(__name__)
 ################
 
 
-async def get_rubric(
+async def get_rubric_in_collection(
+    collection_id: str,
     rubric_id: str,
+    version: int | None = None,
     rubric_svc: RubricService = Depends(get_rubric_service),
 ):
-    sqla_rubric = await rubric_svc.get_rubric(rubric_id, version=None)
-    if sqla_rubric is None:
+    """Fetch rubric and validate it belongs to the collection."""
+    sqla_rubric = await rubric_svc.get_rubric(rubric_id, version=version)
+    if sqla_rubric is None or sqla_rubric.collection_id != collection_id:
         raise HTTPException(status_code=404, detail=f"Rubric {rubric_id} not found")
     return sqla_rubric
+
+
+async def require_rubric_job_in_collection(
+    collection_id: str,
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Validate that job belongs to collection via its rubric_id."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.rubric import SQLARubric
+    from docent_core.docent.db.schemas.tables import SQLAJob
+
+    result = await session.execute(
+        select(SQLAJob.id)
+        .join(SQLARubric, SQLARubric.id == SQLAJob.job_json["rubric_id"].astext)
+        .where(SQLAJob.id == job_id)
+        .where(SQLARubric.collection_id == collection_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=404, detail=f"Job {job_id} not found in collection {collection_id}"
+        )
 
 
 ###############
@@ -70,25 +97,18 @@ class CreateRubricRequest(BaseModel):
 async def create_rubric(
     collection_id: str,
     request: CreateRubricRequest,
-    session: AsyncSession = Depends(get_session),
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     return await rubric_svc.create_rubric(collection_id, request.rubric)
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}")
 async def get_rubric_endpoint(
-    collection_id: str,
-    rubric_id: str,
-    version: int | None = None,
-    rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ) -> Rubric:
-    rubric = await rubric_svc.get_rubric(rubric_id, version)
-    if rubric is None:
-        raise HTTPException(status_code=404, detail="Rubric not found")
-    return rubric.to_pydantic()
+    return sq_rubric.to_pydantic()
 
 
 class UpdateRubricRequest(BaseModel):
@@ -105,9 +125,9 @@ async def add_rubric_version(
     collection_id: str,
     rubric_id: str,
     request: UpdateRubricRequest,
-    session: AsyncSession = Depends(get_session),
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ):
     """Update an existing rubric."""
@@ -134,10 +154,10 @@ async def get_rubrics(
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/latest-version")
 async def get_latest_rubric_version(
-    collection_id: str,
     rubric_id: str,
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ):
     """Get the latest version number for a specific rubric."""
     latest_version = await rubric_svc.get_latest_rubric_version(rubric_id)
@@ -153,17 +173,16 @@ async def get_result_by_id(
     rubric_svc: RubricService = Depends(get_rubric_service),
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ) -> JudgeResultWithCitations:
     """Get the full judge result (with citations parsed) by result ID."""
     result = await rubric_svc.get_rubric_result_by_id(result_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Judge result not found")
 
-    # Fetch the matching rubric schema for the result's rubric/version so we can parse citations
     sqla_rubric = await rubric_svc.get_rubric(result.rubric_id, result.rubric_version)
-    if sqla_rubric is None:
-        raise HTTPException(status_code=404, detail="Rubric version not found for result")
+    if sqla_rubric is None or sqla_rubric.collection_id != collection_id:
+        raise HTTPException(status_code=404, detail="Judge result not found")
 
     results = await rubric_svc.resolve_result_citations(
         [result], sqla_rubric.output_schema, ctx, persist=True
@@ -194,12 +213,12 @@ async def get_rubric_metrics(
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/filter_fields")
 async def get_judge_result_filter_fields(
-    collection_id: str,
     rubric_id: str,
     version: int | None = None,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ):
     """Get filterable fields for a rubric's judge results.
 
@@ -219,14 +238,14 @@ async def get_judge_result_filter_fields(
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/result/{agent_run_id}")
 async def get_result_by_agent_run(
-    collection_id: str,
     rubric_id: str,
     agent_run_id: str,
     version: int,
     rubric_svc: RubricService = Depends(get_rubric_service),
-    mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> JudgeResultWithCitations:
     """Get a single judge result by agent run, rubric id, and rubric version.
 
@@ -239,20 +258,14 @@ async def get_result_by_agent_run(
     if result is None:
         raise HTTPException(status_code=404, detail="Judge result not found")
 
-    # Ensure rubric/version exists and use schema to parse citations
-    sqla_rubric = await rubric_svc.get_rubric(rubric_id, version)
-    if sqla_rubric is None:
-        raise HTTPException(status_code=404, detail="Rubric version not found")
-
     results = await rubric_svc.resolve_result_citations(
-        [result], sqla_rubric.output_schema, ctx, persist=True
+        [result], sq_rubric.output_schema, ctx, persist=True
     )
     return results[0]
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/agent_run/{agent_run_id}/reflection")
 async def get_agent_run_reflection(
-    collection_id: str,
     rubric_id: str,
     agent_run_id: str,
     version: int,
@@ -260,22 +273,16 @@ async def get_agent_run_reflection(
     force_recompute: bool = False,
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> JudgeReflection:
     """Get the reflection analysis for an agent_run's multi-rollout judge results.
 
     Returns structured summaries and the independent rollouts that were reflected on.
     If reflection exists in DB: returns it directly (200 OK)
-    If not exists: starts background job and waits for completion (blocks until ready)
+    If not exists (or force_recompute is True): starts background job and waits for completion (blocks until ready)
     Returns 404 if the agent_run has no multi-rollout results.
-
-    Args:
-        collection_id: The collection ID
-        rubric_id: The rubric ID
-        agent_run_id: The agent run ID
-        version: The rubric version
-        label_set_id: Optional label set ID to filter labels by
-        force_recompute: If true, recompute the reflection even if it exists in DB
     """
     # Try to get the reflection from DB if not forcing recompute
     if not force_recompute:
@@ -305,11 +312,10 @@ async def get_agent_run_reflection(
 
 @rubric_router.delete("/{collection_id}/rubric/{rubric_id}")
 async def delete_rubric_all_versions(
-    collection_id: str,
     rubric_id: str,
-    session: AsyncSession = Depends(get_session),
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ):
     """Delete a rubric from a collection."""
     await rubric_svc.delete_rubric(rubric_id)
@@ -321,10 +327,10 @@ class DeleteFutureVersionsResponse(BaseModel):
 
 @rubric_router.delete("/{collection_id}/jobs/{job_id}")
 async def cancel_job(
-    collection_id: str,
     job_id: str,
     job_svc: JobService = Depends(get_job_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _job: None = Depends(require_rubric_job_in_collection),
 ):
     await job_svc.cancel_job(job_id)
     return {"message": "Job cancelled successfully"}
@@ -342,7 +348,8 @@ async def delete_future_versions(
     after_version: int,
     session: AsyncSession = Depends(get_session),
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _sq_rubric: None = Depends(get_rubric_in_collection),
 ):
     """Delete all versions of a rubric after a specific version."""
     deleted_count = await rubric_svc.delete_rubric_versions_after(rubric_id, after_version)
@@ -404,7 +411,8 @@ async def estimate_rubric_cost(
     request: StartFilteredEvalJobRequest,
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ) -> EstimateCostResponse:
     """Estimate the cost of running a rubric evaluation."""
     return await rubric_svc.estimate_rubric_cost(
@@ -425,15 +433,11 @@ async def start_eval_rubric_job(
     mono_svc: MonoService = Depends(get_mono_svc),
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ):
     """Start or get an existing evaluation job for the specified rubric."""
-
-    # Get the rubric; check that it exists
-    sqla_rubric = await rubric_svc.get_rubric(rubric_id, version=None)
-    if sqla_rubric is None:
-        raise HTTPException(status_code=404, detail=f"Rubric {rubric_id} not found")
 
     logger.info(
         f"Starting evaluation job for rubric {rubric_id} with max results {request.max_agent_runs} "
@@ -451,7 +455,7 @@ async def start_eval_rubric_job(
     # Check if user has a custom API key (just for analytics purposes)
     if ctx.user:
         overrides = await mono_svc.get_api_key_overrides(ctx.user)
-        is_byok = sqla_rubric.judge_model.get("provider") in overrides
+        is_byok = sq_rubric.judge_model.get("provider") in overrides
     else:
         is_byok = False
 
@@ -461,8 +465,8 @@ async def start_eval_rubric_job(
             "collection_id": collection_id,
             "rubric_id": rubric_id,
             # Log the rubric content
-            "text": sqla_rubric.rubric_text,
-            "judge_model": sqla_rubric.judge_model,
+            "text": sq_rubric.rubric_text,
+            "judge_model": sq_rubric.judge_model,
             "is_byok": is_byok,
         },
     )
@@ -476,38 +480,22 @@ class GetRubricRunStateRequest(BaseModel):
 
 @rubric_router.post("/{collection_id}/{rubric_id}/rubric_run_state")
 async def get_rubric_run_state(
-    collection_id: str,
     rubric_id: str,
     request: GetRubricRunStateRequest,
     version: int | None = None,
     label_set_id: str | None = None,
-    sqla_rubric_latest: SQLARubric = Depends(get_rubric),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     rubric_svc: RubricService = Depends(get_rubric_service),
-    mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ) -> RubricRunStateResponse:
-    if version is not None:
-        sqla_rubric_for_schema = await rubric_svc.get_rubric(rubric_id, version)
-        if sqla_rubric_for_schema is None:
-            # If requested version doesn't exist, behave like empty results
-            return RubricRunStateResponse(
-                results=[],
-                job_id=None,
-                job_status=None,
-                total_results_needed=None,
-                current_results_count=None,
-            )
-    else:
-        sqla_rubric_for_schema = sqla_rubric_latest
-
     # What's the ID of the job that's currently running, if any?
     cur_job = None
     total_results_needed = None
     current_results_count = None
     agent_run_ids_being_processed: list[str] = []
     # Make sure that we're not pushing job status for versions other than the latest
-    if version is None or version == sqla_rubric_latest.version:
+    if version is None or version == sq_rubric.version:
         cur_job = await rubric_svc.get_active_job_for_rubric(rubric_id)
         if cur_job:
             agent_run_ids_being_processed = cur_job.job_json.get(
@@ -526,7 +514,7 @@ async def get_rubric_run_state(
 
     # Resolve and store citations for old judge results that don't have them
     results_parsed = await rubric_svc.resolve_result_citations(
-        results, sqla_rubric_for_schema.output_schema, ctx, persist=True
+        results, sq_rubric.output_schema, ctx, persist=True
     )
 
     # Group results by agent_run_id
@@ -539,7 +527,7 @@ async def get_rubric_run_state(
     # Batch fetch all reflections at once
     agent_run_ids = list(grouped_results.keys())
     reflections_map = await rubric_svc.get_reflections_for_agent_runs(
-        agent_run_ids, rubric_id, version or sqla_rubric_latest.version, label_set_id
+        agent_run_ids, rubric_id, version or sq_rubric.version, label_set_id
     )
 
     # Build agent run results
@@ -550,7 +538,7 @@ async def get_rubric_run_state(
             AgentRunJudgeResults(
                 agent_run_id=agent_run_id,
                 rubric_id=rubric_id,
-                rubric_version=version or sqla_rubric_latest.version,
+                rubric_version=version or sq_rubric.version,
                 results=agent_results,
                 reflection=reflection,
             )
@@ -581,7 +569,8 @@ async def get_rubric_job_details(
     collection_id: str,
     rubric_id: str,
     rubric_svc: RubricService = Depends(get_rubric_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ):
     """Get the complete job details for a rubric if it exists, otherwise None."""
     job = await rubric_svc.get_active_job_for_rubric(rubric_id)
@@ -616,7 +605,7 @@ async def get_judge_models(
 async def start_clustering_job(
     collection_id: str,
     request: StartClusteringJobRequest,
-    sq_rubric: SQLARubric = Depends(get_rubric),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     rubric_svc: RubricService = Depends(get_rubric_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
@@ -654,7 +643,7 @@ async def start_clustering_job(
 )
 async def get_clustering_state(
     collection_id: str,
-    sq_rubric: SQLARubric = Depends(get_rubric),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.READ)),
 ):
@@ -684,7 +673,7 @@ async def get_clustering_state(
 @rubric_router.delete("/{collection_id}/{rubric_id}/clear_clusters")
 async def clear_clusters(
     collection_id: str,
-    sq_rubric: SQLARubric = Depends(get_rubric),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
@@ -704,7 +693,8 @@ async def copy_rubric(
     rubric_svc: RubricService = Depends(get_rubric_service),
     mono_svc: MonoService = Depends(get_mono_svc),
     user: User = Depends(get_user_anonymous_ok),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
 ):
     """Copy a rubric to another collection."""
     has_target_permission = await mono_svc.has_permission(

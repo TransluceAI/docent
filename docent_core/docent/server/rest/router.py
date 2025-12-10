@@ -78,6 +78,25 @@ public_router = APIRouter()
 #   This router creates an anonymous user for each session, which is an anti-pattern for API endpoints.
 user_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
+
+################
+# Dependencies #
+################
+
+
+async def require_filter_in_collection(
+    collection_id: str,
+    filter_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+) -> None:
+    """Validate that filter belongs to collection. Raises 404 if not."""
+    filter_entry = await mono_svc.get_filter_entry(collection_id=collection_id, filter_id=filter_id)
+    if filter_entry is None:
+        raise HTTPException(
+            status_code=404, detail=f"Filter {filter_id} not found in collection {collection_id}"
+        )
+
+
 ####################
 # Public endpoints #
 ####################
@@ -871,7 +890,7 @@ async def get_agent_run_job_status(
     collection_id: str,
     job_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """
     Get the status of an agent run ingestion job.
@@ -1165,7 +1184,8 @@ async def get_filter(
     collection_id: str,
     filter_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _filter: None = Depends(require_filter_in_collection),
 ):
     stored_filter = await mono_svc.get_filter_entry(
         collection_id=collection_id, filter_id=filter_id
@@ -1180,7 +1200,8 @@ async def delete_filter(
     collection_id: str,
     filter_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _filter: None = Depends(require_filter_in_collection),
 ):
     deleted = await mono_svc.delete_filter_entry(collection_id=collection_id, filter_id=filter_id)
     if not deleted:

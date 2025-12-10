@@ -14,6 +14,10 @@ from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 from docent_core.docent.db.schemas.rubric import SQLARubric
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import AsyncSession, get_session
+from docent_core.docent.server.dependencies.permissions import (
+    Permission,
+    require_collection_permission,
+)
 from docent_core.docent.server.dependencies.services import (
     get_job_service,
     get_mono_svc,
@@ -21,7 +25,7 @@ from docent_core.docent.server.dependencies.services import (
     get_rubric_service,
 )
 from docent_core.docent.server.dependencies.user import get_default_view_ctx, get_user_anonymous_ok
-from docent_core.docent.server.rest.rubric import get_rubric
+from docent_core.docent.server.rest.rubric import get_rubric_in_collection
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.refinement import RefinementService
@@ -38,13 +42,56 @@ refinement_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
 
 async def get_refinement_session(
+    collection_id: str,
     session_id: str,
     refinement_svc: RefinementService = Depends(get_refinement_service),
-):
-    sqla_rsession = await refinement_svc.get_session_by_id(session_id)
-    if sqla_rsession is None:
+    rubric_svc: RubricService = Depends(get_rubric_service),
+) -> SQLARefinementAgentSession:
+    """Fetch session and validate it belongs to collection via its rubric."""
+    session = await refinement_svc.get_session_by_id(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail=f"Refinement session {session_id} not found")
-    return sqla_rsession
+
+    rubric = await rubric_svc.get_rubric(session.rubric_id, session.rubric_version)
+    if rubric is None or rubric.collection_id != collection_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Refinement session {session_id} not found in collection {collection_id}",
+        )
+
+    return session
+
+
+async def require_refinement_job_in_collection(
+    collection_id: str,
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Validate that refinement job belongs to collection via its rubric."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
+    from docent_core.docent.db.schemas.rubric import SQLARubric
+    from docent_core.docent.db.schemas.tables import SQLAJob
+
+    result = await session.execute(
+        select(SQLAJob.id)
+        .join(
+            SQLARefinementAgentSession,
+            SQLARefinementAgentSession.id == SQLAJob.job_json["rsession_id"].astext,
+        )
+        .join(
+            SQLARubric,
+            (SQLARubric.id == SQLARefinementAgentSession.rubric_id)
+            & (SQLARubric.version == SQLARefinementAgentSession.rubric_version),
+        )
+        .where(SQLAJob.id == job_id)
+        .where(SQLARubric.collection_id == collection_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=404, detail=f"Job {job_id} not found in collection {collection_id}"
+        )
 
 
 #############
@@ -63,12 +110,11 @@ class PostRefinementMessageRequest(BaseModel):
 
 @refinement_router.post("/{collection_id}/refinement-session/create/{rubric_id}")
 async def create_refinement_session(
-    collection_id: str,
-    rubric_id: str,
     request: CreateRefinementSessionRequest,
-    sq_rubric: SQLARubric = Depends(get_rubric),
+    sq_rubric: SQLARubric = Depends(get_rubric_in_collection),
     refinement_svc: RefinementService = Depends(get_refinement_service),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     sq_rsession = await refinement_svc.get_or_create_session(sq_rubric, request.session_type)
 
@@ -92,6 +138,7 @@ async def start_refinement_session(
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     ctx: ViewContext = Depends(get_default_view_ctx),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     # Decide whether to start a job or just return the existing session
     rsession = sq_rsession.to_pydantic()
@@ -126,15 +173,15 @@ async def start_refinement_session(
 @refinement_router.get("/{collection_id}/refinement-session/{session_id}/job")
 async def get_refinement_job(
     collection_id: str,
-    session_id: str,
     refinement_svc: RefinementService = Depends(get_refinement_service),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ):
     """Return the active refinement job for a session if one exists.
     Does NOT start a new job.
     """
-    active_job = await refinement_svc.get_active_job_for_session(session_id)
+    active_job = await refinement_svc.get_active_job_for_session(sq_rsession.id)
 
     analytics.track_event(
         "refinement_session_get_job",
@@ -157,6 +204,8 @@ async def get_refinement_job(
 async def listen_to_refinement_job(
     job_id: str,
     refinement_svc: RefinementService = Depends(get_refinement_service),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _job: None = Depends(require_refinement_job_in_collection),
 ):
     return StreamingResponse(
         generator_to_sse_stream(refinement_svc.listen_for_job_state(job_id)),
@@ -173,6 +222,7 @@ async def post_message_to_refinement_session(
     session: AsyncSession = Depends(get_session),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     # Check whether there's an active job for this session
     active_job = await refinement_svc.get_active_job_for_session(session_id)
@@ -206,11 +256,11 @@ async def post_message_to_refinement_session(
 
 @refinement_router.post("/{collection_id}/refinement-session/{session_id}/retry-last-message")
 async def retry_last_message(
-    collection_id: str,
     session_id: str,
     refinement_svc: RefinementService = Depends(get_refinement_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     # Return the active job id if one exists
     active_job = await refinement_svc.get_active_job_for_session(session_id)
@@ -232,6 +282,7 @@ async def post_rubric_update_to_refinement_session(
     session: AsyncSession = Depends(get_session),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     # Check whether there's an active job for this session
     active_job = await refinement_svc.get_active_job_for_session(session_id)
@@ -279,10 +330,11 @@ async def post_rubric_update_to_refinement_session(
 
 @refinement_router.post("/{collection_id}/refinement-session/{session_id}/cancel")
 async def cancel_active_refinement_message(
-    collection_id: str,
     session_id: str,
     refinement_svc: RefinementService = Depends(get_refinement_service),
     job_svc: JobService = Depends(get_job_service),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _session: SQLARefinementAgentSession = Depends(get_refinement_session),
 ):
     """Cancel a pending or active refinement job for a session (if any)"""
     # Try to cancel any running job for this session
@@ -297,6 +349,7 @@ async def cancel_active_refinement_message(
 async def get_current_state_endpoint(
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
     refinement_svc: RefinementService = Depends(get_refinement_service),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ):
     state = await refinement_svc.get_current_state(sq_rsession)
     return state.prepare_for_client()

@@ -55,3 +55,15 @@ def require_view_permission(permission: Permission):
             )
 
     return _check_permission
+
+
+async def require_agent_run_in_collection(
+    collection_id: str,
+    agent_run_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+) -> None:
+    """Validate that agent_run belongs to collection. Raises 404 if not."""
+    try:
+        await mono_svc.check_agent_run_in_collection(collection_id, agent_run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

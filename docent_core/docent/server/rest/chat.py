@@ -21,6 +21,7 @@ from docent_core.docent.server.dependencies.analytics import use_posthog_user_co
 from docent_core.docent.server.dependencies.database import AsyncSession, get_session
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
+    require_agent_run_in_collection,
     require_collection_permission,
 )
 from docent_core.docent.server.dependencies.services import (
@@ -49,12 +50,36 @@ chat_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 
 async def get_chat_session(
     session_id: str,
+    user: User = Depends(get_authenticated_user),
     chat_svc: ChatService = Depends(get_chat_service),
-):
+) -> SQLAChatSession:
     sqla_session = await chat_svc.get_session_by_id(session_id)
     if sqla_session is None:
         raise HTTPException(status_code=404, detail=f"Chat session {session_id} not found")
+    if sqla_session.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this session")
     return sqla_session
+
+
+async def require_chat_job_ownership(
+    job_id: str,
+    user: User = Depends(get_user_anonymous_ok),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Validate that the chat job's session belongs to the current user."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.chat import SQLAChatSession
+    from docent_core.docent.db.schemas.tables import SQLAJob
+
+    result = await session.execute(
+        select(SQLAJob.id)
+        .join(SQLAChatSession, SQLAChatSession.id == SQLAJob.job_json["session_id"].astext)
+        .where(SQLAJob.id == job_id)
+        .where(SQLAChatSession.user_id == user.id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
 
 #############
@@ -62,24 +87,25 @@ async def get_chat_session(
 #############
 
 
-@chat_router.post("/{collection_id}/{run_id}/session/get")
+@chat_router.post("/{collection_id}/{agent_run_id}/session/get")
 async def create_session(
-    run_id: str,
+    agent_run_id: str,
     result_id: str | None = None,
     user: User = Depends(get_authenticated_user),
     session: AsyncSession = Depends(get_session),
     chat_svc: ChatService = Depends(get_chat_service),
     force_create: bool = False,
+    _run: None = Depends(require_agent_run_in_collection),
 ) -> dict[str, str]:
     """Create a new chat session."""
 
     # Quick input validation to avoid DB errors for clearly invalid IDs
-    if len(run_id) != 36:
-        raise HTTPException(status_code=404, detail=f"Invalid agent run ID {run_id}")
+    if len(agent_run_id) != 36:
+        raise HTTPException(status_code=404, detail=f"Invalid agent run ID {agent_run_id}")
 
     # Create session without rubric or judge result context
     sqla_session = await chat_svc.get_or_create_session(
-        user.id, agent_run_id=run_id, judge_result_id=result_id, force_create=force_create
+        user.id, agent_run_id=agent_run_id, judge_result_id=result_id, force_create=force_create
     )
 
     # Flush now to surface FK violations as 404s instead of later 500s
@@ -93,10 +119,11 @@ async def create_session(
     return {"session_id": sqla_session.id}
 
 
-@chat_router.get("/{collection_id}/{run_id}/job/{job_id}/listen")
+@chat_router.get("/{collection_id}/{agent_run_id}/job/{job_id}/listen")
 async def listen_to_chat_job(
     job_id: str,
     chat_svc: ChatService = Depends(get_chat_service),
+    _job: None = Depends(require_chat_job_ownership),
 ) -> StreamingResponse:
     """Listen to SSE updates for a chat job."""
     return StreamingResponse(
@@ -110,15 +137,15 @@ class PostMessageRequest(BaseModel):
     chat_model: ModelOption | None = None
 
 
-@chat_router.post("/{collection_id}/{run_id}/session/{session_id}/message")
+@chat_router.post("/{collection_id}/{agent_run_id}/session/{session_id}/message")
 async def post_message_to_chat_session(
-    run_id: str,
+    agent_run_id: str,
     session_id: str,
     request: PostMessageRequest,
     chat_svc: ChatService = Depends(get_chat_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     session: AsyncSession = Depends(get_session),
-    sq_rsession: SQLAChatSession = Depends(get_chat_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ) -> dict[str, str | ChatSession]:
     # Check whether there's an active job for this session
@@ -131,42 +158,43 @@ async def post_message_to_chat_session(
 
     # Update the chat model if provided
     if request.chat_model is not None:
-        await chat_svc.update_session_chat_model(sq_rsession, request.chat_model)
+        await chat_svc.update_session_chat_model(sq_chat_session, request.chat_model)
 
     # Add the message to the session
-    await chat_svc.add_user_message(sq_rsession, request.message)
+    await chat_svc.add_user_message(sq_chat_session, request.message)
     await session.commit()
 
     # Track analytics for message post
     analytics.track_event(
         "chat_post_message",
         properties={
-            "run_id": run_id,
+            "run_id": agent_run_id,
             "session_id": session_id,
-            "judge_result_id": sq_rsession.judge_result_id,
+            "judge_result_id": sq_chat_session.judge_result_id,
             "message": request.message,
             "chat_model": request.chat_model,
         },
     )
 
     # Trigger a new turn of the agent
-    job_id = await chat_svc.start_or_get_chat_job(ctx, sq_rsession)
-    return {"job_id": job_id, "session": sq_rsession.to_pydantic()}
+    job_id = await chat_svc.start_or_get_chat_job(ctx, sq_chat_session)
+    return {"job_id": job_id, "session": sq_chat_session.to_pydantic()}
 
 
-@chat_router.get("/{collection_id}/{run_id}/session/{session_id}/state")
+@chat_router.get("/{collection_id}/{agent_run_id}/session/{session_id}/state")
 async def get_current_state_endpoint(
-    sq_rsession: SQLAChatSession = Depends(get_chat_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
     chat_svc: ChatService = Depends(get_chat_service),
     view_ctx: ViewContext = Depends(get_default_view_ctx),
 ) -> ChatSession:
-    return await chat_svc.get_current_state(view_ctx, sq_rsession)
+    return await chat_svc.get_current_state(view_ctx, sq_chat_session)
 
 
-@chat_router.get("/{collection_id}/{run_id}/session/{session_id}/active-job")
+@chat_router.get("/{collection_id}/{agent_run_id}/session/{session_id}/active-job")
 async def get_active_chat_job_for_session(
     session_id: str,
     chat_svc: ChatService = Depends(get_chat_service),
+    _sq_chat_session: SQLAChatSession = Depends(get_chat_session),
 ):
     """Return the active job id for this chat session if one exists, else null."""
     active_job = await chat_svc.get_active_job_for_session(session_id)
@@ -190,7 +218,7 @@ async def get_chat_sessions_for_run(
     collection_id: str,
     agent_run_id: str,
     chat_svc: ChatService = Depends(get_chat_service),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
 ) -> list[ChatSession]:
     """Get all chat sessions for an agent run, excluding judge result sessions."""
     return await chat_svc.get_chat_sessions_for_run(collection_id, agent_run_id)
@@ -255,18 +283,18 @@ async def create_conversation(
 
 @chat_router.get("/conversation/{session_id}/state")
 async def get_conversation_state(
-    session_id: str,
-    sq_rsession: SQLAChatSession = Depends(get_chat_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
     chat_svc: ChatService = Depends(get_chat_service),
 ) -> ChatSession:
     """Get the current state of a conversation chat session."""
-    return await chat_svc.get_current_state(None, sq_rsession)
+    return await chat_svc.get_current_state(None, sq_chat_session)
 
 
 @chat_router.get("/conversation/{session_id}/active-job")
 async def get_active_conversation_job(
     session_id: str,
     chat_svc: ChatService = Depends(get_chat_service),
+    _sq_chat_session: SQLAChatSession = Depends(get_chat_session),
 ):
     """Return the active job id for this conversation chat session if one exists, else null."""
     active_job = await chat_svc.get_active_job_for_session(session_id)
@@ -277,6 +305,7 @@ async def get_active_conversation_job(
 async def listen_to_conversation_job(
     job_id: str,
     chat_svc: ChatService = Depends(get_chat_service),
+    _job: None = Depends(require_chat_job_ownership),
 ) -> StreamingResponse:
     """Listen to SSE updates for a conversation chat job."""
     return StreamingResponse(
@@ -291,8 +320,8 @@ async def post_message_to_conversation(
     request: PostMessageRequest,
     chat_svc: ChatService = Depends(get_chat_service),
     session: AsyncSession = Depends(get_session),
-    sq_rsession: SQLAChatSession = Depends(get_chat_session),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
 ) -> dict[str, str | ChatSession]:
     """Post a message to a conversation chat session."""
     # Check whether there's an active job for this session
@@ -305,10 +334,10 @@ async def post_message_to_conversation(
 
     # Update the chat model if provided
     if request.chat_model is not None:
-        await chat_svc.update_session_chat_model(sq_rsession, request.chat_model)
+        await chat_svc.update_session_chat_model(sq_chat_session, request.chat_model)
 
     # Add the message to the session
-    await chat_svc.add_user_message(sq_rsession, request.message)
+    await chat_svc.add_user_message(sq_chat_session, request.message)
     await session.commit()
 
     # Track analytics for message post
@@ -322,5 +351,5 @@ async def post_message_to_conversation(
     )
 
     # Trigger a new turn of the agent (no ViewContext needed for multi-object conversations)
-    job_id = await chat_svc.start_or_get_chat_job(None, sq_rsession)
-    return {"job_id": job_id, "session": sq_rsession.to_pydantic()}
+    job_id = await chat_svc.start_or_get_chat_job(None, sq_chat_session)
+    return {"job_id": job_id, "session": sq_chat_session.to_pydantic()}

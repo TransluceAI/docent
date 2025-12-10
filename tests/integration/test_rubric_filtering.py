@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -606,8 +607,6 @@ async def test_filter_by_created_at(
     db_session: AsyncSession,
 ):
     """Test filtering judge results by created_at timestamp."""
-    from sqlalchemy import select
-
     from docent_core.docent.db.schemas.tables import SQLAAgentRun
 
     agent_runs = runs_with_metadata([{"order": 1}, {"order": 2}, {"order": 3}])
@@ -616,12 +615,17 @@ async def test_filter_by_created_at(
     ctx = await mono_service.get_default_view_ctx(test_collection_id, test_user)
     await mono_service.add_agent_runs(ctx=ctx, agent_runs=agent_runs)
 
-    # Query DB to get actual created_at timestamps
-    result = await db_session.execute(
-        select(SQLAAgentRun.id, SQLAAgentRun.created_at).where(SQLAAgentRun.id.in_(agent_run_ids))
-    )
-    timestamps = {row[0]: row[1] for row in result.all()}
-    middle_timestamp = str(timestamps[agent_run_ids[1]])
+    from sqlalchemy import update
+
+    base_time = datetime(2024, 1, 1, 12, 0, 0)
+    timestamps = [base_time, base_time + timedelta(seconds=1), base_time + timedelta(seconds=2)]
+    # Set deterministic created_at values to avoid ordering flakiness
+    for agent_run_id, ts in zip(agent_run_ids, timestamps):
+        await db_session.execute(
+            update(SQLAAgentRun).where(SQLAAgentRun.id == agent_run_id).values(created_at=ts)
+        )
+    await db_session.commit()
+    middle_timestamp = timestamps[1].isoformat(sep=" ", timespec="seconds")
 
     rubric_payload = {
         "rubric": {
@@ -664,9 +668,9 @@ async def test_filter_by_created_at(
     )
     assert response.status_code == 200
     filtered_results = response.json()["results"]
-    assert len(filtered_results) >= 2
     result_ids = {r["agent_run_id"] for r in filtered_results}
-    assert agent_run_ids[1] in result_ids
+    expected_ids_ge = {agent_run_ids[1], agent_run_ids[2]}
+    assert result_ids == expected_ids_ge
 
 
 @pytest.mark.integration

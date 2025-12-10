@@ -10,9 +10,7 @@ from docent_core.docent.db.schemas.auth_models import (
     Permission,
 )
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
-from docent_core.docent.server.dependencies.permissions import (
-    require_collection_permission,
-)
+from docent_core.docent.server.dependencies.permissions import require_collection_permission
 from docent_core.docent.server.dependencies.services import (
     get_chart_service,
     get_mono_svc,
@@ -27,6 +25,29 @@ from docent_core.docent.services.charts import (
 from docent_core.docent.services.monoservice import MonoService
 
 chart_router = APIRouter()
+
+
+################
+# Dependencies #
+################
+
+
+async def require_chart_in_collection(
+    collection_id: str,
+    chart_id: str,
+    chart_svc: ChartsService = Depends(get_chart_service),
+) -> None:
+    """Validate that chart belongs to collection. Raises 404 if not."""
+    from sqlalchemy import select
+
+    from docent_core.docent.db.schemas.chart import SQLAChart
+
+    result = await chart_svc.session.execute(select(SQLAChart).where(SQLAChart.id == chart_id))
+    chart = result.scalar_one_or_none()
+    if chart is None or chart.collection_id != collection_id:
+        raise HTTPException(
+            status_code=404, detail=f"Chart {chart_id} not found in collection {collection_id}"
+        )
 
 
 class CreateChartRequest(BaseModel):
@@ -79,13 +100,15 @@ class UpdateChartRequest(BaseModel):
     runs_filter: ComplexFilter | None = None
 
 
-@chart_router.post("/{collection_id}")
+@chart_router.post("/{collection_id}/{chart_id}")
 async def update_chart(
     collection_id: str,
+    chart_id: str,
     request: UpdateChartRequest,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _chart: None = Depends(require_chart_in_collection),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ):
     # Only include fields that were explicitly set in the request
@@ -103,7 +126,7 @@ async def update_chart(
     async with mono_svc.db.session() as session:
         chart_service = ChartsService(session)
         async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-            await chart_service.update_chart(ctx=ctx, chart_id=request.id, updates=update_fields)
+            await chart_service.update_chart(ctx=ctx, chart_id=chart_id, updates=update_fields)
 
     analytics.track_event(
         "update_chart",
@@ -122,7 +145,8 @@ async def delete_chart(
     chart_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _chart: None = Depends(require_chart_in_collection),
 ):
     async with mono_svc.db.session() as session:
         chart_service = ChartsService(session)
@@ -134,7 +158,6 @@ async def delete_chart(
 
 @chart_router.get("/{collection_id}")
 async def get_charts(
-    collection_id: str,
     chart_service: ChartsService = Depends(get_chart_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
@@ -150,11 +173,11 @@ async def get_charts(
 
 @chart_router.get("/{collection_id}/{chart_id}/data")
 async def get_chart_data(
-    collection_id: str,
     chart_id: str,
     chart_service: ChartsService = Depends(get_chart_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_collection_permission(Permission.READ)),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _chart: None = Depends(require_chart_in_collection),
 ) -> dict[str, Any]:
     """Get chart data (binStats) for a specific chart."""
     try:
@@ -163,7 +186,6 @@ async def get_chart_data(
         if not chart:
             raise HTTPException(status_code=404, detail="Chart not found")
 
-        # Get chart data using the same logic as websocket publishing
         chart_data = await chart_service.get_chart_data(ctx, chart)
         return chart_data
 
@@ -175,7 +197,6 @@ async def get_chart_data(
 
 @chart_router.get("/{collection_id}/metadata")
 async def get_chart_metadata(
-    collection_id: str,
     chart_service: ChartsService = Depends(get_chart_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
