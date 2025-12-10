@@ -162,7 +162,7 @@ class BaseJudge(ABC):
         llm_output = outputs[0]
         output_str = llm_output.first_text
 
-        # If the ouptut is None, return the failures
+        # If the output is None, return the failures
         if output_str is None:
             return None, None, llm_output.errors
 
