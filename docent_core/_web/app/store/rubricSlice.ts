@@ -23,6 +23,9 @@ export interface JudgeResult {
   rubric_id: string;
   rubric_version: number;
   output: Record<string, any>;
+  result_metadata?: Record<string, any> | null;
+  result_type: 'DIRECT_RESULT' | 'FAILURE';
+  value?: string | null;
 }
 
 export type JudgeResultWithCitations = JudgeResult & {

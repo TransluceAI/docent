@@ -12,6 +12,7 @@ from docent.judges import (
     Rubric,
 )
 from docent.judges.impl import build_judge
+from docent.judges.types import ResultType
 
 logger = get_logger(__name__)
 
@@ -39,7 +40,7 @@ async def run_rubric(
     *,
     n_rollouts_per_input: int | list[int] = 1,
     show_progress: bool = True,
-) -> list[JudgeResult | None]:
+) -> list[JudgeResult]:
     if not agent_runs:
         raise ValueError("agent_runs must be a non-empty sequence")
     if rubric.n_rollouts_per_input <= 0:
@@ -68,7 +69,7 @@ async def run_rubric(
         total_rollouts,
     )
 
-    agent_results: list[list[JudgeResult | None]] = [[] for _ in agent_runs]
+    agent_results: list[list[JudgeResult]] = [[] for _ in agent_runs]
     progress_bar = tqdm(
         total=total_rollouts,
         desc=f"Rubric {rubric.id}",
@@ -84,7 +85,7 @@ async def run_rubric(
 
     async def _run_single_judge(index: int, agent_run_input: AgentRunInput):
         async with run_judge_semaphore:
-            rollout_results: list[JudgeResult | None] = []
+            rollout_results: list[JudgeResult] = []
 
             if rollouts_per_run[index] == 0:
                 agent_results[index] = []
@@ -106,9 +107,7 @@ async def run_rubric(
             agent_results[index] = rollout_results
 
             if callback is not None:
-                # Filter out None results for the callback
-                valid_results = [r for r in rollout_results if r is not None]
-                await callback(index, valid_results if valid_results else None)
+                await callback(index, rollout_results)
 
     try:
         async with anyio.create_task_group() as tg:
@@ -118,7 +117,7 @@ async def run_rubric(
         progress_bar.close()
 
     flattened_results = [result for rollouts in agent_results for result in rollouts]
-    successful = sum(result is not None for result in flattened_results)
+    successful = sum(result.result_type == ResultType.DIRECT_RESULT for result in flattened_results)
     logger.info(
         "Finished rubric %s: produced %d/%d judge results",
         rubric.id,

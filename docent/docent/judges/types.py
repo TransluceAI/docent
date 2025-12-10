@@ -203,8 +203,8 @@ class ExposedReasoningRubric(Rubric):
 class ResultType(enum.Enum):
     """Enum for the type of result that a judge result can have."""
 
-    DIRECT_RESULT = "direct_result"
-    NEAR_MISS = "near_miss"
+    DIRECT_RESULT = "DIRECT_RESULT"
+    FAILURE = "FAILURE"
 
 
 class JudgeResult(BaseModel):

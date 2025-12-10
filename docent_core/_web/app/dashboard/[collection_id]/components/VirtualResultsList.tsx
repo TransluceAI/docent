@@ -3,6 +3,7 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import JudgeResultCard from './JudgeResultCard';
+import FailedResultCard from './FailedResultCard';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
 import { AgentRunJudgeResults } from '@/app/api/rubricApi';
@@ -175,10 +176,16 @@ const VirtualResultsList = ({
     count: sortedJudgeResultsList.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      // Estimate size based on number of results in the group
-      // Each result is roughly 100px, plus header of ~40px
-      const resultsCount = sortedJudgeResultsList[index].results.length;
-      return 40 + resultsCount * 200;
+      const group = sortedJudgeResultsList[index];
+      const successCount = group.results.filter(
+        (result) => result.result_type === 'DIRECT_RESULT'
+      ).length;
+      const failureCount = group.results.filter(
+        (result) => result.result_type === 'FAILURE'
+      ).length;
+      // One card represents all direct results, plus a card per failure
+      const cardCount = (successCount > 0 ? 1 : 0) + failureCount;
+      return 40 + cardCount * 200;
     },
     paddingStart: 0,
     paddingEnd: 50,
@@ -215,6 +222,17 @@ const VirtualResultsList = ({
           {items.map((virtualRow) => {
             const group = sortedJudgeResultsList[virtualRow.index];
             const hasActiveResult = group.agent_run_id === activeAgentRunId;
+            const directResults = group.results.filter(
+              (result) => result.result_type === 'DIRECT_RESULT'
+            );
+            const failedResults = group.results.filter(
+              (result) => result.result_type === 'FAILURE'
+            );
+            const hasDirectResults = directResults.length > 0;
+            const directResultGroup = hasDirectResults
+              ? { ...group, results: directResults }
+              : null;
+
             return (
               <div
                 key={virtualRow.key}
@@ -232,18 +250,27 @@ const VirtualResultsList = ({
                 </div>
                 <div
                   className={cn(
-                    'ml-0.5 border-l-2 pl-2',
+                    'ml-0.5 border-l-2 pl-2 space-y-2',
                     hasActiveResult ? 'border-indigo-border' : 'border-border'
                   )}
                 >
-                  <JudgeResultCard
-                    key={group.agent_run_id}
-                    agentRunResult={group}
-                    schema={schema}
-                    labels={labelsMap?.get(group.agent_run_id) || []}
-                    activeLabelSetId={activeLabelSet?.id || null}
-                    canEditLabels={canEditLabels}
-                  />
+                  {hasDirectResults && directResultGroup && (
+                    <JudgeResultCard
+                      key={group.agent_run_id}
+                      agentRunResult={directResultGroup}
+                      schema={schema}
+                      labels={labelsMap?.get(group.agent_run_id) || []}
+                      activeLabelSetId={activeLabelSet?.id || null}
+                      canEditLabels={canEditLabels}
+                    />
+                  )}
+                  {failedResults.length > 0 && (
+                    <>
+                      {failedResults.map((result) => (
+                        <FailedResultCard key={result.id} result={result} />
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             );

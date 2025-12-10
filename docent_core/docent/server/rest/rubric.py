@@ -476,6 +476,7 @@ async def start_eval_rubric_job(
 
 class GetRubricRunStateRequest(BaseModel):
     filter_dict: dict[str, Any] | None = None
+    include_failures: bool = False
 
 
 @rubric_router.post("/{collection_id}/{rubric_id}/rubric_run_state")
@@ -510,7 +511,12 @@ async def get_rubric_run_state(
         filter_obj = parse_filter_dict(request.filter_dict)
 
     # Get current results for the specified version, applying filter in SQL if provided
-    results = await rubric_svc.get_rubric_results(rubric_id, version, filter_obj=filter_obj)
+    results = await rubric_svc.get_rubric_results(
+        rubric_id,
+        version,
+        filter_obj=filter_obj,
+        include_failures=request.include_failures,
+    )
 
     # Resolve and store citations for old judge results that don't have them
     results_parsed = await rubric_svc.resolve_result_citations(
@@ -532,7 +538,13 @@ async def get_rubric_run_state(
 
     # Build agent run results
     agent_run_results: list[AgentRunJudgeResults] = []
+    results_count_for_progress: dict[str, int] = {}
     for agent_run_id, agent_results in grouped_results.items():
+        results_count_for_progress[agent_run_id] = sum(
+            1
+            for result in agent_results
+            if result.result_type in {ResultType.DIRECT_RESULT, ResultType.FAILURE}
+        )
         reflection = reflections_map.get(agent_run_id)
         agent_run_results.append(
             AgentRunJudgeResults(
@@ -549,9 +561,8 @@ async def get_rubric_run_state(
         n_rollouts = cur_job.job_json.get("n_rollouts_per_input", 1)
         agent_run_ids_set = set(agent_run_ids_being_processed)
         current_results_count = sum(
-            min(len(results), n_rollouts)
-            for agent_run_id, results in grouped_results.items()
-            if agent_run_id in agent_run_ids_set
+            min(results_count_for_progress.get(agent_run_id, 0), n_rollouts)
+            for agent_run_id in agent_run_ids_set
         )
         total_results_needed = len(agent_run_ids_being_processed) * n_rollouts
 

@@ -2,14 +2,14 @@ import random
 import re
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 import anyio
 import yaml
 from pydantic_core import to_jsonable_python
 from tqdm.auto import tqdm
 
-from docent._llm_util.data_models.exceptions import ValidationFailedException
+from docent._llm_util.data_models.exceptions import LLMException, ValidationFailedException
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.llm_svc import BaseLLMService
 from docent._log_util import get_logger
@@ -42,8 +42,23 @@ class BaseJudge(ABC):
         self.llm_svc = llm_svc
         self.docent_collection_id = docent_collection_id
 
+    def _build_failure_result(
+        self,
+        agent_run: AgentRun,
+        errors: list[LLMException] | None,
+    ) -> JudgeResult:
+        error_list = errors or [LLMException("unknown failure")]
+        return JudgeResult(
+            agent_run_id=agent_run.id,
+            rubric_id=self.cfg.id,
+            rubric_version=self.cfg.version,
+            output={},
+            result_metadata={"errors": LLMException.serialize_llm_errors(error_list)},
+            result_type=ResultType.FAILURE,
+        )
+
     @abstractmethod
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
+    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
         """Returns None if all rollouts failed to produce a valid output."""
 
     @abstractmethod
@@ -66,12 +81,12 @@ class BaseJudge(ABC):
 
     async def one_rollout(
         self, agent_run: AgentRun
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
         with agent_run_context() if self.docent_collection_id is not None else nullcontext():
             if self.cfg.rollout_type == "single_turn":
-                output, metadata = await self.one_single_turn_rollout(agent_run)
+                output, metadata, errors = await self.one_single_turn_rollout(agent_run)
             elif self.cfg.rollout_type == "multi_turn":
-                output, metadata = await self.one_multi_turn_rollout(
+                output, metadata, errors = await self.one_multi_turn_rollout(
                     agent_run, max_turns=10, max_steps_per_turn=5
                 )
             else:
@@ -83,10 +98,11 @@ class BaseJudge(ABC):
                         "agent_run_id": agent_run.id,
                         "judge_output": output,
                         "judge_rollout_metadata": to_jsonable_python(metadata),
+                        "errors": LLMException.serialize_llm_errors(errors) if errors else None,
                     }
                 )
 
-        return output, metadata
+        return output, metadata, errors
 
     def _validate_first_response_tag_or_entire_output(
         self, output_str: str, agent_run: AgentRun
@@ -133,7 +149,7 @@ class BaseJudge(ABC):
 
     async def one_single_turn_rollout(
         self, agent_run: AgentRun
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
         prompt = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
         outputs = await self.llm_svc.get_completions(
             inputs=[prompt],
@@ -143,16 +159,24 @@ class BaseJudge(ABC):
             use_cache=False,
             validation_callback=self._get_validation_callback(agent_run),
         )
-        output_str = outputs[0].first_text
+        llm_output = outputs[0]
+        output_str = llm_output.first_text
+
+        # If the ouptut is None, return the failures
+        if output_str is None:
+            return None, None, llm_output.errors
 
         # Extract all <response>...</response> tags from the current message
-        validated_output = self._validate_first_response_tag_or_entire_output(
-            output_str or "", agent_run
-        )
+        validated_output = self._validate_first_response_tag_or_entire_output(output_str, agent_run)
         if validated_output is not None:
-            return validated_output, {"full_output": output_str}
-        else:
-            return None, None
+            return validated_output, {"full_output": output_str}, None
+
+        # If validation failed, show a ValidationFailedException
+        return (
+            None,
+            None,
+            [ValidationFailedException("Validation failed", failed_output=output_str)],
+        )
 
     #######################
     # Multi-turn rollouts #
@@ -160,7 +184,11 @@ class BaseJudge(ABC):
 
     async def one_multi_turn_rollout(
         self, agent_run: AgentRun, max_turns: int, max_steps_per_turn: int
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
+        raise NotImplementedError(
+            "This function is not implemented properly yet; this is prototype code."
+        )
+
         msgs = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
         for _ in range(max_turns):
             msgs = await self.agent_one_turn(msgs, max_steps_per_turn=max_steps_per_turn)
@@ -174,15 +202,18 @@ class BaseJudge(ABC):
             if validated_output is not None:
                 # When returning, strip out the system message, which duplicates the agent run
                 # content many times.
-                return validated_output, {"rollout_messages": msgs[1:]}
+                return validated_output, {"rollout_messages": msgs[1:]}, None
 
         # No <response>...</response> tags with valid JSON,so return None
-        return None, None
+        return None, None, [LLMException("Unknown failure")]
 
     async def agent_one_turn(self, init_msgs: Sequence[ChatMessage], max_steps_per_turn: int):
         """Given a list of messages, run one turn of the agent.
         The agent may invoke tools, so we loop until there are no more to handle.
         """
+        raise NotImplementedError(
+            "This function is not implemented properly yet; this is prototype code."
+        )
 
         msgs = list(init_msgs)  # Shallow copy is fine
         for _ in range(max_steps_per_turn):
@@ -233,10 +264,10 @@ class SingleRolloutJudge(BaseJudge):
     def __init__(self, cfg: Rubric, llm_svc: BaseLLMService):
         super().__init__(cfg, llm_svc)
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
-        output, metadata = await self.one_rollout(agent_run)
+    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
+        output, metadata, errors = await self.one_rollout(agent_run)
         if output is None:
-            return None
+            return self._build_failure_result(agent_run, errors)
         else:
             return JudgeResult(
                 agent_run_id=agent_run.id,
@@ -256,22 +287,28 @@ class MajorityVotingJudge(BaseJudge):
     ):
         super().__init__(cfg, llm_svc, docent_collection_id)
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
-        indep_results: list[dict[str, Any]] = []
+    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
+        indep_results_raw: list[dict[str, Any] | None] = []
         indep_rollout_metadata: list[dict[str, Any] | None] = []
+        indep_errors: list[list[LLMException] | None] = []
 
         async def _execute():
-            result, metadata = await self.one_rollout(agent_run)
-            if result is not None:
-                indep_results.append(result)
-                indep_rollout_metadata.append(metadata)
+            result, metadata, errors = await self.one_rollout(agent_run)
+            indep_results_raw.append(result)
+            indep_rollout_metadata.append(metadata)
+            indep_errors.append(errors)
 
         # Run rollouts concurrently
         async with anyio.create_task_group() as tg:
             for _ in range(self.cfg.n_rollouts_per_input):
                 tg.start_soon(_execute)
-        if not indep_results:
-            return None
+
+        # If not all rollouts succeeded, return a failure result
+        if any(result is None for result in indep_results_raw):
+            aggregated_errors = [error for errors in indep_errors if errors for error in errors]
+            return self._build_failure_result(agent_run, aggregated_errors or None)
+
+        indep_results = cast(list[dict[str, Any]], indep_results_raw)
 
         # Get a list of the keys that we want to measure agreement on
         agreement_keys = get_agreement_keys(self.cfg.output_schema)
@@ -317,7 +354,7 @@ class MajorityVotingJudge(BaseJudge):
         pbar = tqdm(total=n_initial_rollouts_to_sample, desc="Independent rollouts", leave=False)
 
         async def _execute():
-            result, metadata = await self.one_rollout(agent_run)
+            result, metadata, _ = await self.one_rollout(agent_run)
             if result is not None:
                 indep_results.append(result)
                 indep_rollout_metadata.append(metadata)
@@ -354,7 +391,7 @@ class MultiReflectionJudge(BaseJudge):
 
     async def one_rollout_second_stage(
         self, agent_run: AgentRun, first_stage_results: list[dict[str, Any]]
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
         """Reflect on the results of the first stage of rollouts.
         TODO(mengk): this is only done in a single-turn way. We should generalize this to multi-turn.
         """
@@ -388,34 +425,45 @@ class MultiReflectionJudge(BaseJudge):
             use_cache=False,
             validation_callback=self._get_validation_callback(agent_run),
         )
-        output_str = outputs[0].first_text
+        llm_output = outputs[0]
+        output_str = llm_output.first_text
 
-        validated_output = self._validate_first_response_tag_or_entire_output(
-            output_str or "", agent_run
-        )
+        if output_str is None:
+            return None, None, llm_output.errors
+
+        validated_output = self._validate_first_response_tag_or_entire_output(output_str, agent_run)
         if validated_output is not None:
-            return validated_output, None
-        else:
-            return None, None
+            return validated_output, None, None
+        return (
+            None,
+            None,
+            [ValidationFailedException("Validation failed", failed_output=output_str)],
+        )
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult | None:
+    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
         rubric = self.cfg
 
-        indep_results: list[dict[str, Any]] = []
+        indep_results_raw: list[dict[str, Any] | None] = []
         indep_rollout_metadata: list[dict[str, Any] | None] = []
+        indep_errors: list[list[LLMException] | None] = []
 
         async def _execute():
-            result, metadata = await self.one_rollout(agent_run)
-            if result is not None:
-                indep_results.append(result)
-                indep_rollout_metadata.append(metadata)
+            result, metadata, errors = await self.one_rollout(agent_run)
+            indep_results_raw.append(result)
+            indep_rollout_metadata.append(metadata)
+            indep_errors.append(errors)
 
         # Stage 1: run rollouts concurrently
         async with anyio.create_task_group() as tg:
             for _ in range(self.cfg.n_rollouts_per_input):
                 tg.start_soon(_execute)
-        if not indep_results:
-            return None
+
+        # If not all rollouts succeeded, return a failure result
+        if any(result is None for result in indep_results_raw):
+            aggregated_errors = [error for errors in indep_errors if errors for error in errors]
+            return self._build_failure_result(agent_run, aggregated_errors or None)
+
+        indep_results = cast(list[dict[str, Any]], indep_results_raw)
 
         # Compute initial modes
         agreement_keys = get_agreement_keys(rubric.output_schema)
@@ -428,18 +476,30 @@ class MultiReflectionJudge(BaseJudge):
         final_results = indep_results.copy()
         final_rollout_metadata = indep_rollout_metadata.copy()
         if len(indep_results) > 1:
-            candidate_final_results: list[dict[str, Any]] = []
+            candidate_final_results_raw: list[dict[str, Any] | None] = []
             candidate_final_rollout_metadata: list[dict[str, Any] | None] = []
+            candidate_final_errors: list[list[LLMException] | None] = []
 
             async def _execute_second_stage():
-                result, metadata = await self.one_rollout_second_stage(agent_run, indep_results)
-                if result is not None:
-                    candidate_final_results.append(result)
-                    candidate_final_rollout_metadata.append(metadata)
+                result, metadata, errors = await self.one_rollout_second_stage(
+                    agent_run, indep_results
+                )
+                candidate_final_results_raw.append(result)
+                candidate_final_rollout_metadata.append(metadata)
+                candidate_final_errors.append(errors)
 
             async with anyio.create_task_group() as tg:
                 for _ in range(self.cfg.n_rollouts_per_input):
                     tg.start_soon(_execute_second_stage)
+
+            # If not all rollouts succeeded, return a failure result
+            if any(result is None for result in candidate_final_results_raw):
+                aggregated_errors = [
+                    error for errors in candidate_final_errors if errors for error in errors
+                ]
+                return self._build_failure_result(agent_run, aggregated_errors or None)
+
+            candidate_final_results = cast(list[dict[str, Any]], candidate_final_results_raw)
 
             # Use reflected results if we got any, otherwise fall back to original results
             if candidate_final_results:
@@ -505,7 +565,7 @@ class MultiReflectionJudge(BaseJudge):
         )
 
         async def _execute_first_stage():
-            result, metadata = await self.one_rollout(agent_run)
+            result, metadata, _ = await self.one_rollout(agent_run)
             if result is not None:
                 first_step_rollouts.append(result)
                 first_step_rollout_metadata.append(metadata)
@@ -546,7 +606,9 @@ class MultiReflectionJudge(BaseJudge):
                 )
 
                 async def _execute_second_stage_inner():
-                    result, metadata = await self.one_rollout_second_stage(agent_run, combination)
+                    result, metadata, _ = await self.one_rollout_second_stage(
+                        agent_run, combination
+                    )
                     if result is not None:
                         second_step_rollouts[i].append(result)
                         second_step_rollout_metadata[i].append(metadata)

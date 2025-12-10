@@ -403,9 +403,17 @@ export const rubricApi = createApi({
         version?: number | null;
         labelSetId?: string | null;
         filter?: CollectionFilter | null;
+        includeFailures?: boolean;
       }
     >({
-      query: ({ collectionId, rubricId, version, labelSetId, filter }) => ({
+      query: ({
+        collectionId,
+        rubricId,
+        version,
+        labelSetId,
+        filter,
+        includeFailures,
+      }) => ({
         url: `/${collectionId}/${rubricId}/rubric_run_state`,
         method: 'POST',
         params: {
@@ -414,6 +422,7 @@ export const rubricApi = createApi({
         },
         body: {
           filter_dict: filter ?? undefined,
+          include_failures: includeFailures ?? false,
         },
       }),
       providesTags: (result, error, { rubricId, version, labelSetId }) => [

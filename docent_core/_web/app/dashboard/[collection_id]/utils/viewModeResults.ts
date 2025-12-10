@@ -7,8 +7,12 @@ export type ViewMode =
   | 'missing_labels'
   | 'incomplete_labels';
 
+const getResults = (agentRun: AgentRunJudgeResults) =>
+  agentRun.results.filter((result) => result.result_type === 'DIRECT_RESULT');
+
 function calculateHumanMissFraction(agentRun: AgentRunJudgeResults): number {
-  const { results, reflection } = agentRun;
+  const results = getResults(agentRun);
+  const { reflection } = agentRun;
   if (!reflection || results.length === 0 || !reflection.issues) {
     return 0;
   }
@@ -28,7 +32,10 @@ function calculateHumanMissFraction(agentRun: AgentRunJudgeResults): number {
 }
 
 function calculateControversyScore(agentRun: AgentRunJudgeResults): number {
-  const labels = agentRun.results.map((result) => result.output?.label);
+  const results = getResults(agentRun);
+  const labels = results.map((result) => result.output?.label);
+  if (labels.length === 0) return 0;
+
   const labelCounts = labels.reduce(
     (acc, label) => {
       acc[label] = (acc[label] || 0) + 1;
@@ -40,7 +47,7 @@ function calculateControversyScore(agentRun: AgentRunJudgeResults): number {
   const mode = Object.keys(labelCounts).reduce((a, b) =>
     labelCounts[a] > labelCounts[b] ? a : b
   );
-  const nonModalFraction = 1 - labelCounts[mode] / agentRun.results.length;
+  const nonModalFraction = 1 - labelCounts[mode] / results.length;
 
   return nonModalFraction;
 }
@@ -49,7 +56,8 @@ function calculateJudgeLabelDisagreementScore(
   agentRun: AgentRunJudgeResults,
   labels: Label[]
 ): number {
-  const { results, agent_run_id } = agentRun;
+  const { agent_run_id } = agentRun;
+  const results = getResults(agentRun);
   const label = labels.find((l) => l.agent_run_id === agent_run_id);
   if (!label) return 0;
 

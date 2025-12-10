@@ -16,6 +16,7 @@ import {
   useGetJudgeResultFilterFieldsQuery,
 } from '../../../api/rubricApi';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -146,6 +147,7 @@ export default function SingleRubricArea({
     null
   );
   const [viewMode, setViewMode] = useState<ViewMode>('all');
+  const [showFailures, setShowFailures] = useState(false);
 
   const { data: filterFieldsData } = useGetJudgeResultFilterFieldsQuery(
     {
@@ -167,7 +169,8 @@ export default function SingleRubricArea({
     currentResultsCount,
 
     // Rubric run results
-    agentRunResults,
+    agentRunResults: agentRunResultsAll,
+    failureCount,
 
     // Clustering job status
     clusteringJobId,
@@ -184,6 +187,21 @@ export default function SingleRubricArea({
     labelSetId: activeLabelSetId ?? null,
     filter: runsFilter,
   });
+
+  // Filter out failures if not showing them
+  const agentRunResults = showFailures
+    ? agentRunResultsAll
+    : agentRunResultsAll
+        .map((run) => ({
+          // This logic filters out the failures from the results of this agent run
+          // Prevents issue where, if an agent run has both successes and failures, the failures slip through
+          ...run,
+          results:
+            run.results?.filter(
+              (result) => result.result_type === 'DIRECT_RESULT'
+            ) ?? [],
+        }))
+        .filter((run) => run.results.length > 0);
 
   // Get the remote rubric
   const { data: rubric } = useGetRubricQuery({
@@ -236,7 +254,6 @@ export default function SingleRubricArea({
     }
   };
 
-  const noJudgeResults = agentRunResults.length == 0;
   const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
 
   // Get the latest version number for the version navigator
@@ -315,18 +332,35 @@ export default function SingleRubricArea({
               onRequestEdit={handleRequestEditFilter}
             />
           )}
+          {failureCount > 0 && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Switch
+                id="include-failures"
+                checked={showFailures}
+                onCheckedChange={setShowFailures}
+                className="scale-75"
+              />
+              <label htmlFor="include-failures" className="cursor-pointer">
+                Show <span className="text-red-500">{failureCount} errors</span>
+              </label>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1.5 ml-auto">
-          {!rubricJobId && hasWritePermission && !noJudgeResults && (
-            <ClusterButton
-              collectionId={collectionId}
-              rubricId={rubricId}
-              clusteringJobId={clusteringJobId}
-              clusteringJobStatus={clusteringJobStatus}
-              hasUnsavedChanges={hasUnsavedChanges}
-              hasCentroids={centroids.length > 0}
-            />
-          )}
+          {!rubricJobId &&
+            hasWritePermission &&
+            agentRunResultsAll.some((run) =>
+              run.results?.some((r) => r.result_type === 'DIRECT_RESULT')
+            ) && (
+              <ClusterButton
+                collectionId={collectionId}
+                rubricId={rubricId}
+                clusteringJobId={clusteringJobId}
+                clusteringJobStatus={clusteringJobStatus}
+                hasUnsavedChanges={hasUnsavedChanges}
+                hasCentroids={centroids.length > 0}
+              />
+            )}
           {!isClusteringActive && (
             <AgreementWidget
               agentRunResults={agentRunResults}

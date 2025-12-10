@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import anyio
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -482,6 +482,21 @@ class RubricService:
 
         ar_resolvers = [_make_ar_resolver(agent_run_id) for agent_run_id in ar_ids_selected]
 
+        # Clear existing failure records up front so stale errors don't linger when rerunning.
+        async with self.session_cm_factory() as session:
+            batch_size = 1000
+            for i in range(0, len(ar_ids_selected), batch_size):
+                # Use batched deletes to avoid oversized IN clauses.
+                batch_ids = ar_ids_selected[i : i + batch_size]
+                await session.execute(
+                    delete(SQLAJudgeResult).where(
+                        SQLAJudgeResult.agent_run_id.in_(batch_ids),
+                        SQLAJudgeResult.rubric_id == rubric_id,
+                        SQLAJudgeResult.rubric_version == rubric.version,
+                        SQLAJudgeResult.result_type == ResultType.FAILURE,
+                    )
+                )
+
         async with BatchedWriter(self.session_cm_factory) as writer:
             async with anyio.create_task_group() as tg:
 
@@ -503,10 +518,14 @@ class RubricService:
                     # Spawn reflection task for this agent_run
                     # Pass new results directly; reflection will merge with existing DB results
                     # This handles race conditions where new results may not be committed yet
-                    if resolved_results:
+                    if successful_results := [
+                        result
+                        for result in judge_results
+                        if result.result_type == ResultType.DIRECT_RESULT
+                    ]:
                         tg.start_soon(
                             self._create_reflection_background,
-                            resolved_results,
+                            successful_results,
                             rubric.to_pydantic(),
                             label_set_id,
                         )
@@ -544,8 +563,13 @@ class RubricService:
         rubric_id: str,
         version: int | None = None,
         filter_obj: CollectionFilter | None = None,
+        include_failures: bool = False,
     ) -> list[JudgeResult]:
-        """Get the results of a rubric, optionally filtered by agent run criteria."""
+        """Get the results of a rubric, optionally filtered by agent run criteria.
+
+        By default, rubric execution failures are excluded. Set include_failures to True
+        to retrieve them alongside successful results.
+        """
         from docent_core.docent.db.schemas.tables import SQLAAgentRun
 
         if version is None:
@@ -573,6 +597,11 @@ class RubricService:
                 SQLAJudgeResult.rubric_version == version,
             )
         )
+
+        if not include_failures:
+            search_query = search_query.where(
+                SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT
+            )
 
         if filter_obj is not None:
             from docent_core.docent.db.filters import build_judge_result_filter_clause
@@ -681,7 +710,10 @@ class RubricService:
             List of judge results with citations resolved, in original order
         """
         needs_resolution = {
-            r.id: r for r in results if self._output_has_unresolved_citations(r.output, schema)
+            r.id: r
+            for r in results
+            if r.result_type == ResultType.DIRECT_RESULT
+            and self._output_has_unresolved_citations(r.output, schema)
         }
 
         if not needs_resolution:
@@ -853,6 +885,7 @@ class RubricService:
                     SQLAJudgeResult.agent_run_id == agent_run_id,
                     SQLAJudgeResult.rubric_id == rubric_id,
                     SQLAJudgeResult.rubric_version == rubric_version,
+                    SQLAJudgeResult.result_type == ResultType.DIRECT_RESULT,
                 )
                 result = await session.execute(all_results_query)
                 sqla_results = result.scalars().all()
@@ -865,6 +898,8 @@ class RubricService:
                     results_by_id[new_result.id] = new_result
 
                 all_judge_results = list(results_by_id.values())
+                if not all_judge_results:
+                    return
 
                 sqla_reflection = await self._create_or_update_reflection(
                     session, all_judge_results, rubric, label_set_id=label_set_id

@@ -58,7 +58,12 @@ export const AgreementPopover = ({
 
   // Get first results per agent run for filtering
   const firstResults = useMemo(
-    () => agentRunResults.map((arr) => arr.results[0]).filter(Boolean),
+    () =>
+      agentRunResults
+        .map((arr) =>
+          arr.results.find((result) => result.result_type === 'DIRECT_RESULT')
+        )
+        .filter(Boolean) as JudgeResultWithCitations[],
     [agentRunResults]
   );
   // Track the selected property for the visible selection

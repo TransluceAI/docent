@@ -1,6 +1,23 @@
+from typing import Any
+
+
 class LLMException(Exception):
     error_type_id = "other"
     user_message = "The model failed to respond. Please try again later."
+
+    def serialize(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "type": self.__class__.__name__,
+            "user_message": getattr(self, "user_message", None),
+            "error_type_id": getattr(self, "error_type_id", None),
+        }
+        if failed_output := getattr(self, "failed_output", None):
+            data["failed_output"] = str(failed_output)
+        return data
+
+    @classmethod
+    def serialize_llm_errors(cls, errors: list["LLMException"]) -> list[dict[str, Any]]:
+        return [error.serialize() for error in errors]
 
 
 class CompletionTooLongException(LLMException):

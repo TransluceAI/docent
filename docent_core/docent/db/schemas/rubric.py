@@ -39,6 +39,8 @@ TABLE_JUDGE_REFLECTION = "judge_reflections"
 
 logger = get_logger(__name__)
 
+RESULT_TYPE_ENUM = Enum(ResultType, name="result_type")
+
 
 class SQLARubric(SQLABase):
     __tablename__ = TABLE_RUBRIC
@@ -196,7 +198,7 @@ class SQLAJudgeResult(SQLABase):
     # Outputs
     output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    result_type: Mapped[ResultType] = mapped_column(Enum(ResultType), nullable=False)
+    result_type: Mapped[ResultType] = mapped_column(RESULT_TYPE_ENUM, nullable=False)
 
     # Deprecated
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -258,7 +260,7 @@ class SQLARubricCentroid(SQLABase):
     rubric_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     rubric_version: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     centroid: Mapped[str] = mapped_column(Text, nullable=False)
-    result_type: Mapped[ResultType] = mapped_column(Enum(ResultType), nullable=False)
+    result_type: Mapped[ResultType] = mapped_column(RESULT_TYPE_ENUM, nullable=False)
 
     # Composite foreign key constraint
     __table_args__ = (
@@ -299,7 +301,7 @@ class SQLAJudgeResultCentroid(SQLABase):
     )
     decision: Mapped[bool] = mapped_column(Boolean, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
-    result_type: Mapped[ResultType] = mapped_column(Enum(ResultType), nullable=False)
+    result_type: Mapped[ResultType] = mapped_column(RESULT_TYPE_ENUM, nullable=False)
 
     # Relationships
     judge_result: Mapped["SQLAJudgeResult"] = relationship(

@@ -6,6 +6,13 @@ export function findModalResult(
   agentRunResult: AgentRunJudgeResults,
   schema: SchemaDefinition
 ): JudgeResultWithCitations {
+  const results = agentRunResult.results.filter(
+    (result) => result.result_type === 'DIRECT_RESULT'
+  );
+  if (results.length === 0) {
+    throw new Error('No judge results available to select a mode from.');
+  }
+
   let firstEnumKey: string | undefined;
   // We're interested in the mode of the first string enum key
   for (const [key, property] of Object.entries(schema.properties)) {
@@ -15,11 +22,11 @@ export function findModalResult(
     }
   }
   if (!firstEnumKey) {
-    return agentRunResult.results[0];
+    return results[0];
   }
   // Count frequencies of each enum value
   const valueCounts: Record<string, number> = {};
-  for (const result of agentRunResult.results) {
+  for (const result of results) {
     const value = result.output[firstEnumKey];
     valueCounts[value] = (valueCounts[value] || 0) + 1;
   }
@@ -31,8 +38,8 @@ export function findModalResult(
     return a < b ? a : b;
   });
   // Return the first result that agrees with the mode
-  const majorityResult = agentRunResult.results.find(
+  const majorityResult = results.find(
     (result) => result.output[firstEnumKey] === modalValue
   );
-  return majorityResult ?? agentRunResult.results[0];
+  return majorityResult ?? results[0];
 }

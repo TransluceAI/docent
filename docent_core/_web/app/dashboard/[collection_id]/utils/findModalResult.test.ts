@@ -9,13 +9,16 @@ import { findModalResult } from './findModalResult';
 const createResult = (
   id: string,
   outputValue: string,
-  enumKey: string = 'status'
+  enumKey: string = 'status',
+  resultType: JudgeResultWithCitations['result_type'] = 'DIRECT_RESULT'
 ): JudgeResultWithCitations => ({
   id,
   agent_run_id: 'test-agent-run',
   rubric_id: 'test-rubric',
   rubric_version: 1,
   output: { [enumKey]: outputValue },
+  result_type: resultType,
+  result_metadata: null,
   _brand: 'citations' as const,
 });
 
@@ -182,6 +185,26 @@ describe('findMajorityResult', () => {
     const result = findModalResult(agentRunResult, schema);
 
     expect(result.output.status).toBe('fail');
+  });
+
+  test('ignores failures when selecting modal result', () => {
+    const schema = createSchema('status', ['pass', 'fail']);
+    const agentRunResult: AgentRunJudgeResults = {
+      agent_run_id: 'test-agent-run',
+      rubric_id: 'test-rubric',
+      rubric_version: 1,
+      results: [
+        createResult('0', 'fail', 'status', 'FAILURE'),
+        createResult('1', 'pass'),
+        createResult('2', 'pass'),
+      ],
+      reflection: null,
+    };
+
+    const result = findModalResult(agentRunResult, schema);
+
+    expect(result.id).toBe('1');
+    expect(result.output.status).toBe('pass');
   });
 
   test('handles three-way tie correctly', () => {

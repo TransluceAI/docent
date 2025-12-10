@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   useGetClusteringStateQuery,
   useGetRubricRunStateQuery,
@@ -20,6 +20,7 @@ interface UseJobStatusResponse {
   rubricJobId: string | null;
   rubricJobStatus: JobStatus | null;
   agentRunResults: AgentRunJudgeResults[];
+  failureCount: number;
   totalResultsNeeded: number;
   currentResultsCount: number;
   activeClusteringJobId?: string;
@@ -54,6 +55,7 @@ const useJobStatus = ({
         version,
         labelSetId,
         filter,
+        includeFailures: true,
       },
       {
         pollingInterval: rubricJobId !== null ? 1000 : 0,
@@ -63,6 +65,18 @@ const useJobStatus = ({
     setRubricJobId(rubricRunState?.job_id ?? null);
     setRubricJobStatus(rubricRunState?.job_status ?? null);
   }, [rubricRunState?.job_id, rubricRunState?.job_status]);
+
+  // Count failures and filter results
+  const { agentRunResults, failureCount } = useMemo(() => {
+    const results = rubricRunState?.results ?? [];
+    const count = results.reduce(
+      (acc, run) =>
+        acc +
+        (run.results?.filter((r) => r.result_type === 'FAILURE').length ?? 0),
+      0
+    );
+    return { agentRunResults: results, failureCount: count };
+  }, [rubricRunState?.results]);
 
   // Clustering job status
   const [clusteringJobId, setClusteringJobId] = useState<string | null>(null);
@@ -91,7 +105,8 @@ const useJobStatus = ({
     currentResultsCount: rubricRunState?.current_results_count ?? 0,
 
     // Rubric run results
-    agentRunResults: rubricRunState?.results ?? [],
+    agentRunResults,
+    failureCount,
 
     // Clustering job status
     clusteringJobId,
