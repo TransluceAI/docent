@@ -297,8 +297,15 @@ class CodeSampleService:
         table_alias: str,
         comparison_value: object | None = None,
     ) -> str:
-        path_body = ",".join(CodeSampleService._escape_literal(part) for part in path)
-        accessor = f"{table_alias}.metadata_json#>>'{{{path_body}}}'"
+        if not path:
+            raise ValueError("Metadata path cannot be empty")
+
+        accessor = f"{table_alias}.metadata_json"
+        for segment in path[:-1]:
+            accessor = f"{accessor}->'{CodeSampleService._escape_literal(segment)}'"
+
+        last_segment = CodeSampleService._escape_literal(path[-1])
+        accessor = f"{accessor}->>'{last_segment}'"
 
         if isinstance(comparison_value, (int, float)):
             return f"CAST({accessor} AS DOUBLE PRECISION)"
@@ -409,5 +416,6 @@ class CodeSampleService:
         if column.startswith("metadata."):
             path = column.split(".")[1:]
             expr = CodeSampleService._build_metadata_accessor(path, table_alias)
-            return f"{expr} AS {column}"
+            alias = column.replace(".", "_")
+            return f"{expr} AS {alias}"
         return f"{table_alias}.{column} AS {column}"
