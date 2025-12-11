@@ -979,7 +979,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.41a0"
+version = "0.1.42a0"
 source = { editable = "docent" }
 dependencies = [
     { name = "anthropic" },
