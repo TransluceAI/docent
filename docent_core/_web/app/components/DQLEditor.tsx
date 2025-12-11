@@ -10,7 +10,7 @@ import React, {
 } from 'react';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
-import { Check, Copy, Maximize2, Play } from 'lucide-react';
+import { Check, Copy, FileCode, Loader2, Maximize2, Play } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,15 @@ import {
 } from '@/components/ui/dialog';
 import { TableContainer } from './TableContainer';
 import { copyToClipboard } from '@/lib/utils';
+import DownloadMenu from '@/app/components/DownloadMenu';
+import {
+  exportTabularData,
+  type DelimitedFormat,
+} from '@/app/utils/exportTable';
+import { BASE_URL } from '@/app/constants';
+import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
+import { downloadPythonSample } from '@/app/utils/pythonSamples';
+import { toast } from '@/hooks/use-toast';
 
 interface DQLEditorProps {
   collectionId?: string;
@@ -291,6 +300,10 @@ const DQLEditor = ({
   );
   const { resolvedTheme } = useTheme();
   const [isSchemaVisible, setIsSchemaVisible] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
+    useDownloadApiKey();
+  const [isDownloadingSample, setIsDownloadingSample] = useState(false);
   const latestRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -515,6 +528,79 @@ const DQLEditor = ({
     return result.columns.map(fallbackColumnName);
   }, [result]);
 
+  const handleExportResult = useCallback(
+    async (format: DelimitedFormat) => {
+      if (!result) {
+        return;
+      }
+      setIsExporting(true);
+      try {
+        exportTabularData({
+          columns: displayColumns,
+          rows: result.rows,
+          format,
+          filename: 'dql-results',
+        });
+      } catch (error) {
+        console.error('Failed to export DQL results', error);
+        toast({
+          title: 'Download failed',
+          description: 'Unable to export query results.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [displayColumns, result]
+  );
+
+  const handleDownloadPythonSample = useCallback(
+    async (format: 'python' | 'notebook' = 'python') => {
+      if (!collectionId) {
+        toast({
+          title: 'Missing collection',
+          description: 'Open a collection before downloading a code sample.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) {
+        toast({
+          title: 'Missing query',
+          description: 'Enter a query before downloading a code sample.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        setIsDownloadingSample(true);
+        const apiKey = await getDownloadApiKey();
+        await downloadPythonSample({
+          type: 'dql',
+          api_key: apiKey,
+          server_url: BASE_URL,
+          collection_id: collectionId,
+          dql_query: trimmedQuery,
+          format,
+        });
+      } catch (error) {
+        console.error('Failed to download DQL Python sample', error);
+        toast({
+          title: 'Download failed',
+          description: 'Unable to generate a Python sample for this query.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsDownloadingSample(false);
+      }
+    },
+    [collectionId, getDownloadApiKey, query]
+  );
+
   const handleEditorChange = useCallback(
     (value?: string) => {
       const nextValue = value ?? '';
@@ -642,18 +728,79 @@ const DQLEditor = ({
         <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
           {result && (
             <>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>{result.row_count} rows</span>
-                <span>·</span>
-                <span>{result.execution_time_ms.toFixed(1)} ms</span>
-                {result.truncated && (
-                  <>
-                    <span>·</span>
-                    <Badge variant="outline">Truncated</Badge>
-                  </>
-                )}
-                <span>·</span>
-                <span>Limit applied: {result.applied_limit}</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{result.row_count} rows</span>
+                  <span>·</span>
+                  <span>{result.execution_time_ms.toFixed(1)} ms</span>
+                  {result.truncated && (
+                    <>
+                      <span>·</span>
+                      <Badge variant="outline">Truncated</Badge>
+                    </>
+                  )}
+                  <span>·</span>
+                  <span>Limit applied: {result.applied_limit}</span>
+                </div>
+                <DownloadMenu
+                  options={[
+                    {
+                      key: 'csv',
+                      label: 'Download CSV',
+                      disabled: isExporting,
+                      onSelect: () => {
+                        void handleExportResult('csv');
+                      },
+                    },
+                    {
+                      key: 'tsv',
+                      label: 'Download TSV',
+                      disabled: isExporting,
+                      onSelect: () => {
+                        void handleExportResult('tsv');
+                      },
+                    },
+                    {
+                      key: 'python',
+                      label: 'Python',
+                      disabled:
+                        isDownloadingSample || isApiKeyLoading || !collectionId,
+                      icon:
+                        isDownloadingSample || isApiKeyLoading ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <FileCode className="h-3 w-3" />
+                        ),
+                      onSelect: () => {
+                        void handleDownloadPythonSample('python');
+                      },
+                    },
+                    {
+                      key: 'notebook',
+                      label: 'Notebook',
+                      disabled:
+                        isDownloadingSample || isApiKeyLoading || !collectionId,
+                      icon:
+                        isDownloadingSample || isApiKeyLoading ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <FileCode className="h-3 w-3" />
+                        ),
+                      onSelect: () => {
+                        void handleDownloadPythonSample('notebook');
+                      },
+                    },
+                  ]}
+                  isLoading={isExporting || isDownloadingSample}
+                  triggerDisabled={
+                    isExporting ||
+                    isDownloadingSample ||
+                    isApiKeyLoading ||
+                    !collectionId
+                  }
+                  className="h-7 gap-1 text-xs text-muted-foreground"
+                  contentClassName="w-36"
+                />
               </div>
               <TableContainer>
                 <Table className="min-w-full table-auto">

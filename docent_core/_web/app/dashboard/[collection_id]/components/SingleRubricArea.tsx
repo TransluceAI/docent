@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 import { Rubric } from '../../../store/rubricSlice';
 
-import { Loader2, Tags, ChevronRight, FunnelPlus } from 'lucide-react';
+import {
+  Loader2,
+  Tags,
+  ChevronRight,
+  FunnelPlus,
+  FileCode,
+} from 'lucide-react';
 import RubricEditor, { RubricVersionNavigator } from './RubricEditor';
 import { JudgeResultsList } from './JudgeResultsList';
 import {
@@ -48,6 +54,10 @@ import { FilterChips } from '@/app/components/FilterChips';
 import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import ViewModeDropdown from './ViewModeDropdown';
 import { ViewMode } from '../utils/viewModeResults';
+import DownloadMenu from '@/app/components/DownloadMenu';
+import { BASE_URL } from '@/app/constants';
+import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
+import { downloadPythonSample } from '@/app/utils/pythonSamples';
 
 interface AgreementWidgetProps {
   agentRunResults: AgentRunJudgeResults[];
@@ -219,6 +229,9 @@ export default function SingleRubricArea({
     );
   const hasLabels = (labels?.length ?? 0) > 0;
 
+  const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
+    useDownloadApiKey();
+  const [isDownloadingSample, setIsDownloadingSample] = useState(false);
   const [isLabelSetsDialogOpen, setIsLabelSetsDialogOpen] = useState(false);
 
   const handleImportLabelSet = (labelSet: any) => {
@@ -279,6 +292,51 @@ export default function SingleRubricArea({
     setEditingFilter(filter);
     setFilterPopoverOpen(true);
   };
+
+  const handleDownloadRubricSample = useCallback(
+    async (format: 'python' | 'notebook' = 'python') => {
+      if (!collectionId) {
+        toast({
+          title: 'Missing collection',
+          description: 'Open a collection before downloading a code sample.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        setIsDownloadingSample(true);
+        const apiKey = await getDownloadApiKey();
+        await downloadPythonSample({
+          type: 'rubric_results',
+          api_key: apiKey,
+          server_url: BASE_URL,
+          collection_id: collectionId,
+          rubric_id: rubricId,
+          rubric_version: version ?? null,
+          runs_filter: runsFilter ?? null,
+          format,
+        });
+      } catch (error) {
+        console.error('Failed to download rubric Python sample', error);
+        toast({
+          title: 'Download failed',
+          description: 'Unable to generate a Python sample for this rubric.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsDownloadingSample(false);
+      }
+    },
+    [
+      agentRunResults.length,
+      collectionId,
+      getDownloadApiKey,
+      rubricId,
+      runsFilter,
+      version,
+    ]
+  );
 
   const ResultsSection = (
     <>
@@ -371,6 +429,42 @@ export default function SingleRubricArea({
               activeFilters={runsFilter?.filters ?? []}
             />
           )}
+          <DownloadMenu
+            options={[
+              {
+                key: 'python',
+                label: 'Python',
+                disabled: isDownloadingSample || isApiKeyLoading,
+                icon:
+                  isDownloadingSample || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <FileCode className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleDownloadRubricSample('python');
+                },
+              },
+              {
+                key: 'notebook',
+                label: 'Notebook',
+                disabled: isDownloadingSample || isApiKeyLoading,
+                icon:
+                  isDownloadingSample || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <FileCode className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleDownloadRubricSample('notebook');
+                },
+              },
+            ]}
+            isLoading={isDownloadingSample || isApiKeyLoading}
+            triggerDisabled={isDownloadingSample || isApiKeyLoading}
+            className="h-7 gap-1 text-xs"
+            contentClassName="w-36"
+          />
         </div>
       </div>
 

@@ -26,6 +26,7 @@ import {
   Check,
   Columns3,
   Loader2,
+  FileCode,
   Upload,
 } from 'lucide-react';
 
@@ -57,6 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import DownloadMenu from '@/app/components/DownloadMenu';
 import { compareAgentRunColumnNames } from '@/lib/agentRunColumns';
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -65,6 +67,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from './Combobox';
 import { TableContainer } from './TableContainer';
 import { isDateString, formatDateValue } from '@/lib/dateUtils';
+import {
+  exportTabularData,
+  type DelimitedFormat,
+} from '@/app/utils/exportTable';
+import { BASE_URL } from '@/app/constants';
+import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
+import { downloadPythonSample } from '@/app/utils/pythonSamples';
+import { toast } from '@/hooks/use-toast';
+import { ComplexFilter } from '@/app/types/collectionTypes';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -84,7 +95,10 @@ function useDebouncedMetadataRequest(
   selectedColumns: string[],
   startIndex: number,
   endIndex: number,
-  requestMetadataForIds: (ids: string[]) => void
+  requestMetadataForIds: (
+    ids: string[],
+    options?: { force?: boolean }
+  ) => Promise<Record<string, Record<string, unknown>>>
 ) {
   // Create a key that changes when we need to make a new request
   const requestKey = useMemo(() => {
@@ -124,7 +138,7 @@ function useDebouncedMetadataRequest(
   useEffect(() => {
     if (debouncedRequestKey) {
       const idsToRequest = debouncedRequestKey.split(',');
-      requestMetadataForIds(idsToRequest);
+      void requestMetadataForIds(idsToRequest);
     }
   }, [debouncedRequestKey, requestMetadataForIds]);
 }
@@ -140,13 +154,18 @@ export interface AgentRunTableProps {
   sortableColumns: Set<string>;
   sortField: string | null;
   sortDirection: 'asc' | 'desc';
+  collectionId?: string;
+  baseFilter?: ComplexFilter | null;
   onSortChange: (field: string | null, direction: 'asc' | 'desc') => void;
   activeRunId?: string;
   onRowMouseDown: (
     runId: string,
     event: ReactMouseEvent<HTMLTableRowElement>
   ) => void;
-  requestMetadataForIds: (ids: string[]) => void;
+  requestMetadataForIds: (
+    ids: string[],
+    options?: { force?: boolean }
+  ) => Promise<Record<string, Record<string, unknown>>>;
   dropZoneHandlers: {
     onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
     onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void;
@@ -276,6 +295,8 @@ export const AgentRunTable = memo(function AgentRunTable({
   sortableColumns,
   sortField,
   sortDirection,
+  collectionId,
+  baseFilter,
   onSortChange,
   activeRunId,
   onRowMouseDown,
@@ -293,6 +314,17 @@ export const AgentRunTable = memo(function AgentRunTable({
   const internalScrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
+  const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
+    useDownloadApiKey();
+  const [isDownloadingSample, setIsDownloadingSample] = useState(false);
+  const params = useParams();
+  const resolvedCollectionId =
+    collectionId ??
+    (Array.isArray(params?.collection_id)
+      ? params?.collection_id[0]
+      : (params as { collection_id?: string } | null | undefined)
+          ?.collection_id);
 
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
     null
@@ -362,12 +394,16 @@ export const AgentRunTable = memo(function AgentRunTable({
   }, [agentRunIds]);
 
   const getCellValue = useCallback(
-    (runId: string, columnKey: string): unknown => {
+    (
+      runId: string,
+      columnKey: string,
+      dataOverride?: Record<string, Record<string, unknown>>
+    ): unknown => {
       if (columnKey === 'agent_run_id') {
         return runId;
       }
 
-      const processedData = metadataData[runId];
+      const processedData = (dataOverride ?? metadataData)[runId];
       if (!processedData) {
         return undefined;
       }
@@ -388,6 +424,128 @@ export const AgentRunTable = memo(function AgentRunTable({
       return (processedData as Record<string, unknown>)[columnKey];
     },
     [metadataData]
+  );
+
+  const exportColumns = useMemo(() => {
+    const unique = new Set<string>(['agent_run_id', ...selectedColumns]);
+    return Array.from(unique);
+  }, [selectedColumns]);
+
+  const handleExport = useCallback(
+    async (format: DelimitedFormat) => {
+      if (!agentRunIds?.length) {
+        return;
+      }
+      setIsExporting(true);
+      const missingIds = agentRunIds.filter((id) => !metadataData[id]);
+      try {
+        const fetchedMetadata = await requestMetadataForIds(missingIds, {
+          force: true,
+        });
+        const combinedMetadata = {
+          ...metadataData,
+          ...fetchedMetadata,
+        };
+        const rows = agentRunIds.map((runId) =>
+          exportColumns.map((columnKey) =>
+            formatMetadataValue(
+              getCellValue(runId, columnKey, combinedMetadata)
+            )
+          )
+        );
+        exportTabularData({
+          columns: exportColumns,
+          rows,
+          format,
+          filename: `agent-runs${
+            resolvedCollectionId ? `-${resolvedCollectionId}` : ''
+          }`,
+        });
+        posthog.capture('agent_run_table_download', {
+          collectionId: resolvedCollectionId,
+          format,
+          rowCount: agentRunIds.length,
+          columnCount: exportColumns.length,
+        });
+      } catch (error) {
+        console.error('Failed to export agent run table', error);
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      agentRunIds,
+      exportColumns,
+      getCellValue,
+      metadataData,
+      requestMetadataForIds,
+      resolvedCollectionId,
+    ]
+  );
+
+  const handleDownloadSample = useCallback(
+    async (format: 'python' | 'notebook') => {
+      if (!agentRunIds?.length) {
+        return;
+      }
+      if (!resolvedCollectionId) {
+        toast({
+          title: 'Missing collection',
+          description: 'Open a collection before downloading a code sample.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const eventName =
+        format === 'notebook'
+          ? 'agent_run_table_download_notebook_sample'
+          : 'agent_run_table_download_python_sample';
+      const errorDescription =
+        format === 'notebook'
+          ? 'Unable to generate a notebook sample for this table.'
+          : 'Unable to generate a Python sample for this table.';
+
+      try {
+        setIsDownloadingSample(true);
+        const apiKey = await getDownloadApiKey();
+        await downloadPythonSample({
+          type: 'agent_runs',
+          api_key: apiKey,
+          server_url: BASE_URL,
+          collection_id: resolvedCollectionId,
+          columns: exportColumns,
+          sort_field: sortField ?? null,
+          sort_direction: sortDirection,
+          base_filter: baseFilter ?? null,
+          format,
+        });
+
+        posthog.capture(eventName, {
+          collectionId: resolvedCollectionId,
+          rowCount: agentRunIds.length,
+          columnCount: exportColumns.length,
+        });
+      } catch (error) {
+        console.error('Failed to download agent run sample', error);
+        toast({
+          title: 'Download failed',
+          description: errorDescription,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsDownloadingSample(false);
+      }
+    },
+    [
+      agentRunIds,
+      baseFilter,
+      exportColumns,
+      getDownloadApiKey,
+      resolvedCollectionId,
+      sortDirection,
+      sortField,
+    ]
   );
 
   const skeletonRowCount = useMemo(() => {
@@ -554,13 +712,10 @@ export const AgentRunTable = memo(function AgentRunTable({
   const showFetchOverlay = isFetchingAgentRuns && hasRows;
   const visibleColumns = table.getVisibleLeafColumns();
 
-  const params = useParams();
-  const collectionId = params?.collectionId;
-
   const handleToggleColumn = useCallback(
     (column: string, checked: boolean) => {
       posthog.capture('agent_run_table_column_toggled', {
-        collectionId,
+        collectionId: resolvedCollectionId,
         column: column,
         action: checked ? 'add' : 'remove',
       });
@@ -573,30 +728,30 @@ export const AgentRunTable = memo(function AgentRunTable({
       const next = selectedColumns.filter((item) => item !== column);
       onSelectedColumnsChange(next);
     },
-    [onSelectedColumnsChange, selectedColumns]
+    [onSelectedColumnsChange, resolvedCollectionId, selectedColumns]
   );
 
   const handleSelectAll = useCallback(() => {
     posthog.capture('agent_run_table_columns_select_all', {
-      collectionId,
+      collectionId: resolvedCollectionId,
     });
 
     onSelectedColumnsChange(availableColumns);
-  }, [availableColumns, onSelectedColumnsChange]);
+  }, [availableColumns, onSelectedColumnsChange, resolvedCollectionId]);
 
   const handleClearAll = useCallback(() => {
     posthog.capture('agent_run_table_columns_clear_all', {
-      collectionId,
+      collectionId: resolvedCollectionId,
     });
 
     onSelectedColumnsChange([]);
-  }, [onSelectedColumnsChange]);
+  }, [onSelectedColumnsChange, resolvedCollectionId]);
 
   // Sort controls handlers
   const handleFieldChange = useCallback(
     (field: string) => {
       posthog.capture('agent_run_table_sort_changed', {
-        collectionId,
+        collectionId: resolvedCollectionId,
         field: field === 'none' ? null : field,
         direction: sortDirection,
       });
@@ -607,21 +762,21 @@ export const AgentRunTable = memo(function AgentRunTable({
         onSortChange(field, sortDirection);
       }
     },
-    [onSortChange, sortDirection]
+    [onSortChange, resolvedCollectionId, sortDirection]
   );
 
   const handleDirectionChange = useCallback(() => {
     if (sortField) {
       const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
       posthog.capture('agent_run_table_sort_changed', {
-        collectionId,
+        collectionId: resolvedCollectionId,
         field: sortField,
         direction: newDirection,
       });
 
       onSortChange(sortField, newDirection);
     }
-  }, [onSortChange, sortField, sortDirection]);
+  }, [onSortChange, resolvedCollectionId, sortField, sortDirection]);
 
   // Prepare sortable fields for the select
   const sortOptions = useMemo(
@@ -686,6 +841,70 @@ export const AgentRunTable = memo(function AgentRunTable({
               </Button>
             )}
           </div>
+
+          <DownloadMenu
+            options={[
+              {
+                key: 'csv',
+                label: 'Download CSV',
+                disabled: !agentRunIds?.length || isExporting,
+                onSelect: () => {
+                  void handleExport('csv');
+                },
+              },
+              {
+                key: 'tsv',
+                label: 'Download TSV',
+                disabled: !agentRunIds?.length || isExporting,
+                onSelect: () => {
+                  void handleExport('tsv');
+                },
+              },
+              {
+                key: 'python',
+                label: 'Python',
+                disabled:
+                  !agentRunIds?.length ||
+                  isDownloadingSample ||
+                  isApiKeyLoading,
+                icon:
+                  isDownloadingSample || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <FileCode className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleDownloadSample('python');
+                },
+              },
+              {
+                key: 'notebook',
+                label: 'Notebook',
+                disabled:
+                  !agentRunIds?.length ||
+                  isDownloadingSample ||
+                  isApiKeyLoading,
+                icon:
+                  isDownloadingSample || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <FileCode className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleDownloadSample('notebook');
+                },
+              },
+            ]}
+            isLoading={isExporting || isDownloadingSample}
+            triggerDisabled={
+              !agentRunIds?.length ||
+              isExporting ||
+              isDownloadingSample ||
+              isApiKeyLoading
+            }
+            className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0"
+            contentClassName="w-36"
+          />
 
           {/* Columns selection */}
           <DropdownMenu onOpenChange={handleColumnsMenuOpenChange}>

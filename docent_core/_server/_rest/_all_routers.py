@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from docent_core._server._rest.onboarding import onboarding_router
 from docent_core.docent.server.rest.chart import chart_router
 from docent_core.docent.server.rest.chat import chat_router
+from docent_core.docent.server.rest.code_samples import code_samples_router
 from docent_core.docent.server.rest.dql import dql_router
 from docent_core.docent.server.rest.label import label_router
 from docent_core.docent.server.rest.refinement import refinement_router
@@ -58,6 +59,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": dql_router,
         "prefix": "/rest/dql",
+    },
+    {
+        "router": code_samples_router,
+        "prefix": "/rest/code-samples",
     },
     {
         "router": onboarding_router,
