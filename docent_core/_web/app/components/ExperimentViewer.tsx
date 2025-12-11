@@ -649,21 +649,22 @@ export default function ExperimentViewer({
   }, [collectionId]);
 
   const requestMetadataForIds = useCallback(
-    async (ids: string[]) => {
+    async (ids: string[], options?: { force?: boolean }) => {
       if (!collectionId || !ids.length) {
-        return;
+        return {};
       }
 
       const uniqueIds = Array.from(new Set(ids));
       const idsToFetch = uniqueIds.filter(
         (id) =>
-          !metadataData[id] &&
-          !loadingMetadataIds.has(id) &&
-          !requestedMetadataIds.has(id)
+          options?.force ||
+          (!metadataData[id] &&
+            !loadingMetadataIds.has(id) &&
+            !requestedMetadataIds.has(id))
       );
 
       if (!idsToFetch.length) {
-        return;
+        return {};
       }
 
       // Mark these IDs as requested immediately to prevent duplicate requests
@@ -679,6 +680,8 @@ export default function ExperimentViewer({
         return next;
       });
 
+      const fetched: Record<string, Record<string, unknown>> = {};
+
       try {
         for (let i = 0; i < idsToFetch.length; i += METADATA_FETCH_BATCH_SIZE) {
           const chunk = idsToFetch.slice(i, i + METADATA_FETCH_BATCH_SIZE);
@@ -686,6 +689,11 @@ export default function ExperimentViewer({
             collectionId,
             agent_run_ids: chunk,
           }).unwrap();
+
+          Object.entries(response).forEach(([runId, structuredMetadata]) => {
+            const processed = processAgentRunMetadata(structuredMetadata);
+            fetched[runId] = processed;
+          });
 
           setMetadataData((prev) => {
             const next = { ...prev };
@@ -703,6 +711,7 @@ export default function ExperimentViewer({
           idsToFetch.forEach((id) => next.delete(id));
           return next;
         });
+        throw error;
       } finally {
         setLoadingMetadataIds((prev) => {
           const next = new Set(prev);
@@ -710,12 +719,14 @@ export default function ExperimentViewer({
           return next;
         });
       }
+
+      return fetched;
     },
     [
       collectionId,
       fetchAgentRunMetadata,
-      metadataData,
       loadingMetadataIds,
+      metadataData,
       requestedMetadataIds,
     ]
   );
