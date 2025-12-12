@@ -2,6 +2,7 @@ export const PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'google', label: 'Google' },
+  { value: 'openrouter', label: 'OpenRouter' },
 ] as const;
 
 export function getProviderLabel(provider: string): string {

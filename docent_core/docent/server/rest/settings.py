@@ -103,7 +103,7 @@ async def upsert_model_api_key(
 ):
     """Create or update a model API key for the authenticated user."""
     # Validate provider
-    valid_providers = ["openai", "anthropic", "google"]
+    valid_providers = ["openai", "anthropic", "google", "openrouter"]
     if request.provider not in valid_providers:
         raise HTTPException(
             status_code=400,

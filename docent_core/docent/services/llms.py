@@ -290,6 +290,17 @@ class ProviderPreferences(PublicProviderPreferences):
                 model_name="gemini-2.5-flash-lite",
                 reasoning_effort="low",
             ),
+            ModelOption(provider="openrouter", model_name="openai/gpt-5", reasoning_effort="low"),
+            ModelOption(
+                provider="openrouter", model_name="openai/gpt-5", reasoning_effort="medium"
+            ),
+            ModelOption(provider="openrouter", model_name="openai/gpt-5", reasoning_effort="high"),
+            ModelOption(provider="openrouter", model_name="anthropic/claude-sonnet-4-5"),
+            ModelOption(
+                provider="openrouter",
+                model_name="anthropic/claude-sonnet-4-5",
+                reasoning_effort="medium",
+            ),
         ]
 
     @cached_property
@@ -368,7 +379,32 @@ class ProviderPreferences(PublicProviderPreferences):
                 provider="google",
                 model_name="gemini-2.5-flash",
                 reasoning_effort="medium",
-            )
+            ),
+            ModelOption(provider="openrouter", model_name="openai/gpt-5", reasoning_effort="low"),
+            ModelOption(
+                provider="openrouter", model_name="openai/gpt-5", reasoning_effort="medium"
+            ),
+            ModelOption(provider="openrouter", model_name="openai/gpt-5", reasoning_effort="high"),
+            ModelOption(
+                provider="openrouter",
+                model_name="openai/gpt-5-mini",
+                reasoning_effort="low",
+            ),
+            ModelOption(
+                provider="openrouter",
+                model_name="openai/gpt-5-mini",
+                reasoning_effort="medium",
+            ),
+            ModelOption(
+                provider="openrouter",
+                model_name="openai/gpt-5-mini",
+                reasoning_effort="high",
+            ),
+            ModelOption(
+                provider="openrouter",
+                model_name="anthropic/claude-sonnet-4-5",
+                reasoning_effort="medium",
+            ),
         ]
 
     @cached_property
