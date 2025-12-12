@@ -206,6 +206,9 @@ class ResultType(enum.Enum):
     DIRECT_RESULT = "DIRECT_RESULT"
     FAILURE = "FAILURE"
 
+    # Deprecated; do not use. Keeping for DB backward compatibility.
+    NEAR_MISS = "NEAR_MISS"
+
 
 class JudgeResult(BaseModel):
     class Config:

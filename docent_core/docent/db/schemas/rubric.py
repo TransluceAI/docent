@@ -39,7 +39,7 @@ TABLE_JUDGE_REFLECTION = "judge_reflections"
 
 logger = get_logger(__name__)
 
-RESULT_TYPE_ENUM = Enum(ResultType, name="result_type")
+RESULT_TYPE_ENUM = Enum(ResultType, name="resulttype")
 
 
 class SQLARubric(SQLABase):
