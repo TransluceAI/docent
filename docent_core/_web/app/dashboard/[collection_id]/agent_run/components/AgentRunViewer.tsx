@@ -5,9 +5,6 @@ import {
   FolderTree,
   ChevronRight,
   AlertCircle,
-  PanelLeft,
-  PanelRightClose,
-  PanelRightOpen,
   MessageSquarePlus,
 } from 'lucide-react';
 import {
@@ -24,10 +21,6 @@ import { TranscriptBlockContentItem } from '@/app/types/citationTypes';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   selectRunCitationsById,
-  toggleAgentRunLeftSidebar,
-  toggleAgentRunRightSidebar,
-  toggleJudgeLeftSidebar,
-  toggleJudgeRightSidebar,
   addCitationToDraft,
   setSelectedCommentId,
   setCommentSidebarCollapsed,
@@ -57,10 +50,9 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable';
 import { MessageBox, hasJsonContent } from './MessageBox';
-import { Button } from '@/components/ui/button';
 import { useGetAgentRunWithTreeQuery } from '@/app/api/collectionApi';
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Comment, useGetCommentsForAgentRunQuery } from '@/app/api/labelApi';
 import {
   CommentSidebarHeader,
@@ -87,6 +79,8 @@ interface AgentRunViewerProps {
   agentRunId: string;
   collectionId?: string;
   allConversationCitations?: CitationTarget[];
+  headerLeftActions?: React.ReactNode;
+  headerRightActions?: React.ReactNode;
 }
 
 // Controlled metadata intent (run/transcript/message) for opening dialogs
@@ -264,7 +258,13 @@ const TranscriptPath: React.FC<{
 
 const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
   (
-    { agentRunId, collectionId: collectionIdProp, allConversationCitations },
+    {
+      agentRunId,
+      collectionId: collectionIdProp,
+      allConversationCitations,
+      headerLeftActions,
+      headerRightActions,
+    },
     ref
   ) => {
     const dispatch = useAppDispatch();
@@ -276,7 +276,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     // Use prop if provided, otherwise fall back to Redux
     const collectionId = collectionIdProp ?? collectionIdFromRedux;
 
-    const { rubric_id: rubricId } = useParams<{ rubric_id: string }>();
     const searchParams = useSearchParams();
     const initialCommentId = searchParams.get('comment_id');
 
@@ -331,11 +330,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // Whether to show comments for all transcripts in the sidebar
     const [showAllTranscripts, setShowAllTranscripts] = useState(false);
-
-    // Whether the chat / label sidebar is open
-    const rightSidebarOpen = useAppSelector(
-      (state) => state.transcript?.agentRunRightSidebarOpen
-    );
 
     // Ref for boundary container (scrollNode)
     const boundaryRef = useRef<HTMLDivElement | null>(null);
@@ -396,22 +390,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // State for sidebar toggle and hover functionality
     const [sidebarVisible, setSidebarVisible] = useState(true);
-    const toggleLeftSidebar = useCallback(() => {
-      if (rubricId) {
-        dispatch(toggleJudgeLeftSidebar());
-      } else {
-        dispatch(toggleAgentRunLeftSidebar());
-      }
-    }, [dispatch, rubricId]);
-
-    const toggleRightSidebar = useCallback(() => {
-      if (rubricId) {
-        dispatch(toggleJudgeRightSidebar());
-      } else {
-        dispatch(toggleAgentRunRightSidebar());
-      }
-    }, [dispatch, rubricId]);
-
     const [sidebarHovering, setSidebarHovering] = useState(false);
 
     // Helper for sidebar-aware styling
@@ -1208,14 +1186,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             <div className="flex flex-col gap-1 agent-run-viewer">
               <div className="flex items-center justify-between space-x-1">
                 <div className="flex items-center space-x-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 cursor-default"
-                    onClick={toggleLeftSidebar}
-                  >
-                    <PanelLeft className="h-4 w-4" />
-                  </Button>
+                  {headerLeftActions}
                   <span className="font-semibold text-sm shrink-0">
                     Agent Run
                   </span>
@@ -1260,18 +1231,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                     </MetadataPopover.Root>
                   )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 cursor-default"
-                  onClick={toggleRightSidebar}
-                >
-                  {rightSidebarOpen ? (
-                    <PanelRightClose className="h-4 w-4" />
-                  ) : (
-                    <PanelRightOpen className="h-4 w-4" />
-                  )}
-                </Button>
+                {headerRightActions}
               </div>
               <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">
                 {Object.entries(agentRun.metadata).map(([key, value]) => (
@@ -1645,6 +1605,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                               scrollContainer={scrollNode}
                               scrollToCitation={focusCitationTarget}
                               activeTab={activeCommentTab}
+                              collectionId={collectionId}
+                              agentRunId={agentRunId}
                             />
                           </div>
                         )}

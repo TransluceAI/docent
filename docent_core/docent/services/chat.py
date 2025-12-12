@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.providers.preference_types import ModelOption
 from docent._log_util import get_logger
+from docent.data_models.agent_run import SelectionSpec
 from docent.data_models.chat.message import (
     AssistantMessage,
     DocentAssistantMessage,
@@ -17,7 +18,13 @@ from docent.data_models.chat.message import (
     SystemMessage,
     UserMessage,
 )
-from docent.sdk.llm_context import LLMContext, resolve_citations_with_context
+from docent.sdk.llm_context import (
+    AgentRunRef,
+    LLMContext,
+    LLMContextSpec,
+    TranscriptRef,
+    resolve_citations_with_context,
+)
 from docent_core._server._broker.redis_client import (
     STATE_KEY_FORMAT,
     STREAM_KEY_FORMAT,
@@ -29,13 +36,21 @@ from docent_core.docent.ai_tools.assistant.chat import (
     make_system_prompt,
 )
 from docent_core.docent.db.contexts import ViewContext
-from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
-from docent_core.docent.db.schemas.tables import JobStatus, SQLAAgentRun, SQLAJob
+from docent_core.docent.db.schemas.chat import ChatSession, ChatSessionSummary, SQLAChatSession
+from docent_core.docent.db.schemas.tables import (
+    JobStatus,
+    SQLAAgentRun,
+    SQLAJob,
+    SQLATranscript,
+)
 from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
-from docent_core.docent.utils.llm_context import deserialize_llm_context
+from docent_core.docent.utils.llm_context import (
+    compute_context_token_estimates,
+    load_context_objects,
+)
 
 logger = get_logger(__name__)
 
@@ -260,29 +275,198 @@ class ChatService:
         )
         return [sqla_session.to_pydantic() for sqla_session in result.scalars().all()]
 
+    async def lookup_context_item(self, item_id: str) -> AgentRunRef | TranscriptRef | None:
+        """Return item info for a transcript or agent run id, else None."""
+        agent_run = await self.session.execute(
+            select(SQLAAgentRun.collection_id).where(SQLAAgentRun.id == item_id)
+        )
+        collection_id = agent_run.scalar_one_or_none()
+        if collection_id:
+            return AgentRunRef(id=item_id, collection_id=str(collection_id))
+
+        transcript = await self.session.execute(
+            select(SQLATranscript.agent_run_id, SQLAAgentRun.collection_id)
+            .join(SQLAAgentRun, SQLAAgentRun.id == SQLATranscript.agent_run_id)
+            .where(SQLATranscript.id == item_id)
+        )
+        transcript_row = transcript.first()
+        if transcript_row:
+            transcript_agent_run_id, transcript_collection_id = transcript_row
+            return TranscriptRef(
+                id=item_id,
+                agent_run_id=str(transcript_agent_run_id),
+                collection_id=str(transcript_collection_id),
+            )
+
+        return None
+
+    async def add_context_item(self, sq_chat_session: SQLAChatSession, item_id: str) -> ChatSession:
+        if sq_chat_session.context_serialized is None:
+            raise ValueError("Cannot add context item to a session without context")
+
+        lookup = await self.lookup_context_item(item_id)
+        if lookup is None:
+            raise ValueError(f"Item {item_id} not found")
+
+        if sq_chat_session.collection_id and sq_chat_session.collection_id != lookup.collection_id:
+            raise ValueError("Item collection does not match session collection")
+
+        spec = LLMContextSpec.model_validate(sq_chat_session.context_serialized)
+
+        if lookup.type == "agent_run":
+            agent_runs = await self.mono_svc.get_agent_runs(
+                ctx=None, agent_run_ids=[item_id], apply_base_filter=False
+            )
+            if not agent_runs:
+                raise ValueError(f"Agent run {item_id} not found")
+
+            agent_run = agent_runs[0]
+            _ = spec.add_agent_run_from_object(
+                agent_run=agent_run,
+                collection_id=lookup.collection_id,
+            )
+
+        else:
+            assert isinstance(lookup, TranscriptRef)
+            _ = spec.add_transcript(
+                id=item_id,
+                agent_run_id=lookup.agent_run_id,
+                collection_id=lookup.collection_id,
+                is_root=True,
+            )
+
+        sq_chat_session.context_serialized = spec.to_dict()
+        return sq_chat_session.to_pydantic()
+
+    async def remove_context_item(
+        self, sq_chat_session: SQLAChatSession, item_id: str
+    ) -> ChatSession:
+        if sq_chat_session.context_serialized is None:
+            raise ValueError("Cannot remove context item from a session without context")
+
+        spec = LLMContextSpec.model_validate(sq_chat_session.context_serialized)
+
+        target_alias: str | None = None
+        for alias, ref in spec.items.items():
+            if ref.id == item_id and alias in spec.root_items:
+                target_alias = alias
+                break
+
+        if target_alias is None:
+            raise ValueError(f"Item {item_id} not in context")
+
+        spec.remove_from_root(target_alias)
+        sq_chat_session.context_serialized = spec.to_dict()
+        return sq_chat_session.to_pydantic()
+
+    async def update_context_item(
+        self,
+        sq_chat_session: SQLAChatSession,
+        agent_run_id: str,
+        selection_spec: SelectionSpec | None,
+        visible: bool | None,
+    ) -> ChatSession:
+        if sq_chat_session.context_serialized is None:
+            raise ValueError("Cannot update context without context_serialized")
+
+        spec = LLMContextSpec.model_validate(sq_chat_session.context_serialized)
+
+        target_alias: str | None = None
+        for alias, ref in spec.items.items():
+            if ref.id == agent_run_id:
+                target_alias = alias
+                break
+
+        if target_alias is None:
+            raise ValueError(f"Item {agent_run_id} not in context")
+
+        if selection_spec is not None:
+            spec.set_selection_spec(target_alias, selection_spec)
+
+        if visible is not None:
+            if target_alias not in spec.root_items:
+                raise ValueError("Visibility toggle only applies to root items")
+            spec.set_visibility(target_alias, visible)
+
+        sq_chat_session.context_serialized = spec.to_dict()
+        return sq_chat_session.to_pydantic()
+
+    async def get_conversations_for_collection(
+        self, user_id: str, collection_id: str
+    ) -> list[ChatSession]:
+        result = await self.session.execute(
+            select(SQLAChatSession)
+            .where(SQLAChatSession.user_id == user_id)
+            .where(SQLAChatSession.collection_id == collection_id)
+            .where(SQLAChatSession.context_serialized.is_not(None))
+            .order_by(SQLAChatSession.updated_at.desc())
+        )
+        return [sqla_session.to_pydantic() for sqla_session in result.scalars().all()]
+
+    async def get_conversation_summaries_for_collection(
+        self, user_id: str, collection_id: str
+    ) -> list[ChatSessionSummary]:
+        result = await self.session.execute(
+            select(SQLAChatSession)
+            .where(SQLAChatSession.user_id == user_id)
+            .where(SQLAChatSession.collection_id == collection_id)
+            .where(SQLAChatSession.context_serialized.is_not(None))
+            .order_by(SQLAChatSession.updated_at.desc())
+        )
+        return [sqla_session.to_summary() for sqla_session in result.scalars().all()]
+
+    async def create_conversation_session(
+        self,
+        user_id: str,
+        context_serialized: dict[str, Any],
+        chat_model: ModelOption | None = None,
+        collection_id: str | None = None,
+    ) -> SQLAChatSession:
+        if chat_model is None:
+            chat_model = PROVIDER_PREFERENCES.default_chat_models[0]
+        sqla_session = SQLAChatSession(
+            id=str(uuid4()),
+            user_id=user_id,
+            collection_id=collection_id,
+            agent_run_id=None,
+            judge_result_id=None,
+            context_serialized=context_serialized,
+            messages=[],
+            chat_model=chat_model.model_dump() if chat_model else None,
+        )
+        self.session.add(sqla_session)
+        await self.session.flush()
+        return sqla_session
+
+    async def delete_session(self, sqla_session: SQLAChatSession) -> None:
+        await self.session.delete(sqla_session)
+
     async def get_current_state(
         self, ctx: ViewContext | None, sqla_session: SQLAChatSession
     ) -> ChatSession:
         """Return the current state of the chat session as a pydantic model.
 
         For "chat with anything" sessions (context_serialized != None), citations are already
-        parsed and stored in the database.
+        parsed and stored in the database. Token estimates are computed for visible items.
         For existing single-run chats (context_serialized == None), citations need to be parsed.
         """
         session = sqla_session.to_pydantic()
 
-        if (
-            session.context_serialized is None
-            and session.agent_run_id is not None
-            and ctx is not None
-        ):
+        # Handle multi-run sessions with context_serialized
+        # PERF: This loads items and computes estimates on every call.
+        if session.context_serialized is not None:
+            session = await self._compute_multi_run_token_estimates(sqla_session, session)
+            return session
+
+        # Handle single-run sessions
+        if session.agent_run_id is not None and ctx is not None:
             session = await self._parse_citations_in_session(ctx, session)
 
         if session.estimated_input_tokens is not None or sqla_session.agent_run_id is None:
             return session
 
         # If we have a run but no token usage data, estimate token count
-        # (only for single-run sessions with a view context)
+        # (only for single-run sessions)
         if ctx is None:
             return session
 
@@ -294,6 +478,48 @@ class ChatService:
 
         # Add estimated tokens to response
         return session.model_copy(update={"estimated_input_tokens": estimated_tokens})
+
+    async def _compute_multi_run_token_estimates(
+        self, sqla_session: SQLAChatSession, session: ChatSession
+    ) -> ChatSession:
+        """Compute token estimates for multi-run chat sessions.
+
+        PERF: This loads context items and computes estimates on every call.
+        """
+        try:
+            spec = LLMContextSpec.model_validate(sqla_session.context_serialized)  # type: ignore
+            context = await load_context_objects(spec, self.mono_svc)
+
+            # Compute per-item estimates
+            item_estimates = compute_context_token_estimates(context)
+
+            # Sum visible items for total context estimate
+            visible_context_tokens = sum(
+                item_estimates.get(alias, 0)
+                for alias in context.root_items
+                if context.item_visibility.get(alias, True)
+            )
+
+            # Compute total estimate using ground truth anchor if available
+            if sqla_session.estimated_messages_tokens is not None:
+                # We have ground truth from a previous API call
+                # estimated_messages_tokens = ground_truth - context_estimate_at_call_time
+                # So total = base + current_visible_context
+                total_estimate = sqla_session.estimated_messages_tokens + visible_context_tokens
+            else:
+                # No API call yet, estimate is just the visible context
+                # (system prompt overhead is relatively small, we ignore it here)
+                total_estimate = visible_context_tokens
+
+            return session.model_copy(
+                update={
+                    "estimated_input_tokens": total_estimate,
+                    "item_token_estimates": item_estimates,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to compute token estimates for session {sqla_session.id}: {e}")
+            return session
 
     async def _parse_citations_in_session(
         self, ctx: ViewContext, session: ChatSession
@@ -449,7 +675,8 @@ class ChatService:
         """
         # Multi-object session with LLMContext
         if sqla_session.context_serialized is not None:
-            context = await deserialize_llm_context(sqla_session.context_serialized, self.mono_svc)
+            spec = LLMContextSpec.model_validate(sqla_session.context_serialized)
+            context = await load_context_objects(spec, self.mono_svc)
             system_prompt = context.get_system_message()
             context_messages = [
                 SystemMessage(content=system_prompt),
@@ -628,6 +855,23 @@ class ChatService:
                 if total_tokens > 0:
                     sqla_session.estimated_input_tokens = total_tokens
 
+                    # For multi-run sessions, compute estimated_messages_tokens
+                    # This anchors future estimates when visibility changes.
+                    # base = ground_truth - context_estimate_at_call_time
+                    if sqla_session.context_serialized is not None:
+                        try:
+                            item_estimates = compute_context_token_estimates(context)
+                            visible_context_tokens = sum(
+                                item_estimates.get(alias, 0)
+                                for alias in context.root_items
+                                if context.item_visibility.get(alias, True)
+                            )
+                            sqla_session.estimated_messages_tokens = (
+                                total_tokens - visible_context_tokens
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to compute estimated_messages_tokens: {e}")
+
             # 3) If the last message is an assistant message with tool calls, execute the tool calls
             elif last_message.role == "assistant" and last_message.tool_calls:
                 # Removing the agent writing labels feature for now
@@ -677,7 +921,9 @@ async def cleanup_old_chat_sessions(session: AsyncSession, days_old: int = 7) ->
     cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days_old)
 
     result = await session.execute(
-        delete(SQLAChatSession).where(SQLAChatSession.updated_at < cutoff_date)
+        delete(SQLAChatSession).where(
+            SQLAChatSession.updated_at < cutoff_date, SQLAChatSession.context_serialized.is_(None)
+        )
     )
     # Ensure the deletion is persisted
     await session.commit()

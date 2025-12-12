@@ -294,31 +294,63 @@ class SelectionSpec(BaseModel):
             }
         )
 
+    def is_default(self) -> bool:
+        """Return True if all nodes have default settings (show everything)."""
+        return all(
+            node.render_children_default is True
+            and len(node.render_children_overrides) == 0
+            and node.render_self_metadata is True
+            for node in self.nodes.values()
+        )
+
 
 class AgentRunView:
     def __init__(
         self,
         agent_run: AgentRun,
-        agent_run_tree: AgentRunTree,
-        selection_spec: SelectionSpec,
+        selection_spec: SelectionSpec | None = None,
         comments: list[Comment] | None = None,
     ):
-        self._ar = agent_run
-        self._ar_tree = agent_run_tree
-        self._spec = selection_spec
+        self.agent_run = agent_run
+        self._cached_tree: AgentRunTree | None = None
+        if selection_spec is None:
+            self.selection_spec = SelectionSpec.from_agent_run_tree(self.tree)
+        else:
+            self.selection_spec = selection_spec
+        self.comments = comments or []
+
+    @property
+    def tree(self) -> AgentRunTree:
+        if self._cached_tree is None:
+            self._cached_tree = AgentRunTree.from_agent_run(self.agent_run)
+        return self._cached_tree
 
     @classmethod
     def from_agent_run(
         cls, agent_run: AgentRun, comments: list[Comment] | None = None
     ) -> AgentRunView:
-        ar_tree = AgentRunTree.from_agent_run(agent_run)
-        spec = SelectionSpec.from_agent_run_tree(ar_tree)
-        return cls(
-            agent_run=agent_run,
-            agent_run_tree=ar_tree,
-            selection_spec=spec,
-            comments=comments,
-        )
+        return cls(agent_run=agent_run, comments=comments)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the view for storage. Omits selection_spec if it's default."""
+        return {
+            "agent_run_id": self.agent_run.id,
+            "selection_spec": (
+                None
+                if self.selection_spec.is_default()
+                else self.selection_spec.model_dump(mode="json")
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], agent_run: AgentRun) -> AgentRunView:
+        """Reconstruct a view from serialized data and an AgentRun."""
+        spec_data = data.get("selection_spec")
+        if spec_data is None:
+            return cls(agent_run=agent_run)
+        else:
+            selection_spec = SelectionSpec.model_validate(spec_data)
+            return cls(agent_run=agent_run, selection_spec=selection_spec)
 
     #######################
     # Core text rendering #
@@ -331,11 +363,11 @@ class AgentRunView:
         indent: int = 0,
         full_tree: bool = False,
     ):
-        ar_tree_nodes = self._ar_tree.nodes if full_tree else self._ar_tree.nodes_pruned
+        ar_tree_nodes = self.tree.nodes if full_tree else self.tree.nodes_pruned
         if t_idx_map is None:
-            t_idx_map = self._ar_tree.transcript_id_to_idx
-        t_dict = self._ar.transcript_dict
-        tg_dict = self._ar.transcript_group_dict
+            t_idx_map = self.tree.transcript_id_to_idx
+        t_dict = self.agent_run.transcript_dict
+        tg_dict = self.agent_run.transcript_group_dict
 
         # Traverse the tree and render the string
         def _recurse(u_id: str) -> str:
@@ -368,7 +400,7 @@ class AgentRunView:
 
             # No wrapper for global root
             if u_id == GLOBAL_ROOT_ID:
-                return self._ar.to_text(
+                return self.agent_run.to_text(
                     children_text,
                     agent_run_alias=agent_run_alias,
                     indent=indent,
@@ -392,7 +424,7 @@ class AgentRunView:
     def should_render_child(self, parent_id: str, child_id: str) -> bool:
         """Determine if a child should be rendered based on parent's render settings."""
         # Default to rendering if no spec
-        if (parent_spec := self._spec.nodes.get(parent_id)) is None:
+        if (parent_spec := self.selection_spec.nodes.get(parent_id)) is None:
             return True
 
         # Default include: render all except those in overrides
@@ -405,7 +437,7 @@ class AgentRunView:
     def should_render_metadata(self, node_id: str) -> bool:
         """Determine if a node's metadata should be rendered."""
         # Default to rendering if no spec
-        if (node_spec := self._spec.nodes.get(node_id)) is None:
+        if (node_spec := self.selection_spec.nodes.get(node_id)) is None:
             return True
         return node_spec.render_self_metadata
 
@@ -423,7 +455,7 @@ class AgentRunView:
             node_id: The ID of the node to modify.
             selected: Whether the node's metadata should be rendered.
         """
-        if (spec := self._spec.nodes.get(node_id)) is not None:
+        if (spec := self.selection_spec.nodes.get(node_id)) is not None:
             spec.render_self_metadata = selected
             if selected:
                 self._ensure_path_to_root_selected(node_id)
@@ -451,9 +483,9 @@ class AgentRunView:
 
     def _set_children_selected_recursive(self, node_id: str, selected: bool) -> None:
         """Recursively set children selection state for a node and all its descendants."""
-        if (node := self._ar_tree.nodes.get(node_id)) is None:
+        if (node := self.tree.nodes.get(node_id)) is None:
             return
-        if (spec := self._spec.nodes.get(node_id)) is None:
+        if (spec := self.selection_spec.nodes.get(node_id)) is None:
             return
 
         spec.render_children_default = selected
@@ -467,11 +499,11 @@ class AgentRunView:
         # The root node has no parent
         if node_id == GLOBAL_ROOT_ID:
             return None
-        return self._ar_tree.parent_map.get(node_id)
+        return self.tree.parent_map.get(node_id)
 
     def _set_parent_renders_child(self, parent_id: str, child_id: str, renders: bool) -> None:
         """Update parent's overrides so that it renders (or doesn't render) the child."""
-        if (parent_spec := self._spec.nodes.get(parent_id)) is None:
+        if (parent_spec := self.selection_spec.nodes.get(parent_id)) is None:
             return
         if renders == parent_spec.render_children_default:
             parent_spec.render_children_overrides.discard(child_id)

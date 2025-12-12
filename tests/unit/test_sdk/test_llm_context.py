@@ -15,7 +15,9 @@ from docent.data_models.transcript import Transcript
 from docent.sdk.llm_context import _build_whitespace_flexible_regex  # type: ignore
 from docent.sdk.llm_context import _find_pattern_in_text  # type: ignore
 from docent.sdk.llm_context import (
+    AgentRunRef,
     LLMContext,
+    TranscriptRef,
     resolve_citations_with_context,
 )
 
@@ -107,9 +109,12 @@ def test_add_multiple_transcripts(sample_transcript: Transcript) -> None:
     context.add(sample_transcript)
     context.add(transcript2)
 
-    assert len(context.transcript_aliases) == 2
-    assert context.transcript_aliases[0] == sample_transcript
-    assert context.transcript_aliases[1] == transcript2
+    t0_ref = context.spec.items["T0"]
+    assert isinstance(t0_ref, TranscriptRef)
+    assert context.transcripts[t0_ref.id] == sample_transcript
+    t1_ref = context.spec.items["T1"]
+    assert isinstance(t1_ref, TranscriptRef)
+    assert context.transcripts[t1_ref.id] == transcript2
     assert context.root_items == ["T0", "T1"]
 
 
@@ -119,15 +124,15 @@ def test_add_agent_run(sample_agent_run: AgentRun, sample_transcript: Transcript
     context = LLMContext()
     context.add(sample_agent_run)
 
-    # Agent run should get R0 alias
-    assert len(context.agent_run_aliases) == 1
-    assert context.agent_run_aliases[0] == sample_agent_run
-    assert context.get_item_by_alias("R0") == sample_agent_run
+    assert context.build_agent_run_view("R0").agent_run == sample_agent_run
+    r0_ref = context.spec.items["R0"]
+    assert isinstance(r0_ref, AgentRunRef)
+    assert context.agent_runs[r0_ref.id] == sample_agent_run
 
     # Nested transcript should also get T0 alias
-    assert len(context.transcript_aliases) == 1
-    assert context.transcript_aliases[0] == sample_transcript
-    assert context.get_item_by_alias("T0") == sample_transcript
+    t0_ref = context.spec.items["T0"]
+    assert isinstance(t0_ref, TranscriptRef)
+    assert context.transcripts[t0_ref.id] == sample_transcript
 
     # Only agent run should be in root_items
     assert context.root_items == ["R0"]
@@ -250,15 +255,21 @@ def test_resolve_citations_with_text_range(sample_agent_run: AgentRun) -> None:
 def test_to_dict_agent_run(sample_agent_run: AgentRun) -> None:
     """Test serialization of context with agent run."""
     context = LLMContext()
-    context.add(sample_agent_run)
+    context.add(sample_agent_run, collection_id="collection-123")
 
     serialized = context.to_dict()
 
+    assert serialized["version"] == "3"
     assert serialized["root_items"] == ["R0"]
-    assert serialized["agent_run_aliases"] == {"0": "agent-run-456"}
-    assert serialized["transcript_aliases"] == {"0": "transcript-123"}
-    assert "agent-run-456" not in serialized["formatted_data"]  # Not formatted
-    assert serialized["transcript_to_agent_run"]["transcript-123"] == "agent-run-456"
+    assert serialized["items"]["R0"]["type"] == "agent_run"
+    assert serialized["items"]["R0"]["id"] == "agent-run-456"
+    assert serialized["items"]["R0"]["collection_id"] == "collection-123"
+    assert serialized["items"]["T0"]["type"] == "transcript"
+    assert serialized["items"]["T0"]["id"] == "transcript-123"
+    assert serialized["items"]["T0"]["agent_run_id"] == "agent-run-456"
+    assert serialized["items"]["T0"]["collection_id"] == "collection-123"
+    assert serialized["inline_data"] == {}
+    assert serialized["visibility"] == {}
 
 
 @pytest.mark.unit

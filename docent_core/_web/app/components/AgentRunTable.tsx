@@ -67,6 +67,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from './Combobox';
 import { TableContainer } from './TableContainer';
 import { isDateString, formatDateValue } from '@/lib/dateUtils';
+import UuidPill from '@/components/UuidPill';
 import {
   exportTabularData,
   type DelimitedFormat,
@@ -573,10 +574,7 @@ export const AgentRunTable = memo(function AgentRunTable({
       ),
       cell: ({ row }) => {
         const runId = row.original.agentRunId;
-        const shortUuid = runId.split('-')[0];
-        return (
-          <span className="font-mono text-xs text-primary">{shortUuid}</span>
-        );
+        return <UuidPill uuid={runId} stopPropagation={true} />;
       },
       size: 160,
       maxSize: 300,

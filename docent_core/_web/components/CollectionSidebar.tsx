@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   Scale,
   ListChecks,
+  MessagesSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -63,6 +64,11 @@ export function CollectionSidebar() {
       title: 'Label Sets',
       url: `/dashboard/${collectionId}/labels`,
       icon: Tags,
+    },
+    {
+      title: 'Chats',
+      url: `/dashboard/${collectionId}/chat`,
+      icon: MessagesSquare,
     },
     {
       title: 'Jobs',

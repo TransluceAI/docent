@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Settings,
   MessageCircle,
+  MessagesSquare,
   Tags,
   Layers,
   type LucideIcon,
@@ -38,10 +39,12 @@ const Breadcrumbs: React.FC = () => {
     collection_id: collectionId,
     agent_run_id: agentRunId,
     job_id: jobId,
+    session_id: sessionId,
   }: {
     collection_id?: string;
     agent_run_id?: string;
     job_id?: string;
+    session_id?: string;
   } = allParams;
 
   const pathname = usePathname();
@@ -66,6 +69,9 @@ const Breadcrumbs: React.FC = () => {
     jobs: {
       title: `Job`,
     },
+    chat: {
+      title: 'Chat',
+    },
   };
 
   const pageCrumbs: Record<string, Crumb> = {
@@ -86,6 +92,11 @@ const Breadcrumbs: React.FC = () => {
       title: 'Jobs',
       icon: Layers,
     },
+    chat: {
+      title: 'Chats',
+      icon: MessagesSquare,
+      url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}/chat`,
+    },
     settings: {
       title: 'Settings',
       icon: Settings,
@@ -103,6 +114,10 @@ const Breadcrumbs: React.FC = () => {
     // Handle plural to singular conversion for jobs -> job_id
     if (param === 'jobs') {
       resolvedParam = 'job';
+    }
+    // Handle chats -> session_id
+    if (param === 'chat') {
+      resolvedParam = 'session';
     }
 
     const slugLookup = resolvedParam.toLowerCase() + '_id';

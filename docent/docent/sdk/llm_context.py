@@ -2,9 +2,11 @@ import json
 import re
 import sys
 import textwrap
-from typing import Any
+from typing import Any, Literal
 
-from docent.data_models.agent_run import AgentRun, AgentRunTree, AgentRunView
+from pydantic import BaseModel, Field
+
+from docent.data_models.agent_run import AgentRun, AgentRunTree, AgentRunView, SelectionSpec
 from docent.data_models.citation import (
     AgentRunMetadataItem,
     CitationTarget,
@@ -23,6 +25,23 @@ RANGE_END = "</RANGE>"
 
 LLMContextItem = AgentRun | Transcript
 
+
+class AgentRunRef(BaseModel):
+    type: Literal["agent_run"] = "agent_run"
+    id: str
+    collection_id: str
+    selection_spec: SelectionSpec | None = None
+
+
+class TranscriptRef(BaseModel):
+    type: Literal["transcript"] = "transcript"
+    id: str
+    agent_run_id: str
+    collection_id: str
+
+
+ContextItemRef = AgentRunRef | TranscriptRef
+
 _SINGLE_RE = re.compile(r"T(\d+)B(\d+)")
 _AGENT_RUN_METADATA_RE = re.compile(r"^R(\d+)M\.([^:]+)$")  # [R0M.key]
 _TRANSCRIPT_METADATA_RE = re.compile(r"^T(\d+)M\.([^:]+)$")  # [T0M.key]
@@ -30,124 +49,351 @@ _MESSAGE_METADATA_RE = re.compile(r"^T(\d+)B(\d+)M\.([^:]+)$")  # [T0B1M.key]
 _RANGE_CONTENT_RE = re.compile(r":\s*" + re.escape(RANGE_BEGIN) + r".*?" + re.escape(RANGE_END))
 
 
+class LLMContextSpec(BaseModel):
+    version: Literal["3"] = "3"
+    root_items: list[str] = Field(default_factory=list)
+    items: dict[str, ContextItemRef] = Field(default_factory=dict)
+    inline_data: dict[str, Any] = Field(default_factory=dict)
+    visibility: dict[str, bool] = Field(default_factory=dict)
+
+    def _next_alias(self, prefix: Literal["R", "T"]) -> str:
+        used: set[int] = set()
+        for alias in self.items.keys():
+            if not alias.startswith(prefix):
+                continue
+            suffix = alias[1:]
+            if suffix.isdigit():
+                used.add(int(suffix))
+
+        idx = 0
+        while idx in used:
+            idx += 1
+        return f"{prefix}{idx}"
+
+    def set_visibility(self, alias: str, visible: bool) -> None:
+        if alias not in self.items:
+            raise ValueError(f"Unknown alias: {alias}")
+        if visible:
+            self.visibility.pop(alias, None)
+        else:
+            self.visibility[alias] = False
+
+    def remove_from_root(self, alias: str) -> None:
+        if alias not in self.root_items:
+            raise ValueError(f"Alias not in root_items: {alias}")
+        self.root_items = [a for a in self.root_items if a != alias]
+        self.visibility.pop(alias, None)
+
+    def _add_agent_run(
+        self,
+        *,
+        id: str,
+        collection_id: str,
+        selection_spec: SelectionSpec | None = None,
+    ) -> str:
+        for alias, ref in self.items.items():
+            if isinstance(ref, AgentRunRef) and ref.id == id:
+                if alias not in self.root_items:
+                    self.root_items.append(alias)
+                if collection_id and ref.collection_id != collection_id:
+                    ref.collection_id = collection_id
+                if selection_spec is not None:
+                    ref.selection_spec = selection_spec
+                return alias
+
+        alias = self._next_alias("R")
+        self.items[alias] = AgentRunRef(
+            id=id,
+            collection_id=collection_id,
+            selection_spec=selection_spec,
+        )
+        self.root_items.append(alias)
+        return alias
+
+    def add_transcript(
+        self,
+        *,
+        id: str,
+        agent_run_id: str,
+        collection_id: str,
+        is_root: bool = False,
+    ) -> str:
+        for alias, ref in self.items.items():
+            if isinstance(ref, TranscriptRef) and ref.id == id:
+                if is_root and alias not in self.root_items:
+                    self.root_items.append(alias)
+                if agent_run_id and ref.agent_run_id != agent_run_id:
+                    ref.agent_run_id = agent_run_id
+                if collection_id and ref.collection_id != collection_id:
+                    ref.collection_id = collection_id
+                return alias
+
+        alias = self._next_alias("T")
+        self.items[alias] = TranscriptRef(
+            id=id,
+            agent_run_id=agent_run_id,
+            collection_id=collection_id,
+        )
+        if is_root:
+            self.root_items.append(alias)
+        return alias
+
+    def add_agent_run_from_object(
+        self,
+        agent_run: AgentRun,
+        collection_id: str,
+        selection_spec: SelectionSpec | None = None,
+    ) -> str:
+        alias = self._add_agent_run(
+            id=agent_run.id,
+            collection_id=collection_id,
+            selection_spec=selection_spec,
+        )
+
+        tree = AgentRunTree.from_agent_run(agent_run)
+        t_ids_ordered = sorted(
+            tree.transcript_id_to_idx.keys(),
+            key=lambda t_id: tree.transcript_id_to_idx[t_id],
+        )
+        for t_id in t_ids_ordered:
+            transcript = agent_run.transcript_dict[t_id]
+            self.add_transcript(
+                id=transcript.id,
+                agent_run_id=agent_run.id,
+                collection_id=collection_id,
+                is_root=False,
+            )
+        return alias
+
+    def set_selection_spec(self, alias: str, spec: SelectionSpec | None) -> None:
+        ref = self.items.get(alias)
+        if ref is None:
+            raise ValueError(f"Unknown alias: {alias}")
+        if not isinstance(ref, AgentRunRef):
+            raise ValueError(f"Alias is not an agent run: {alias}")
+        ref.selection_spec = spec
+
+    def set_inline_data(self, item_id: str, data: dict[str, Any] | None) -> None:
+        if data is None:
+            self.inline_data.pop(item_id, None)
+            return
+        self.inline_data[item_id] = data
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+    def resolve_item_alias(self, item_alias: str) -> ResolvedCitationItemUnion:
+        # 1) T0B0M.key
+        m = _MESSAGE_METADATA_RE.match(item_alias)
+        if m:
+            transcript_idx = int(m.group(1))
+            block_idx = int(m.group(2))
+            metadata_key = m.group(3)
+            if "." in metadata_key:
+                raise ValueError(f"Nested keys are not allowed: {item_alias}")
+
+            t_alias = f"T{transcript_idx}"
+            ref = self.items.get(t_alias)
+            if ref is None or not isinstance(ref, TranscriptRef):
+                raise ValueError(f"Unknown transcript alias: {t_alias}")
+
+            return TranscriptBlockMetadataItem(
+                agent_run_id=ref.agent_run_id,
+                collection_id=ref.collection_id,
+                transcript_id=ref.id,
+                block_idx=block_idx,
+                metadata_key=metadata_key,
+            )
+
+        # 2) T0M.key
+        m = _TRANSCRIPT_METADATA_RE.match(item_alias)
+        if m:
+            transcript_idx = int(m.group(1))
+            metadata_key = m.group(2)
+            if "." in metadata_key:
+                raise ValueError(f"Nested keys are not allowed: {item_alias}")
+
+            t_alias = f"T{transcript_idx}"
+            ref = self.items.get(t_alias)
+            if ref is None or not isinstance(ref, TranscriptRef):
+                raise ValueError(f"Unknown transcript alias: {t_alias}")
+
+            return TranscriptMetadataItem(
+                agent_run_id=ref.agent_run_id,
+                collection_id=ref.collection_id,
+                transcript_id=ref.id,
+                metadata_key=metadata_key,
+            )
+
+        # 3) R0M.key
+        m = _AGENT_RUN_METADATA_RE.match(item_alias)
+        if m:
+            agent_run_idx = int(m.group(1))
+            metadata_key = m.group(2)
+            if "." in metadata_key:
+                raise ValueError(f"Nested keys are not allowed: {item_alias}")
+
+            r_alias = f"R{agent_run_idx}"
+            ref = self.items.get(r_alias)
+            if ref is None or not isinstance(ref, AgentRunRef):
+                raise ValueError(f"Unknown agent run alias: {r_alias}")
+
+            return AgentRunMetadataItem(
+                agent_run_id=ref.id,
+                collection_id=ref.collection_id,
+                metadata_key=metadata_key,
+            )
+
+        # 4) T0B0
+        m = _SINGLE_RE.match(item_alias)
+        if m:
+            transcript_idx = int(m.group(1))
+            block_idx = int(m.group(2))
+
+            t_alias = f"T{transcript_idx}"
+            ref = self.items.get(t_alias)
+            if ref is None or not isinstance(ref, TranscriptRef):
+                raise ValueError(f"Unknown transcript alias: {t_alias}")
+
+            return TranscriptBlockContentItem(
+                agent_run_id=ref.agent_run_id,
+                collection_id=ref.collection_id,
+                transcript_id=ref.id,
+                block_idx=block_idx,
+            )
+
+        raise ValueError(f"Unknown item alias: {item_alias}")
+
+
 class LLMContext:
-    """Manages a collection of objects (agent runs, transcripts) for LLM consumption.
-
-    This class provides:
-    - Assignment of local IDs (T0, T1, R0, etc.) for citations
-    - Serialization for database storage
-    - Conversion to LLM-ready string format
-    - Citation resolution mapping local IDs back to database UUIDs
-
-    Example usage:
-        context = LLMContext()
-        context.add(agent_run1)
-        context.add(agent_run2)
-
-        # Get string representation for LLM
-        llm_input = context.to_str()
-
-        # Get system message with citation instructions
-        system_msg = context.get_system_message()
-
-        # Serialize for database storage
-        serialized = context.to_dict()
-    """
-
-    def __init__(self, items: list[LLMContextItem] | None = None):
-        self.root_items: list[str] = []
-
-        self.transcript_aliases: dict[int, Transcript] = {}
-        self.agent_run_aliases: dict[int, AgentRun] = {}
-
-        self.agent_run_collection_ids: dict[str, str] = {}  # agent_run_id -> collection_id
-        self.transcript_to_agent_run: dict[str, str] = {}  # transcript_id -> agent_run_id
+    def __init__(
+        self,
+        items: list[LLMContextItem] | None = None,
+        *,
+        spec: LLMContextSpec | None = None,
+    ):
+        self.spec = spec or LLMContextSpec()
+        self.agent_runs: dict[str, AgentRun] = {}
+        self.transcripts: dict[str, Transcript] = {}
 
         if items is not None:
             for item in items:
                 self.add(item)
 
-    def add(self, item: LLMContextItem) -> None:
-        """Add an object to the context.
+    @classmethod
+    def from_spec(
+        cls,
+        spec: LLMContextSpec,
+        *,
+        agent_runs: dict[str, AgentRun],
+        transcripts: dict[str, Transcript],
+    ) -> "LLMContext":
+        spec_copy = spec.model_copy(deep=True)
+        kept_items: dict[str, ContextItemRef] = {}
+        for alias, ref in spec_copy.items.items():
+            if isinstance(ref, AgentRunRef):
+                if ref.id in agent_runs:
+                    kept_items[alias] = ref
+            else:
+                if ref.id in transcripts:
+                    kept_items[alias] = ref
+        spec_copy.items = kept_items
+        spec_copy.root_items = [alias for alias in spec_copy.root_items if alias in kept_items]
+        spec_copy.visibility = {
+            alias: v for alias, v in spec_copy.visibility.items() if alias in spec_copy.root_items
+        }
 
-        Accepts AgentRun, Transcript, FormattedAgentRun, or FormattedTranscript.
-        """
-        alias = self._create_alias(item)
+        context = cls(spec=spec_copy)
+        context.agent_runs = dict(agent_runs)
+        context.transcripts = dict(transcripts)
+        return context
 
+    @property
+    def root_items(self) -> list[str]:
+        return self.spec.root_items
+
+    @property
+    def item_visibility(self) -> dict[str, bool]:
+        return self.spec.visibility
+
+    def build_agent_run_view(self, alias: str) -> AgentRunView:
+        ref = self.spec.items.get(alias)
+        if ref is None:
+            raise ValueError(f"Unknown alias: {alias}")
+        if not isinstance(ref, AgentRunRef):
+            raise ValueError(f"Alias is not an agent run: {alias}")
+
+        agent_run = self.agent_runs.get(ref.id)
+        if agent_run is None:
+            raise ValueError(f"Agent run {ref.id} not loaded")
+        return AgentRunView(agent_run=agent_run, selection_spec=ref.selection_spec)
+
+    def add(self, item: LLMContextItem, *, collection_id: str = "") -> str:
         if isinstance(item, AgentRun):
-            # Assign aliases in canonical tree order
-            ar_tree = AgentRunTree.from_agent_run(item)
-            t_ids_ordered = sorted(
-                ar_tree.transcript_id_to_idx.keys(),
-                key=lambda t_id: ar_tree.transcript_id_to_idx[t_id],
+            agent_run = item
+            alias = self.spec.add_agent_run_from_object(
+                agent_run=agent_run,
+                collection_id=collection_id,
+                selection_spec=None,
             )
-            for t_id in t_ids_ordered:
-                transcript = item.transcript_dict[t_id]
-                self._create_alias(transcript)
-                self.transcript_to_agent_run[t_id] = item.id
+            self.agent_runs[agent_run.id] = agent_run
 
-        self.root_items.append(alias)
+            if isinstance(agent_run, FormattedAgentRun):
+                self.spec.set_inline_data(agent_run.id, agent_run.model_dump(mode="json"))
 
-    def _create_alias(self, item: LLMContextItem) -> str:
-        if isinstance(item, AgentRun):
-            idx = len(self.agent_run_aliases)
-            alias = "R" + str(idx)
-            self.agent_run_aliases[idx] = item
+            for transcript in agent_run.transcripts:
+                self.transcripts[transcript.id] = transcript
+
+            return alias
         elif isinstance(item, Transcript):  # type: ignore
-            idx = len(self.transcript_aliases)
-            alias = "T" + str(idx)
-            self.transcript_aliases[idx] = item
+            transcript = item
+            agent_run_id = ""
+            for ref in self.spec.items.values():
+                if isinstance(ref, TranscriptRef) and ref.id == transcript.id:
+                    agent_run_id = ref.agent_run_id
+                    if ref.collection_id:
+                        collection_id = ref.collection_id
+                    break
+            alias = self.spec.add_transcript(
+                id=transcript.id,
+                agent_run_id=agent_run_id,
+                collection_id=collection_id,
+                is_root=True,
+            )
+            self.transcripts[transcript.id] = transcript
+            if isinstance(transcript, FormattedTranscript):
+                self.spec.set_inline_data(transcript.id, transcript.model_dump(mode="json"))
+            return alias
         else:
             raise ValueError(f"Unknown item type: {type(item)}")
-        return alias
-
-    def get_item_by_alias(self, alias: str) -> LLMContextItem:
-        if not alias:
-            raise ValueError("Alias cannot be empty")
-
-        prefix = alias[0]
-        try:
-            idx = int(alias[1:])
-        except ValueError as exc:
-            raise ValueError(f"Invalid alias format: {alias}") from exc
-
-        if prefix == "R":
-            if idx not in self.agent_run_aliases:
-                raise ValueError(f"Unknown agent run alias: {alias}")
-            return self.agent_run_aliases[idx]
-
-        if prefix == "T":
-            if idx not in self.transcript_aliases:
-                raise ValueError(f"Unknown transcript alias: {alias}")
-            return self.transcript_aliases[idx]
-
-        raise ValueError(f"Unknown alias type: {alias}")
 
     def to_str(self, token_limit: int = sys.maxsize) -> str:
-        """Format all objects for LLM consumption with proper headers.
-
-        Args:
-            token_limit: Maximum tokens for the output (default: no limit)
-
-        Returns:
-            Formatted string with all objects and their local IDs
-        """
         sections: list[str] = []
 
-        for alias in self.root_items:
-            item = self.get_item_by_alias(alias)
-            # Render each transcript with its global index
-            if isinstance(item, Transcript):
-                transcript_text = item.to_text(transcript_alias=alias)
-                sections.append(transcript_text)
-            elif isinstance(item, AgentRun):  # type: ignore
-                id_to_idx_map = {t.id: i for i, t in self.transcript_aliases.items()}
-                agent_run_text = AgentRunView.from_agent_run(item).to_text(
-                    agent_run_alias=alias, t_idx_map=id_to_idx_map
-                )
-                sections.append(agent_run_text)
-            else:
-                raise ValueError(f"Unknown item type: {type(item)}")
+        id_to_idx_map = {
+            ref.id: int(alias[1:])
+            for alias, ref in self.spec.items.items()
+            if isinstance(ref, TranscriptRef) and alias.startswith("T") and alias[1:].isdigit()
+        }
+
+        for alias in self.spec.root_items:
+            if self.spec.visibility.get(alias) is False:
+                continue
+
+            ref = self.spec.items.get(alias)
+            if ref is None:
+                raise ValueError(f"Unknown alias: {alias}")
+
+            if isinstance(ref, TranscriptRef):
+                transcript = self.transcripts.get(ref.id)
+                if transcript is None:
+                    raise ValueError(f"Transcript {ref.id} not loaded")
+                sections.append(transcript.to_text(transcript_alias=alias))
+                continue
+
+            view = self.build_agent_run_view(alias)
+            sections.append(view.to_text(agent_run_alias=alias, t_idx_map=id_to_idx_map))
+            continue
 
         return "\n\n".join(sections)
 
@@ -179,7 +425,7 @@ class LLMContext:
             - Citations are self-contained. Do NOT label them as citation or evidence. Just insert the citation by itself at the appropriate place in the text.
             - Citations must come immediately after the part of a claim that they support. This may be in the middle of a sentence.
             - Each pair of brackets must contain only one citation. To cite multiple items, use multiple pairs of brackets, like [T0B0] [T0B1].
-            - Outside of citations, do not refer to item IDs.
+            - Item IDs are ONLY to be used inside citation brackets. Do NOT use item IDs anywhere else.
             - Outside of citations, avoid quoting or paraphrasing the transcript.
             """
         )
@@ -187,126 +433,10 @@ class LLMContext:
         return f"{context_description}\n\n{citation_instructions}"
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the context for database storage.
-
-        Returns dictionary with explicit alias mappings and formatted object data.
-        Formatted objects store full data inline, regular objects only store IDs
-        for later database fetching.
-
-        Returns:
-            Dictionary suitable for JSONB storage
-        """
-        # Serialize alias dicts directly (JSON requires string keys)
-        transcript_aliases_serialized = {
-            str(idx): transcript.id for idx, transcript in self.transcript_aliases.items()
-        }
-        agent_run_aliases_serialized = {
-            str(idx): agent_run.id for idx, agent_run in self.agent_run_aliases.items()
-        }
-
-        # Build formatted_data dict for all formatted objects
-        formatted_data: dict[str, Any] = {}
-
-        # Add formatted agent runs
-        serialized_transcript_ids: set[str] = set()
-        for agent_run in self.agent_run_aliases.values():
-            if isinstance(agent_run, FormattedAgentRun):
-                formatted_data[agent_run.id] = agent_run.model_dump(mode="json")
-                serialized_transcript_ids.update(t.id for t in agent_run.transcripts)
-
-        # Add formatted transcripts that aren't already included in output
-        for transcript in self.transcript_aliases.values():
-            if transcript.id in serialized_transcript_ids:
-                continue
-            if isinstance(transcript, FormattedTranscript):
-                formatted_data[transcript.id] = transcript.model_dump(mode="json")
-
-        return {
-            "version": "1",
-            "root_items": self.root_items,
-            "transcript_aliases": transcript_aliases_serialized,
-            "agent_run_aliases": agent_run_aliases_serialized,
-            "formatted_data": formatted_data,
-            "agent_run_collection_ids": self.agent_run_collection_ids,
-            "transcript_to_agent_run": self.transcript_to_agent_run,
-        }
+        return self.spec.to_dict()
 
     def resolve_item_alias(self, item_alias: str) -> ResolvedCitationItemUnion:
-        # 1) T0B0M.key
-        m = _MESSAGE_METADATA_RE.match(item_alias)
-        if m:
-            transcript_idx = int(m.group(1))
-            block_idx = int(m.group(2))
-            metadata_key = m.group(3)
-
-            # Disallow nested keys like status.code
-            if "." in metadata_key:
-                raise ValueError(f"Nested keys are not allowed: {item_alias}")
-
-            transcript = self.transcript_aliases[transcript_idx]
-            agent_run_id = self.transcript_to_agent_run.get(transcript.id, "")
-            collection_id = self.agent_run_collection_ids.get(agent_run_id, "")
-
-            return TranscriptBlockMetadataItem(
-                agent_run_id=agent_run_id,
-                collection_id=collection_id,
-                transcript_id=transcript.id,
-                block_idx=block_idx,
-                metadata_key=metadata_key,
-            )
-
-        # 2) T0M.key
-        m = _TRANSCRIPT_METADATA_RE.match(item_alias)
-        if m:
-            transcript_idx = int(m.group(1))
-            metadata_key = m.group(2)
-            if "." in metadata_key:
-                raise ValueError(f"Nested keys are not allowed: {item_alias}")
-
-            transcript = self.transcript_aliases[transcript_idx]
-            agent_run_id = self.transcript_to_agent_run.get(transcript.id, "")
-            collection_id = self.agent_run_collection_ids.get(agent_run_id, "")
-
-            return TranscriptMetadataItem(
-                agent_run_id=agent_run_id,
-                collection_id=collection_id,
-                transcript_id=transcript.id,
-                metadata_key=metadata_key,
-            )
-
-        # 3) R0M.key
-        m = _AGENT_RUN_METADATA_RE.match(item_alias)
-        if m:
-            agent_run_idx = int(m.group(1))
-            metadata_key = m.group(2)
-            if "." in metadata_key:
-                raise ValueError(f"Nested keys are not allowed: {item_alias}")
-            agent_run = self.agent_run_aliases[agent_run_idx]
-            collection_id = self.agent_run_collection_ids.get(agent_run.id, "")
-            return AgentRunMetadataItem(
-                agent_run_id=agent_run.id,
-                collection_id=collection_id,
-                metadata_key=metadata_key,
-            )
-
-        # 4) T0B0
-        m = _SINGLE_RE.match(item_alias)
-        if m:
-            transcript_idx = int(m.group(1))
-            block_idx = int(m.group(2))
-
-            transcript = self.transcript_aliases[transcript_idx]
-            agent_run_id = self.transcript_to_agent_run.get(transcript.id, "")
-            collection_id = self.agent_run_collection_ids.get(agent_run_id, "")
-
-            return TranscriptBlockContentItem(
-                agent_run_id=agent_run_id,
-                collection_id=collection_id,
-                transcript_id=transcript.id,
-                block_idx=block_idx,
-            )
-
-        raise ValueError(f"Unknown item alias: {item_alias}")
+        return self.spec.resolve_item_alias(item_alias)
 
 
 def _build_whitespace_flexible_regex(pattern: str) -> re.Pattern[str]:
@@ -351,39 +481,46 @@ def _get_text_for_citation_target(target: CitationTarget, context: LLMContext) -
     item = target.item
 
     if isinstance(item, AgentRunMetadataItem):
-        for agent_run in context.agent_run_aliases.values():
-            if agent_run.id == item.agent_run_id:
-                metadata_value = agent_run.metadata.get(item.metadata_key)
-                if metadata_value is not None:
-                    return json.dumps(metadata_value)
-        return None
+        agent_run = context.agent_runs.get(item.agent_run_id)
+        if agent_run is None:
+            return None
+        metadata_value = agent_run.metadata.get(item.metadata_key)
+        return None if metadata_value is None else json.dumps(metadata_value)
 
     if isinstance(item, TranscriptMetadataItem):
-        for transcript in context.transcript_aliases.values():
-            if transcript.id == item.transcript_id:
-                metadata_value = transcript.metadata.get(item.metadata_key)
-                if metadata_value is not None:
-                    return json.dumps(metadata_value)
-        return None
+        transcript = context.transcripts.get(item.transcript_id)
+        if transcript is None:
+            return None
+        metadata_value = transcript.metadata.get(item.metadata_key)
+        return None if metadata_value is None else json.dumps(metadata_value)
 
     if isinstance(item, TranscriptBlockMetadataItem):
-        for transcript in context.transcript_aliases.values():
-            if transcript.id == item.transcript_id:
-                if 0 <= item.block_idx < len(transcript.messages):
-                    message = transcript.messages[item.block_idx]
-                    metadata_value = (
-                        message.metadata.get(item.metadata_key) if message.metadata else None
-                    )
-                    if metadata_value is not None:
-                        return json.dumps(metadata_value)
-        return None
+        transcript = context.transcripts.get(item.transcript_id)
+        if transcript is None:
+            return None
+        if not (0 <= item.block_idx < len(transcript.messages)):
+            return None
+        message = transcript.messages[item.block_idx]
+        metadata_value = message.metadata.get(item.metadata_key) if message.metadata else None
+        return None if metadata_value is None else json.dumps(metadata_value)
 
     # Must be TranscriptBlockContentItem at this point
-    for t_idx, transcript in context.transcript_aliases.items():
-        if transcript.id == item.transcript_id:
-            if 0 <= item.block_idx < len(transcript.messages):
-                message = transcript.messages[item.block_idx]
-                return format_chat_message(message, f"T{t_idx}B{item.block_idx}")
+    transcript = context.transcripts.get(item.transcript_id)
+    if transcript is None:
+        return None
+    if not (0 <= item.block_idx < len(transcript.messages)):
+        return None
+
+    transcript_alias: str | None = None
+    for alias, ref in context.spec.items.items():
+        if isinstance(ref, TranscriptRef) and ref.id == item.transcript_id:
+            transcript_alias = alias
+            break
+    if transcript_alias is None:
+        return None
+
+    message = transcript.messages[item.block_idx]
+    return format_chat_message(message, f"{transcript_alias}B{item.block_idx}")
 
     return None
 

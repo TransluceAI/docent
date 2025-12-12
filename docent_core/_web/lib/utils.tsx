@@ -179,3 +179,10 @@ export const areSchemasCompatible = (
 
   return true;
 };
+
+export function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}K`;
+  }
+  return tokens.toString();
+}

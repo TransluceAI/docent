@@ -16,6 +16,8 @@ interface CommentSidebarContentProps {
   scrollContainer?: HTMLElement | null;
   scrollToCitation: (citation: CitationTarget) => void;
   activeTab: CommentTab;
+  collectionId?: string;
+  agentRunId?: string;
 }
 
 export const CommentSidebarContent = ({
@@ -24,6 +26,8 @@ export const CommentSidebarContent = ({
   scrollContainer,
   scrollToCitation,
   activeTab,
+  collectionId,
+  agentRunId,
 }: CommentSidebarContentProps) => {
   const dispatch = useAppDispatch();
   const selectedCommentId = useAppSelector(
@@ -91,6 +95,8 @@ export const CommentSidebarContent = ({
               isFocused={selectedCommentId === comment.id}
               onFocus={() => dispatch(setSelectedCommentId(comment.id))}
               onNavigateToCitation={scrollToCitation}
+              collectionId={collectionId}
+              agentRunId={agentRunId}
             />
           );
         })}
@@ -136,6 +142,8 @@ export const CommentSidebarContent = ({
               isFocused={isFocused}
               onFocus={() => dispatch(setSelectedCommentId(comment.id))}
               onNavigateToCitation={scrollToCitation}
+              collectionId={collectionId}
+              agentRunId={agentRunId}
             />
           </div>
         );

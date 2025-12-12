@@ -1,14 +1,20 @@
 'use client';
 
 import React, { Suspense, useEffect, useRef } from 'react';
+import { PanelLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import AgentRunViewer, {
   AgentRunViewerHandle,
 } from '../../../../agent_run/components/AgentRunViewer';
 import { useParams, useRouter } from 'next/navigation';
 import { useGetRubricRunStateQuery } from '@/app/api/rubricApi';
 
-import { useAppDispatch } from '@/app/store/hooks';
-import { setRunCitations } from '@/app/store/transcriptSlice';
+import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
+import {
+  setRunCitations,
+  toggleJudgeLeftSidebar,
+  toggleJudgeRightSidebar,
+} from '@/app/store/transcriptSlice';
+import { Button } from '@/components/ui/button';
 import {
   useCitationNavigation,
   wrapCitationHandlerWithRouting,
@@ -32,6 +38,9 @@ export default function JudgeResultPage() {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const citationNav = useCitationNavigation();
+  const rightSidebarOpen = useAppSelector(
+    (state) => state.transcript.judgeRightSidebarOpen
+  );
   const { version } = useRubricVersion();
   const { activeLabelSet } = useLabelSets(rubricId);
   const isResultRoute = !!resultId;
@@ -129,7 +138,34 @@ export default function JudgeResultPage() {
   if (agentRunId) {
     agentRunViewerContent = (
       <div className="h-full overflow-hidden flex flex-col space-y-2">
-        <AgentRunViewer ref={agentRunViewerRef} agentRunId={agentRunId} />
+        <AgentRunViewer
+          ref={agentRunViewerRef}
+          agentRunId={agentRunId}
+          headerLeftActions={
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-default"
+              onClick={() => dispatch(toggleJudgeLeftSidebar())}
+            >
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          }
+          headerRightActions={
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-default"
+              onClick={() => dispatch(toggleJudgeRightSidebar())}
+            >
+              {rightSidebarOpen ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <PanelRightOpen className="h-4 w-4" />
+              )}
+            </Button>
+          }
+        />
       </div>
     );
   }

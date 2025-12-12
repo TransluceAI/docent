@@ -5,26 +5,51 @@ import { ChatMessage } from '@/app/types/transcriptTypes';
 
 import { ModelOption } from '@/app/store/rubricSlice';
 
-export type ContextSerialized = {
+export type LLMContextSpec = {
   version: string;
   root_items: string[];
-  formatted_data: Record<string, any>;
-  transcript_aliases: Record<string, string>;
-  agent_run_aliases: Record<string, string>;
-  agent_run_collection_ids: Record<string, string>;
-  transcript_to_agent_run: Record<string, string>;
+  items: Record<
+    string,
+    | {
+        type: 'agent_run';
+        id: string;
+        collection_id: string;
+        selection_spec?: any;
+      }
+    | {
+        type: 'transcript';
+        id: string;
+        agent_run_id: string;
+        collection_id: string;
+      }
+  >;
+  inline_data: Record<string, any>;
+  visibility?: Record<string, boolean>;
 };
 
 export interface ChatSession {
   id: string;
+  collection_id?: string | null;
   agent_run_id: string | null;
   judge_result_id: string | null;
   messages: ChatMessage[];
   chat_model: ModelOption;
   estimated_input_tokens: number;
-  context_serialized?: ContextSerialized | null;
+  context_serialized?: LLMContextSpec | null;
+  // Per-item token estimates for multi-run sessions (computed on read).
+  // Maps alias (e.g., "R0", "R1") to token count.
+  item_token_estimates?: Record<string, number> | null;
   error_message?: string;
   error_id?: string;
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  collection_id?: string | null;
+  message_count: number;
+  context_item_count: number;
+  updated_at: string;
+  first_message_preview?: string | null;
 }
 
 export const chatApi = createApi({
@@ -180,6 +205,20 @@ export const chatApi = createApi({
       }),
     }),
 
+    lookupConversationItem: build.query<
+      {
+        item_id: string;
+        item_type: 'agent_run' | 'transcript';
+        collection_id: string;
+      },
+      { itemId: string }
+    >({
+      query: ({ itemId }) => ({
+        url: `/conversation/lookup/${itemId}`,
+        method: 'GET',
+      }),
+    }),
+
     getConversationState: build.query<ChatSession, { sessionId: string }>({
       query: ({ sessionId }) => ({
         url: `/conversation/${sessionId}/state`,
@@ -270,6 +309,119 @@ export const chatApi = createApi({
         { type: 'ChatSession' as const, id: arg.sessionId },
       ],
     }),
+
+    addConversationContextItem: build.mutation<
+      ChatSession,
+      { sessionId: string; itemId: string }
+    >({
+      query: ({ sessionId, itemId }) => ({
+        url: `/conversation/${sessionId}/context`,
+        method: 'POST',
+        body: { item_id: itemId },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'ChatSession' as const, id: arg.sessionId },
+      ],
+    }),
+
+    removeConversationContextItem: build.mutation<
+      ChatSession,
+      { sessionId: string; itemId: string }
+    >({
+      query: ({ sessionId, itemId }) => ({
+        url: `/conversation/${sessionId}/context/${itemId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'ChatSession' as const, id: arg.sessionId },
+      ],
+    }),
+
+    updateConversationContextSelection: build.mutation<
+      ChatSession,
+      {
+        sessionId: string;
+        itemId: string;
+        selectionSpec?: Record<string, any>;
+        visible?: boolean;
+      }
+    >({
+      query: ({ sessionId, itemId, selectionSpec, visible }) => ({
+        url: `/conversation/${sessionId}/context/${itemId}`,
+        method: 'PATCH',
+        body: { selection_spec: selectionSpec, visible },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'ChatSession' as const, id: arg.sessionId },
+      ],
+    }),
+
+    getCollectionChats: build.query<
+      ChatSessionSummary[],
+      { collectionId: string }
+    >({
+      query: ({ collectionId }) => ({
+        url: `/${collectionId}/chats`,
+        method: 'GET',
+      }),
+      providesTags: (result, _error, arg) => {
+        const baseTag = {
+          type: 'ChatSession' as const,
+          id: `collection-${arg.collectionId}`,
+        };
+        if (!result) return [baseTag];
+        return [
+          ...result.map((chat) => ({
+            type: 'ChatSession' as const,
+            id: chat.id,
+          })),
+          baseTag,
+        ];
+      },
+    }),
+
+    createCollectionConversation: build.mutation<
+      { session_id: string },
+      {
+        collectionId: string;
+        context_serialized?: Record<string, any>;
+        chat_model?: ModelOption;
+      }
+    >({
+      query: ({ collectionId, context_serialized, chat_model }) => ({
+        url: `/${collectionId}/chats`,
+        method: 'POST',
+        body: {
+          context_serialized,
+          chat_model,
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'ChatSession' as const, id: `collection-${arg.collectionId}` },
+      ],
+    }),
+
+    deleteConversation: build.mutation<
+      { status: string },
+      { sessionId: string; collectionId?: string }
+    >({
+      query: ({ sessionId }) => ({
+        url: `/conversation/${sessionId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_result, _error, arg) => {
+        const tags: Array<{ type: 'ChatSession'; id: string }> = [
+          { type: 'ChatSession' as const, id: arg.sessionId },
+        ];
+        if (arg.collectionId) {
+          tags.push({
+            type: 'ChatSession' as const,
+            id: `collection-${arg.collectionId}`,
+          });
+        }
+        return tags;
+      },
+    }),
   }),
 });
 
@@ -285,8 +437,16 @@ export const {
   useGetChatModelsQuery,
   // For new chat sessions that aren't tied to a collection
   useCreateConversationMutation,
+  useLookupConversationItemQuery,
+  useLazyLookupConversationItemQuery,
   useGetConversationStateQuery,
   useGetActiveConversationJobQuery,
   useListenToConversationJobQuery,
   usePostConversationMessageMutation,
+  useAddConversationContextItemMutation,
+  useRemoveConversationContextItemMutation,
+  useUpdateConversationContextSelectionMutation,
+  useGetCollectionChatsQuery,
+  useCreateCollectionConversationMutation,
+  useDeleteConversationMutation,
 } = chatApi;

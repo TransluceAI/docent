@@ -12,11 +12,12 @@ from docent._llm_util.providers.preference_types import (
     merge_models_with_byok,
 )
 from docent._log_util import get_logger
+from docent.data_models.agent_run import SelectionSpec
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server.util import generator_to_sse_stream
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
-from docent_core.docent.db.schemas.chat import ChatSession, SQLAChatSession
+from docent_core.docent.db.schemas.chat import ChatSession, ChatSessionSummary, SQLAChatSession
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import AsyncSession, get_session
 from docent_core.docent.server.dependencies.permissions import (
@@ -36,7 +37,6 @@ from docent_core.docent.server.dependencies.user import (
 from docent_core.docent.services.chat import ChatService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES
 from docent_core.docent.services.monoservice import MonoService
-from docent_core.docent.utils.llm_context import enrich_llm_context_metadata
 
 logger = get_logger(__name__)
 
@@ -224,6 +224,54 @@ async def get_chat_sessions_for_run(
     return await chat_svc.get_chat_sessions_for_run(collection_id, agent_run_id)
 
 
+class CreateCollectionConversationRequest(BaseModel):
+    context_serialized: dict[str, Any] | None = None
+    chat_model: ModelOption | None = None
+
+
+@chat_router.get("/{collection_id}/chats")
+async def list_collection_conversations(
+    collection_id: str,
+    user: User = Depends(get_authenticated_user),
+    chat_svc: ChatService = Depends(get_chat_service),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[ChatSessionSummary]:
+    """List conversation-style chat sessions for a collection owned by the current user."""
+    return await chat_svc.get_conversation_summaries_for_collection(user.id, collection_id)
+
+
+@chat_router.post("/{collection_id}/chats")
+async def create_collection_conversation(
+    collection_id: str,
+    request: CreateCollectionConversationRequest,
+    user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
+    chat_svc: ChatService = Depends(get_chat_service),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+) -> dict[str, str]:
+    context_serialized = request.context_serialized or {}
+    sqla_session = await chat_svc.create_conversation_session(
+        user.id,
+        context_serialized=context_serialized,
+        chat_model=request.chat_model,
+        collection_id=collection_id,
+    )
+    await session.commit()
+
+    analytics.track_event(
+        "conversation_created",
+        properties={
+            "session_id": sqla_session.id,
+            "collection_id": collection_id,
+            "num_items": (len(context_serialized.get("root_items", []))),
+            "chat_model": request.chat_model.model_dump() if request.chat_model else None,
+        },
+    )
+
+    return {"session_id": sqla_session.id}
+
+
 class CreateConversationRequest(BaseModel):
     context_serialized: dict[str, Any]
     model_string: str | None = None
@@ -253,9 +301,6 @@ async def create_conversation(
             reasoning_effort=request.reasoning_effort,
         )
 
-    # Enrich the serialized context with metadata from the database
-    await enrich_llm_context_metadata(request.context_serialized, session)
-
     sqla_session = SQLAChatSession(
         id=str(uuid4()),
         user_id=user.id,
@@ -273,7 +318,7 @@ async def create_conversation(
         "conversation_created",
         properties={
             "session_id": sqla_session.id,
-            "num_items": len(request.context_serialized.get("items", [])),
+            "num_items": len(request.context_serialized.get("root_items", [])),
             "chat_model": chat_model.model_dump() if chat_model else None,
         },
     )
@@ -288,6 +333,106 @@ async def get_conversation_state(
 ) -> ChatSession:
     """Get the current state of a conversation chat session."""
     return await chat_svc.get_current_state(None, sq_chat_session)
+
+
+class ContextLookupResponse(BaseModel):
+    item_id: str
+    item_type: str
+    collection_id: str
+
+
+@chat_router.get("/conversation/lookup/{item_id}")
+async def lookup_conversation_item(
+    item_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    user: User = Depends(get_authenticated_user),
+) -> ContextLookupResponse:
+    lookup = await chat_svc.lookup_context_item(item_id)
+    if lookup is None:
+        raise HTTPException(status_code=404, detail=f"Item {item_id} not found")
+    await require_collection_permission(Permission.READ)(lookup.collection_id, user, mono_svc)
+    return ContextLookupResponse(
+        item_id=item_id, item_type=lookup.type, collection_id=lookup.collection_id
+    )
+
+
+class AddContextItemRequest(BaseModel):
+    item_id: str
+
+
+@chat_router.post("/conversation/{session_id}/context")
+async def add_conversation_context_item(
+    session_id: str,
+    request: AddContextItemRequest,
+    chat_svc: ChatService = Depends(get_chat_service),
+    session: AsyncSession = Depends(get_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
+) -> ChatSession:
+    if sq_chat_session.context_serialized is None:
+        raise HTTPException(status_code=400, detail="Session has no context to modify")
+
+    try:
+        updated = await chat_svc.add_context_item(sq_chat_session, request.item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await session.commit()
+    return updated
+
+
+@chat_router.delete("/conversation/{session_id}/context/{item_id}")
+async def remove_conversation_context_item(
+    session_id: str,
+    item_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+    session: AsyncSession = Depends(get_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
+) -> ChatSession:
+    if sq_chat_session.context_serialized is None:
+        raise HTTPException(status_code=400, detail="Session has no context to modify")
+
+    try:
+        updated = await chat_svc.remove_context_item(sq_chat_session, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await session.commit()
+    return updated
+
+
+class UpdateContextSelectionRequest(BaseModel):
+    selection_spec: dict[str, Any] | None = None
+    visible: bool | None = None
+
+
+@chat_router.patch("/conversation/{session_id}/context/{item_id}")
+async def update_conversation_context_selection(
+    item_id: str,
+    request: UpdateContextSelectionRequest,
+    chat_svc: ChatService = Depends(get_chat_service),
+    session: AsyncSession = Depends(get_session),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
+) -> ChatSession:
+    if sq_chat_session.context_serialized is None:
+        raise HTTPException(status_code=400, detail="Session has no context to modify")
+
+    if request.selection_spec is None and request.visible is None:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    selection_spec = None
+    if request.selection_spec is not None:
+        selection_spec = SelectionSpec.model_validate(request.selection_spec)
+
+    try:
+        updated = await chat_svc.update_context_item(
+            sq_chat_session, item_id, selection_spec, request.visible
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await session.commit()
+    return updated
 
 
 @chat_router.get("/conversation/{session_id}/active-job")
@@ -353,3 +498,26 @@ async def post_message_to_conversation(
     # Trigger a new turn of the agent (no ViewContext needed for multi-object conversations)
     job_id = await chat_svc.start_or_get_chat_job(None, sq_chat_session)
     return {"job_id": job_id, "session": sq_chat_session.to_pydantic()}
+
+
+@chat_router.delete("/conversation/{session_id}")
+async def delete_conversation(
+    session_id: str,
+    chat_svc: ChatService = Depends(get_chat_service),
+    session: AsyncSession = Depends(get_session),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    sq_chat_session: SQLAChatSession = Depends(get_chat_session),
+) -> dict[str, str]:
+    """Delete a conversation chat session."""
+    await chat_svc.delete_session(sq_chat_session)
+    await session.commit()
+
+    analytics.track_event(
+        "conversation_deleted",
+        properties={
+            "session_id": session_id,
+            "collection_id": sq_chat_session.collection_id,
+        },
+    )
+
+    return {"status": "ok"}

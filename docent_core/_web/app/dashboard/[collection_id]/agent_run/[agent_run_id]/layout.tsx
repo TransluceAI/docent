@@ -1,12 +1,18 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { PanelLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import ExperimentViewer from '../../../../components/ExperimentViewer';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 
-import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
+import {
+  setAgentRunSidebarTab,
+  toggleAgentRunLeftSidebar,
+  toggleAgentRunRightSidebar,
+} from '@/app/store/transcriptSlice';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ResizableHandle,
@@ -100,7 +106,34 @@ export default function AgentRunLayout() {
         className="flex-1 min-w-0 min-h-0 p-3 !mx-0"
       >
         <div className="h-full space-y-2 flex flex-col min-h-0">
-          <AgentRunViewer agentRunId={agentRunId} ref={agentRunViewerRef} />
+          <AgentRunViewer
+            agentRunId={agentRunId}
+            ref={agentRunViewerRef}
+            headerLeftActions={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 cursor-default"
+                onClick={() => dispatch(toggleAgentRunLeftSidebar())}
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            }
+            headerRightActions={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 cursor-default"
+                onClick={() => dispatch(toggleAgentRunRightSidebar())}
+              >
+                {rightSidebarOpen ? (
+                  <PanelRightClose className="h-4 w-4" />
+                ) : (
+                  <PanelRightOpen className="h-4 w-4" />
+                )}
+              </Button>
+            }
+          />
         </div>
       </ResizablePanel>
 

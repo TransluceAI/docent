@@ -32,6 +32,8 @@ interface CommentCardProps {
   isFocused: boolean;
   onFocus: () => void;
   onNavigateToCitation?: (citation: CitationTarget) => void;
+  collectionId?: string;
+  agentRunId?: string;
 }
 
 export function CommentCard({
@@ -39,15 +41,19 @@ export function CommentCard({
   isFocused,
   onFocus,
   onNavigateToCitation,
+  collectionId: collectionIdProp,
+  agentRunId: agentRunIdProp,
 }: CommentCardProps) {
   const [updateComment] = useUpdateCommentMutation();
   const [deleteComment] = useDeleteCommentMutation();
   const [createComment] = useCreateCommentMutation();
 
-  const { collection_id: collectionId, agent_run_id: agentRunId } = useParams<{
+  const params = useParams<{
     collection_id: string;
     agent_run_id: string;
   }>();
+  const collectionId = collectionIdProp ?? params.collection_id;
+  const agentRunId = agentRunIdProp ?? params.agent_run_id;
 
   const dispatch = useAppDispatch();
   const draftComment = useAppSelector((state) => state.transcript.draftComment);
