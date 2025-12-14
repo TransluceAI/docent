@@ -802,7 +802,7 @@ export const AgentRunTable = memo(function AgentRunTable({
           {/* Sorting controls */}
           <div className="flex flex-1 flex-wrap items-center gap-1.5 justify-end min-w-0">
             <ArrowUpDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <div className="flex-1 min-w-0 basis-[8rem] max-w-[18rem]">
+            <div className="max-w-72">
               <Combobox
                 value={sortField ?? 'none'}
                 onChange={handleFieldChange}
@@ -810,12 +810,11 @@ export const AgentRunTable = memo(function AgentRunTable({
                 placeholder="Select field"
                 searchPlaceholder="Search fields..."
                 emptyMessage="No field found."
-                triggerClassName="bg-background font-mono text-muted-foreground max-w-full min-w-0 justify-between"
-                valueClassName="truncate flex-1 min-w-0 text-left"
+                triggerProps={{ title: sortField ?? 'No sorting' }}
+                triggerClassName="bg-background font-mono text-muted-foreground"
                 commandInputClassName="h-8 text-xs"
-                commandListClassName="custom-scrollbar"
-                optionClassName="font-mono text-muted-foreground text-xs"
-                popoverClassName="w-64"
+                optionClassName="font-mono text-primary text-xs"
+                popoverClassName="max-w-[720px] w-auto"
                 popoverAlign="start"
                 renderValue={(selected) =>
                   sortField ? (selected?.label ?? sortField) : 'Select field'
