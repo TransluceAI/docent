@@ -1457,10 +1457,18 @@ async def update_organization_member_role(
                 detail="You must be an admin of this organization to manage members.",
             )
 
-        if request.role != OrganizationRole.ADMIN:
+        target_role = await mono_svc.get_organization_role(
+            organization_id=org_id, user_id=member_user_id
+        )
+        is_demoting_admin = (
+            target_role == OrganizationRole.ADMIN and request.role != OrganizationRole.ADMIN
+        )
+        if is_demoting_admin:
             try:
                 await mono_svc.ensure_not_last_org_admin(
-                    organization_id=org_id, target_user_id=member_user_id
+                    organization_id=org_id,
+                    target_user_id=member_user_id,
+                    target_role=target_role,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -34,6 +34,18 @@ export const useHasCollectionWritePermission = () => {
   return useHasCollectionPermission('write');
 };
 
+export const useHasCollectionWritePermissionForCollection = (
+  collectionId: string
+) => {
+  return useHasCollectionPermission('write', collectionId);
+};
+
 export const useHasCollectionAdminPermission = () => {
   return useHasCollectionPermission('admin');
+};
+
+export const useHasCollectionAdminPermissionForCollection = (
+  collectionId: string
+) => {
+  return useHasCollectionPermission('admin', collectionId);
 };

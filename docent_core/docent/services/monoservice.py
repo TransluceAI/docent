@@ -2091,8 +2091,14 @@ class MonoService:
             )
             return int(result.scalar_one())
 
-    async def ensure_not_last_org_admin(self, *, organization_id: str, target_user_id: str) -> None:
-        role = await self.get_organization_role(
+    async def ensure_not_last_org_admin(
+        self,
+        *,
+        organization_id: str,
+        target_user_id: str,
+        target_role: OrganizationRole | None = None,
+    ) -> None:
+        role = target_role or await self.get_organization_role(
             organization_id=organization_id, user_id=target_user_id
         )
         if role != OrganizationRole.ADMIN:

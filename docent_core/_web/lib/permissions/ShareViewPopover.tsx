@@ -37,8 +37,8 @@ import PermissionDropdown from './PermissionDropdown';
 import { toast } from '@/hooks/use-toast';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
 import {
-  useHasCollectionAdminPermission,
-  useHasCollectionWritePermission,
+  useHasCollectionAdminPermissionForCollection,
+  useHasCollectionWritePermissionForCollection,
 } from './hooks';
 
 const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
@@ -52,7 +52,8 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [getUserByEmail] = useLazyGetUserByEmailQuery();
 
-  const hasWritePermission = useHasCollectionWritePermission();
+  const hasAdminPermission =
+    useHasCollectionAdminPermissionForCollection(collectionId);
 
   // Send invite to new collaborator
   const handleSendInvite = async () => {
@@ -106,10 +107,10 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
       });
     }
   };
-  if (!hasWritePermission) {
+  if (!hasAdminPermission) {
     return (
       <div className="text-sm text-muted-foreground">
-        You do not have permission to add or edit collaborators.
+        You do not have permission to manage sharing for this collection.
       </div>
     );
   }
@@ -119,11 +120,11 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
       <Input
         value={emailInput}
         onChange={(e) => setEmailInput(e.target.value)}
-        disabled={!hasWritePermission}
+        disabled={!hasAdminPermission}
         placeholder={
-          hasWritePermission
+          hasAdminPermission
             ? 'Enter email address'
-            : "You don't have permission to add collaborators"
+            : "You don't have permission to manage sharing"
         }
         className="h-7 text-xs w-full"
       />
@@ -155,6 +156,8 @@ const AddOrganizationCollaborator = ({
   const [permissionLevel, setPermissionLevel] =
     useState<PermissionLevel>('read');
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
+  const hasAdminPermission =
+    useHasCollectionAdminPermissionForCollection(collectionId);
 
   useEffect(() => {
     if (!selectedOrgId && organizations?.length === 1) {
@@ -196,6 +199,14 @@ const AddOrganizationCollaborator = ({
     return (
       <div className="text-sm text-muted-foreground">
         Loading organizations…
+      </div>
+    );
+  }
+
+  if (!hasAdminPermission) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        You do not have permission to manage sharing for this collection.
       </div>
     );
   }
@@ -288,8 +299,10 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
     [collectionId, upsertCollaborator, removeCollaborator]
   );
 
-  const hasAdminPermission = useHasCollectionAdminPermission();
-  const hasWritePermission = useHasCollectionWritePermission();
+  const hasAdminPermission =
+    useHasCollectionAdminPermissionForCollection(collectionId);
+  const hasWritePermission =
+    useHasCollectionWritePermissionForCollection(collectionId);
   const accessButtonLabel = hasWritePermission ? 'Read-write' : 'Read-only';
   const handleCopyCollectionLink = useCallback(async () => {
     try {
