@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   useAddOrganizationMemberMutation,
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ArrowLeft } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
 
@@ -99,6 +101,12 @@ export default function OrganizationDetailPage() {
   return (
     <div className="p-3 space-y-3">
       <div className="space-y-1">
+        <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
+          <Link href="/settings/organizations">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back to Organizations
+          </Link>
+        </Button>
         <h2 className="text-xl font-semibold">{org?.name || 'Organization'}</h2>
         <div className="text-sm text-muted-foreground">
           {org?.description ||
@@ -121,13 +129,12 @@ export default function OrganizationDetailPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
-              className="h-7 text-xs"
             />
             <Select
               value={newRole}
               onValueChange={(v) => setNewRole(v as OrganizationRole)}
             >
-              <SelectTrigger className="w-28 h-7 text-xs">
+              <SelectTrigger className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -135,12 +142,7 @@ export default function OrganizationDetailPage() {
                 <SelectItem value="admin">{ROLE_LABELS.admin}</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              className="h-7"
-              onClick={onAdd}
-              disabled={!email.trim()}
-            >
+            <Button onClick={onAdd} disabled={!email.trim()}>
               Add
             </Button>
           </div>
@@ -174,7 +176,7 @@ export default function OrganizationDetailPage() {
                     }
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger className="w-28 h-7 text-xs">
+                    <SelectTrigger className="w-28">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -185,9 +187,8 @@ export default function OrganizationDetailPage() {
                     </SelectContent>
                   </Select>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="h-7"
                     disabled={!isAdmin}
                     onClick={() => onRemove(m.user.id, m.user.email)}
                   >

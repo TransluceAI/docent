@@ -5,7 +5,7 @@ import { getUser } from '@/app/services/dal';
 import { INTERNAL_BASE_URL, COOKIE_KEY } from '@/app/constants';
 import type { OrganizationWithRole } from '@/app/api/orgApi';
 import { Card } from '@/components/ui/card';
-import CreateOrganizationCard from './CreateOrganizationCard';
+import CreateOrganizationDialog from './CreateOrganizationDialog';
 
 async function fetchMyOrganizations(
   cookieValue: string
@@ -41,15 +41,16 @@ export default async function OrganizationsIndexPage() {
   const organizations = await fetchMyOrganizations(sessionCookie.value);
 
   return (
-    <div className="p-3 space-y-3">
-      <div className="space-y-1">
-        <h2 className="text-xl font-semibold">Organizations</h2>
-        <p className="text-sm text-muted-foreground">
-          Select an organization to manage members.
-        </p>
+    <div className="p-3 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-semibold">Organizations</h2>
+          <p className="text-sm text-muted-foreground">
+            Select an organization to manage members.
+          </p>
+        </div>
+        <CreateOrganizationDialog />
       </div>
-
-      <CreateOrganizationCard />
 
       {organizations.length ? (
         <div className="grid grid-cols-1 gap-3">
