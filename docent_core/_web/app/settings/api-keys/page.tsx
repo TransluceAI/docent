@@ -29,7 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Copy, Plus, Trash2 } from 'lucide-react';
+import { Copy, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { apiRestClient } from '@/app/services/apiService';
 
@@ -162,10 +162,7 @@ export default function ApiKeysPage() {
 
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create API Key
-            </Button>
+            <Button>Create API Key</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>

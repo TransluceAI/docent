@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { PROVIDERS, getProviderLabel } from '@/app/settings/utils/providers';
 import {
@@ -100,7 +100,6 @@ export default function ModelProvidersPage() {
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button disabled={availableProviders.length === 0}>
-              <Plus className="mr-2 h-4 w-4" />
               Add Provider
             </Button>
           </DialogTrigger>

@@ -14,7 +14,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCreateOrganizationMutation } from '@/app/api/orgApi';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
@@ -56,10 +55,7 @@ export default function CreateOrganizationDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Organization
-        </Button>
+        <Button>Create Organization</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
