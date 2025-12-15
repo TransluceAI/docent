@@ -154,18 +154,32 @@ resource "aws_security_group" "vpc_endpoints" {
   }
 }
 
+# https://tailscale.com/kb/1082/firewall-ports
+# This article describes how to configure relevant firewall ports for Tailscale.
 resource "aws_security_group" "bastion" {
   name_prefix = "${var.project_name}-${var.deployment}-bastion-"
   vpc_id      = aws_vpc.main.id
 
+  # Allow Tailscale traffic (UDP 41641)
+  ingress {
+    from_port   = 41641
+    to_port     = 41641
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Tailscale WireGuard"
+  }
+
+  # Allow SSH only from Tailscale network
+  # https://tailscale.com/kb/1304/ip-pool
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # TODO: Restrict this to your IP address for security
-    description = "SSH access to bastion"
+    cidr_blocks = ["100.64.0.0/10"] # Tailscale CGNAT range
+    description = "SSH access from Tailscale network only"
   }
 
+  # Permissive egress rules for all outbound traffic.
   egress {
     from_port   = 0
     to_port     = 0
@@ -174,7 +188,7 @@ resource "aws_security_group" "bastion" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-bastion-sg"
+    Name       = "${var.project_name}-${var.deployment}-bastion-sg"
     Deployment = var.deployment
   }
 

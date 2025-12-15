@@ -156,9 +156,10 @@ resource "aws_launch_template" "tailscale_router" {
     name = aws_iam_instance_profile.tailscale_router[0].name
   }
 
-  user_data = base64encode(templatefile("${path.module}/tailscale-user-data.tftpl", {
+  user_data = base64encode(templatefile("${path.module}/metr-tailscale-user-data.tftpl", {
     vpc_cidr           = aws_vpc.main.cidr_block
-    tailscale_auth_key = var.tailscale_auth_key
+    tailscale_auth_key = local.tailscale_auth_key
+    deployment         = var.deployment
   }))
 
   tag_specifications {
@@ -177,7 +178,7 @@ resource "aws_launch_template" "tailscale_router" {
 
   lifecycle {
     precondition {
-      condition     = length(trimspace(var.tailscale_auth_key)) > 0
+      condition     = length(trimspace(local.tailscale_auth_key)) > 0
       error_message = "Tailscale: set non-empty tailscale_auth_key. Provide via TF_VAR_tailscale_auth_key or a secrets tfvars file."
     }
     create_before_destroy = true

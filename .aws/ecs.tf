@@ -18,7 +18,7 @@ resource "aws_ecs_cluster" "main" {
 
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${var.project_name}-${var.deployment}"
-  retention_in_days = 7
+  retention_in_days = 365
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-ecs-logs"
@@ -184,7 +184,7 @@ resource "aws_ecs_task_definition" "worker" {
         },
         {
           name  = "DOCENT_PG_PASSWORD"
-          value = var.db_password
+          value = local.db_password
         },
         {
           name  = "DOCENT_REDIS_HOST"
@@ -349,7 +349,7 @@ resource "aws_ecs_task_definition" "datadog_agent" {
       environment = [
         {
           name  = "DD_API_KEY"
-          value = var.datadog_api_key
+          value = local.datadog_api_key
         },
         {
           name  = "DD_SITE"
@@ -502,7 +502,7 @@ resource "aws_ecs_task_definition" "migrations" {
         },
         {
           name  = "DOCENT_PG_PASSWORD"
-          value = var.db_password
+          value = local.db_password
         }
       ]
 

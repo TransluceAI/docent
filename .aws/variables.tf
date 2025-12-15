@@ -60,11 +60,6 @@ variable "db_username" {
   default     = "docent_user"
 }
 
-variable "db_password" {
-  description = "Database password - used only for RDS instance creation, not exposed in application environment variables"
-  type        = string
-  sensitive   = true
-}
 
 variable "db_name" {
   description = "Database name"
@@ -205,12 +200,6 @@ variable "bastion_public_key" {
   default     = ""
 }
 
-variable "tailscale_auth_key" {
-  description = "Tailscale auth key for subnet router (only used in METR deployment)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
 
 variable "enable_frontend_app_runner" {
   description = "Enable App Runner deployment for the Next.js frontend"
@@ -248,10 +237,11 @@ variable "frontend_app_runner_max_size" {
   default     = 10
 }
 
-variable "datadog_api_key" {
-  description = "Datadog API key for the agent"
-  type        = string
-  sensitive   = true
+
+variable "create_datadog_integration" {
+  description = "Whether to create Datadog AWS integration resources (only needed once per AWS account)"
+  type        = bool
+  default     = false
 }
 
 variable "datadog_site" {

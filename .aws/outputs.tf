@@ -31,7 +31,7 @@ output "rds_port" {
 
 output "database_url" {
   description = "Database connection URL"
-  value       = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.postgres.endpoint}:5432/docent"
+  value       = "postgresql://${var.db_username}:${local.db_password}@${aws_db_instance.postgres.endpoint}:5432/docent"
   sensitive   = true
 }
 

@@ -22,7 +22,7 @@ resource "aws_db_instance" "postgres" {
 
   db_name  = var.db_name
   username = var.db_username
-  password = var.db_password
+  password = local.db_password
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -31,6 +31,7 @@ resource "aws_db_instance" "postgres" {
   backup_retention_period = 7
   backup_window          = "03:00-04:00"
   maintenance_window     = "sun:04:00-sun:05:00"
+  apply_immediately      = false # Changes are applied at the next maintenance window.
 
   deletion_protection = true
   skip_final_snapshot = false

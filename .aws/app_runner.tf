@@ -78,7 +78,7 @@ resource "aws_apprunner_service" "api" {
           DOCENT_PG_PORT       = aws_db_instance.postgres.port
           DOCENT_PG_DATABASE   = var.db_name
           DOCENT_PG_USER       = var.db_username
-          DOCENT_PG_PASSWORD   = var.db_password
+          DOCENT_PG_PASSWORD   = local.db_password
           DOCENT_REDIS_HOST    = aws_elasticache_replication_group.redis.primary_endpoint_address
           DOCENT_REDIS_PORT    = aws_elasticache_replication_group.redis.port
           DOCENT_REDIS_TLS     = "true"

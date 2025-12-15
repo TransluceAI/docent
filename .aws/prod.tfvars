@@ -1,5 +1,7 @@
 deployment = "prod"
 
+create_datadog_integration = true
+
 private_subnet_count = 2
 public_subnet_count = 2
 nat_gateway_count = 2
