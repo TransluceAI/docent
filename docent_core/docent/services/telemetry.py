@@ -4,7 +4,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, cast
+from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, Optional, Sequence, cast
 from uuid import uuid4
 
 from asyncpg.exceptions import DeadlockDetectedError
@@ -1746,28 +1746,29 @@ class TelemetryService:
                     self._normalize_lineage_entry_for_upsert(entry) for entry in lineage_entries
                 ]
                 if normalized_lineage_entries:
-                    lineage_insert = insert(SQLATelemetryLineage).values(normalized_lineage_entries)
-                    conflict_columns = [
-                        SQLATelemetryLineage.collection_id,
-                        SQLATelemetryLineage.agent_run_id,
-                        SQLATelemetryLineage.derived_type,
-                        SQLATelemetryLineage.derived_id,
-                        SQLATelemetryLineage.derived_key,
-                        SQLATelemetryLineage.source_type,
-                        SQLATelemetryLineage.source_id,
-                        SQLATelemetryLineage.source_idx,
-                    ]
-                    upsert_update_columns = {
-                        "telemetry_log_id": lineage_insert.excluded.telemetry_log_id,
-                        "telemetry_accumulation_id": lineage_insert.excluded.telemetry_accumulation_id,
-                        "source_transcript_id": lineage_insert.excluded.source_transcript_id,
-                        "attributes": lineage_insert.excluded.attributes,
-                    }
-                    upsert_stmt = lineage_insert.on_conflict_do_update(
-                        index_elements=conflict_columns,
-                        set_=upsert_update_columns,
-                    )
-                    await self.session.execute(upsert_stmt)
+                    for lineage_batch in self._batched_lineage_entries(normalized_lineage_entries):
+                        lineage_insert = insert(SQLATelemetryLineage).values(lineage_batch)
+                        conflict_columns = [
+                            SQLATelemetryLineage.collection_id,
+                            SQLATelemetryLineage.agent_run_id,
+                            SQLATelemetryLineage.derived_type,
+                            SQLATelemetryLineage.derived_id,
+                            SQLATelemetryLineage.derived_key,
+                            SQLATelemetryLineage.source_type,
+                            SQLATelemetryLineage.source_id,
+                            SQLATelemetryLineage.source_idx,
+                        ]
+                        upsert_update_columns = {
+                            "telemetry_log_id": lineage_insert.excluded.telemetry_log_id,
+                            "telemetry_accumulation_id": lineage_insert.excluded.telemetry_accumulation_id,
+                            "source_transcript_id": lineage_insert.excluded.source_transcript_id,
+                            "attributes": lineage_insert.excluded.attributes,
+                        }
+                        upsert_stmt = lineage_insert.on_conflict_do_update(
+                            index_elements=conflict_columns,
+                            set_=upsert_update_columns,
+                        )
+                        await self.session.execute(upsert_stmt)
             logger.info(
                 "Upserted %s transcripts for agent_run_ids=%s (new=%s updated=%s deleted=%s)",
                 len(transcript_data),
@@ -2525,6 +2526,20 @@ class TelemetryService:
         )
         normalized["attributes"] = normalized.get("attributes") or {}
         return normalized
+
+    def _batched_lineage_entries(
+        self, entries: Sequence[LineageEntry]
+    ) -> Iterable[Sequence[LineageEntry]]:
+        """
+        Yield lineage batches sized to stay under the asyncpg bind parameter limit.
+        """
+        column_count = len(SQLATelemetryLineage.__table__.columns)
+
+        max_bind_params = 32000
+        batch_size = max(1, max_bind_params // (column_count + 1))
+
+        for start in range(0, len(entries), batch_size):
+            yield entries[start : start + batch_size]
 
     def _find_or_create_chat_thread(
         self, span_messages: List[ChatMessage], existing_chat_threads: List[List[ChatMessage]]
