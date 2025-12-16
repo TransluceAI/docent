@@ -335,22 +335,22 @@ export function MetadataBlock({
               ({ key, value, valueText, keyIntervals, valueIntervals }) => {
                 const isHighlightedRow = shouldHighlightRow(key);
                 const rowClass = isHighlightedRow
-                  ? 'group flex items-start p-2 bg-yellow-100 dark:bg-yellow-900/30 transition-colors'
-                  : 'group flex items-start p-2 hover:bg-muted transition-colors';
+                  ? 'group flex items-center p-2 bg-yellow-100 dark:bg-yellow-900/30 transition-colors'
+                  : 'group flex items-center p-2 hover:bg-muted transition-colors';
                 return (
                   <div
                     key={key}
                     className={rowClass}
                     data-highlighted={isHighlightedRow ? 'true' : undefined}
                   >
-                    <div className="w-1/3 font-medium text-sm text-primary break-words pr-4 flex items-center gap-2">
+                    <div className="w-1/3 min-w-0 font-medium text-sm text-primary break-all pr-4 flex items-center gap-2">
                       {keyIntervals.length > 0 ? (
                         <SegmentedText text={key} intervals={keyIntervals} />
                       ) : (
                         key
                       )}
                     </div>
-                    <div className="w-2/3 text-sm text-muted-foreground break-words whitespace-pre-wrap font-mono text-xs flex items-start justify-between">
+                    <div className="w-2/3 min-w-0 text-sm text-muted-foreground break-all whitespace-pre-wrap font-mono text-xs flex items-center justify-between">
                       <span className="flex-1">
                         {valueIntervals.length > 0 ? (
                           <SegmentedText

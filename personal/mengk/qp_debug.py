@@ -59,7 +59,13 @@ def create_dummy_agent_run(
         else:
             messages.append(AssistantMessage(content=content))
 
-    transcript = Transcript(messages=messages)
+    # Create metadata with super long key names (~300 chars each) and long values
+    long_key_metadata = {
+        "this_is_an_extremely_long_metadata_key_name_that_spans_approximately_three_hundred_characters_to_test_how_the_system_handles_very_long_key_names_in_the_metadata_dictionary_structure_for_transcripts_and_agent_runs_testing_edge_cases_number_one": "This is a very long metadata value that contains a lot of text to test how the system handles large amounts of data in metadata values. It includes multiple sentences and paragraphs worth of content to ensure we're testing edge cases properly. The quick brown fox jumps over the lazy dog multiple times in this extended test string.",
+        "another_incredibly_lengthy_metadata_key_designed_to_push_the_boundaries_of_what_is_typically_expected_for_key_lengths_in_metadata_dictionaries_this_key_should_be_around_three_hundred_characters_long_to_test_system_limits_and_edge_cases_two": "Another extremely long value that spans many characters and includes various types of content such as numbers 12345, special characters !@#$%, and unicode symbols like émojis and àccénts. This helps test the robustness of the metadata handling system across different character types and encodings in the database and UI.",
+        "yet_one_more_absurdly_long_key_name_for_testing_purposes_that_contains_many_words_and_underscores_to_reach_the_target_length_of_approximately_three_hundred_characters_testing_metadata_key_length_limits_in_the_transcript_system_edge_case_three": "A third lengthy value containing repetitive content: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit.",
+    }
+    transcript = Transcript(messages=messages, metadata=long_key_metadata)
     return AgentRun(transcripts=[transcript])
 
 
@@ -69,7 +75,7 @@ from tqdm.auto import tqdm
 
 from docent.data_models._tiktoken_util import get_token_count
 
-ars = [create_dummy_agent_run(num_messages=250, chars_per_message=2000) for _ in tqdm(range(1500))]
+ars = [create_dummy_agent_run(num_messages=250, chars_per_message=2000) for _ in tqdm(range(100))]
 
 # %%
 
