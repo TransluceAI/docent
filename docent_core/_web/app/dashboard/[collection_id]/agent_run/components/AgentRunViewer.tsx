@@ -1179,7 +1179,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     const hasComments = comments.length > 0 || draftComment !== null;
 
     return (
-      <>
+      <div className="h-full flex flex-col min-h-0">
         {/* Header area Content */}
         {agentRun && (
           <>
@@ -1670,7 +1670,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         )}
-      </>
+      </div>
     );
   }
 );
