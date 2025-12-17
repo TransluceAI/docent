@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useChangePasswordMutation } from '@/app/api/settingsApi';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -47,10 +47,7 @@ export default function ChangePasswordPage() {
       setNewPassword('');
       setConfirmPassword('');
 
-      toast({
-        title: 'Password updated',
-        description: 'Your password has been changed successfully.',
-      });
+      toast.success('Your password has been changed successfully.');
     } catch (error: unknown) {
       const message =
         (typeof error === 'object' && error && 'data' in error

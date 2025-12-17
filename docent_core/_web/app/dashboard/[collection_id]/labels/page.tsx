@@ -10,7 +10,7 @@ import LabelSetsTable, {
   type LabelSetTableRow,
 } from '../components/LabelSetsTable';
 import LabelSetEditor from '../components/LabelSetEditor';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useParams } from 'next/navigation';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,6 @@ export default function LabelsPage() {
     null
   );
   const [isCreateMode, setIsCreateMode] = useState(false);
-  const { toast } = useToast();
   const hasWritePermission = useHasCollectionWritePermission();
 
   // Fetch all label sets with counts
@@ -69,10 +68,7 @@ export default function LabelsPage() {
     await deleteLabelSet({ collectionId, labelSetId })
       .unwrap()
       .then(() => {
-        toast({
-          title: 'Label set deleted',
-          description: 'The label set has been successfully deleted.',
-        });
+        toast.success('The label set has been successfully deleted.');
 
         // Clear selection if the deleted set was selected
         if (selectedLabelSetId === labelSetId) {
@@ -81,11 +77,7 @@ export default function LabelsPage() {
         }
       })
       .catch((error) => {
-        toast({
-          title: 'Failed to delete label set',
-          description: 'An error occurred while deleting the label set.',
-          variant: 'destructive',
-        });
+        toast.error('An error occurred while deleting the label set.');
       });
   };
 

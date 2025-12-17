@@ -35,7 +35,7 @@ import {
 } from './collabSlice';
 import { PermissionLevel } from './types';
 import PermissionDropdown from './PermissionDropdown';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
 import {
   useHasCollectionAdminPermissionForCollection,
@@ -65,29 +65,17 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
       const result = await getUserByEmail(emailInput.trim());
 
       if (result.error) {
-        toast({
-          title: 'Error',
-          description: 'Failed to look up user. Please try again.',
-          variant: 'destructive',
-        });
+        toast.error('Failed to look up user. Please try again.');
         return;
       }
 
       const newUser = result.data;
       if (!newUser) {
-        toast({
-          title: 'User not found',
-          description: `No user found with email address: ${emailInput.trim()}`,
-          variant: 'destructive',
-        });
+        toast.error(`No user found with email address: ${emailInput.trim()}`);
         return;
       }
       if (newUser.id === user.id) {
-        toast({
-          title: 'Error',
-          description: 'You cannot invite yourself.',
-          variant: 'destructive',
-        });
+        toast.error('You cannot invite yourself.');
         return;
       }
 
@@ -101,11 +89,7 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
 
       setEmailInput('');
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to invite user. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to invite user. Please try again.');
     }
   };
   if (!hasAdminPermission) {
@@ -179,20 +163,15 @@ const AddOrganizationCollaborator = ({
         collection_id: collectionId,
         permission_level: permissionLevel,
       }).unwrap();
-      toast({
-        title: 'Organization added',
-        description: selectedOrg?.name
+      toast.success(
+        selectedOrg?.name
           ? `Shared with ${selectedOrg.name}`
-          : 'Shared with organization',
-      });
+          : 'Shared with organization'
+      );
       setSelectedOrgId('');
       setPermissionLevel('read');
     } catch {
-      toast({
-        title: 'Error',
-        description: 'Failed to share with organization. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to share with organization. Please try again.');
     }
   };
 
@@ -324,17 +303,10 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
       if (!didCopy) {
         throw new Error('Copy command failed');
       }
-      toast({
-        title: 'Link copied',
-        description: 'Collection link copied to clipboard',
-      });
+      toast.success('Collection link copied to clipboard');
     } catch (error) {
       console.error('Failed to copy collection link:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to copy link to clipboard',
-        variant: 'destructive',
-      });
+      toast.error('Failed to copy link to clipboard');
     }
   }, [collectionId]);
 

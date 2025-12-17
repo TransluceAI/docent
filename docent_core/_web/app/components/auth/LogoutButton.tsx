@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import { logout } from '../../services/authService';
 import { useUserContext } from '../../contexts/UserContext';
@@ -30,20 +30,13 @@ export const LogoutButton = ({
       await logout(); // Pure API call
       setUser(null); // Clear client state
 
-      toast({
-        title: 'Success',
-        description: 'You have been logged out successfully.',
-      });
+      toast.success('You have been logged out successfully.');
 
       // Redirect to login
       window.location.href = '/signup';
     } catch (error) {
       console.error('Logout failed:', error);
-      toast({
-        title: 'Error',
-        description: 'There was an error logging out. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('There was an error logging out. Please try again.');
     }
   };
 

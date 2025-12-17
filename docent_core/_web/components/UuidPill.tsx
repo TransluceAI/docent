@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/utils';
 import { Copy } from 'lucide-react';
 
@@ -51,17 +51,9 @@ export default function UuidPill({
     }
     const success = await copyToClipboard(uuid);
     if (success) {
-      toast({
-        title: 'Copied to clipboard',
-        description: 'Full UUID copied to clipboard',
-        variant: 'default',
-      });
+      toast.success('Full UUID copied to clipboard');
     } else {
-      toast({
-        title: 'Failed to copy',
-        description: 'Could not copy to clipboard',
-        variant: 'destructive',
-      });
+      toast.error('Could not copy to clipboard');
     }
   };
 

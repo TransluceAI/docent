@@ -42,7 +42,7 @@ import { ProgressBar } from '@/app/components/ProgressBar';
 import { useRubricVersion } from '@/providers/use-rubric-version';
 import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { usePostRubricUpdateToRefinementSessionMutation } from '@/app/api/refinementApi';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Label, useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
 import { useLabelSets } from '@/providers/use-label-sets';
 import { skipToken } from '@reduxjs/toolkit/query';
@@ -255,11 +255,7 @@ export default function SingleRubricArea({
       }).unwrap();
 
       if (postRubricUpdateError) {
-        toast({
-          title: 'Error',
-          description: 'Failed to update refinement session',
-          variant: 'destructive',
-        });
+        toast.error('Failed to update refinement session');
       } else {
         setVersion(rubric.version);
         if (res?.job_id) setRefinementJobId(res.job_id);
@@ -296,11 +292,7 @@ export default function SingleRubricArea({
   const handleDownloadRubricSample = useCallback(
     async (format: 'python' | 'notebook' = 'python') => {
       if (!collectionId) {
-        toast({
-          title: 'Missing collection',
-          description: 'Open a collection before downloading a code sample.',
-          variant: 'destructive',
-        });
+        toast.error('Open a collection before downloading a code sample.');
         return;
       }
 
@@ -319,11 +311,7 @@ export default function SingleRubricArea({
         });
       } catch (error) {
         console.error('Failed to download rubric Python sample', error);
-        toast({
-          title: 'Download failed',
-          description: 'Unable to generate a Python sample for this rubric.',
-          variant: 'destructive',
-        });
+        toast.error('Unable to generate a Python sample for this rubric.');
       } finally {
         setIsDownloadingSample(false);
       }

@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import {
   Carousel,
@@ -123,18 +123,11 @@ function SignupPageContent() {
         message.includes('already exists') ||
         error.response?.status === 409
       ) {
-        toast({
-          title: 'Account Already Exists',
-          description:
-            'A user with this email already exists. Please log in instead.',
-          variant: 'destructive',
-        });
+        toast.error(
+          'A user with this email already exists. Please log in instead.'
+        );
       } else {
-        toast({
-          title: 'Error',
-          description: message,
-          variant: 'destructive',
-        });
+        toast.error(message);
       }
     } finally {
       setIsSubmitting(false);

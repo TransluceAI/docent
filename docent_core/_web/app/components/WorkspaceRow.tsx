@@ -16,7 +16,7 @@ import { InvestigatorWorkspace } from '@/app/api/investigatorApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { cn, copyToClipboard } from '@/lib/utils';
 
 import { useUpdateWorkspaceMutation } from '../api/investigatorApi';
@@ -53,16 +53,9 @@ export default function WorkspaceRow({
     e.stopPropagation();
     const success = await copyToClipboard(workspace.id);
     if (success) {
-      toast({
-        title: 'Workspace ID Copied',
-        description: `Copied ${workspace.id} to clipboard`,
-      });
+      toast.success(`Copied ${workspace.id} to clipboard`);
     } else {
-      toast({
-        title: 'Failed to copy',
-        description: 'Could not copy to clipboard',
-        variant: 'destructive',
-      });
+      toast.error('Could not copy to clipboard');
     }
   };
 
@@ -93,18 +86,11 @@ export default function WorkspaceRow({
         description,
       }).unwrap();
 
-      toast({
-        title: 'Workspace Updated',
-        description: 'Your changes have been saved',
-      });
+      toast.success('Your changes have been saved');
 
       setIsEditing(false);
     } catch (error) {
-      toast({
-        title: 'Update Failed',
-        description: 'Failed to save changes. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to save changes. Please try again.');
     }
   };
 

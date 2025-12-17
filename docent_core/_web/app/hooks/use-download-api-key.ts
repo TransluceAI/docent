@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { apiRestClient } from '@/app/services/apiService';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 let cachedApiKey: string | null = null;
 let inflightApiKeyPromise: Promise<string> | null = null;
@@ -23,11 +23,9 @@ const createDownloadApiKey = async (): Promise<string> => {
     throw new Error('API key was not returned by the server');
   }
 
-  toast({
-    title: 'API key created',
-    description:
-      'Generated a key for Python downloads. Rotate it in Settings as needed.',
-  });
+  toast.success(
+    'Generated a key for Python downloads. Rotate it in Settings as needed.'
+  );
 
   return apiKey;
 };
@@ -52,11 +50,7 @@ export const useDownloadApiKey = () => {
       })
       .catch((error) => {
         console.error('Failed to create download API key', error);
-        toast({
-          title: 'API key unavailable',
-          description: 'Unable to generate an API key for the sample script.',
-          variant: 'destructive',
-        });
+        toast.error('Unable to generate an API key for the sample script.');
         throw error;
       })
       .finally(() => {

@@ -24,7 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import { CollectionsTable } from '../components/CollectionsTable';
 import { UserProfile } from '../components/auth/UserProfile';
@@ -77,17 +77,10 @@ export default function HomePage() {
       setNewCollectionName('');
       setNewCollectionDescription('');
 
-      toast({
-        title: 'Collection Created',
-        description: 'New collection has been created successfully',
-      });
+      toast.success('New collection has been created successfully');
     } catch (error) {
       console.error('Failed to create collection:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create new collection',
-        variant: 'destructive',
-      });
+      toast.error('Failed to create new collection');
     }
   };
 

@@ -21,7 +21,7 @@ import {
   type LabelSet,
 } from '@/app/api/labelApi';
 import { SchemaDefinition, SchemaProperty } from '@/app/types/schema';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 
@@ -69,10 +69,7 @@ export default function LabelEditForm({
           agentRunId,
         }).unwrap();
 
-        toast({
-          title: 'Label updated',
-          description: `Successfully updated label for "${labelSet.name}"`,
-        });
+        toast.success(`Successfully updated label for "${labelSet.name}"`);
       } else {
         // Create new label
         await createLabel({
@@ -84,20 +81,13 @@ export default function LabelEditForm({
           },
         }).unwrap();
 
-        toast({
-          title: 'Label created',
-          description: `Successfully created label for "${labelSet.name}"`,
-        });
+        toast.success(`Successfully created label for "${labelSet.name}"`);
       }
 
       onSuccess?.();
     } catch (error: any) {
       console.error('Failed to save label:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to save label',
-        variant: 'destructive',
-      });
+      toast.error('Failed to save label');
     }
   };
 
@@ -111,19 +101,12 @@ export default function LabelEditForm({
         agentRunId,
       }).unwrap();
 
-      toast({
-        title: 'Label deleted',
-        description: `Successfully deleted label for "${labelSet.name}"`,
-      });
+      toast.success(`Successfully deleted label for "${labelSet.name}"`);
 
       onSuccess?.();
     } catch (error: any) {
       console.error('Failed to delete label:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete label',
-        variant: 'destructive',
-      });
+      toast.error('Failed to delete label');
     }
   };
 

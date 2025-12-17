@@ -11,7 +11,7 @@ import {
 import { LabelSet } from '@/app/api/labelApi';
 import { JudgeResultWithCitations } from '@/app/store/rubricSlice';
 import { SchemaDefinition } from '@/app/types/schema';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import posthog from 'posthog-js';
 import { Tag, Pencil, X, ExternalLink } from 'lucide-react';
 import { TextWithCitations } from '@/components/CitationRenderer';
@@ -84,11 +84,7 @@ const LabelSetMenuItems = ({
       })
       .catch((error) => {
         console.error('Failed to create label set:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to create label set',
-          variant: 'destructive',
-        });
+        toast.error('Failed to create label set');
       });
   };
 
@@ -883,11 +879,7 @@ const JudgeResultCard = ({
       }
     } catch (error: any) {
       console.error('Failed to clear label field:', error.data || error);
-      toast({
-        title: 'Error',
-        description: 'Failed to clear label field',
-        variant: 'destructive',
-      });
+      toast.error('Failed to clear label field');
     }
   };
 
@@ -955,11 +947,7 @@ const JudgeResultCard = ({
       });
     } catch (error: any) {
       console.error('Label operation failed:', error.data || error);
-      toast({
-        title: 'Error',
-        description: `Failed to ${existingLabel ? 'update' : 'create'} label`,
-        variant: 'destructive',
-      });
+      toast.error(`Failed to ${existingLabel ? 'update' : 'create'} label`);
     }
   };
 

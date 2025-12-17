@@ -22,7 +22,7 @@ import {
   useGetRubricMetricsQuery,
 } from '@/app/api/rubricApi';
 import { useGetCollectionsQuery } from '@/app/api/collectionApi';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import {
   DropdownMenu,
@@ -84,17 +84,12 @@ function RubricCard({
       const targetCollection = collections?.find(
         (c) => c.id === targetCollectionId
       );
-      toast({
-        title: 'Rubric Copied',
-        description: `Rubric copied to ${targetCollection?.name || targetCollectionId}`,
-      });
+      toast.success(
+        `Rubric copied to ${targetCollection?.name || targetCollectionId}`
+      );
     } catch (error) {
       console.error('Failed to copy rubric:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to copy rubric',
-        variant: 'destructive',
-      });
+      toast.error('Failed to copy rubric');
     }
   };
 
@@ -107,11 +102,7 @@ function RubricCard({
       }).unwrap();
     } catch (error) {
       console.error('Failed to cancel job:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to cancel job',
-        variant: 'destructive',
-      });
+      toast.error('Failed to cancel job');
     }
   };
 
@@ -127,11 +118,7 @@ function RubricCard({
       }).unwrap();
     } catch (error) {
       console.error('Failed to delete rubric:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete rubric',
-        variant: 'destructive',
-      });
+      toast.error('Failed to delete rubric');
     }
   };
 
@@ -156,11 +143,7 @@ function RubricCard({
       router.push(`/dashboard/${collectionId}/rubric/${rubric.id}`);
     } catch (error) {
       console.error('Failed to start refinement session:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to start refinement session',
-        variant: 'destructive',
-      });
+      toast.error('Failed to start refinement session');
     }
   };
 

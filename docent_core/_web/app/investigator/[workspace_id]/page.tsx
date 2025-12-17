@@ -40,7 +40,7 @@ import {
   useGetActiveExperimentJobsQuery,
   type Backend,
 } from '@/app/api/investigatorApi';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 // Import layout components
 import LeftSidebar from './components/LeftSidebar';
@@ -402,10 +402,7 @@ export default function WorkspacePage() {
         experimentConfigId: selectedExperiment.id,
       }).unwrap();
 
-      toast({
-        title: 'Success',
-        description: 'Experiment cancelled successfully',
-      });
+      toast.success('Experiment cancelled successfully');
 
       // The experiment viewer component will handle reloading the data
     } catch (error) {
@@ -426,10 +423,7 @@ export default function WorkspacePage() {
       setShowDeleteDialog(false);
 
       // Show success toast
-      toast({
-        title: 'Success',
-        description: 'Experiment deleted successfully',
-      });
+      toast.success('Experiment deleted successfully');
     } catch (error) {
       console.error('Failed to delete experiment:', error);
       handleInvestigatorError(error, 'Failed to delete experiment');
@@ -452,11 +446,7 @@ export default function WorkspacePage() {
             !selectedBackendId ||
             !selectedCounterfactualIdeaId
           ) {
-            toast({
-              title: 'Error',
-              description: 'Please select all required fields before launching',
-              variant: 'destructive',
-            });
+            toast.error('Please select all required fields before launching');
             return;
           }
 
@@ -491,12 +481,9 @@ export default function WorkspacePage() {
             !selectedBackendIds ||
             selectedBackendIds.length === 0
           ) {
-            toast({
-              title: 'Error',
-              description:
-                'Please select base context and at least one backend before launching',
-              variant: 'destructive',
-            });
+            toast.error(
+              'Please select base context and at least one backend before launching'
+            );
             return;
           }
 
@@ -628,17 +615,12 @@ export default function WorkspacePage() {
       setEditingComponent(null);
 
       // Show success toast
-      toast({
-        title: 'Success',
-        description: 'Base context deleted successfully',
-      });
+      toast.success('Base context deleted successfully');
     } catch (error) {
       // Show error toast
-      toast({
-        title: 'Error',
-        description: `Failed to delete base context: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to delete base context: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -692,16 +674,11 @@ export default function WorkspacePage() {
       setSelectedJudgeConfigId(undefined);
       setJudgeConfigToView(null);
       setEditingComponent(null);
-      toast({
-        title: 'Success',
-        description: 'Judge configuration deleted successfully',
-      });
+      toast.success('Judge configuration deleted successfully');
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: `Failed to delete judge configuration: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to delete judge configuration: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -819,16 +796,11 @@ export default function WorkspacePage() {
       setSelectedBackendId(undefined);
       setBackendToView(null);
       setEditingComponent(null);
-      toast({
-        title: 'Success',
-        description: 'Backend configuration deleted successfully',
-      });
+      toast.success('Backend configuration deleted successfully');
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: `Failed to delete backend configuration: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to delete backend configuration: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -886,16 +858,11 @@ export default function WorkspacePage() {
       setSelectedCounterfactualIdeaId(undefined);
       setIdeaToView(null);
       setEditingComponent(null);
-      toast({
-        title: 'Success',
-        description: 'Counterfactual idea deleted successfully',
-      });
+      toast.success('Counterfactual idea deleted successfully');
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: `Failed to delete counterfactual idea: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to delete counterfactual idea: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -913,10 +880,7 @@ export default function WorkspacePage() {
         setSelectedBaseContextId(result.id);
       } else {
         // Show success toast for fork from read-only view
-        toast({
-          title: 'Success',
-          description: `Base context "${data.name}" created successfully`,
-        });
+        toast.success(`Base context "${data.name}" created successfully`);
       }
 
       // Clear fork state
@@ -942,10 +906,9 @@ export default function WorkspacePage() {
         setSelectedCounterfactualIdeaId(result.id);
       } else {
         // Show success toast for fork from read-only view
-        toast({
-          title: 'Success',
-          description: `Counterfactual idea "${data.name}" created successfully`,
-        });
+        toast.success(
+          `Counterfactual idea "${data.name}" created successfully`
+        );
       }
 
       // Clear fork state
@@ -955,11 +918,9 @@ export default function WorkspacePage() {
       setEditingComponent(null);
     } catch (error) {
       // Show error toast
-      toast({
-        title: 'Error',
-        description: `Failed to create counterfactual idea: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to create counterfactual idea: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -988,11 +949,7 @@ export default function WorkspacePage() {
       (ctx) => ctx.id === selectedExperiment.base_context.id
     );
     if (!baseContext) {
-      toast({
-        title: 'Cannot clone',
-        description: 'Could not find base context configuration',
-        variant: 'destructive',
-      });
+      toast.error('Could not find base context configuration');
       return;
     }
 
@@ -1063,10 +1020,9 @@ export default function WorkspacePage() {
         setSelectedBackendId(result.id);
       } else {
         // Show success toast for fork from read-only view
-        toast({
-          title: 'Success',
-          description: `Backend configuration "${data.name}" created successfully`,
-        });
+        toast.success(
+          `Backend configuration "${data.name}" created successfully`
+        );
       }
 
       // Clear fork state
@@ -1076,11 +1032,9 @@ export default function WorkspacePage() {
       setEditingComponent(null);
     } catch (error) {
       // Show error toast
-      toast({
-        title: 'Error',
-        description: `Failed to create backend configuration: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to create backend configuration: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 
@@ -1097,10 +1051,9 @@ export default function WorkspacePage() {
         setSelectedJudgeConfigId(result.id);
       } else {
         // Show success toast for fork from read-only view
-        toast({
-          title: 'Success',
-          description: `Judge configuration "${data.name}" created successfully`,
-        });
+        toast.success(
+          `Judge configuration "${data.name}" created successfully`
+        );
       }
 
       // Clear fork state
@@ -1110,11 +1063,9 @@ export default function WorkspacePage() {
       setEditingComponent(null);
     } catch (error) {
       // Show error toast
-      toast({
-        title: 'Error',
-        description: `Failed to create judge configuration: ${(error as any)?.data?.detail || 'Unknown error'}`,
-        variant: 'destructive',
-      });
+      toast.error(
+        `Failed to create judge configuration: ${(error as any)?.data?.detail || 'Unknown error'}`
+      );
     }
   };
 

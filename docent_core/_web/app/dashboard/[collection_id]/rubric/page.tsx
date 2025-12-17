@@ -7,7 +7,7 @@ import {
   useGetJudgeModelsQuery,
 } from '@/app/api/rubricApi';
 import { useCreateOrGetRefinementSessionMutation } from '@/app/api/refinementApi';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import QuickSearchBox from '../components/QuickSearchBox';
 import RubricList from '../components/RubricList';
 import JsonEditor from '../components/JsonEditor';
@@ -120,11 +120,7 @@ export default function RubricsPage() {
     if (!collectionId) return undefined;
 
     if (!selectedJudgeModel) {
-      toast({
-        title: 'Error',
-        description: 'Judge model is still loading.',
-        variant: 'destructive',
-      });
+      toast.error('Judge model is still loading.');
       return undefined;
     }
 
@@ -149,11 +145,7 @@ export default function RubricsPage() {
       .unwrap()
       .catch((error) => {
         console.error('Failed to create rubric', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to create rubric',
-          variant: 'destructive',
-        });
+        toast.error('Failed to create rubric');
       });
   };
 
@@ -172,11 +164,7 @@ export default function RubricsPage() {
       })
       .catch((error) => {
         console.error('Failed to create or get session:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to create or get session',
-          variant: 'destructive',
-        });
+        toast.error('Failed to create or get session');
       });
   };
 
@@ -196,11 +184,7 @@ export default function RubricsPage() {
       })
       .catch((error) => {
         console.error('Failed to create or get session:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to create or get session',
-          variant: 'destructive',
-        });
+        toast.error('Failed to create or get session');
       });
   };
 

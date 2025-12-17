@@ -14,7 +14,7 @@ import {
 import { Loader2, UploadIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { ProgressBar } from './ProgressBar';
 import {
   usePreviewImportRunsFromFileMutation,
@@ -170,10 +170,7 @@ export default function UploadRunsDialog({
     setProgressTotal(data.total);
 
     if (data.phase === 'complete') {
-      toast({
-        title: 'Runs Imported',
-        description: `${data.uploaded} runs have been imported successfully.`,
-      });
+      toast.success(`${data.uploaded} runs have been imported successfully.`);
       if (onImportSuccess) {
         onImportSuccess();
       }

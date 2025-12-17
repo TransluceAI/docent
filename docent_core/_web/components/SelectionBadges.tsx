@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TextSelectionItem } from '@/providers/use-text-selection';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { CitationTarget } from '@/app/types/citationTypes';
 
 // Get location label based on citation type
@@ -83,11 +83,7 @@ export default function SelectionBadges({
                   try {
                     window.getSelection()?.removeAllRanges();
                   } catch {
-                    toast({
-                      title: 'Error',
-                      description: 'Failed to remove selection',
-                      variant: 'destructive',
-                    });
+                    toast.error('Failed to remove selection');
                   }
                   onRemove(idx);
                 }}

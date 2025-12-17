@@ -5,7 +5,7 @@ import { ChatArea } from '../../../components/chat/ChatArea';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { ProgressBar } from '@/app/components/ProgressBar';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Tags } from 'lucide-react';
 import {
   Tooltip,
@@ -104,11 +104,7 @@ export default function RefinementChat({
     await cancelRefinementSession({ collectionId, sessionId })
       .unwrap()
       .catch(() => {
-        toast({
-          title: 'Error',
-          description: 'Failed to cancel refinement session',
-          variant: 'destructive',
-        });
+        toast.error('Failed to cancel refinement session');
       });
   }, [collectionId, sessionId, cancelRefinementSession, setRefinementJobId]);
 
@@ -122,11 +118,7 @@ export default function RefinementChat({
         if (res?.job_id) setRefinementJobId(res.job_id);
       })
       .catch(() => {
-        toast({
-          title: 'Error',
-          description: 'Failed to retry last message',
-          variant: 'destructive',
-        });
+        toast.error('Failed to retry last message');
       });
   };
 

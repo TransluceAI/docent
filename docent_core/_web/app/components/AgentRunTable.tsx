@@ -61,7 +61,7 @@ import {
 import { BASE_URL } from '@/app/constants';
 import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
 import { downloadPythonSample } from '@/app/utils/pythonSamples';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { ComplexFilter } from '@/app/types/collectionTypes';
 
 export type AgentRunTableRow = {
@@ -476,11 +476,7 @@ export const AgentRunTable = memo(function AgentRunTable({
         return;
       }
       if (!resolvedCollectionId) {
-        toast({
-          title: 'Missing collection',
-          description: 'Open a collection before downloading a code sample.',
-          variant: 'destructive',
-        });
+        toast.error('Open a collection before downloading a code sample.');
         return;
       }
 
@@ -515,11 +511,7 @@ export const AgentRunTable = memo(function AgentRunTable({
         });
       } catch (error) {
         console.error('Failed to download agent run sample', error);
-        toast({
-          title: 'Download failed',
-          description: errorDescription,
-          variant: 'destructive',
-        });
+        toast.error(errorDescription);
       } finally {
         setIsDownloadingSample(false);
       }

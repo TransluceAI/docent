@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Copy, Trash2 } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { apiRestClient } from '@/app/services/apiService';
 
 interface ApiKey {
@@ -64,11 +64,7 @@ export default function ApiKeysPage() {
       setApiKeys(response.data);
     } catch (error) {
       console.error('Failed to fetch API keys:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load API keys',
-        variant: 'destructive',
-      });
+      toast.error('Failed to load API keys');
     } finally {
       setIsLoading(false);
     }
@@ -93,18 +89,12 @@ export default function ApiKeysPage() {
       setIsCreateDialogOpen(false);
       await fetchApiKeys();
 
-      toast({
-        title: 'API Key Created',
-        description:
-          'Your new API key has been created. Make sure to copy it now!',
-      });
+      toast.success(
+        'Your new API key has been created. Make sure to copy it now!'
+      );
     } catch (error) {
       console.error('Failed to create API key:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create API key',
-        variant: 'destructive',
-      });
+      toast.error('Failed to create API key');
     } finally {
       setIsCreating(false);
     }
@@ -114,35 +104,20 @@ export default function ApiKeysPage() {
     try {
       await apiRestClient.delete(`/api-keys/${keyId}`);
       await fetchApiKeys();
-      toast({
-        title: 'API Key Disabled',
-        description: 'The API key has been disabled successfully',
-      });
+      toast.success('The API key has been disabled successfully');
     } catch (error) {
       console.error('Failed to disable API key:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to disable API key',
-        variant: 'destructive',
-      });
+      toast.error('Failed to disable API key');
     }
   };
 
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: 'Copied',
-        description: 'API key copied to clipboard',
-      });
+      toast.success('API key copied to clipboard');
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
-      toast({
-        title: 'Copy Failed',
-        description:
-          'Failed to copy API key to clipboard. Please copy manually.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to copy API key to clipboard. Please copy manually.');
     }
   };
 

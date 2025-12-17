@@ -39,7 +39,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import { WorkspacesTable } from '../components/WorkspacesTable';
 import { UserProfile } from '../components/auth/UserProfile';
@@ -85,11 +85,7 @@ export default function InvestigatorHomePage() {
   const handleCreateWorkspace = async () => {
     // Validate that name is provided
     if (!newWorkspaceName.trim()) {
-      toast({
-        title: 'Name Required',
-        description: 'Please provide a name for the workspace',
-        variant: 'destructive',
-      });
+      toast.error('Please provide a name for the workspace');
       return;
     }
 
@@ -104,10 +100,7 @@ export default function InvestigatorHomePage() {
       setNewWorkspaceName('');
       setNewWorkspaceDescription('');
 
-      toast({
-        title: 'Workspace Created',
-        description: 'New workspace has been created successfully',
-      });
+      toast.success('New workspace has been created successfully');
     } catch (error) {
       console.error('Failed to create workspace:', error);
       handleInvestigatorError(error, 'Failed to create new workspace');

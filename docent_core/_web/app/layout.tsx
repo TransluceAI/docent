@@ -4,11 +4,11 @@ import { Open_Sans, JetBrains_Mono } from 'next/font/google';
 import { cn } from '@/lib/utils';
 
 import { ReduxProvider, CSPostHogProvider } from './providers';
-import { Toaster } from '@/components/ui/toaster';
 import ReduxToastHandler from '@/components/ReduxToastHandler';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserProvider } from './contexts/UserContext';
 import { getUser } from './services/dal';
+import { Toaster, PersistentToaster } from '@/components/ui/sonner';
 
 import './globals.css';
 
@@ -54,6 +54,7 @@ export default async function RootLayout({
                 <TooltipProvider delayDuration={0}>
                   {children}
                   <Toaster />
+                  <PersistentToaster />
                   <ReduxToastHandler />
                 </TooltipProvider>
               </CSPostHogProvider>

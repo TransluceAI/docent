@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableCell, TableRow } from '@/components/ui/table';
 import UuidPill from '@/components/UuidPill';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDateValue } from '@/lib/dateUtils';
 
@@ -88,10 +88,7 @@ export default function CollectionRow({
       description,
     });
 
-    toast({
-      title: 'Collection Updated',
-      description: 'The collection has been updated successfully',
-    });
+    toast.success('The collection has been updated successfully');
 
     setIsEditing(false);
   };

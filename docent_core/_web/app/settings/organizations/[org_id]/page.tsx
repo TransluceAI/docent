@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArrowLeft } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
 
 const ROLE_LABELS: Record<OrganizationRole, string> = {
@@ -58,16 +58,12 @@ export default function OrganizationDetailPage() {
     if (!trimmed) return;
     try {
       await addMember({ orgId, email: trimmed, role: newRole }).unwrap();
-      toast({ title: 'Member added', description: trimmed });
+      toast.success(`Member added: ${trimmed}`);
       setEmail('');
       setNewRole('member');
     } catch (err: unknown) {
       const parsed = getRtkQueryErrorMessage(err, 'Failed to add member.');
-      toast({
-        title: 'Error',
-        description: parsed.message,
-        variant: 'destructive',
-      });
+      toast.error(parsed.message);
     }
   };
 
@@ -76,25 +72,17 @@ export default function OrganizationDetailPage() {
       await updateRole({ orgId, memberUserId, role }).unwrap();
     } catch (err: unknown) {
       const parsed = getRtkQueryErrorMessage(err, 'Failed to update role.');
-      toast({
-        title: 'Error',
-        description: parsed.message,
-        variant: 'destructive',
-      });
+      toast.error(parsed.message);
     }
   };
 
   const onRemove = async (memberUserId: string, memberEmail: string) => {
     try {
       await removeMember({ orgId, memberUserId }).unwrap();
-      toast({ title: 'Member removed', description: memberEmail });
+      toast.success(`Member removed: ${memberEmail}`);
     } catch (err: unknown) {
       const parsed = getRtkQueryErrorMessage(err, 'Failed to remove member.');
-      toast({
-        title: 'Error',
-        description: parsed.message,
-        variant: 'destructive',
-      });
+      toast.error(parsed.message);
     }
   };
 

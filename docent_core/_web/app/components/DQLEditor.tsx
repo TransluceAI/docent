@@ -49,7 +49,7 @@ import {
 import { BASE_URL } from '@/app/constants';
 import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
 import { downloadPythonSample } from '@/app/utils/pythonSamples';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 interface DQLEditorProps {
   collectionId?: string;
@@ -543,11 +543,7 @@ const DQLEditor = ({
         });
       } catch (error) {
         console.error('Failed to export DQL results', error);
-        toast({
-          title: 'Download failed',
-          description: 'Unable to export query results.',
-          variant: 'destructive',
-        });
+        toast.error('Unable to export query results.');
       } finally {
         setIsExporting(false);
       }
@@ -558,21 +554,13 @@ const DQLEditor = ({
   const handleDownloadPythonSample = useCallback(
     async (format: 'python' | 'notebook' = 'python') => {
       if (!collectionId) {
-        toast({
-          title: 'Missing collection',
-          description: 'Open a collection before downloading a code sample.',
-          variant: 'destructive',
-        });
+        toast.error('Open a collection before downloading a code sample.');
         return;
       }
 
       const trimmedQuery = query.trim();
       if (!trimmedQuery) {
-        toast({
-          title: 'Missing query',
-          description: 'Enter a query before downloading a code sample.',
-          variant: 'destructive',
-        });
+        toast.error('Enter a query before downloading a code sample.');
         return;
       }
 
@@ -589,11 +577,7 @@ const DQLEditor = ({
         });
       } catch (error) {
         console.error('Failed to download DQL Python sample', error);
-        toast({
-          title: 'Download failed',
-          description: 'Unable to generate a Python sample for this query.',
-          variant: 'destructive',
-        });
+        toast.error('Unable to generate a Python sample for this query.');
       } finally {
         setIsDownloadingSample(false);
       }

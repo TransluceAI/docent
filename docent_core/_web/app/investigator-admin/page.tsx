@@ -38,7 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import { UserProfile } from '../components/auth/UserProfile';
 import { useRequireUserContext } from '../contexts/UserContext';
@@ -89,11 +89,7 @@ export default function InvestigatorAdminPage() {
 
   const handleAddUser = async () => {
     if (!newUserEmail.trim()) {
-      toast({
-        title: 'Email Required',
-        description: 'Please provide an email address',
-        variant: 'destructive',
-      });
+      toast.error('Please provide an email address');
       return;
     }
 
@@ -103,17 +99,10 @@ export default function InvestigatorAdminPage() {
       setIsAddUserDialogOpen(false);
       setNewUserEmail('');
 
-      toast({
-        title: 'User Added',
-        description: 'User has been added to the authorized list',
-      });
+      toast.success('User has been added to the authorized list');
     } catch (error: any) {
       console.error('Failed to add user:', error);
-      toast({
-        title: 'Error',
-        description: error?.data?.detail || 'Failed to add user',
-        variant: 'destructive',
-      });
+      toast.error(error?.data?.detail || 'Failed to add user');
     }
   };
 
@@ -121,17 +110,10 @@ export default function InvestigatorAdminPage() {
     try {
       await removeAuthorizedUser(userId).unwrap();
 
-      toast({
-        title: 'User Removed',
-        description: `${email} has been removed from the authorized list`,
-      });
+      toast.success(`${email} has been removed from the authorized list`);
     } catch (error: any) {
       console.error('Failed to remove user:', error);
-      toast({
-        title: 'Error',
-        description: error?.data?.detail || 'Failed to remove user',
-        variant: 'destructive',
-      });
+      toast.error(error?.data?.detail || 'Failed to remove user');
     }
   };
 

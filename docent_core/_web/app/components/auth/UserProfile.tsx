@@ -16,7 +16,7 @@ import {
   useRequireUserContext,
   useUserContext,
 } from '../../contexts/UserContext';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 export const UserProfile = () => {
   // User is guaranteed to be present since this component is only used in authenticated areas
@@ -35,11 +35,7 @@ export const UserProfile = () => {
       window.location.href = '/signup'; // Handle redirect
     } catch (error) {
       console.error('Logout failed:', error);
-      toast({
-        title: 'Logout Error',
-        description: 'Failed to logout. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to logout. Please try again.');
     }
   };
 

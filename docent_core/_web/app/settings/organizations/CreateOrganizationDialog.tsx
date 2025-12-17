@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useCreateOrganizationMutation } from '@/app/api/orgApi';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
 
@@ -33,7 +33,7 @@ export default function CreateOrganizationDialog() {
         name: trimmedName,
         description: description.trim() || undefined,
       }).unwrap();
-      toast({ title: 'Organization created', description: org.name });
+      toast.success(`Organization created: ${org.name}`);
       setIsOpen(false);
       setName('');
       setDescription('');
@@ -44,11 +44,7 @@ export default function CreateOrganizationDialog() {
         err,
         'Failed to create organization.'
       );
-      toast({
-        title: 'Error',
-        description: parsed.message,
-        variant: 'destructive',
-      });
+      toast.error(parsed.message);
     }
   };
 

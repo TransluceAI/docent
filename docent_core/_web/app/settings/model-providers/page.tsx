@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trash2 } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { PROVIDERS, getProviderLabel } from '@/app/settings/utils/providers';
 import {
   useGetModelApiKeysQuery,
@@ -62,11 +62,7 @@ export default function ModelProvidersPage() {
       await refetch();
     } catch (error) {
       console.error('Failed to save model API key:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to save model API key',
-        variant: 'destructive',
-      });
+      toast.error('Failed to save model API key');
     }
   };
 
@@ -76,11 +72,7 @@ export default function ModelProvidersPage() {
       await refetch();
     } catch (error) {
       console.error('Failed to delete model API key:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete model API key',
-        variant: 'destructive',
-      });
+      toast.error('Failed to delete model API key');
     }
   };
 

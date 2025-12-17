@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 interface ErrorToastOptions {
   title: string;
@@ -27,9 +27,10 @@ export function logErrorWithToast(
   Sentry.captureException(errorObj, sentryOptions);
 
   // Show toast notification
-  toast({
-    title: options.title,
-    description: options.description,
-    variant: options.variant || 'destructive',
-  });
+  const message = options.description || options.title;
+  if (options.variant === 'destructive') {
+    toast.error(message);
+  } else {
+    toast.success(message);
+  }
 }

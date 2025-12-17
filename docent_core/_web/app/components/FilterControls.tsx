@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { v4 as uuid4 } from 'uuid';
 import { SmartValueInput } from './SmartValueInput';
 import { SingleCombobox } from './Combobox';
@@ -107,11 +107,7 @@ export const FilterControls = ({
 
   const onUpdateMetadataFilter = (value: string) => {
     if (!metadataKey.trim()) {
-      toast({
-        title: 'Missing key',
-        description: 'Please enter a metadata key',
-        variant: 'destructive',
-      });
+      toast.error('Please enter a metadata key');
       return;
     }
 
@@ -128,11 +124,7 @@ export const FilterControls = ({
         const isValidNullCheck =
           normalized === 'null' || normalized === 'not null';
         if (!isValidNullCheck) {
-          toast({
-            title: 'Invalid value',
-            description: 'Select either "null" or "not null"',
-            variant: 'destructive',
-          });
+          toast.error('Select either "null" or "not null"');
           return;
         }
       } else if (metadataType === 'bool') {
@@ -140,11 +132,7 @@ export const FilterControls = ({
       } else if (metadataType === 'int' || metadataType === 'float') {
         parsedValue = Number(value);
         if (isNaN(parsedValue)) {
-          toast({
-            title: 'Invalid number',
-            description: 'Please enter a valid number',
-            variant: 'destructive',
-          });
+          toast.error('Please enter a valid number');
           return;
         }
       }

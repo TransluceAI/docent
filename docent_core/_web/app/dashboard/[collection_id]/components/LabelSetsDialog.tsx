@@ -16,7 +16,7 @@ import {
 import LabelSetsTable, { type LabelSetTableRow } from './LabelSetsTable';
 import { areSchemasCompatible } from '@/lib/utils';
 import LabelSetEditor from './LabelSetEditor';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useParams } from 'next/navigation';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,6 @@ export default function LabelSetsDialog({
     null
   );
   const [isCreateMode, setIsCreateMode] = useState(false);
-  const { toast } = useToast();
 
   // Fetch all label sets with counts
   const { data: allLabelSets, isLoading } = useGetLabelSetsWithCountsQuery({
@@ -87,10 +86,7 @@ export default function LabelSetsDialog({
     await deleteLabelSet({ collectionId, labelSetId })
       .unwrap()
       .then(() => {
-        toast({
-          title: 'Label set deleted',
-          description: 'The label set has been successfully deleted.',
-        });
+        toast.success('The label set has been successfully deleted.');
 
         // Clear selection if the deleted set was selected
         if (selectedLabelSetId === labelSetId) {
@@ -104,21 +100,14 @@ export default function LabelSetsDialog({
         }
       })
       .catch((error) => {
-        toast({
-          title: 'Failed to delete label set',
-          description: 'An error occurred while deleting the label set.',
-          variant: 'destructive',
-        });
+        toast.error('An error occurred while deleting the label set.');
       });
   };
 
   const handleImportLabelSet = (labelSet: LabelSet) => {
     if (onImportLabelSet) {
       onImportLabelSet(labelSet);
-      toast({
-        title: 'Label set activated',
-        description: `"${labelSet.name}" is now the active label set.`,
-      });
+      toast.success(`"${labelSet.name}" is now the active label set.`);
     }
   };
 

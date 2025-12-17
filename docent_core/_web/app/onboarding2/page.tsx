@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { apiRestClient } from '@/app/services/apiService';
 
 interface OnboardingData {
@@ -325,19 +325,12 @@ export default function Onboarding2Page() {
         discovery_source: onboardingData.discoverySource || null,
       });
 
-      toast({
-        title: 'Welcome to Docent!',
-        description: 'Your account has been set up successfully.',
-      });
+      toast.success('Your account has been set up successfully.');
       const redirectUrl = redirectParam || '/dashboard';
       router.push(redirectUrl);
     } catch (error) {
       console.error('Failed to complete onboarding:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to complete onboarding. Please try again.',
-        variant: 'destructive',
-      });
+      toast.error('Failed to complete onboarding. Please try again.');
     }
   };
 

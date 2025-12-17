@@ -1,4 +1,4 @@
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 /**
  * Handle RTK Query errors consistently across the investigator frontend
@@ -11,12 +11,9 @@ export function handleInvestigatorError(
 
   // Handle 403 specifically
   if (errorObj?.status === 403) {
-    toast({
-      title: 'Access Denied',
-      description:
-        'You are not authorized to perform this action in the investigator.',
-      variant: 'destructive',
-    });
+    toast.error(
+      'You are not authorized to perform this action in the investigator.'
+    );
     return;
   }
 
@@ -41,11 +38,7 @@ export function handleInvestigatorError(
     message = errorObj.message;
   }
 
-  toast({
-    title: 'Error',
-    description: message,
-    variant: 'destructive',
-  });
+  toast.error(message);
 }
 
 /**

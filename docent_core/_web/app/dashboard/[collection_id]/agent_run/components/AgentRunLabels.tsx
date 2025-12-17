@@ -24,7 +24,7 @@ import { useParams } from 'next/navigation';
 import LabelEditForm from './LabelEditForm';
 import { Label } from '@/components/ui/label';
 import LabelSetsDialog from '../../components/LabelSetsDialog';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
 
 import {
@@ -377,18 +377,11 @@ const AgentRunLabelCard = ({
   const handleDeleteLabel = async (labelId: string) => {
     try {
       await deleteLabel({ collectionId, labelId, agentRunId }).unwrap();
-      toast({
-        title: 'Label deleted',
-        description: 'The label has been successfully deleted.',
-      });
+      toast.success('The label has been successfully deleted.');
       setDeleteLabelId(null);
     } catch (error) {
       console.error('Failed to delete label:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete label',
-        variant: 'destructive',
-      });
+      toast.error('Failed to delete label');
     }
   };
 

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 import { login } from '../services/authService';
 import { useUserContext } from '../contexts/UserContext';
@@ -52,18 +52,11 @@ function LoginPageContent() {
         error.response?.data?.detail || error.message || 'Login failed';
 
       if (message.includes('not found') || error.response?.status === 404) {
-        toast({
-          title: 'User not found',
-          description:
-            'No account found with that email address. Please sign up first.',
-          variant: 'destructive',
-        });
+        toast.error(
+          'No account found with that email address. Please sign up first.'
+        );
       } else {
-        toast({
-          title: 'Error',
-          description: message,
-          variant: 'destructive',
-        });
+        toast.error(message);
       }
     } finally {
       setIsSubmitting(false);
