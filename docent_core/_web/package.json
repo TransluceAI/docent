@@ -87,7 +87,7 @@
     "@types/react-window": "^1.8.8",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "eslint": "^8",
-    "eslint-config-next": "14.2.7",
+    "eslint-config-next": "16.1.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-unused-imports": "^4.1.4",
