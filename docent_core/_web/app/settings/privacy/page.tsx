@@ -120,6 +120,38 @@ export default function PrivacySettingsPage() {
           </RadioGroup>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Data Deletion Requests</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            You have the right to request deletion of your personal data in
+            accordance with GDPR and CCPA regulations. For more details, see our{' '}
+            <a
+              href="https://trust.transluce.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-text hover:underline font-medium"
+            >
+              privacy statement
+            </a>
+            .
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            To request deletion of your personal data, please contact us at{' '}
+            <a
+              href="mailto:info@transluce.org"
+              className="text-blue-text hover:underline font-medium"
+            >
+              info@transluce.org
+            </a>
+            . We will process your request in accordance with applicable
+            regulations.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
