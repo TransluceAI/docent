@@ -765,10 +765,17 @@ async def get_agent_run_with_tree(
     tree = AgentRunTree.from_agent_run(agent_run)
     nodes = tree.nodes if full_tree else tree.nodes_pruned
 
+    transcript_ids = [t.id for t in agent_run.transcripts if t.id]
+    otel_message_ids_by_transcript_id = await mono_svc.get_otel_message_ids_by_transcript_ids(
+        collection_id=ctx.collection_id,
+        transcript_ids=transcript_ids,
+    )
+
     return agent_run, {
         "nodes": {k: v.model_dump() for k, v in nodes.items()},
         "transcript_id_to_idx": tree.transcript_id_to_idx,
         "parent_map": tree.parent_map,
+        "otel_message_ids_by_transcript_id": otel_message_ids_by_transcript_id,
     }
 
 

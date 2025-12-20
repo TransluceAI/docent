@@ -509,6 +509,18 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       ? transcriptIdToIdx[selectedTranscriptId]
       : undefined;
 
+    const telemetryMessageIds = useMemo(() => {
+      if (!selectedTranscriptId) return new Set<string>();
+      const ids =
+        agentRunTree?.otel_message_ids_by_transcript_id?.[selectedTranscriptId];
+      if (!Array.isArray(ids)) return new Set<string>();
+      const out = new Set<string>();
+      for (const id of ids) {
+        if (typeof id === 'string' && id.length > 0) out.add(id);
+      }
+      return out;
+    }, [agentRunTree, selectedTranscriptId]);
+
     // Initialize pretty print for messages with JSON content when transcript changes
     useEffect(() => {
       if (transcript && transcript.messages.length > 0) {
@@ -1488,6 +1500,13 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                         >
                           {transcript.messages.map((message, index) => {
                             const blockId = `t-${transcriptIdx}_b-${index}`;
+                            const messageId = (message as any)?.id as
+                              | string
+                              | undefined;
+                            const hasTelemetry =
+                              typeof messageId === 'string' &&
+                              messageId.length > 0 &&
+                              telemetryMessageIds.has(messageId);
                             const isMsgIntent =
                               metadataIntent?.type === 'message' &&
                               metadataIntent.transcriptId ===
@@ -1541,6 +1560,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                 setPrettyPrintJsonMessages={
                                   setPrettyPrintJsonMessages
                                 }
+                                hasTelemetry={hasTelemetry}
                                 metadataDialogControl={{
                                   open: Boolean(isMsgIntent),
                                   onOpenChange: (open) => {

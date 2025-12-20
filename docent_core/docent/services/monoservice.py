@@ -97,6 +97,7 @@ from docent_core.docent.db.schemas.tables import (
     SQLASearchResultCluster,
     SQLASession,
     SQLATelemetryAgentRunStatus,
+    SQLATelemetryLineage,
     SQLATelemetryLog,
     SQLATranscript,
     SQLATranscriptEmbedding,
@@ -1105,6 +1106,45 @@ class MonoService:
                 transcripts_raw.extend(result.scalars().all())
 
         return [t_raw.to_transcript() for t_raw in transcripts_raw]
+
+    async def get_otel_message_ids_by_transcript_ids(
+        self, *, collection_id: str, transcript_ids: Sequence[str]
+    ) -> dict[str, list[str]]:
+        """
+        Return a mapping of transcript_id -> message_ids that have linked OpenTelemetry span payloads.
+
+        The mapping is derived from telemetry lineage entries created during telemetry processing and
+        is used by the UI to hide telemetry affordances for messages without available data.
+        """
+        unique_transcript_ids = [tid for tid in dict.fromkeys(transcript_ids) if tid]
+        if not unique_transcript_ids:
+            return {}
+
+        async with self.db.session() as session:
+            stmt = (
+                select(SQLATelemetryLineage.derived_id, SQLATelemetryLineage.derived_key)
+                .where(
+                    SQLATelemetryLineage.collection_id == collection_id,
+                    SQLATelemetryLineage.derived_type == "transcript_message",
+                    SQLATelemetryLineage.derived_id.in_(unique_transcript_ids),
+                    SQLATelemetryLineage.derived_key != "",
+                    SQLATelemetryLineage.telemetry_accumulation_id.is_not(None),
+                )
+                .distinct()
+                .order_by(
+                    SQLATelemetryLineage.derived_id.asc(),
+                    SQLATelemetryLineage.derived_key.asc(),
+                )
+            )
+            result = await session.execute(stmt)
+
+        otel_message_ids_by_transcript_id: dict[str, list[str]] = {}
+        for transcript_id, message_id in result.all():
+            if not transcript_id or not message_id:
+                continue
+            otel_message_ids_by_transcript_id.setdefault(transcript_id, []).append(message_id)
+
+        return otel_message_ids_by_transcript_id
 
     async def get_metadata_for_agent_runs(
         self,

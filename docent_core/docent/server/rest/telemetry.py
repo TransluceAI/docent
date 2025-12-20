@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from docent._log_util import get_logger
-from docent_core.docent.db.schemas.auth_models import User
+from docent_core.docent.db.schemas.auth_models import Permission, User
 from docent_core.docent.server.dependencies.database import require_collection_exists
+from docent_core.docent.server.dependencies.permissions import require_collection_permission
 from docent_core.docent.server.dependencies.services import (
     get_mono_svc,
     get_telemetry_accumulation_service,
@@ -111,7 +112,7 @@ def _find_null_character_path(value: Any, path: str = "") -> Optional[str]:
         return None
 
     if isinstance(value, dict):
-        value_dict: dict[Any, Any] = value
+        value_dict = cast(dict[str, Any], value)
         for key, nested in value_dict.items():
             nested_path = f"{path}.{key}" if path else str(key)
             result = _find_null_character_path(nested, nested_path)
@@ -120,7 +121,7 @@ def _find_null_character_path(value: Any, path: str = "") -> Optional[str]:
         return None
 
     if isinstance(value, list):
-        value_list: list[Any] = value
+        value_list = cast(list[Any], value)
         for index, nested in enumerate(value_list):
             nested_path = f"{path}[{index}]" if path else f"[{index}]"
             result = _find_null_character_path(nested, nested_path)
@@ -697,3 +698,26 @@ async def ensure_telemetry_processing(
 
     except Exception as e:
         logger.error(f"Failed to ensure telemetry processing for collection {collection_id}: {e}")
+
+
+@telemetry_router.get("/{collection_id}/transcripts/{transcript_id}/messages/{message_id}/otel")
+async def get_message_otel(
+    transcript_id: str,
+    message_id: str,
+    collection_id: str = Depends(require_collection_exists),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+    telemetry_svc: TelemetryService = Depends(get_telemetry_service),
+) -> Dict[str, Any]:
+    """
+    Fetch the OpenTelemetry span payload associated with a transcript message.
+
+    The linkage is maintained via SQLATelemetryLineage rows written during telemetry processing.
+    """
+    payload = await telemetry_svc.get_message_otel_payload(
+        collection_id=collection_id,
+        transcript_id=transcript_id,
+        message_id=message_id,
+    )
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Telemetry span payload not found.")
+    return payload

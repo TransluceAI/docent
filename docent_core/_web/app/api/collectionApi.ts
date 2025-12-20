@@ -24,6 +24,7 @@ interface AgentRunTree {
   nodes: Record<string, AgentRunTreeNode>;
   transcript_id_to_idx: Record<string, number>;
   parent_map: Record<string, string>;
+  otel_message_ids_by_transcript_id?: Record<string, string[]>;
 }
 
 interface CreateCollectionRequest {

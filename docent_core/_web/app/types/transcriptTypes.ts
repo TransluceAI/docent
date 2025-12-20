@@ -19,6 +19,7 @@ export interface Content {
 }
 
 interface BaseChatMessage {
+  id?: string;
   content: string | Content[];
   metadata?: BaseMetadata;
 }

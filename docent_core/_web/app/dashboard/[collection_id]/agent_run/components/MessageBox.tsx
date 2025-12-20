@@ -20,6 +20,7 @@ import { MetadataPopover } from '@/components/metadata/MetadataPopover';
 import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import { MessageSquarePlus } from 'lucide-react';
+import { MessageTelemetryDialog } from './MessageTelemetryDialog';
 
 function stringify(x: any): string {
   if (typeof x === 'string') return x;
@@ -159,6 +160,7 @@ interface MessageBoxProps {
   prettyPrintJsonMessages: Set<number>;
   setPrettyPrintJsonMessages: React.Dispatch<React.SetStateAction<Set<number>>>;
   dataContext: TranscriptBlockContentItem;
+  hasTelemetry?: boolean;
   metadataDialogControl?: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -180,6 +182,7 @@ export function MessageBox({
   prettyPrintJsonMessages,
   dataContext,
   setPrettyPrintJsonMessages,
+  hasTelemetry,
   metadataDialogControl,
   onAddMetadataComment,
   onAddBlockComment,
@@ -473,6 +476,23 @@ export function MessageBox({
     });
   };
 
+  const collectionId = (dataContext as any)?.collection_id as
+    | string
+    | undefined;
+  const transcriptId = (dataContext as any)?.transcript_id as
+    | string
+    | undefined;
+  const messageId = (message as any)?.id as string | undefined;
+
+  const canShowTelemetryLink =
+    typeof collectionId === 'string' &&
+    collectionId.length > 0 &&
+    typeof transcriptId === 'string' &&
+    transcriptId.length > 0 &&
+    typeof messageId === 'string' &&
+    messageId.length > 0 &&
+    hasTelemetry === true;
+
   return (
     <div className="mb-1 agent-run-viewer">
       <div
@@ -510,6 +530,13 @@ export function MessageBox({
             )}
           </span>
           <div className="flex items-center gap-2">
+            {canShowTelemetryLink && (
+              <MessageTelemetryDialog
+                collectionId={collectionId as string}
+                transcriptId={transcriptId as string}
+                messageId={messageId as string}
+              />
+            )}
             {hasJsonContent(mainTextContent) && (
               <label className="flex items-center space-x-1 text-xs text-muted-foreground">
                 <input
