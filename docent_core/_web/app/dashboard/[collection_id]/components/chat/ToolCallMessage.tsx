@@ -68,7 +68,15 @@ export default function ToolCallMessage({
             <span className="text-muted-foreground">(...)</span>
           </button>
         ) : (
-          <span className="font-semibold">{tool.function}(...)</span>
+          <span className="flex items-center gap-1.5 font-semibold">
+            {isStreaming && (
+              <Loader2
+                size={12}
+                className="animate-spin text-muted-foreground"
+              />
+            )}
+            {tool.function}()
+          </span>
         )}
 
         {isExpanded &&

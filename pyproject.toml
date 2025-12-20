@@ -55,6 +55,7 @@ dev = [
     "matplotlib",
     "jupyter>=1.0.0",
     "scipy>=1.16.2",
+    "scikit-learn>=1.8.0",
     # Data registry
     "boto3>=1.35.0",
     "beaupy>=3.10.0",

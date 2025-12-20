@@ -18,7 +18,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docent.data_models.chat.message import ChatMessage, parse_chat_message
 from docent_core._db_service.schemas.base import SQLABase
-from docent_core.docent.ai_tools.rubric.refine import clear_messages
 from docent_core.docent.db.schemas.rubric import TABLE_RUBRIC
 
 if TYPE_CHECKING:
@@ -47,11 +46,6 @@ class RefinementAgentSession(BaseModel):
     )
     # Deprecated
     status: Optional[RefinementStatus] = Field(default=None, description="Deprecated")
-    # note(cadentj): This will *NOT* be backward compatible with old schema if i remove the judge_results field
-    # update(mengk): since Pydantic allows for extra fields in the constructor, we can just remove the field
-    # judge_results: Optional[list[JudgeResult]] = Field(
-    #     default=[], description="Deprecated, sessions now store summaries"
-    # )
     error_message: Optional[str] = Field(
         default=None, description="Error message from the refinement agent"
     )
@@ -60,13 +54,16 @@ class RefinementAgentSession(BaseModel):
         """This function trims the session for the SSE callback.
         the FE doesn't need all session state
 
-        Trim the messages at positions 0 and 2
-        0 --> the system message
-        2 --> the user message with the rubric, schema, and examples
+        Trim the system message at position 0 and initial rubric at position 2
+        Furthermore, trim all tool messages in response to rewrite_rubric tool calls
         """
 
         messages = self.model_copy().messages
-        cleaned_messages = clear_messages(messages[1:2] + messages[3:])
+        cleaned_messages = [
+            message
+            for message in messages[1:2] + messages[3:]
+            if not (message.role == "tool" and message.function == "rewrite_rubric")
+        ]
 
         return self.model_copy(
             update={
@@ -91,11 +88,6 @@ class SQLARefinementAgentSession(SQLABase):
             [f"{TABLE_RUBRIC}.id", f"{TABLE_RUBRIC}.version"],
         ),
     )
-
-    # messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    # status: Mapped[RefinementStatus] = mapped_column(
-    #     SQLAEnum(RefinementStatus), nullable=False, default=RefinementStatus.INITIAL_FEEDBACK
-    # )
     content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     updated_at: Mapped[datetime] = mapped_column(

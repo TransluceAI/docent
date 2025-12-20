@@ -149,7 +149,10 @@ export default function RubricsPage() {
       });
   };
 
-  const handleGuidedSubmit = async (highLevelDescription: string) => {
+  const handleGuidedSubmit = async (
+    highLevelDescription: string,
+    useComments: boolean
+  ) => {
     const rubricId = await handleAddNewRubric(highLevelDescription);
     if (!rubricId) return;
 
@@ -160,7 +163,12 @@ export default function RubricsPage() {
     })
       .unwrap()
       .then(() => {
-        router.push(`/dashboard/${collectionId}/rubric/${rubricId}`);
+        const params = new URLSearchParams();
+        if (useComments) params.set('useComments', '1');
+        const queryString = params.toString();
+        router.push(
+          `/dashboard/${collectionId}/rubric/${rubricId}${queryString ? `?${queryString}` : ''}`
+        );
       })
       .catch((error) => {
         console.error('Failed to create or get session:', error);
@@ -168,7 +176,10 @@ export default function RubricsPage() {
       });
   };
 
-  const handleDirectSubmit = async (highLevelDescription: string) => {
+  const handleDirectSubmit = async (
+    highLevelDescription: string,
+    useComments: boolean
+  ) => {
     const rubricId = await handleAddNewRubric(highLevelDescription);
     if (!rubricId) return;
 
@@ -178,8 +189,11 @@ export default function RubricsPage() {
       sessionType: 'direct',
     })
       .then(() => {
+        const params = new URLSearchParams();
+        params.set('openRunDialog', '1');
+        if (useComments) params.set('useComments', '1');
         router.push(
-          `/dashboard/${collectionId}/rubric/${rubricId}?openRunDialog=1`
+          `/dashboard/${collectionId}/rubric/${rubricId}?${params.toString()}`
         );
       })
       .catch((error) => {

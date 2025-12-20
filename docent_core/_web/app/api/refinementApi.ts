@@ -39,11 +39,14 @@ export const refinementApi = createApi({
 
     startRefinementSession: build.mutation<
       { session_id: string; job_id: string | null; rubric_id: string },
-      { collectionId: string; sessionId: string }
+      { collectionId: string; sessionId: string; useComments?: boolean }
     >({
-      query: ({ collectionId, sessionId }) => ({
+      query: ({ collectionId, sessionId, useComments }) => ({
         url: `/${collectionId}/refinement-session/start/${sessionId}`,
         method: 'POST',
+        body: {
+          use_comments: useComments ?? false,
+        },
       }),
       invalidatesTags: (result) =>
         result
@@ -117,15 +120,15 @@ export const refinementApi = createApi({
         collectionId: string;
         sessionId: string;
         message: string;
-        labelSetId: string | null;
+        useComments?: boolean;
       }
     >({
-      query: ({ collectionId, sessionId, message, labelSetId }) => ({
+      query: ({ collectionId, sessionId, message, useComments }) => ({
         url: `/${collectionId}/refinement-session/${sessionId}/message`,
         method: 'POST',
         body: {
           message,
-          label_set_id: labelSetId,
+          use_comments: useComments ?? false,
         },
       }),
       invalidatesTags: (result, error, arg) => [

@@ -901,7 +901,6 @@ class MonoService:
 
             result = await session.execute(query)
             agent_run_ids = result.scalars().all()
-            logger.info(f"get_agent_run_ids: Found {len(agent_run_ids)} agent run IDs")
             return list(agent_run_ids)
 
     ########

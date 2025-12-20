@@ -344,21 +344,6 @@ class ProviderPreferences(PublicProviderPreferences):
         ]
 
     @cached_property
-    def refine_agent(self) -> list[ModelOption]:
-        """Get model options for the refinement agent
-
-        Returns:
-            List of configured model options for this function.
-        """
-        return [
-            ModelOption(
-                provider="openai",
-                model_name="gpt-5",
-                reasoning_effort="medium",
-            ),
-        ]
-
-    @cached_property
     def cluster_assign_o4_mini(self) -> list[ModelOption]:
         """Get model options for the cluster_assign_o4-mini function.
 
@@ -370,20 +355,6 @@ class ProviderPreferences(PublicProviderPreferences):
                 provider="openai",
                 model_name="o4-mini",
                 reasoning_effort="medium",
-            ),
-        ]
-
-    @cached_property
-    def summarize_for_refinement(self) -> list[ModelOption]:
-        """Get model options for summarizing agent runs for the refinement agent.
-        Returns:
-            List of configured model options for this function.
-        """
-        return [
-            ModelOption(
-                provider="openai",
-                model_name="gpt-5",
-                reasoning_effort="low",
             ),
         ]
 
@@ -438,6 +409,31 @@ class ProviderPreferences(PublicProviderPreferences):
             ),
             ModelOption(
                 provider="anthropic", model_name="claude-haiku-4-5", reasoning_effort="low"
+            ),
+        ]
+
+    @cached_property
+    def rubric_rewrite(self) -> list[ModelOption]:
+        """Get model options for the rubric rewrite tool in the refinement agent.
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(provider="openai", model_name="gpt-5.1", reasoning_effort="low"),
+        ]
+
+    @cached_property
+    def refine_agent(self) -> list[ModelOption]:
+        """Get model options for the refinement agent
+
+        Returns:
+            List of configured model options for this function.
+        """
+        return [
+            ModelOption(
+                provider="openai",
+                model_name="gpt-5.1",
+                reasoning_effort="low",
             ),
         ]
 

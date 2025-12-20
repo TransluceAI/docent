@@ -103,9 +103,13 @@ class CreateRefinementSessionRequest(BaseModel):
     session_type: Literal["guided", "direct"]
 
 
+class StartRefinementSessionRequest(BaseModel):
+    use_comments: bool = False
+
+
 class PostRefinementMessageRequest(BaseModel):
     message: str
-    label_set_id: str | None = None
+    use_comments: bool = False
 
 
 @refinement_router.post("/{collection_id}/refinement-session/create/{rubric_id}")
@@ -133,6 +137,7 @@ async def create_refinement_session(
 @refinement_router.post("/{collection_id}/refinement-session/start/{session_id}")
 async def start_refinement_session(
     collection_id: str,
+    request: StartRefinementSessionRequest,
     mono_svc: MonoService = Depends(get_mono_svc),
     refinement_svc: RefinementService = Depends(get_refinement_service),
     sq_rsession: SQLARefinementAgentSession = Depends(get_refinement_session),
@@ -146,9 +151,16 @@ async def start_refinement_session(
 
     job_id: str | None = None
 
-    # Start a job only if the session is brand new (system-only message)
-    if len(messages) == 1 and messages[0].role == "system":
-        job_id = await refinement_svc.start_or_get_agent_job(ctx, sq_rsession)
+    # Start a job only if the session is brand new (system-assistant-user message chain from init)
+    if (
+        len(messages) == 3
+        and messages[0].role == "system"
+        and messages[1].role == "assistant"
+        and messages[2].role == "user"
+    ):
+        job_id = await refinement_svc.start_or_get_agent_job(
+            ctx, sq_rsession, use_comments=request.use_comments
+        )
     else:
         # Do not start a job; if one is already active, return its id
         active_job = await refinement_svc.get_active_job_for_session(sq_rsession.id)
@@ -249,7 +261,7 @@ async def post_message_to_refinement_session(
 
     # Trigger a new turn of the agent
     job_id = await refinement_svc.start_or_get_agent_job(
-        ctx, sq_rsession, label_set_id=request.label_set_id
+        ctx, sq_rsession, use_comments=request.use_comments
     )
     return {"job_id": job_id, "rsession": sq_rsession.to_pydantic().prepare_for_client()}
 

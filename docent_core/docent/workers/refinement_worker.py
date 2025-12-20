@@ -62,12 +62,12 @@ async def refinement_agent_job(ctx: ViewContext, job: SQLAJob):
         await _event_callback(sq_rsession.to_pydantic().prepare_for_client())
 
         # Run the refinement agent
-        label_set_id = job.job_json.get("label_set_id", None)
+        use_comments = job.job_json.get("use_comments", False)
         final_state = await refinement_svc.refine_agent_one_turn(
             ctx,
             sq_rsession,
+            use_comments=use_comments,
             sse_callback=_event_callback,
-            label_set_id=label_set_id,
         )
 
         # Publish the final state and indicate that the job is finished

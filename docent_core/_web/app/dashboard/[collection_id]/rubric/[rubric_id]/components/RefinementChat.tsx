@@ -4,15 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatArea } from '../../../components/chat/ChatArea';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { ProgressBar } from '@/app/components/ProgressBar';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Tags } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import {
   useCancelRefinementJobMutation,
   useGetRefinementSessionStateQuery,
@@ -25,9 +17,7 @@ import { useRefinementTab } from '@/providers/use-refinement-tab';
 import { RefinementAgentSession } from '@/app/store/refinementSlice';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useRubricVersion } from '@/providers/use-rubric-version';
-import { useGetLabelsInLabelSetQuery } from '@/app/api/labelApi';
-import { useLabelSets } from '@/providers/use-label-sets';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 interface RefinementChatProps {
   sessionId?: string;
@@ -38,27 +28,19 @@ export default function RefinementChat({
   sessionId,
   isOnResultRoute,
 }: RefinementChatProps) {
-  const { collection_id: collectionId, rubric_id: rubricId } = useParams<{
+  const { collection_id: collectionId } = useParams<{
     collection_id: string;
-    rubric_id: string;
   }>();
+  const searchParams = useSearchParams();
+  const useComments = searchParams.get('useComments') === '1';
   const hasWritePermission = useHasCollectionWritePermission();
   const { refinementJobId, setRefinementJobId } = useRefinementTab();
-
-  // Judge run labels
-  const { activeLabelSet } = useLabelSets(rubricId);
-  const { data: labels = [] } = useGetLabelsInLabelSetQuery(
-    activeLabelSet ? { collectionId, labelSetId: activeLabelSet.id } : skipToken
-  );
-  const hasLabels = labels.length > 0;
-  const [_showLabelsInContext, setShowLabelsInContext] = useState(true);
-  const showLabelsInContext = _showLabelsInContext && hasLabels;
 
   // Start or get active refinement job
   const [startRefinementSession] = useStartRefinementSessionMutation();
   useEffect(() => {
     if (!sessionId) return;
-    startRefinementSession({ collectionId, sessionId })
+    startRefinementSession({ collectionId, sessionId, useComments })
       .unwrap()
       .then((res) => {
         if (res?.job_id) {
@@ -66,7 +48,13 @@ export default function RefinementChat({
         }
       })
       .catch(() => {});
-  }, [collectionId, sessionId, startRefinementSession, setRefinementJobId]);
+  }, [
+    collectionId,
+    sessionId,
+    useComments,
+    startRefinementSession,
+    setRefinementJobId,
+  ]);
 
   // Handle sending messages to the refinement session
   const [postMessage] = usePostMessageToRefinementSessionMutation();
@@ -77,8 +65,7 @@ export default function RefinementChat({
         collectionId,
         sessionId,
         message,
-        labelSetId:
-          showLabelsInContext && activeLabelSet ? activeLabelSet.id : null,
+        useComments,
       })
         .unwrap()
         .then((res) => {
@@ -86,14 +73,7 @@ export default function RefinementChat({
         })
         .catch(() => {});
     },
-    [
-      collectionId,
-      sessionId,
-      showLabelsInContext,
-      activeLabelSet,
-      postMessage,
-      setRefinementJobId,
-    ]
+    [collectionId, sessionId, useComments, postMessage, setRefinementJobId]
   );
 
   // Handle canceling the refinement session and cleaning up local state
@@ -175,41 +155,6 @@ export default function RefinementChat({
     return rSession?.n_summaries > 0 && rSession?.n_summaries < 10;
   }, [rSession]);
 
-  const LabelToggle = () => {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-6 gap-2 text-xs border rounded-lg',
-              !showLabelsInContext && 'border-dashed bg-transparent opacity-70'
-            )}
-            disabled={!hasLabels}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!hasLabels) return;
-              setShowLabelsInContext((v) => !v);
-            }}
-          >
-            <Tags
-              className={cn('size-3', showLabelsInContext && 'text-blue-text')}
-            />
-            Labels
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-48 text-center">
-          <p>
-            {hasLabels
-              ? 'Toggle whether the agent sees labels in context.'
-              : 'No labels found.'}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
-
   return (
     <div className="flex-1 flex flex-col space-y-3 h-full">
       {showSummaryProgressBar && (
@@ -241,7 +186,6 @@ export default function RefinementChat({
             </div>
           </div>
         }
-        inputHeaderElement={hasLabels ? <LabelToggle /> : null}
       />
     </div>
   );

@@ -6,6 +6,7 @@ import {
   HelpCircle,
   Search,
   ConciergeBell,
+  FlaskConical,
 } from 'lucide-react';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
@@ -17,6 +18,8 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from '@/components/ui/input-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 const DEFAULT_PLACEHOLDER_TEXT =
   'Describe an agent behavior you want to explore...';
@@ -46,8 +49,8 @@ const PRESET_QUERIES = [
 ];
 
 interface QuickSearchBoxProps {
-  onGuided: (highLevelDescription: string) => void;
-  onDirect: (highLevelDescription: string) => void;
+  onGuided: (highLevelDescription: string, useComments: boolean) => void;
+  onDirect: (highLevelDescription: string, useComments: boolean) => void;
   isLoading: boolean;
   modelPicker?: React.ReactNode;
 }
@@ -67,6 +70,11 @@ export default function QuickSearchBox({
   const [placeholderText, setPlaceholderText] = useState(
     DEFAULT_PLACEHOLDER_TEXT
   );
+
+  /**
+   * Experimental options
+   */
+  const [useComments, setUseComments] = useState(false);
   const handleSelectPreset = (query: string) => {
     setSearchQueryTextboxValue(query);
     setIsPresetHovered(false);
@@ -84,12 +92,12 @@ export default function QuickSearchBox({
 
   const submitGuided = () => {
     if (!hasWritePermission || emptyInput || isLoading) return;
-    onGuided(searchQueryTextboxValue);
+    onGuided(searchQueryTextboxValue, useComments);
   };
 
   const submitDirect = () => {
     if (!hasWritePermission || emptyInput || isLoading) return;
-    onDirect(searchQueryTextboxValue);
+    onDirect(searchQueryTextboxValue, useComments);
   };
 
   const searchForm = (
@@ -117,7 +125,24 @@ export default function QuickSearchBox({
           />
           <InputGroupAddon align="block-end" className="p-2">
             {modelPicker}
-            <div className="flex justify-end ml-auto items-center gap-2">
+            <div className="flex justify-end ml-auto items-center gap-4">
+              {/* Hidden for now, will enable later once more stable */}
+              <div className="hidden items-center gap-2 text-muted-foreground">
+                <FlaskConical className="size-3" />
+                <Label
+                  htmlFor="use-comments"
+                  className="text-xs cursor-pointer"
+                >
+                  Include comments
+                </Label>
+                <Checkbox
+                  id="use-comments"
+                  checked={useComments}
+                  onCheckedChange={(checked) =>
+                    setUseComments(checked === true)
+                  }
+                />
+              </div>
               <InputGroupButton
                 type="button"
                 size="sm"
@@ -178,21 +203,6 @@ export default function QuickSearchBox({
         </div>
       </div>
       {searchForm}
-      {/* <div>
-        {!hasWritePermission ? (
-          <Tooltip>
-            <TooltipTrigger asChild>{searchForm}</TooltipTrigger>
-            <TooltipContent>
-              <p>
-                This search box is disabled because you&apos;re in read-only
-                mode
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          searchForm
-        )}
-      </div> */}
     </div>
   );
 }

@@ -14,9 +14,14 @@ from pydantic import (
 )
 
 from docent._log_util import get_logger
-from docent.data_models.citation import Comment
+from docent.data_models.citation import (
+    AgentRunMetadataItem,
+    Comment,
+    TranscriptBlockMetadataItem,
+    TranscriptMetadataItem,
+)
 from docent.data_models.metadata_util import dump_metadata
-from docent.data_models.transcript import Transcript, TranscriptGroup
+from docent.data_models.transcript import Transcript, TranscriptGroup, render_metadata_comments
 
 logger = get_logger(__name__)
 
@@ -100,6 +105,7 @@ class AgentRun(BaseModel):
         agent_run_alias: int | str = 0,
         indent: int = 0,
         render_metadata: bool = True,
+        agent_run_metadata_comments: list[Comment] | None = None,
     ) -> str:
         if not isinstance(agent_run_alias, str):
             agent_run_alias = f"R{agent_run_alias}"
@@ -111,6 +117,16 @@ class AgentRun(BaseModel):
                     metadata_text = textwrap.indent(metadata_text, " " * indent)
                 metadata_alias = f"{agent_run_alias}M"
                 children_text += f"\n<|agent run metadata {metadata_alias}|>\n{metadata_text}\n</|agent run metadata {metadata_alias}|>"
+
+            # Add agent run metadata comments right underneath the metadata block
+            if agent_run_metadata_comments:
+                metadata_comments_text = render_metadata_comments(agent_run_metadata_comments)
+                if metadata_comments_text:
+                    if indent > 0:
+                        metadata_comments_text = textwrap.indent(
+                            metadata_comments_text, " " * indent
+                        )
+                    children_text += f"\n<|agent run metadata comments|>\n{metadata_comments_text}\n</|agent run metadata comments|>"
 
         if indent > 0:
             children_text = textwrap.indent(children_text, " " * indent)
@@ -317,7 +333,41 @@ class AgentRunView:
             self.selection_spec = SelectionSpec.from_agent_run_tree(self.tree)
         else:
             self.selection_spec = selection_spec
-        self.comments = comments or []
+        self.comments = comments
+
+        # We also need to build an index of which comments belong to each location
+        # There are 4 types of comments: AR metadata, transcript metadata, message metadata, and message content metadata
+        # TODO(mengk): there's quite a bit of data duplication here
+
+        # agent_run_id -> ...
+        self._agent_run_metadata_comment_index: dict[str, list[Comment]] = {}
+        # transcript_id -> ...
+        self._transcript_metadata_comment_index: dict[str, list[Comment]] = {}
+        # (transcript_id, block_idx) -> ...
+        self._block_metadata_comment_index: dict[tuple[str, int], list[Comment]] = {}
+        # (transcript_id, block_idx) -> ...
+        self._block_content_comment_index: dict[tuple[str, int], list[Comment]] = {}
+
+        for comment in self.comments or []:
+            for citation in comment.citations:
+                citation_item = citation.target.item
+                if isinstance(citation_item, AgentRunMetadataItem):
+                    self._agent_run_metadata_comment_index.setdefault(
+                        citation_item.agent_run_id, []
+                    ).append(comment)
+                elif isinstance(citation_item, TranscriptMetadataItem):
+                    self._transcript_metadata_comment_index.setdefault(
+                        citation_item.transcript_id, []
+                    ).append(comment)
+                elif isinstance(citation_item, TranscriptBlockMetadataItem):
+                    self._block_metadata_comment_index.setdefault(
+                        (citation_item.transcript_id, citation_item.block_idx), []
+                    ).append(comment)
+                else:
+                    # Must be TranscriptBlockContentItem
+                    self._block_content_comment_index.setdefault(
+                        (citation_item.transcript_id, citation_item.block_idx), []
+                    ).append(comment)
 
     @property
     def tree(self) -> AgentRunTree:
@@ -388,10 +438,28 @@ class AgentRunView:
                 if v.node_type == NodeType.TRANSCRIPT_GROUP:
                     children_texts.append(_recurse(v_id))
                 elif v.node_type == NodeType.TRANSCRIPT:
+                    # Gather comments for this transcript
+                    transcript_metadata_comments = self._transcript_metadata_comment_index.get(v_id)
+                    block_metadata_comments = {
+                        block_idx: comments
+                        for (
+                            t_id,
+                            block_idx,
+                        ), comments in self._block_metadata_comment_index.items()
+                        if t_id == v_id
+                    } or None
+                    block_content_comments = {
+                        block_idx: comments
+                        for (t_id, block_idx), comments in self._block_content_comment_index.items()
+                        if t_id == v_id
+                    } or None
                     cur_text = t_dict[v_id].to_text(
                         transcript_alias=t_idx_map[v_id],
                         indent=indent,
                         render_metadata=self.should_render_metadata(v_id),
+                        transcript_metadata_comments=transcript_metadata_comments,
+                        block_metadata_comments=block_metadata_comments,
+                        block_content_comments=block_content_comments,
                     )
                     children_texts.append(cur_text)
                 else:
@@ -400,11 +468,16 @@ class AgentRunView:
 
             # No wrapper for global root
             if u_id == GLOBAL_ROOT_ID:
+                # Get agent run metadata comments
+                agent_run_metadata_comments = self._agent_run_metadata_comment_index.get(
+                    self.agent_run.id
+                )
                 return self.agent_run.to_text(
                     children_text,
                     agent_run_alias=agent_run_alias,
                     indent=indent,
                     render_metadata=self.should_render_metadata(GLOBAL_ROOT_ID),
+                    agent_run_metadata_comments=agent_run_metadata_comments,
                 )
             # Delegate rendering to TranscriptGroup
             else:

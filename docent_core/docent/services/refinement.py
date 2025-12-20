@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._log_util import get_logger
+from docent.data_models.agent_run import AgentRunView
 from docent.data_models.chat.message import (
     AssistantMessage,
     ChatMessage,
@@ -18,6 +19,7 @@ from docent.data_models.chat.message import (
     ToolMessage,
     UserMessage,
 )
+from docent.data_models.citation import Comment
 from docent_core._server._broker.redis_client import (
     STATE_KEY_FORMAT,
     STREAM_KEY_FORMAT,
@@ -31,12 +33,8 @@ from docent_core.docent.ai_tools.rubric.refine import (
     FIRST_USER_MESSAGE_TEMPLATE,
     GUIDED_SEARCH_SYS_PROMPT,
     GUIDED_SEARCH_WELCOME_MESSAGE,
-    RUN_SUMMARY_TEMPLATE,
-    SummaryStreamingCallback,
-    create_set_rubric_and_schema_tool,
-    execute_set_rubric,
-    summarize_agent_runs,
-    update_user_message_with_labels,
+    create_rewrite_rubric_tool,
+    execute_rewrite_rubric,
 )
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.refinement import (
@@ -44,6 +42,7 @@ from docent_core.docent.db.schemas.refinement import (
     SQLARefinementAgentSession,
 )
 from docent_core.docent.db.schemas.tables import JobStatus, SQLAJob
+from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService, SQLARubric
@@ -132,6 +131,7 @@ class RefinementService:
         self.mono_svc = mono_svc
         self.rubric_svc = rubric_svc
         self.llm_svc = llm_svc
+        self.label_svc = LabelService(session, session_cm_factory, mono_svc)
 
     async def get_session_by_id(self, session_id: str):
         result = await self.session.execute(
@@ -161,19 +161,33 @@ class RefinementService:
         ):
             sq_rsession = await self.get_session_by_rubric(sq_rubric)
             if sq_rsession is None:
-
-                system_prompt = (
-                    DIRECT_SEARCH_SYS_PROMPT
-                    if session_type == "direct"
-                    else GUIDED_SEARCH_SYS_PROMPT
-                )
-
                 # Ensure required fields are initialized so the instance is usable pre-flush
                 rsession = RefinementAgentSession(
                     id=str(uuid4()),
                     rubric_id=sq_rubric.id,
                     rubric_version=sq_rubric.version,
-                    messages=[SystemMessage(content=system_prompt)],
+                    messages=[
+                        SystemMessage(
+                            content=(
+                                DIRECT_SEARCH_SYS_PROMPT
+                                if session_type == "direct"
+                                else GUIDED_SEARCH_SYS_PROMPT
+                            )
+                        ),
+                        AssistantMessage(
+                            content=(
+                                DIRECT_SEARCH_WELCOME_MESSAGE
+                                if session_type == "direct"
+                                else GUIDED_SEARCH_WELCOME_MESSAGE
+                            )
+                        ),
+                        UserMessage(
+                            content=FIRST_USER_MESSAGE_TEMPLATE.format(
+                                rubric=sq_rubric.rubric_text,
+                                output_schema=json.dumps(sq_rubric.output_schema, indent=2),
+                            )
+                        ),
+                    ],
                     n_summaries=0,
                 )
                 sq_rsession = SQLARefinementAgentSession.from_pydantic(rsession)
@@ -194,6 +208,37 @@ class RefinementService:
         sq_rsession.updated_at = datetime.now(UTC).replace(tzinfo=None)
         flag_modified(sq_rsession, "content")  # Required to trigger a DB update
 
+    async def _get_annotated_agent_run_views_from_comments(
+        self, ctx: ViewContext, collection_id: str
+    ) -> list[AgentRunView]:
+        comments = await self.label_svc.get_comments_by_collection(collection_id)
+        if not comments:
+            return []
+
+        comments_by_agent_run: dict[str, list[Comment]] = {}
+        for comment in comments:
+            comments_by_agent_run.setdefault(comment.agent_run_id, []).append(comment)
+
+        agent_runs = await self.mono_svc.get_agent_runs(
+            ctx,
+            agent_run_ids=list(comments_by_agent_run.keys()),
+        )
+        agent_run_map = {agent_run.id: agent_run for agent_run in agent_runs}
+
+        annotated_agent_run_views: list[AgentRunView] = []
+        for agent_run_id, agent_run_comments in comments_by_agent_run.items():
+            agent_run = agent_run_map.get(agent_run_id)
+            if agent_run is None:
+                logger.warning(f"Agent run {agent_run_id} not found for comments; skipping")
+                continue
+
+            sorted_comments = sorted(agent_run_comments, key=lambda comment: comment.created_at)
+            annotated_agent_run_views.append(
+                AgentRunView.from_agent_run(agent_run, comments=sorted_comments)
+            )
+
+        return annotated_agent_run_views
+
     async def add_user_message(self, sq_rsession: SQLARefinementAgentSession, message: str):
         await self._update_session_messages(
             sq_rsession, sq_rsession.to_pydantic().messages + [UserMessage(content=message)]
@@ -204,31 +249,6 @@ class RefinementService:
     ) -> RefinementAgentSession:
         """Return the current state of the refinement session as a pydantic model."""
         return sq_rsession.to_pydantic()
-
-    async def _get_agent_run_summaries(
-        self, sq_rubric: SQLARubric, ctx: ViewContext, completion_callback: SummaryStreamingCallback
-    ) -> str:
-        """Summarize max 10 agent runs as initial context for the refinement agent."""
-
-        # Get some arbitrary agent runs
-        N_SAMPLE_AGENT_RUNS = 10
-        agent_runs = await self.mono_svc.get_agent_runs(ctx, limit=N_SAMPLE_AGENT_RUNS)
-
-        # Get summaries for max 10 agent runs
-        if ctx.user is None:
-            raise ValueError("User is required to summarize agent runs")
-        outputs = await summarize_agent_runs(
-            sq_rubric.rubric_text,
-            agent_runs,
-            self.llm_svc,
-            completion_callback,
-        )
-
-        summary_body = ""
-        for ar, output in zip(agent_runs, outputs):
-            summary = output.first_text or ""
-            summary_body += RUN_SUMMARY_TEMPLATE.format(agent_run_id=ar.id, summary=summary) + "\n"
-        return "<summaries>\n" + summary_body + "\n</summaries>"
 
     @staticmethod
     async def _get_active_refinement_job(session: AsyncSession, session_id: str) -> SQLAJob | None:
@@ -248,7 +268,7 @@ class RefinementService:
         self,
         ctx: ViewContext,
         sq_rsession: SQLARefinementAgentSession,
-        label_set_id: str | None = None,
+        use_comments: bool = False,
     ):
         """This job is responsible for running the refine agent for one turn.
         Uses an advisory lock to avoid races where multiple jobs are started for the same session.
@@ -272,7 +292,7 @@ class RefinementService:
                     type=WorkerFunction.REFINEMENT_AGENT_JOB.value,
                     job_json={
                         "rsession_id": sq_rsession.id,
-                        "label_set_id": label_set_id,
+                        "use_comments": use_comments,
                     },
                 )
             )
@@ -356,7 +376,7 @@ class RefinementService:
         self,
         ctx: ViewContext,
         sq_rsession: SQLARefinementAgentSession,
-        label_set_id: str | None = None,
+        use_comments: bool = False,
         sse_callback: RefineAgentEventCallback | None = None,
     ):
         """Run one turn of the refinement agent.
@@ -373,29 +393,14 @@ class RefinementService:
         rsession = sq_rsession.to_pydantic()
         lock = anyio.Lock()
 
-        # Add labels to the user message if toggled on the FE
-        last_message = rsession.messages[-1]
-        if (
-            label_set_id is not None
-            and last_message.role == "user"
-            # Don't add labels if they already exist on the user message
-            and "labeled_results" not in last_message.content
-        ):
-            labels_and_results = await self.rubric_svc.get_judge_run_labels_and_results(
-                sq_rsession.rubric_id, label_set_id
-            )
-            update_user_message_with_labels(rsession.messages, labels_and_results)
-            # Update the user message immediately so labels persist on retry
-            await self._update_session_messages(sq_rsession, rsession.messages)
-
-        async def _summary_callback(batch_index: int, summary: str):
-            """This stores summaries in the session state."""
-            if sse_callback and summary:
-                async with lock:
-                    if rsession.n_summaries is None:
-                        rsession.n_summaries = 0
-                    rsession.n_summaries += 1
-                    await sse_callback(rsession.prepare_for_client())
+        assert (
+            len(rsession.messages) > 0
+        ), "this should never happen; the initial message is inserted when the session is created."
+        rewrite_already_happened = any(
+            message.tool_calls and message.tool_calls[0].function == "rewrite_rubric"
+            for message in rsession.messages
+            if message.role == "assistant"
+        )
 
         async def _llm_callback(batch_index: int, llm_output: LLMOutput):
             """This *does NOT* store messages in the session state.
@@ -434,44 +439,12 @@ class RefinementService:
         # 3. Tool call messages: need to have the agent decide what to do next given the responses
         # In other words, skip when the last message is an assistant message with no tool calls
         for _ in range(MAX_ITERS_PER_TURN):
-            assert len(rsession.messages) > 0, "this should never fail"
-
             # Now handle the message sequence based on the last message
             last_message = rsession.messages[-1]
 
             # If the last message is an assistant message with no tool calls, break
             if last_message.role == "assistant" and not last_message.tool_calls:
                 break
-
-            # If system: generate the first user message with sample data
-            if last_message.role == "system":
-                is_guided = GUIDED_SEARCH_SYS_PROMPT == last_message.content
-
-                # Add a welcome message and notify sse_callback
-                welcome_message = (
-                    GUIDED_SEARCH_WELCOME_MESSAGE if is_guided else DIRECT_SEARCH_WELCOME_MESSAGE
-                )
-                rsession.messages.append(AssistantMessage(content=welcome_message))
-                if sse_callback:
-                    await sse_callback(rsession.prepare_for_client())
-
-                # Build the initial user message template
-                message_content = FIRST_USER_MESSAGE_TEMPLATE.format(
-                    rubric=sq_rubric.rubric_text,
-                    output_schema=json.dumps(sq_rubric.output_schema, indent=2),
-                )
-                if is_guided:
-                    # Get summaries for agent runs
-                    message_content += await self._get_agent_run_summaries(
-                        sq_rubric, ctx, _summary_callback
-                    )
-
-                # Append as a new user message
-                rsession.messages.append(UserMessage(content=message_content))
-
-                # Notify sse_callback
-                if sse_callback:
-                    await sse_callback(rsession.prepare_for_client())
 
             # If user or tool: generate asst continuation
             if last_message.role == "user" or last_message.role == "tool":
@@ -485,10 +458,10 @@ class RefinementService:
                     inputs=[messages],
                     model_options=PROVIDER_PREFERENCES.refine_agent,
                     tools=[
-                        create_set_rubric_and_schema_tool(),
+                        create_rewrite_rubric_tool(),
                     ],
                     tool_choice="auto",
-                    max_new_tokens=8192,
+                    max_new_tokens=16384,
                     timeout=180.0,
                     use_cache=True,
                     streaming_callback=_llm_callback,
@@ -514,7 +487,7 @@ class RefinementService:
             elif last_message.role == "assistant" and (tool_calls := last_message.tool_calls):
                 for tc in tool_calls:
                     try:
-                        if tc.function == "set_rubric_and_schema":
+                        if tc.function == "rewrite_rubric":
                             # Load current rubric
                             current_sq_rubric = await self.rubric_svc.get_rubric(
                                 sq_rsession.rubric_id, version=None
@@ -524,9 +497,31 @@ class RefinementService:
                                     f"Rubric {sq_rsession.rubric_id} not found during tool execution"
                                 )
 
+                            # Only include sampled runs or annotated runs on first rewrite
+                            sampled_agent_run_views: list[AgentRunView] | None = None
+                            annotated_agent_run_views: list[AgentRunView] | None = None
+                            if not rewrite_already_happened:
+                                if use_comments:
+                                    annotated_agent_run_views = (
+                                        await self._get_annotated_agent_run_views_from_comments(
+                                            ctx, current_sq_rubric.collection_id
+                                        )
+                                    )
+                                else:
+                                    # Don't need both comments and agent run details at once
+                                    agent_runs = await self.mono_svc.get_agent_runs(ctx, limit=1)
+                                    sampled_agent_run_views = [
+                                        AgentRunView.from_agent_run(arv) for arv in agent_runs
+                                    ]
+
                             # Apply tool update and message
-                            updated_rubric, tool_result_msg = execute_set_rubric(
-                                current_sq_rubric.to_pydantic(), tc
+                            updated_rubric, tool_result_msg = await execute_rewrite_rubric(
+                                current_sq_rubric.to_pydantic(),
+                                tc,
+                                llm_svc=self.llm_svc,
+                                sampled_agent_run_views=sampled_agent_run_views or None,
+                                annotated_agent_run_views=annotated_agent_run_views or None,
+                                model_options=PROVIDER_PREFERENCES.rubric_rewrite,
                             )
                             rsession.messages.append(tool_result_msg)
 
@@ -549,7 +544,6 @@ class RefinementService:
                                 await self.rubric_svc.start_or_get_eval_rubric_job(
                                     ctx,
                                     updated_rubric.id,
-                                    label_set_id=label_set_id,
                                 )
                         else:
                             raise ValueError(f"Unsupported tool call: {tc.function}")
