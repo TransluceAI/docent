@@ -514,11 +514,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       const ids =
         agentRunTree?.otel_message_ids_by_transcript_id?.[selectedTranscriptId];
       if (!Array.isArray(ids)) return new Set<string>();
-      const out = new Set<string>();
-      for (const id of ids) {
-        if (typeof id === 'string' && id.length > 0) out.add(id);
-      }
-      return out;
+      return new Set(ids);
     }, [agentRunTree, selectedTranscriptId]);
 
     // Initialize pretty print for messages with JSON content when transcript changes

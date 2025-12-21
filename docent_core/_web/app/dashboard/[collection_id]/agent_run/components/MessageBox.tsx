@@ -476,18 +476,12 @@ export function MessageBox({
     });
   };
 
-  const collectionId = (dataContext as any)?.collection_id as
-    | string
-    | undefined;
-  const transcriptId = (dataContext as any)?.transcript_id as
-    | string
-    | undefined;
-  const messageId = (message as any)?.id as string | undefined;
+  const collectionId = dataContext.collection_id;
+  const transcriptId = dataContext.transcript_id;
+  const messageId = message.id;
 
   const canShowTelemetryLink =
-    typeof collectionId === 'string' &&
     collectionId.length > 0 &&
-    typeof transcriptId === 'string' &&
     transcriptId.length > 0 &&
     typeof messageId === 'string' &&
     messageId.length > 0 &&
