@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Any, Literal, Mapping, Sequence, cast
 
 from docent._log_util import get_logger
 from docent_core.docent.db.filters import (
@@ -121,7 +121,8 @@ class CodeSampleService:
         server_url: str,
         collection_id: str,
         rubric_id: str,
-        rubric_version: int | None,
+        rubric_version: int,
+        output_schema: Mapping[str, Any] | None,
         runs_filter: ComplexFilter | None,
         limit: int | None,
         format: SampleFormat = SampleFormat.PYTHON,
@@ -129,6 +130,7 @@ class CodeSampleService:
         dql_query = CodeSampleService.build_rubric_results_dql_query(
             rubric_id=rubric_id,
             rubric_version=rubric_version,
+            output_schema=output_schema,
             runs_filter=runs_filter,
             limit=limit,
         )
@@ -193,15 +195,15 @@ class CodeSampleService:
     def build_rubric_results_dql_query(
         *,
         rubric_id: str,
-        rubric_version: int | None,
+        rubric_version: int,
+        output_schema: Mapping[str, Any] | None,
         runs_filter: ComplexFilter | None,
         limit: int | None,
     ) -> str:
         where_clauses = [
             f"jr.rubric_id = '{CodeSampleService._escape_literal(rubric_id)}'",
         ]
-        if rubric_version is not None:
-            where_clauses.append(f"jr.rubric_version = {rubric_version}")
+        where_clauses.append(f"jr.rubric_version = {rubric_version}")
 
         run_filter_condition = (
             CodeSampleService._build_collection_filter_clause(runs_filter, "ar")
@@ -213,16 +215,22 @@ class CodeSampleService:
 
         where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
+        output_select_lines = CodeSampleService._build_rubric_output_select_lines(
+            output_schema=output_schema,
+            table_alias="jr",
+        )
+
         lines = [
             "SELECT",
-            "  jr.id AS judge_result_id",
-            "  , jr.agent_run_id",
-            "  , jr.rubric_version",
-            "  , jr.result_type",
-            "  , jr.output",
-            "  , jr.result_metadata",
-            "  , ar.created_at AS run_created_at",
-            "  , ar.metadata_json AS run_metadata",
+            "  jr.id AS judge_result_id,",
+            "  jr.agent_run_id,",
+            "  jr.rubric_version,",
+            "  jr.result_type,",
+            *output_select_lines,
+            "  jr.output AS output_json,",
+            "  jr.result_metadata,",
+            "  ar.created_at AS run_created_at,",
+            "  ar.metadata_json AS run_metadata",
             "FROM judge_results jr",
             "JOIN agent_runs ar ON ar.id = jr.agent_run_id",
             where_clause,
@@ -233,6 +241,109 @@ class CodeSampleService:
             lines.append(f"LIMIT {normalized_limit};")
 
         return "\n".join(line for line in lines if line).strip()
+
+    @staticmethod
+    def _build_rubric_output_select_lines(
+        *,
+        output_schema: Mapping[str, Any] | None,
+        table_alias: str,
+        max_fields: int = 20,
+    ) -> list[str]:
+        """Build SELECT lines for expected rubric output fields from a JSON schema.
+
+        These fields are selected in addition to the raw output JSON so downstream users
+        get a convenient, columnar view in pandas while still retaining full fidelity.
+        """
+        if not output_schema:
+            return []
+
+        properties_any = output_schema.get("properties")
+        if not isinstance(properties_any, dict) or not properties_any:
+            return []
+        properties: dict[str, Any] = {}
+        properties_any_typed = cast(dict[object, object], properties_any)
+        for key_any, value_any in properties_any_typed.items():
+            if isinstance(key_any, str):
+                properties[key_any] = value_any
+        if not properties:
+            return []
+
+        required_any = output_schema.get("required")
+        required_fields: list[str] = []
+        if isinstance(required_any, list):
+            required_any_typed = cast(list[object], required_any)
+            for item_any in required_any_typed:
+                if isinstance(item_any, str):
+                    required_fields.append(item_any)
+
+        ordered_fields: list[str] = []
+        for field in required_fields:
+            if field in properties and field not in ordered_fields:
+                ordered_fields.append(field)
+        for field in sorted(properties.keys()):
+            if field not in ordered_fields:
+                ordered_fields.append(field)
+
+        lines: list[str] = []
+        for field in ordered_fields[: max(0, int(max_fields))]:
+            schema_fragment_any = properties.get(field)
+            fragment: dict[str, Any] = {}
+            if isinstance(schema_fragment_any, dict):
+                schema_fragment_any_typed = cast(dict[object, object], schema_fragment_any)
+                for key_any, value_any in schema_fragment_any_typed.items():
+                    if isinstance(key_any, str):
+                        fragment[key_any] = value_any
+            expr = CodeSampleService._build_json_schema_accessor(
+                base=f"{table_alias}.output",
+                field=field,
+                schema_fragment=fragment,
+            )
+            alias = CodeSampleService._sanitize_identifier(f"output_{field}")
+            lines.append(f"  {expr} AS {alias},")
+        return lines
+
+    @staticmethod
+    def _build_json_schema_accessor(
+        *,
+        base: str,
+        field: str,
+        schema_fragment: Mapping[str, Any],
+    ) -> str:
+        """Build a SQL expression that extracts a JSON field, casting when helpful."""
+        escaped = CodeSampleService._escape_literal(field)
+        json_type = schema_fragment.get("type")
+        types: list[str] = []
+        if isinstance(json_type, str):
+            types = [json_type]
+        elif isinstance(json_type, list):
+            json_type_typed = cast(list[object], json_type)
+            for item_any in json_type_typed:
+                if isinstance(item_any, str):
+                    types.append(item_any)
+
+        is_complex = any(t in {"object", "array"} for t in types)
+        if is_complex:
+            return f"{base}->'{escaped}'"
+
+        text_expr = f"{base}->>'{escaped}'"
+        if "boolean" in types:
+            return f"CAST({text_expr} AS BOOLEAN)"
+        if "integer" in types:
+            return f"CAST({text_expr} AS BIGINT)"
+        if "number" in types:
+            return f"CAST({text_expr} AS DOUBLE PRECISION)"
+        return text_expr
+
+    @staticmethod
+    def _sanitize_identifier(value: str) -> str:
+        sanitized: list[str] = []
+        for ch in value:
+            if ch.isalnum() or ch == "_":
+                sanitized.append(ch)
+            else:
+                sanitized.append("_")
+        candidate = "".join(sanitized).strip("_")
+        return candidate or "field"
 
     @staticmethod
     def build_where_clause(filter_obj: ComplexFilter | None, table_alias: str) -> str:

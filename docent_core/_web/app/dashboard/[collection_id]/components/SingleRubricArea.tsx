@@ -11,6 +11,7 @@ import {
   Tags,
   ChevronRight,
   FunnelPlus,
+  Copy,
   FileCode,
 } from 'lucide-react';
 import RubricEditor, { RubricVersionNavigator } from './RubricEditor';
@@ -57,7 +58,11 @@ import { ViewMode } from '../utils/viewModeResults';
 import DownloadMenu from '@/app/components/DownloadMenu';
 import { BASE_URL } from '@/app/constants';
 import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
-import { downloadPythonSample } from '@/app/utils/pythonSamples';
+import {
+  downloadPythonSample,
+  fetchPythonSample,
+} from '@/app/utils/pythonSamples';
+import { copyDqlToClipboard } from '@/app/utils/copyDql';
 
 interface AgreementWidgetProps {
   agentRunResults: AgentRunJudgeResults[];
@@ -232,6 +237,7 @@ export default function SingleRubricArea({
   const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
     useDownloadApiKey();
   const [isDownloadingSample, setIsDownloadingSample] = useState(false);
+  const [isCopyingDql, setIsCopyingDql] = useState(false);
   const [isLabelSetsDialogOpen, setIsLabelSetsDialogOpen] = useState(false);
 
   const handleImportLabelSet = (labelSet: any) => {
@@ -325,6 +331,35 @@ export default function SingleRubricArea({
       version,
     ]
   );
+
+  const handleCopyRubricDql = useCallback(async () => {
+    if (!collectionId) {
+      toast.error('Open a collection before copying DQL.');
+      return;
+    }
+
+    try {
+      setIsCopyingDql(true);
+      const apiKey = await getDownloadApiKey();
+      const sample = await fetchPythonSample({
+        type: 'rubric_results',
+        api_key: apiKey,
+        server_url: BASE_URL,
+        collection_id: collectionId,
+        rubric_id: rubricId,
+        rubric_version: version ?? null,
+        runs_filter: runsFilter ?? null,
+        format: 'python',
+      });
+
+      await copyDqlToClipboard(sample.dql_query);
+    } catch (error) {
+      console.error('Failed to copy rubric DQL', error);
+      toast.error('Unable to copy DQL for this rubric.');
+    } finally {
+      setIsCopyingDql(false);
+    }
+  }, [collectionId, getDownloadApiKey, rubricId, runsFilter, version]);
 
   const ResultsSection = (
     <>
@@ -447,9 +482,26 @@ export default function SingleRubricArea({
                   void handleDownloadRubricSample('notebook');
                 },
               },
+              {
+                key: 'copy_dql',
+                label: 'Copy DQL',
+                disabled:
+                  isCopyingDql || isDownloadingSample || isApiKeyLoading,
+                icon:
+                  isCopyingDql || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleCopyRubricDql();
+                },
+              },
             ]}
-            isLoading={isDownloadingSample || isApiKeyLoading}
-            triggerDisabled={isDownloadingSample || isApiKeyLoading}
+            isLoading={isDownloadingSample || isApiKeyLoading || isCopyingDql}
+            triggerDisabled={
+              isDownloadingSample || isApiKeyLoading || isCopyingDql
+            }
             className="h-7 gap-1 text-xs"
             contentClassName="w-36"
           />

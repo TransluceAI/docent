@@ -24,6 +24,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   Columns3,
+  Copy,
   Loader2,
   FileCode,
   Upload,
@@ -60,9 +61,13 @@ import {
 } from '@/app/utils/exportTable';
 import { BASE_URL } from '@/app/constants';
 import { useDownloadApiKey } from '@/app/hooks/use-download-api-key';
-import { downloadPythonSample } from '@/app/utils/pythonSamples';
+import {
+  downloadPythonSample,
+  fetchPythonSample,
+} from '@/app/utils/pythonSamples';
 import { toast } from 'sonner';
 import { ComplexFilter } from '@/app/types/collectionTypes';
+import { copyDqlToClipboard } from '@/app/utils/copyDql';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -310,6 +315,7 @@ export const AgentRunTable = memo(function AgentRunTable({
   const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
     useDownloadApiKey();
   const [isDownloadingSample, setIsDownloadingSample] = useState(false);
+  const [isCopyingDql, setIsCopyingDql] = useState(false);
   const params = useParams();
   const resolvedCollectionId =
     collectionId ??
@@ -531,6 +537,54 @@ export const AgentRunTable = memo(function AgentRunTable({
       sortField,
     ]
   );
+
+  const handleCopyDql = useCallback(async () => {
+    if (!agentRunIds?.length) {
+      return;
+    }
+    if (!resolvedCollectionId) {
+      toast.error('Open a collection before copying DQL.');
+      return;
+    }
+
+    try {
+      setIsCopyingDql(true);
+      const apiKey = await getDownloadApiKey();
+      const sample = await fetchPythonSample({
+        type: 'agent_runs',
+        api_key: apiKey,
+        server_url: BASE_URL,
+        collection_id: resolvedCollectionId,
+        columns: exportColumns,
+        sort_field: sortField ?? null,
+        sort_direction: sortDirection,
+        base_filter: baseFilter ?? null,
+        format: 'python',
+      });
+
+      const didCopy = await copyDqlToClipboard(sample.dql_query);
+      if (didCopy) {
+        posthog.capture('agent_run_table_copy_dql', {
+          collectionId: resolvedCollectionId,
+          rowCount: agentRunIds.length,
+          columnCount: exportColumns.length,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to copy DQL for agent run table', error);
+      toast.error('Unable to copy DQL for this table.');
+    } finally {
+      setIsCopyingDql(false);
+    }
+  }, [
+    agentRunIds,
+    baseFilter,
+    exportColumns,
+    getDownloadApiKey,
+    resolvedCollectionId,
+    sortDirection,
+    sortField,
+  ]);
 
   const skeletonRowCount = useMemo(() => {
     if (!containerHeight) {
@@ -858,22 +912,6 @@ export const AgentRunTable = memo(function AgentRunTable({
           <DownloadMenu
             options={[
               {
-                key: 'csv',
-                label: 'Download CSV',
-                disabled: !agentRunIds?.length || isExporting,
-                onSelect: () => {
-                  void handleExport('csv');
-                },
-              },
-              {
-                key: 'tsv',
-                label: 'Download TSV',
-                disabled: !agentRunIds?.length || isExporting,
-                onSelect: () => {
-                  void handleExport('tsv');
-                },
-              },
-              {
                 key: 'python',
                 label: 'Python',
                 disabled:
@@ -907,12 +945,47 @@ export const AgentRunTable = memo(function AgentRunTable({
                   void handleDownloadSample('notebook');
                 },
               },
+              {
+                key: 'copy_dql',
+                label: 'Copy DQL',
+                disabled:
+                  !agentRunIds?.length ||
+                  isCopyingDql ||
+                  isDownloadingSample ||
+                  isApiKeyLoading,
+                icon:
+                  isCopyingDql || isApiKeyLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  ),
+                onSelect: () => {
+                  void handleCopyDql();
+                },
+              },
+              {
+                key: 'csv',
+                label: 'Download CSV',
+                disabled: !agentRunIds?.length || isExporting,
+                onSelect: () => {
+                  void handleExport('csv');
+                },
+              },
+              {
+                key: 'tsv',
+                label: 'Download TSV',
+                disabled: !agentRunIds?.length || isExporting,
+                onSelect: () => {
+                  void handleExport('tsv');
+                },
+              },
             ]}
-            isLoading={isExporting || isDownloadingSample}
+            isLoading={isExporting || isDownloadingSample || isCopyingDql}
             triggerDisabled={
               !agentRunIds?.length ||
               isExporting ||
               isDownloadingSample ||
+              isCopyingDql ||
               isApiKeyLoading
             }
             className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0"

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
 from docent_core.docent.server.dependencies.database import get_mono_svc
+from docent_core.docent.server.dependencies.services import get_rubric_service
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
 from docent_core.docent.services.code_samples import (
     CodeSampleService,
@@ -16,6 +17,7 @@ from docent_core.docent.services.code_samples import (
     SampleFormat,
 )
 from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.rubric import RubricService
 
 code_samples_router = APIRouter()
 
@@ -81,6 +83,7 @@ async def create_python_sample(
     http_request: Request,
     user: User = Depends(get_user_anonymous_ok),
     mono_svc: MonoService = Depends(get_mono_svc),
+    rubric_svc: RubricService = Depends(get_rubric_service),
 ):
     allowed = await mono_svc.has_permission(
         user=user,
@@ -127,12 +130,17 @@ async def create_python_sample(
                 format=sample_format,
             )
         else:  # RubricSampleRequest
+            sqla_rubric = await rubric_svc.get_rubric(request.rubric_id, request.rubric_version)
+            if sqla_rubric is None or sqla_rubric.collection_id != request.collection_id:
+                raise HTTPException(status_code=404, detail=f"Rubric {request.rubric_id} not found")
+            effective_version = request.rubric_version or sqla_rubric.version
             sample = CodeSampleService.build_rubric_results_sample(
                 api_key=request.api_key,
                 server_url=server_url,
                 collection_id=request.collection_id,
                 rubric_id=request.rubric_id,
-                rubric_version=request.rubric_version,
+                rubric_version=effective_version,
+                output_schema=sqla_rubric.output_schema,
                 runs_filter=request.runs_filter,
                 limit=request.limit,
                 format=sample_format,

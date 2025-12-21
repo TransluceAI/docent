@@ -31,6 +31,7 @@ import {
 } from '@/app/api/collectionApi';
 import { DqlExecuteResponse } from '@/app/types/dqlTypes';
 import { registerDqlCompletionProvider } from '@/app/utils/dqlCompletions';
+import { copyDqlToClipboard } from '@/app/utils/copyDql';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -729,22 +730,6 @@ const DQLEditor = ({
                 <DownloadMenu
                   options={[
                     {
-                      key: 'csv',
-                      label: 'Download CSV',
-                      disabled: isExporting,
-                      onSelect: () => {
-                        void handleExportResult('csv');
-                      },
-                    },
-                    {
-                      key: 'tsv',
-                      label: 'Download TSV',
-                      disabled: isExporting,
-                      onSelect: () => {
-                        void handleExportResult('tsv');
-                      },
-                    },
-                    {
                       key: 'python',
                       label: 'Python',
                       disabled:
@@ -772,6 +757,31 @@ const DQLEditor = ({
                         ),
                       onSelect: () => {
                         void handleDownloadPythonSample('notebook');
+                      },
+                    },
+                    {
+                      key: 'copy_dql',
+                      label: 'Copy DQL',
+                      disabled: query.trim().length === 0,
+                      icon: <Copy className="h-3 w-3" />,
+                      onSelect: () => {
+                        void copyDqlToClipboard(query);
+                      },
+                    },
+                    {
+                      key: 'csv',
+                      label: 'Download CSV',
+                      disabled: isExporting,
+                      onSelect: () => {
+                        void handleExportResult('csv');
+                      },
+                    },
+                    {
+                      key: 'tsv',
+                      label: 'Download TSV',
+                      disabled: isExporting,
+                      onSelect: () => {
+                        void handleExportResult('tsv');
                       },
                     },
                   ]}
