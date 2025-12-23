@@ -1,7 +1,7 @@
 type SchemaProperty =
   | { type: 'string'; enum: string[] }
   | { type: 'string'; citations: boolean }
-  | { type: 'integer' | 'number'; maximum: number; minimum: number }
+  | { type: 'integer' | 'number'; maximum?: number; minimum?: number }
   | { type: 'boolean' };
 
 type SchemaDefinition = {

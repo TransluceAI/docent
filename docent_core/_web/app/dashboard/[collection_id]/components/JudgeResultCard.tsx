@@ -441,8 +441,8 @@ interface NumberInputProps {
   propertyKey: string;
   resultValue: number;
   labelValue?: number;
-  maximum: number;
-  minimum: number;
+  maximum?: number;
+  minimum?: number;
   activeLabelSet: LabelSet | null;
   onSubmit: (labelSetId: string, value: number) => void;
   onClearLabel?: (labelSetId: string) => void;
@@ -481,7 +481,9 @@ const NumberInput = ({
     if (!effectiveLabelSetId || disableEditing) return;
     const parsed = parseInt(localValue, 10);
     if (!isNaN(parsed)) {
-      const clamped = Math.min(maximum, Math.max(minimum, parsed));
+      let clamped = parsed;
+      if (minimum !== undefined) clamped = Math.max(minimum, clamped);
+      if (maximum !== undefined) clamped = Math.min(maximum, clamped);
       onSubmit(effectiveLabelSetId, clamped);
       setTempLabelSetId(null);
     }
@@ -1009,11 +1011,7 @@ const JudgeResultCard = ({
           );
         }
 
-        if (
-          (property.type === 'integer' || property.type === 'number') &&
-          'maximum' in property &&
-          'minimum' in property
-        ) {
+        if (property.type === 'integer' || property.type === 'number') {
           return (
             <NumberInput
               key={key}
