@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from docent._log_util import get_logger
 from docent_core._server._broker.redis_client import get_redis_client
-from docent_core._worker.constants import JOB_TIMEOUT_SECONDS
+from docent_core._worker.constants import WorkerFunction, get_job_timeout_seconds
 from docent_core.docent.db.contexts import TelemetryContext
 from docent_core.docent.db.schemas.tables import SQLAJob
 from docent_core.docent.services.monoservice import MonoService
@@ -21,6 +21,7 @@ from docent_core.docent.services.telemetry_accumulation import TelemetryAccumula
 
 logger = get_logger(__name__)
 INGEST_LOCK_WAIT_LOG_THRESHOLD_SECONDS = 0.05
+TELEMETRY_INGEST_TIMEOUT_SECONDS = get_job_timeout_seconds(WorkerFunction.TELEMETRY_INGEST_JOB)
 
 
 def _decode_body(job_data: Dict[str, Any]) -> Optional[bytes]:
@@ -71,7 +72,7 @@ async def telemetry_ingest_job(ctx: TelemetryContext, job: SQLAJob) -> None:
     redis_client = await get_redis_client()
     lock = redis_client.lock(
         f"telemetry_ingest_lock:{telemetry_log_id}",
-        timeout=JOB_TIMEOUT_SECONDS,
+        timeout=TELEMETRY_INGEST_TIMEOUT_SECONDS,
         blocking_timeout=10,
     )
     lock_wait_start = time.monotonic()

@@ -8,7 +8,7 @@ and ensuring data consistency.
 import time
 
 from docent._log_util import get_logger
-from docent_core._worker.constants import JOB_TIMEOUT_SECONDS
+from docent_core._worker.constants import WorkerFunction, get_job_timeout_seconds
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAJob
@@ -16,6 +16,9 @@ from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.telemetry import TelemetryService
 
 logger = get_logger(__name__)
+TELEMETRY_PROCESSING_TIMEOUT_SECONDS = get_job_timeout_seconds(
+    WorkerFunction.TELEMETRY_PROCESSING_JOB
+)
 
 
 async def telemetry_processing_job(ctx: ViewContext, job: SQLAJob) -> None:
@@ -110,7 +113,7 @@ async def _process_collection_batch_job(collection_id: str, user: User, mono_svc
             collection_id,
             user,
             limit=10,
-            time_budget_seconds=max(1, int(JOB_TIMEOUT_SECONDS / 2)),
+            time_budget_seconds=max(1, int(TELEMETRY_PROCESSING_TIMEOUT_SECONDS / 2)),
         )
         processing_duration = time.monotonic() - processing_phase_start
 

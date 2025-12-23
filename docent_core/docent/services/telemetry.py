@@ -37,7 +37,7 @@ from docent.data_models.chat import (
 from docent.data_models.chat.tool import ToolCall
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._broker.redis_client import get_redis_client
-from docent_core._worker.constants import JOB_TIMEOUT_SECONDS
+from docent_core._worker.constants import WorkerFunction, get_job_timeout_seconds
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import (
@@ -65,7 +65,10 @@ logger = get_logger(__name__)
 LineageEntry = Dict[str, Any]
 
 AGENT_RUN_LOCK_PREFIX = "telemetry_agent_run_lock"
-AGENT_RUN_LOCK_TIMEOUT_SECONDS = JOB_TIMEOUT_SECONDS + 60
+TELEMETRY_PROCESSING_TIMEOUT_SECONDS = get_job_timeout_seconds(
+    WorkerFunction.TELEMETRY_PROCESSING_JOB
+)
+AGENT_RUN_LOCK_TIMEOUT_SECONDS = TELEMETRY_PROCESSING_TIMEOUT_SECONDS + 60
 
 
 class TelemetryService:

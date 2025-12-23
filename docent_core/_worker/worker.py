@@ -17,8 +17,9 @@ from docent._log_util import get_logger
 from docent_core._env_util import ENV, get_deployment_id, init_sentry_or_raise
 from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import (
-    JOB_TIMEOUT_SECONDS,
     WORKER_QUEUE_NAME,
+    get_arq_job_timeout_seconds,
+    get_job_timeout_seconds,
     validate_worker_queue_name,
 )
 from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
@@ -141,7 +142,24 @@ async def run_job(
             if job.type not in JOB_DISPATCHER_MAP:
                 raise ValueError(f"Unknown job type: {job.type}")
 
-            await JOB_DISPATCHER_MAP[job.type](ctx, job)  # type: ignore
+            job_timeout_seconds = get_job_timeout_seconds(job.type)
+            logger.info(
+                "Running job %s type=%s with timeout=%s seconds",
+                job_id,
+                job.type,
+                job_timeout_seconds,
+            )
+            try:
+                with anyio.fail_after(job_timeout_seconds):
+                    await JOB_DISPATCHER_MAP[job.type](ctx, job)  # type: ignore
+            except TimeoutError:
+                logger.error(
+                    "Job %s type=%s exceeded timeout of %s seconds",
+                    job_id,
+                    job.type,
+                    job_timeout_seconds,
+                )
+                raise
 
         except anyio.get_cancelled_exc_class():
             canceled = True
@@ -235,7 +253,7 @@ def run():
             "redis_settings": redis_settings,
             "queue_name": queue_name,
             "max_jobs": 1,  # per worker
-            "job_timeout": JOB_TIMEOUT_SECONDS,
+            "job_timeout": get_arq_job_timeout_seconds(),
             "job_completion_wait": job_completion_wait_seconds,
             "on_startup": partial(_worker_on_startup, queue_name, deployment_id),
             "on_shutdown": _worker_on_shutdown,

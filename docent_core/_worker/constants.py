@@ -4,17 +4,17 @@ WORKER_QUEUE_NAME = "docent_worker_queue"
 TELEMETRY_PROCESSING_QUEUE_NAME = "docent_worker_queue:telemetry_processing"
 TELEMETRY_INGEST_QUEUE_NAME = "docent_worker_queue:telemetry_ingest"
 # TODO(mengk) we should really consider making our jobs not... this long.
-JOB_TIMEOUT_SECONDS = 20 * 60  # 20 minutes
+DEFAULT_JOB_TIMEOUT_SECONDS = 20 * 60  # 20 minutes
 
 
 class WorkerFunction(str, Enum):
     # Rubrics and clustering
     RUBRIC_JOB = "rubric_job"
     CENTROID_ASSIGNMENT_JOB = "centroid_assignment_job"  # Deprecated
-    REFINEMENT_AGENT_JOB = "refinement_agent_job"
     CLUSTERING_JOB = "clustering_job"
     REFLECTION_JOB = "reflection_job"
-    # Chat
+    # Agent and chat
+    REFINEMENT_AGENT_JOB = "refinement_agent_job"
     CHAT_JOB = "chat_job"
     # Ingestion
     TELEMETRY_PROCESSING_JOB = "telemetry_processing_job"
@@ -23,6 +23,35 @@ class WorkerFunction(str, Enum):
     # IUI (deprecated)
     COUNTERFACTUAL_EXPERIMENT_JOB = "counterfactual_experiment_job"
     SIMPLE_ROLLOUT_EXPERIMENT_JOB = "simple_rollout_experiment_job"
+
+
+# Tune per-job timeouts here; defaults keep existing behavior.
+JOB_TIMEOUT_SECONDS_BY_TYPE: dict[str, int] = {
+    # Rubrics and clustering
+    WorkerFunction.RUBRIC_JOB.value: 60 * 60,  # 1 hour
+    WorkerFunction.CENTROID_ASSIGNMENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.CLUSTERING_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.REFLECTION_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    # Agent and chat
+    WorkerFunction.REFINEMENT_AGENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.CHAT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    # Telemetry
+    WorkerFunction.TELEMETRY_PROCESSING_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.TELEMETRY_INGEST_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.AGENT_RUN_INGEST_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    # IUI (deprecated)
+    WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+    WorkerFunction.SIMPLE_ROLLOUT_EXPERIMENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
+}
+
+
+def get_job_timeout_seconds(job_type: str | WorkerFunction) -> int:
+    key = job_type.value if isinstance(job_type, WorkerFunction) else job_type
+    return JOB_TIMEOUT_SECONDS_BY_TYPE.get(key, DEFAULT_JOB_TIMEOUT_SECONDS)
+
+
+def get_arq_job_timeout_seconds() -> int:
+    return max([DEFAULT_JOB_TIMEOUT_SECONDS, *JOB_TIMEOUT_SECONDS_BY_TYPE.values()])
 
 
 JOB_QUEUE_OVERRIDES: dict[str, str] = {
