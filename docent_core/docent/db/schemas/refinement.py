@@ -16,7 +16,7 @@ from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from docent.data_models.chat.message import ChatMessage, parse_chat_message
+from docent.data_models.chat.message import ChatMessage, UserMessage, parse_chat_message
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.rubric import TABLE_RUBRIC
 
@@ -60,8 +60,17 @@ class RefinementAgentSession(BaseModel):
 
         messages = self.model_copy().messages
         cleaned_messages = [
-            message
+            # Replace messages triggered when the user manually updates the rubric
+            (
+                UserMessage(content="The user has updated the rubric.")
+                if (
+                    message.role == "user"
+                    and message.text.startswith("The user updated the rubric from v")
+                )
+                else message
+            )
             for message in messages[1:2] + messages[3:]
+            # Filter out tool messages that show the output of the rewrite_rubric tool
             if not (message.role == "tool" and message.function == "rewrite_rubric")
         ]
 

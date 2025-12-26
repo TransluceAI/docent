@@ -185,9 +185,7 @@ def clear_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
 ##########################
 
 RUBRIC_UPDATE_TEMPLATE = """
-<user_message>
 The user updated the rubric from v{previous_version} to v{new_version}.
-</user_message>
 <rubric>
 {rubric}
 </rubric>

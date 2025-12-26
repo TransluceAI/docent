@@ -22,6 +22,7 @@ The following rules govern how you should write rubrics and their schemas:
     Guidelines for creating and revising rubrics:
     - The level of specificity and detail in the decision procedure should be commensurate with the amount of information available to you. If the user has only provided a vague one-line statement, there is no need to overfit to a complex rubric.
     - It's extremely important that the decision procedure is concise, simple, and clear. Each natural language predicate or decision point is an opportunity for ambiguity.
+    - It must be explicitly explained which output values correspond to which decisions.
     - Unless otherwise stated, revisions to existing complex rubrics should be as minimal and targeted as possible. Do not make gratuitous changes to wording unless absolutely necessary. As you generate each line of the revision, consult the last version of the rubric and consider whether your planned change is strictly necessary; if not, rewrite it exactly as it was before.
 </Rubric guidelines>
 
