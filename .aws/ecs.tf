@@ -11,7 +11,7 @@ resource "aws_ecs_cluster" "main" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-cluster"
+    Name       = "${var.project_name}-${var.deployment}-cluster"
     Deployment = var.deployment
   }
 }
@@ -21,7 +21,7 @@ resource "aws_cloudwatch_log_group" "ecs" {
   retention_in_days = 365
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-ecs-logs"
+    Name       = "${var.project_name}-${var.deployment}-ecs-logs"
     Deployment = var.deployment
   }
 }
@@ -43,7 +43,7 @@ resource "aws_iam_role" "ecs_task_execution" {
   })
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-ecs-task-execution-role"
+    Name       = "${var.project_name}-${var.deployment}-ecs-task-execution-role"
     Deployment = var.deployment
   }
 }
@@ -51,6 +51,42 @@ resource "aws_iam_role" "ecs_task_execution" {
 resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   role       = aws_iam_role.ecs_task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Allow ECS task execution role to read secrets from SSM and Secrets Manager
+resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
+  name = "${var.project_name}-${var.deployment}-ecs-task-execution-secrets"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadSSMParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.deployment}/*"
+        ]
+      },
+      {
+        Sid    = "DecryptSecrets"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }
 
 
@@ -71,7 +107,7 @@ resource "aws_iam_role" "ecs_task" {
   })
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-ecs-task-role"
+    Name       = "${var.project_name}-${var.deployment}-ecs-task-role"
     Deployment = var.deployment
   }
 }
@@ -137,7 +173,7 @@ locals {
 }
 
 resource "aws_ecs_task_definition" "worker" {
-  for_each                = local.worker_queue_configs
+  for_each                 = local.worker_queue_configs
   family                   = "${var.project_name}-${var.deployment}-${each.value.service_suffix}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -164,7 +200,7 @@ resource "aws_ecs_task_definition" "worker" {
         },
         {
           name  = "LLM_CACHE_PATH"
-          value = ""  # Disable cache
+          value = "" # Disable cache
         },
         {
           name  = "DOCENT_PG_HOST"
@@ -181,10 +217,6 @@ resource "aws_ecs_task_definition" "worker" {
         {
           name  = "DOCENT_PG_USER"
           value = var.db_username
-        },
-        {
-          name  = "DOCENT_PG_PASSWORD"
-          value = local.db_password
         },
         {
           name  = "DOCENT_REDIS_HOST"
@@ -212,6 +244,13 @@ resource "aws_ecs_task_definition" "worker" {
         }
       ]
 
+      secrets = [
+        {
+          name      = "DOCENT_PG_PASSWORD"
+          valueFrom = aws_ssm_parameter.db_password.arn
+        }
+      ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -226,9 +265,9 @@ resource "aws_ecs_task_definition" "worker" {
   ])
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-task"
+    Name       = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-task"
     Deployment = var.deployment
-    Queue       = each.value.queue_name
+    Queue      = each.value.queue_name
   }
 }
 
@@ -251,9 +290,9 @@ resource "aws_ecs_service" "worker" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-service"
+    Name       = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-service"
     Deployment = var.deployment
-    Queue       = each.value.queue_name
+    Queue      = each.value.queue_name
   }
 }
 
@@ -266,9 +305,9 @@ resource "aws_lb" "datadog_agent" {
   enable_cross_zone_load_balancing = true
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-datadog-agent-nlb"
+    Name       = "${var.project_name}-${var.deployment}-datadog-agent-nlb"
     Deployment = var.deployment
-    Role        = "datadog-agent"
+    Role       = "datadog-agent"
   }
 }
 
@@ -285,9 +324,9 @@ resource "aws_lb_target_group" "datadog_agent" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-datadog-agent-tg"
+    Name       = "${var.project_name}-${var.deployment}-datadog-agent-tg"
     Deployment = var.deployment
-    Role        = "datadog-agent"
+    Role       = "datadog-agent"
   }
 }
 
@@ -326,9 +365,9 @@ resource "aws_ecs_service" "datadog_agent" {
   ]
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-datadog-agent-service"
+    Name       = "${var.project_name}-${var.deployment}-datadog-agent-service"
     Deployment = var.deployment
-    Role        = "datadog-agent"
+    Role       = "datadog-agent"
   }
 }
 
@@ -347,10 +386,6 @@ resource "aws_ecs_task_definition" "datadog_agent" {
       image = "public.ecr.aws/datadog/agent:latest"
 
       environment = [
-        {
-          name  = "DD_API_KEY"
-          value = local.datadog_api_key
-        },
         {
           name  = "DD_SITE"
           value = var.datadog_site
@@ -381,6 +416,13 @@ resource "aws_ecs_task_definition" "datadog_agent" {
         }
       ]
 
+      secrets = [
+        {
+          name      = "DD_API_KEY"
+          valueFrom = aws_ssm_parameter.datadog_api_key.arn
+        }
+      ]
+
       portMappings = [
         {
           containerPort = 8126
@@ -403,9 +445,9 @@ resource "aws_ecs_task_definition" "datadog_agent" {
   ])
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-datadog-agent-task"
+    Name       = "${var.project_name}-${var.deployment}-datadog-agent-task"
     Deployment = var.deployment
-    Role        = "datadog-agent"
+    Role       = "datadog-agent"
   }
 }
 
@@ -418,9 +460,9 @@ resource "aws_appautoscaling_target" "ecs_worker" {
   service_namespace  = "ecs"
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-autoscaling-target"
+    Name       = "${var.project_name}-${var.deployment}-${each.value.service_suffix}-autoscaling-target"
     Deployment = var.deployment
-    Queue       = each.value.queue_name
+    Queue      = each.value.queue_name
   }
 }
 
@@ -482,7 +524,7 @@ resource "aws_ecs_task_definition" "migrations" {
         },
         {
           name  = "LLM_CACHE_PATH"
-          value = ""  # Disable cache
+          value = "" # Disable cache
         },
         {
           name  = "DOCENT_PG_HOST"
@@ -499,10 +541,13 @@ resource "aws_ecs_task_definition" "migrations" {
         {
           name  = "DOCENT_PG_USER"
           value = var.db_username
-        },
+        }
+      ]
+
+      secrets = [
         {
-          name  = "DOCENT_PG_PASSWORD"
-          value = local.db_password
+          name      = "DOCENT_PG_PASSWORD"
+          valueFrom = aws_ssm_parameter.db_password.arn
         }
       ]
 

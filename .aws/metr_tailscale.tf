@@ -4,7 +4,7 @@
 
 locals {
   enable_tailscale = var.deployment == "metr"
-  tailscale_cidr   = "100.64.0.0/10"  # Tailscale CGNAT range
+  tailscale_cidr   = "100.64.0.0/10" # Tailscale CGNAT range
 }
 
 # Data source to get the latest Amazon Linux 2023 AMI
@@ -59,7 +59,7 @@ resource "aws_security_group" "tailscale_router" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-tailscale-router-sg"
+    Name       = "${var.project_name}-${var.deployment}-tailscale-router-sg"
     Deployment = var.deployment
   }
 
@@ -93,7 +93,7 @@ resource "aws_security_group" "app_runner_vpc_endpoint" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-apprunner-endpoint-sg"
+    Name       = "${var.project_name}-${var.deployment}-apprunner-endpoint-sg"
     Deployment = var.deployment
   }
 
@@ -122,9 +122,46 @@ resource "aws_iam_role" "tailscale_router" {
   })
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-tailscale-router-role"
+    Name       = "${var.project_name}-${var.deployment}-tailscale-router-role"
     Deployment = var.deployment
   }
+}
+
+# Allow Tailscale router to read SSM parameters
+resource "aws_iam_role_policy" "tailscale_router_ssm" {
+  count = local.enable_tailscale ? 1 : 0
+
+  name = "${var.project_name}-${var.deployment}-tailscale-router-ssm"
+  role = aws_iam_role.tailscale_router[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadSSMParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          aws_ssm_parameter.tailscale_auth_key.arn
+        ]
+      },
+      {
+        Sid    = "DecryptSSM"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }
 
 # IAM instance profile for Tailscale subnet router
@@ -135,7 +172,7 @@ resource "aws_iam_instance_profile" "tailscale_router" {
   role = aws_iam_role.tailscale_router[0].name
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-tailscale-router-profile"
+    Name       = "${var.project_name}-${var.deployment}-tailscale-router-profile"
     Deployment = var.deployment
   }
 }
@@ -144,8 +181,8 @@ resource "aws_iam_instance_profile" "tailscale_router" {
 resource "aws_launch_template" "tailscale_router" {
   count = local.enable_tailscale ? 1 : 0
 
-  name_prefix   = "${var.project_name}-${var.deployment}-tailscale-router-"
-  key_name      = "${var.project_name}-${var.deployment}-bastion-key"
+  name_prefix = "${var.project_name}-${var.deployment}-tailscale-router-"
+  key_name    = "${var.project_name}-${var.deployment}-bastion-key"
 
   image_id      = data.aws_ami.amazon_linux[0].id
   instance_type = "t3.micro"
@@ -158,29 +195,26 @@ resource "aws_launch_template" "tailscale_router" {
 
   user_data = base64encode(templatefile("${path.module}/metr-tailscale-user-data.tftpl", {
     vpc_cidr           = aws_vpc.main.cidr_block
-    tailscale_auth_key = local.tailscale_auth_key
+    ssm_parameter_name = aws_ssm_parameter.tailscale_auth_key.name
+    aws_region         = var.aws_region
     deployment         = var.deployment
   }))
 
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name        = "${var.project_name}-${var.deployment}-tailscale-router"
+      Name       = "${var.project_name}-${var.deployment}-tailscale-router"
       Deployment = var.deployment
-      Role        = "tailscale-subnet-router"
+      Role       = "tailscale-subnet-router"
     }
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-tailscale-router-lt"
+    Name       = "${var.project_name}-${var.deployment}-tailscale-router-lt"
     Deployment = var.deployment
   }
 
   lifecycle {
-    precondition {
-      condition     = length(trimspace(local.tailscale_auth_key)) > 0
-      error_message = "Tailscale: set non-empty tailscale_auth_key. Provide via TF_VAR_tailscale_auth_key or a secrets tfvars file."
-    }
     create_before_destroy = true
   }
 }
@@ -189,10 +223,10 @@ resource "aws_launch_template" "tailscale_router" {
 resource "aws_autoscaling_group" "tailscale_router" {
   count = local.enable_tailscale ? 1 : 0
 
-  name                = "${var.project_name}-${var.deployment}-tailscale-router-asg"
-  vpc_zone_identifier = aws_subnet.public[*].id
-  target_group_arns   = []
-  health_check_type   = "EC2"
+  name                      = "${var.project_name}-${var.deployment}-tailscale-router-asg"
+  vpc_zone_identifier       = aws_subnet.public[*].id
+  target_group_arns         = []
+  health_check_type         = "EC2"
   health_check_grace_period = 300
 
   min_size         = 1
@@ -225,16 +259,16 @@ resource "aws_autoscaling_group" "tailscale_router" {
 resource "aws_vpc_endpoint" "app_runner" {
   count = local.enable_tailscale ? 1 : 0
 
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.apprunner.requests"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.app_runner_vpc_endpoint[0].id]
+  vpc_id             = aws_vpc.main.id
+  service_name       = "com.amazonaws.${var.aws_region}.apprunner.requests"
+  vpc_endpoint_type  = "Interface"
+  subnet_ids         = aws_subnet.private[*].id
+  security_group_ids = [aws_security_group.app_runner_vpc_endpoint[0].id]
 
   private_dns_enabled = false
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-apprunner-vpc-endpoint"
+    Name       = "${var.project_name}-${var.deployment}-apprunner-vpc-endpoint"
     Deployment = var.deployment
   }
 }
@@ -252,7 +286,7 @@ resource "aws_apprunner_vpc_ingress_connection" "main" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-private-ingress"
+    Name       = "${var.project_name}-${var.deployment}-private-ingress"
     Deployment = var.deployment
   }
 }
@@ -269,7 +303,7 @@ resource "aws_apprunner_vpc_ingress_connection" "frontend" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-frontend-private-ingress"
-    Deployment  = var.deployment
+    Name       = "${var.project_name}-${var.deployment}-frontend-private-ingress"
+    Deployment = var.deployment
   }
 }

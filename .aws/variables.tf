@@ -54,6 +54,12 @@ variable "rds_max_allocated_storage" {
   default     = 100
 }
 
+variable "rds_multi_az" {
+  description = "Enable Multi-AZ deployment for RDS"
+  type        = bool
+  default     = false
+}
+
 variable "db_username" {
   description = "Database username"
   type        = string

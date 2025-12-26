@@ -31,6 +31,42 @@ resource "aws_iam_role" "app_runner_instance" {
   }
 }
 
+# Allow App Runner instance role to read secrets from SSM Parameter Store
+resource "aws_iam_role_policy" "app_runner_instance_secrets" {
+  name = "${var.project_name}-${var.deployment}-app-runner-instance-secrets"
+  role = aws_iam_role.app_runner_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadSSMParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.deployment}/*"
+        ]
+      },
+      {
+        Sid    = "DecryptSecrets"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "app_runner_access" {
   name = "${var.project_name}-${var.deployment}-app-runner-access-role"
 
@@ -72,20 +108,22 @@ resource "aws_apprunner_service" "api" {
         start_command = "docent_core server --port 8000 --workers ${var.app_runner_num_workers} --use-ddog"
         runtime_environment_variables = {
           ENV_RESOLUTION_STRATEGY = "os_environ"
-          DEPLOYMENT_ID        = var.deployment
-          LLM_CACHE_PATH       = null  # Disable cache
-          DOCENT_PG_HOST       = aws_db_instance.postgres.address
-          DOCENT_PG_PORT       = aws_db_instance.postgres.port
-          DOCENT_PG_DATABASE   = var.db_name
-          DOCENT_PG_USER       = var.db_username
-          DOCENT_PG_PASSWORD   = local.db_password
-          DOCENT_REDIS_HOST    = aws_elasticache_replication_group.redis.primary_endpoint_address
-          DOCENT_REDIS_PORT    = aws_elasticache_replication_group.redis.port
-          DOCENT_REDIS_TLS     = "true"
-          DD_AGENT_HOST        = aws_lb.datadog_agent.dns_name
-          DD_AGENT_PORT        = "8126"
-          DD_ENV               = var.deployment
-          DD_SERVICE           = "docent-app"
+          DEPLOYMENT_ID           = var.deployment
+          LLM_CACHE_PATH          = null # Disable cache
+          DOCENT_PG_HOST          = aws_db_instance.postgres.address
+          DOCENT_PG_PORT          = aws_db_instance.postgres.port
+          DOCENT_PG_DATABASE      = var.db_name
+          DOCENT_PG_USER          = var.db_username
+          DOCENT_REDIS_HOST       = aws_elasticache_replication_group.redis.primary_endpoint_address
+          DOCENT_REDIS_PORT       = aws_elasticache_replication_group.redis.port
+          DOCENT_REDIS_TLS        = "true"
+          DD_AGENT_HOST           = aws_lb.datadog_agent.dns_name
+          DD_AGENT_PORT           = "8126"
+          DD_ENV                  = var.deployment
+          DD_SERVICE              = "docent-app"
+        }
+        runtime_environment_secrets = {
+          DOCENT_PG_PASSWORD = aws_ssm_parameter.db_password.arn
         }
       }
       image_repository_type = "ECR"

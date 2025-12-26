@@ -29,9 +29,9 @@ output "rds_port" {
   value       = aws_db_instance.postgres.port
 }
 
-output "database_url" {
-  description = "Database connection URL"
-  value       = "postgresql://${var.db_username}:${local.db_password}@${aws_db_instance.postgres.endpoint}:5432/docent"
+output "database_password_ssm_arn" {
+  description = "ARN of the SSM parameter containing the database password"
+  value       = aws_ssm_parameter.db_password.arn
   sensitive   = true
 }
 

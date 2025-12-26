@@ -23,18 +23,90 @@ resource "aws_key_pair" "bastion" {
   }
 }
 
+# IAM role for bastion to read SSM parameters
+resource "aws_iam_role" "bastion" {
+  name = "${var.project_name}-${var.deployment}-bastion-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-bastion-role"
+    Deployment = var.deployment
+  }
+}
+
+resource "aws_iam_role_policy" "bastion_ssm" {
+  name = "${var.project_name}-${var.deployment}-bastion-ssm"
+  role = aws_iam_role.bastion.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadSSMParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          aws_ssm_parameter.tailscale_auth_key.arn
+        ]
+      },
+      {
+        Sid    = "DecryptSSM"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "bastion" {
+  name = "${var.project_name}-${var.deployment}-bastion-profile"
+  role = aws_iam_role.bastion.name
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-bastion-profile"
+    Deployment = var.deployment
+  }
+}
+
 # Launch template for bastion with Tailscale
 resource "aws_launch_template" "bastion" {
-  name_prefix   = "${var.project_name}-${var.deployment}-bastion-"
-  key_name      = aws_key_pair.bastion.key_name
+  name_prefix = "${var.project_name}-${var.deployment}-bastion-"
+  key_name    = aws_key_pair.bastion.key_name
 
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = "t3.micro"
 
   vpc_security_group_ids = [aws_security_group.bastion.id]
 
+  iam_instance_profile {
+    name = aws_iam_instance_profile.bastion.name
+  }
+
   user_data = base64encode(templatefile("${path.module}/tailscale-user-data.tftpl", {
-    tailscale_auth_key = local.tailscale_auth_key
+    ssm_parameter_name = aws_ssm_parameter.tailscale_auth_key.name
+    aws_region         = var.aws_region
     deployment         = var.deployment
   }))
 
@@ -53,10 +125,6 @@ resource "aws_launch_template" "bastion" {
   }
 
   lifecycle {
-    precondition {
-      condition     = length(trimspace(local.tailscale_auth_key)) > 0
-      error_message = "Tailscale: set non-empty tailscale_auth_key. Provide via TF_VAR_tailscale_auth_key or a secrets tfvars file."
-    }
     create_before_destroy = true
   }
 }
