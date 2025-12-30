@@ -7,8 +7,18 @@ cd "$ROOT_DIR"
 
 # Create a new worktree and branch from within current git directory.
 
+# Parse options
+existing=false
+while getopts "e" opt; do
+  case $opt in
+    e) existing=true ;;
+  esac
+done
+shift $((OPTIND-1))
+
 if [[ -z "$1" ]]; then
-  echo "Usage: gwa.sh [branch name]" >&2
+  echo "Usage: gwa.sh [-e] [branch name]" >&2
+  echo "  -e  Use existing branch instead of creating new" >&2
   exit 1
 fi
 
@@ -19,7 +29,11 @@ safe_branch="${branch//\//-}"
 # Use absolute path based on project root's parent directory
 path="$(dirname "$ROOT_DIR")/${base}--${safe_branch}"
 
-git worktree add -b "$branch" "$path" >&2
+if $existing; then
+  git worktree add "$path" "$branch" >&2
+else
+  git worktree add -b "$branch" "$path" >&2
+fi
 
 # Copy .env file to new worktree if it exists
 if [[ -f ".env" ]]; then
