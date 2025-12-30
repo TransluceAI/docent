@@ -19,8 +19,8 @@ if [[ "$main_worktree" == "$current_dir" ]]; then
   exit 1
 fi
 
-cwd="$(pwd)"
-worktree="$(basename "$cwd")"
+worktree_path="$current_dir"
+worktree="$(basename "$worktree_path")"
 
 # split on first `--`
 root="${worktree%%--*}"
@@ -28,10 +28,10 @@ root="${worktree%%--*}"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
 if gum confirm "Remove worktree '$worktree' (branch '$branch')?"; then
-  git worktree remove "$worktree" --force >&2
+  git worktree remove "$worktree_path" --force >&2
 
   # Print the root path so caller can cd to it: cd $(gwd.sh)
-  echo "../$root"
+  echo "$(dirname "$worktree_path")/$root"
 else
   # "cd" to the current directory if operation cancelled
   echo "."
