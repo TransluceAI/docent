@@ -14,10 +14,10 @@ export default function SettingsClientLayout({
       <Suspense fallback={<div className="h-7">Loading breadcrumbs...</div>}>
         <Breadcrumbs />
       </Suspense>
-      <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <div className="flex gap-8">
+      <div className="flex-1 min-h-0 container mx-auto py-8 px-4 max-w-6xl">
+        <div className="flex gap-8 h-full">
           <SettingsSidebar />
-          <div className="flex-1">{children}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
         </div>
       </div>
     </div>
