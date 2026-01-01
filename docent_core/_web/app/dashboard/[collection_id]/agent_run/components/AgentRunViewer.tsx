@@ -927,6 +927,30 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       [scrollToBlock, selectedTranscriptId]
     );
 
+    // Handler for j/k navigation (used by minimap and messages column)
+    const handleJKNavigation = useCallback(
+      (e: React.KeyboardEvent) => {
+        // Don't intercept key events from input elements
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+
+        if (e.key === 'j') {
+          e.preventDefault();
+          goToNextBlock();
+        } else if (e.key === 'k') {
+          e.preventDefault();
+          goToPrevBlock();
+        }
+      },
+      [goToNextBlock, goToPrevBlock]
+    );
+
     //********************
     // Comment Handlers *
     //********************
@@ -1483,13 +1507,15 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   </div>
 
                   {/* Transcript Minimap - above messages */}
-                  <TranscriptMinimap
-                    messages={transcript.messages}
-                    currentBlockIndex={currentBlockIndex}
-                    blockIdxToCommentsMap={blockIdxToCommentsMap}
-                    onBlockClick={handleMinimapBlockClick}
-                    className="flex-shrink-0 px-1 my-2"
-                  />
+                  <div onKeyDown={handleJKNavigation}>
+                    <TranscriptMinimap
+                      messages={transcript.messages}
+                      currentBlockIndex={currentBlockIndex}
+                      blockIdxToCommentsMap={blockIdxToCommentsMap}
+                      onBlockClick={handleMinimapBlockClick}
+                      className="flex-shrink-0 px-1 my-2"
+                    />
+                  </div>
 
                   {/* Relative wrapper for scroll container and fixed buttons */}
                   <div className="relative flex-1 min-h-0">
@@ -1499,25 +1525,6 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       className="absolute inset-0 overflow-y-auto custom-scrollbar"
                       // Disable browser scroll anchoring, which was causing the viewport to jump when creating a new draft comment
                       style={{ overflowAnchor: 'none' }}
-                      onKeyDown={(e) => {
-                        // Don't intercept key events from input elements
-                        const target = e.target as HTMLElement;
-                        if (
-                          target.tagName === 'INPUT' ||
-                          target.tagName === 'TEXTAREA' ||
-                          target.isContentEditable
-                        ) {
-                          return;
-                        }
-
-                        if (e.key === 'j') {
-                          e.preventDefault();
-                          goToNextBlock();
-                        } else if (e.key === 'k') {
-                          e.preventDefault();
-                          goToPrevBlock();
-                        }
-                      }}
                     >
                       <div className="flex flex-row items-stretch">
                         {/* Messages column */}
@@ -1528,6 +1535,7 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                               !commentSidebarCollapsed &&
                               'pr-1 border-r border-border'
                           )}
+                          onKeyDown={handleJKNavigation}
                         >
                           {transcript.messages.map((message, index) => {
                             const blockId = `t-${transcriptIdx}_b-${index}`;
