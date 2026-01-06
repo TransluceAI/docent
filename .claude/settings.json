@@ -21,7 +21,9 @@
       "Bash(pwd:*)",
       "Bash(tree:*)",
       "Bash(file:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "WebSearch",
+      "WebFetch"
     ],
     "deny": [],
     "ask": []
