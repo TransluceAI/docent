@@ -491,7 +491,7 @@ export default function ExperimentViewer({
     }
 
     hasAutoSelectedColumnsRef.current = true;
-    setSelectedColumns(availableColumns);
+    setSelectedColumns(availableColumns.slice(0, MAX_SELECTED_COLUMNS));
   }, [
     availableColumns,
     hasLoadedFromStorage,
