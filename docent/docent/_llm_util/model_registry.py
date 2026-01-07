@@ -113,6 +113,20 @@ _REGISTRY: list[tuple[str, ModelInfo]] = [
             context_window=256_000,
         ),
     ),
+    (
+        "minimax-m2.1",
+        ModelInfo(
+            rate={"input": 0.12, "output": 0.48},
+            context_window=196_608,
+        ),
+    ),
+    (
+        "minimax-m2",
+        ModelInfo(
+            rate={"input": 0.20, "output": 1.00},
+            context_window=196_608,
+        ),
+    ),
 ]
 
 
