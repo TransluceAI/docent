@@ -102,14 +102,6 @@ class PublicProviderPreferences(BaseModel):
                 provider="google",
                 model_name="gemini-3-flash-preview",
             ),
-            ModelOption(
-                provider="openrouter",
-                model_name="minimax/minimax-m2",
-            ),
-            ModelOption(
-                provider="openrouter",
-                model_name="minimax/minimax-m2.1",
-            ),
         ]
 
 

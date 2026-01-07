@@ -394,6 +394,14 @@ class ProviderPreferences(PublicProviderPreferences):
                 model_name="anthropic/claude-sonnet-4-5",
                 reasoning_effort="medium",
             ),
+            ModelOption(
+                provider="openrouter",
+                model_name="minimax/minimax-m2",
+            ),
+            ModelOption(
+                provider="openrouter",
+                model_name="minimax/minimax-m2.1",
+            ),
         ]
 
     @cached_property
