@@ -24,7 +24,8 @@
       "Bash(chmod:*)",
       "WebSearch",
       "WebFetch",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []
