@@ -51,7 +51,7 @@ export function LabelSetsProvider({
 }) {
   const [labelSetsByKey, setLabelSetsByKey] = useLocalStorage<
     Record<string, LabelSet | null>
-  >(`labelSets-${collectionId}`, {});
+  >(`labelSets-${collectionId}`, {}, { initializeWithValue: false });
 
   // Fetch the available label sets from the API
   const { data: availableLabelSets, isFetching } = useGetLabelSetsQuery({

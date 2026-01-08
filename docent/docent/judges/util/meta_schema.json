@@ -2,6 +2,99 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/meta/mini-schema",
   "title": "Meta-schema for Docent judge outputs. Makes some restrictions to 2020-12.",
+
+  "$defs": {
+    "propertySchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "array", "object"]
+        },
+        "description": {
+          "type": "string"
+        },
+        "citations": {
+          "type": "boolean"
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "type": ["string", "integer", "boolean"]
+          }
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "date-time",
+            "date",
+            "time",
+            "email",
+            "hostname",
+            "ipv4",
+            "ipv6",
+            "uri",
+            "uuid"
+          ]
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "exclusiveMinimum": {
+          "type": "number"
+        },
+        "exclusiveMaximum": {
+          "type": "number"
+        },
+        "multipleOf": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "items": {
+          "$ref": "#/$defs/propertySchema"
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": { "$ref": "#/$defs/propertySchema" }
+        },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "additionalProperties": {
+          "const": false
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "array" } } },
+          "then": { "required": ["items"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "object" } } },
+          "then": { "required": ["properties"] }
+        }
+      ]
+    }
+  },
+
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -11,75 +104,10 @@
       "type": "array",
       "items": { "type": "string" }
     },
-
     "properties": {
       "type": "object",
       "propertyNames": { "type": "string" },
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["type"],
-
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["string", "integer", "number", "boolean"]
-          },
-          "description": {
-            "type": "string"
-          },
-          "citations": {
-            "type": "boolean"
-          },
-          "enum": {
-            "type": "array",
-            "items": {
-              "type": ["string", "integer", "boolean"]
-            }
-          },
-          "format": {
-            "type": "string",
-            "enum": [
-              "date-time",
-              "date",
-              "time",
-              "email",
-              "hostname",
-              "ipv4",
-              "ipv6",
-              "uri",
-              "uuid"
-            ]
-          },
-          "minLength": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxLength": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "pattern": {
-            "type": "string"
-          },
-          "minimum": {
-            "type": "number"
-          },
-          "maximum": {
-            "type": "number"
-          },
-          "exclusiveMinimum": {
-            "type": "number"
-          },
-          "exclusiveMaximum": {
-            "type": "number"
-          },
-          "multipleOf": {
-            "type": "number",
-            "exclusiveMinimum": 0
-          }
-        }
-      }
+      "additionalProperties": { "$ref": "#/$defs/propertySchema" }
     }
   },
   "required": ["type", "properties"]

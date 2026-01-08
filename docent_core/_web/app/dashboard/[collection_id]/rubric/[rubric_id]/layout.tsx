@@ -50,15 +50,23 @@ function RubricLayoutBody({
 
   const { version } = useRubricVersion();
   const { activeLabelSet } = useLabelSets(rubricId);
-  const { data: rubricRunState } = useGetRubricRunStateQuery(
-    {
-      collectionId,
-      rubricId,
-      version: version ?? null,
-      labelSetId: activeLabelSet?.id ?? null,
-    },
-    { skip: !isOnResultRoute }
-  );
+  const { data: rubricRunState, refetch: refetchRubricRunState } =
+    useGetRubricRunStateQuery(
+      {
+        collectionId,
+        rubricId,
+        version: version ?? null,
+        labelSetId: activeLabelSet?.id ?? null,
+      },
+      { skip: !isOnResultRoute }
+    );
+
+  // Refetch rubric run state when navigating to a different agent run or result
+  useEffect(() => {
+    if (isOnResultRoute) {
+      refetchRubricRunState();
+    }
+  }, [agentRunId, resultId]);
 
   // Find the agent_run group that contains the current result
   const currentAgentRunGroup = isOnResultRoute

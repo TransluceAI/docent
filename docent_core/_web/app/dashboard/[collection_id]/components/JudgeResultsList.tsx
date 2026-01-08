@@ -7,7 +7,6 @@ import { AgentRunJudgeResults, RubricCentroid } from '@/app/api/rubricApi';
 import PaginatedResultsList from './PaginatedResultsList';
 import { SchemaDefinition } from '@/app/types/schema';
 import { Label } from '@/app/api/labelApi';
-import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 import { ViewMode } from '../utils/viewModeResults';
 
 interface JudgeResultsListProps {
@@ -37,8 +36,6 @@ export const JudgeResultsList = ({
   activeLabelSet,
   viewMode,
 }: JudgeResultsListProps) => {
-  const hasWritePermission = useHasCollectionWritePermission();
-
   if (centroids.length > 0) {
     return (
       <CentroidsList
@@ -51,7 +48,7 @@ export const JudgeResultsList = ({
         agentRunResults={agentRunResults}
         labels={labels}
         activeLabelSet={activeLabelSet}
-        canEditLabels={hasWritePermission}
+        showLabels
         viewMode={viewMode}
       />
     );
@@ -66,7 +63,7 @@ export const JudgeResultsList = ({
       schema={schema}
       labels={labels}
       activeLabelSet={activeLabelSet}
-      canEditLabels={hasWritePermission}
+      showLabels
       viewMode={viewMode}
       pageSize={RESULTS_PER_PAGE}
     />
@@ -83,7 +80,7 @@ interface CentroidsListProps {
   agentRunResults: AgentRunJudgeResults[];
   labels: Label[];
   activeLabelSet: any;
-  canEditLabels: boolean;
+  showLabels: boolean;
   viewMode: ViewMode;
 }
 
@@ -97,7 +94,7 @@ const CentroidsList = ({
   agentRunResults,
   labels,
   activeLabelSet,
-  canEditLabels,
+  showLabels,
   viewMode,
 }: CentroidsListProps) => {
   // Keep track of which IDs have been assigned (to later compute resids)
@@ -189,7 +186,7 @@ const CentroidsList = ({
           schema={schema}
           labels={labels}
           activeLabelSet={activeLabelSet}
-          canEditLabels={canEditLabels}
+          showLabels={showLabels}
           viewMode={viewMode}
           pageSize={RESULTS_PER_PAGE}
         />

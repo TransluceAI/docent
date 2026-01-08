@@ -25,6 +25,41 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 
+// Simple read-only value display for complex types
+function ReadOnlyValueDisplay({ value }: { value: any }) {
+  if (value === null || value === undefined) {
+    return <span className="text-muted-foreground italic">null</span>;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return (
+        <span className="text-muted-foreground italic">(empty array)</span>
+      );
+    }
+    return (
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+
+  if (typeof value === 'object') {
+    if (Object.keys(value).length === 0) {
+      return (
+        <span className="text-muted-foreground italic">(empty object)</span>
+      );
+    }
+    return (
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+
+  return <span>{String(value)}</span>;
+}
+
 interface LabelEditFormProps {
   labelSet: LabelSet;
   existingLabel?: LabelType;
@@ -216,6 +251,20 @@ export default function LabelEditForm({
             step={property.type === 'integer' ? 1 : 0.1}
             className="text-sm"
           />
+        </div>
+      );
+    }
+
+    // Handle array and object types as read-only display
+    if (property.type === 'array' || property.type === 'object') {
+      return (
+        <div key={key} className="flex flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">
+            {key} <span className="text-muted-foreground/70">(read-only)</span>
+          </Label>
+          <div className="p-2 bg-muted/50 rounded-md border text-xs">
+            <ReadOnlyValueDisplay value={value} />
+          </div>
         </div>
       );
     }

@@ -24,7 +24,7 @@ interface PaginatedResultsListProps {
   schema: SchemaDefinition;
   labels?: Label[];
   activeLabelSet: any;
-  canEditLabels?: boolean;
+  showLabels?: boolean;
   viewMode: ViewMode;
   pageSize?: number;
 }
@@ -38,7 +38,7 @@ const PaginatedResultsList = ({
   schema,
   labels,
   activeLabelSet,
-  canEditLabels = false,
+  showLabels = true,
   viewMode,
   pageSize,
 }: PaginatedResultsListProps) => {
@@ -273,7 +273,7 @@ const PaginatedResultsList = ({
                     schema={schema}
                     labels={labelsMap?.get(group.agent_run_id) || []}
                     activeLabelSetId={activeLabelSet?.id || null}
-                    canEditLabels={canEditLabels}
+                    showLabels={showLabels}
                   />
                 )}
                 {failedResults.length > 0 && (
