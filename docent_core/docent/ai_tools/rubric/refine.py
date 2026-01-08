@@ -80,7 +80,7 @@ SYS_PROMPT_TEMPLATE = """
 
 <Rules for using rewrite_rubric>
     - You should invoke this tool when the user asks you to rewrite the rubric or change the schema. You can also invoke it yourself in accordance with the "how to engage with the user" section.
-    - When you call this tool, provide instructions for how to perform the rewrite, based on what you have learned from engaging with the user. You may also pass an empty string to start.
+    - When you call this tool, provide a natural language description of what needs to change based on user feedback. You may also pass an empty string to start. You should NOT perform the rewriting yourself; the rewrite_rubric tool will handle the actual rewriting based on your instructions.
     - The rewrite_rubric tool returns an output containing the new rubric and output schema. This is for your information, so you know how the rewrite was performed.
     - After calling rewrite_rubric, do NOT regurgitate the content of the rubric. The user can see it on their UI.
 </Rules for using rewrite_rubric>
@@ -110,13 +110,21 @@ FIRST_USER_MESSAGE_TEMPLATE = """
 def create_rewrite_rubric_tool() -> ToolInfo:
     return ToolInfo(
         name="rewrite_rubric",
-        description="Rewrite the rubric and output schema given some instructions.",
+        description=(
+            "Rewrite the rubric and output schema given some instructions. "
+            "This tool handles the actual rewriting - do NOT provide the rewritten "
+            "rubric text or schema yourself."
+        ),
         parameters=ToolParams(
             type="object",
             properties={
                 "instructions": ToolParam(
                     name="instructions",
-                    description="Instructions for rewriting the rubric",
+                    description=(
+                        "A plain text string describing what changes to make to the rubric. "
+                        "CRITICAL: do NOT pass a structured object; just describe the "
+                        "changes in natural language as a string."
+                    ),
                     input_schema={"type": "string"},
                 ),
             },
@@ -132,11 +140,27 @@ async def execute_rewrite_rubric(
     sampled_agent_run_views: list[AgentRunView] | None = None,
     annotated_agent_run_views: list[AgentRunView] | None = None,
 ) -> tuple[Rubric | None, ToolMessage]:
+    # Validate instructions type - must be a string, not a dict
+    instructions = tool_call.arguments.get("instructions", "")
+    if not isinstance(instructions, str):
+        error_msg = (
+            f"The 'instructions' parameter must be a plain text string, not {type(instructions).__name__}. "
+            "Please provide a natural language description of what changes to make, e.g., "
+            "'Make the rubric more specific about edge cases'."
+        )
+        logger.warning(f"Invalid instructions type: {type(instructions)}")
+        return None, ToolMessage(
+            content=error_msg,
+            error={"detail": error_msg},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+
     # This function may raise errors for a number of reasons
     try:
         rubric = await rewrite_rubric(
             old_rubric,
-            instructions=tool_call.arguments.get("instructions", ""),
+            instructions=instructions,
             selection_indices=None,
             model_options=model_options,
             sampled_agent_run_views=sampled_agent_run_views,
