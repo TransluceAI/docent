@@ -1,3 +1,4 @@
+import uuid
 from typing import Any, Literal, cast
 
 import backoff
@@ -193,8 +194,7 @@ async def get_google_chat_completion_streaming_async(
                             args = coerce_tool_args(getattr(fc, "args", {}))
                             accumulated_tool_calls.append(
                                 ToolCall(
-                                    id=getattr(fc, "id", None)
-                                    or f"{getattr(fc, 'name', 'tool')}_call",
+                                    id=getattr(fc, "id", None) or str(uuid.uuid4()),
                                     function=getattr(fc, "name", "unknown"),
                                     arguments=args,
                                     type="function",
@@ -367,7 +367,7 @@ def _parse_google_completion(message: types.GenerateContentResponse, model: str)
             args = coerce_tool_args(getattr(fc, "args", {}))
             tool_calls.append(
                 ToolCall(
-                    id=getattr(fc, "id", None) or f"{getattr(fc, 'name', 'tool')}_call",
+                    id=getattr(fc, "id", None) or str(uuid.uuid4()),
                     function=getattr(fc, "name", "unknown"),
                     arguments=args,
                     type="function",

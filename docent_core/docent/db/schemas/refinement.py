@@ -70,8 +70,6 @@ class RefinementAgentSession(BaseModel):
                 else message
             )
             for message in messages[1:2] + messages[3:]
-            # Filter out tool messages that show the output of the rewrite_rubric tool
-            if not (message.role == "tool" and message.function == "rewrite_rubric")
         ]
 
         return self.model_copy(

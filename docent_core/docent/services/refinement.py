@@ -548,10 +548,11 @@ class RefinementService:
                         else:
                             raise ValueError(f"Unsupported tool call: {tc.function}")
                     except Exception as e:
+                        logger.error(f"Error executing tool call: {e}", exc_info=True)
                         rsession.messages.append(
                             ToolMessage(
-                                content=f"Error executing tool call: {e}",
-                                error={"detail": str(e)},
+                                content="Error executing tool call",
+                                error={"detail": "Unknown error"},
                                 function=tc.function,
                                 tool_call_id=tc.id,
                             )

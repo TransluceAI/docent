@@ -40,7 +40,7 @@ interface AssistantMessage extends BaseChatMessage {
   suggested_messages?: string[];
 }
 
-interface ToolMessage extends BaseChatMessage {
+export interface ToolMessage extends BaseChatMessage {
   role: 'tool';
   tool_call_id?: string;
   function?: string;

@@ -209,3 +209,42 @@ def test_validate_judge_result_schema_nested_object_missing_properties_raises_er
     }
     with pytest.raises(jsonschema.ValidationError, match="'properties' is a required property"):
         validate_judge_result_schema(schema)
+
+
+# --- Regression test for model_copy validation bypass ---
+
+
+def test_rubric_model_copy_bypasses_validation():
+    """Documents that model_copy does NOT run validators.
+
+    This is NOT a bug in Pydantic - it's expected behavior. The bug was in
+    rewrite_rubric() using model_copy when it should use model_validate.
+    This test documents the dangerous behavior to prevent future misuse.
+    """
+    valid_rubric = Rubric(rubric_text="Example rubric", output_schema=_valid_schema())
+
+    invalid_schema = {"type": "object"}  # Missing required 'properties'
+
+    # model_copy does NOT raise - this is why we must use model_validate
+    invalid_rubric = valid_rubric.model_copy(update={"output_schema": invalid_schema})
+
+    # The rubric now contains an invalid schema!
+    assert invalid_rubric.output_schema == invalid_schema
+
+
+def test_rubric_model_validate_with_invalid_schema_raises_validation_error():
+    """Regression test: updating Rubric's output_schema must trigger validation.
+
+    This test ensures that updating a Rubric's output_schema via model_validate
+    properly validates the new schema. Previously, model_copy bypassed validators,
+    allowing invalid schemas to be persisted to the database.
+
+    See: docent_core/docent/ai_tools/rubric/rewrite.py - rewrite_rubric()
+    """
+    valid_rubric = Rubric(rubric_text="Example rubric", output_schema=_valid_schema())
+
+    invalid_schema = {"type": "object"}  # Missing required 'properties'
+
+    # Using model_validate should trigger the output_schema validator
+    with pytest.raises(jsonschema.ValidationError, match="'properties' is a required property"):
+        Rubric.model_validate(valid_rubric.model_dump() | {"output_schema": invalid_schema})

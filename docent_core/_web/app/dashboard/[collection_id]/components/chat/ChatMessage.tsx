@@ -5,12 +5,14 @@ import Markdown from './Markdown';
 import {
   ChatMessage as ChatMessageType,
   Content as ChatContent,
+  ToolMessage,
 } from '@/app/types/transcriptTypes';
 import { MarkdownWithCitations } from '@/components/CitationRenderer';
 import ToolCallMessage from './ToolCallMessage';
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  toolOutputs?: Map<string, ToolMessage>;
   isLoadingPlaceholder: boolean;
   requiresScrollPadding: boolean;
   isStreaming?: boolean;
@@ -25,59 +27,14 @@ function parseDocentUserMessage(text: string): string {
 
 export function ChatMessage({
   message,
+  toolOutputs,
   isLoadingPlaceholder,
   requiresScrollPadding,
   isStreaming = false,
 }: ChatMessageProps) {
   const isStreamingThisMessage = !!isStreaming;
 
-  // No per-tool expansion state here; handled inside ToolCallMessage
-  // Render tool messages in the same style as tool calls
-
-  const renderToolMessage = () => {
-    // NOTE(cadentj): maybe a little hacky atm, sometimes a dupe of the assistant call, but render if it shows an error message bc of execution
-    if (message.role !== 'tool' || !message.error) return null;
-    const contentList = Array.isArray(message.content)
-      ? message.content
-      : ([{ type: 'text', text: message.content }] as ChatContent[]);
-    const contentText = contentList
-      .map((part) => {
-        if (part.type === 'text') return part.text ?? '';
-        if (part.type === 'reasoning') return part.reasoning ?? '';
-        return '';
-      })
-      .filter((t) => (t || '').trim() !== '')
-      .join('\n\n');
-
-    return (
-      <div className="mt-1 p-1.5 bg-secondary/85 rounded text-xs break-all whitespace-pre-wrap">
-        <div className="text-[10px] text-muted-foreground mb-0.5">
-          {message.tool_call_id ? (
-            <>Tool Call ID: {message.tool_call_id}</>
-          ) : (
-            <>Tool Message</>
-          )}
-        </div>
-        <div className="font-mono">
-          {message.function && (
-            <span className="font-semibold">{message.function}</span>
-          )}
-          {message.error && (
-            <div className="mt-1 text-red-text">
-              Error: {message.error.message}
-            </div>
-          )}
-        </div>
-        {contentText && (
-          <div className="mt-1 font-mono whitespace-pre-wrap break-all">
-            {contentText}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // Render tool calls attached to assistant messages
+  // Render tool calls attached to assistant messages, including their outputs
   const renderToolCalls = () => {
     if (
       message.role === 'assistant' &&
@@ -88,6 +45,7 @@ export function ChatMessage({
         <ToolCallMessage
           key={i}
           tool={tool}
+          toolOutput={toolOutputs?.get(tool.id)}
           isStreaming={isStreamingThisMessage}
         />
       ));
@@ -125,9 +83,9 @@ export function ChatMessage({
           })}
         >
           {(() => {
-            // For tool messages, render the styled panel inside a standard bubble
+            // Skip tool messages - they're rendered as part of tool calls
             if (message.role === 'tool') {
-              return renderBubble('tool-message', renderToolMessage());
+              return null;
             }
 
             const contentList = Array.isArray(message.content)

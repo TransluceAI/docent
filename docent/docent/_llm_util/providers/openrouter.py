@@ -2,6 +2,7 @@
 
 import json
 import os
+import uuid
 from typing import Any, Literal
 
 import aiohttp
@@ -198,7 +199,7 @@ def _parse_openrouter_tool_call(tc: dict[str, Any]) -> ToolCall:
     """Parse tool call from OpenRouter response."""
     if tc.get("type") != "function":
         return ToolCall(
-            id=tc.get("id", "unknown"),
+            id=tc.get("id") or str(uuid.uuid4()),
             function="unknown",
             arguments={},
             parse_error=f"Unsupported tool call type: {tc.get('type')}",
@@ -215,7 +216,7 @@ def _parse_openrouter_tool_call(tc: dict[str, Any]) -> ToolCall:
         parse_error = f"Couldn't parse tool call arguments as JSON: {e}"
 
     return ToolCall(
-        id=tc.get("id", "unknown"),
+        id=tc.get("id") or str(uuid.uuid4()),
         function=function_data.get("name", "unknown"),
         arguments=arguments,
         parse_error=parse_error,

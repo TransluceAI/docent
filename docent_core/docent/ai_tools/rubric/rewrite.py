@@ -7,10 +7,11 @@ from docent._llm_util.providers.preference_types import ModelOption
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRunView
 from docent.judges import Rubric
+from docent.judges.util.meta_schema import get_meta_schema_json
 
 logger = get_logger(__name__)
 
-RUBRIC_GUIDELINES = """
+_RUBRIC_GUIDELINES_TEMPLATE = """
 The following rules govern how you should write rubrics and their schemas:
 
 <Rubric guidelines>
@@ -35,12 +36,16 @@ The following rules govern how you should write rubrics and their schemas:
 </Formatting instructions>
 
 <Output schema guidelines>
-    - The schema must follow the JSON Schema standard.
-    - The schema must NOT use nested objects or arrays.
-    - The schema must NOT use any custom string formats such as dates or addresses.
-    - There is a custom optional key "citations" (bool type) which may be added to string properties. If the judge model outputs a citation at this field, it will be parsed for the user.
+    - If unspecified, keep the rubric schema as simple as possible, but of course include what the user requests.
+    - The output schema must conform to the following meta-schema, which is a restricted subset of JSON Schema 2020-12:
+    <meta_schema>
+{meta_schema}
+    </meta_schema>
 </Output schema guidelines>
 """.strip()
+
+# Format the template with the actual meta-schema JSON at module load time
+RUBRIC_GUIDELINES = _RUBRIC_GUIDELINES_TEMPLATE.format(meta_schema=get_meta_schema_json())
 
 SELECTION_TAG = "SELECTED"
 SELECTION_PROMPT = f"""
@@ -324,4 +329,6 @@ async def rewrite_rubric(
         schema_text = schema_match.group(1).strip()
         updates["output_schema"] = json.loads(schema_text)
 
-    return rubric.model_copy(update=updates)
+    # Use model_validate to ensure validators run on the updated schema.
+    # model_copy() bypasses field validators, which would allow invalid schemas.
+    return Rubric.model_validate(rubric.model_dump() | updates)

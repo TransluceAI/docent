@@ -5,14 +5,22 @@ from typing import Any
 import jsonschema
 
 
-def _load_meta_schema() -> dict[str, Any]:
-    """Load the rubric meta-schema from the adjacent JSON file."""
+def _load_meta_schema_json() -> str:
+    """Load the rubric meta-schema JSON string from the adjacent file."""
     meta_schema_path = Path(__file__).with_suffix(".json")
     with meta_schema_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return f.read()
 
 
-_META_VALIDATOR = jsonschema.Draft202012Validator(_load_meta_schema())
+# Load once at module import time
+_META_SCHEMA_JSON = _load_meta_schema_json()
+_META_SCHEMA = json.loads(_META_SCHEMA_JSON)
+_META_VALIDATOR = jsonschema.Draft202012Validator(_META_SCHEMA)
+
+
+def get_meta_schema_json() -> str:
+    """Return the raw meta-schema JSON string for inclusion in prompts."""
+    return _META_SCHEMA_JSON
 
 
 def validate_judge_result_schema(schema: dict[str, Any]):

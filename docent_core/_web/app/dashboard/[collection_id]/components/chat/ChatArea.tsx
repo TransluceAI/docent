@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { ChatMessage } from '@/app/types/transcriptTypes';
+import { ChatMessage, ToolMessage } from '@/app/types/transcriptTypes';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import InputArea from './InputArea';
 
@@ -75,12 +75,24 @@ export function ChatArea({
   const streamingMessageIdx =
     isSendingMessage && messages.length > 0 ? messages.length - 1 : undefined;
 
+  // Build lookup map from tool_call_id to ToolMessage for grouping
+  const toolOutputsMap = useMemo(() => {
+    const map = new Map<string, ToolMessage>();
+    messages.forEach((msg) => {
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        map.set(msg.tool_call_id, msg as ToolMessage);
+      }
+    });
+    return map;
+  }, [messages]);
+
   // Define messages to display
   const displayedMessages = useMemo(() => {
     const ans = messages.map((message, index) => (
       <ChatMessageComponent
         key={index}
         message={message}
+        toolOutputs={toolOutputsMap}
         isLoadingPlaceholder={false}
         isStreaming={index === streamingMessageIdx}
         requiresScrollPadding={
@@ -106,7 +118,13 @@ export function ChatArea({
       );
     }
     return ans;
-  }, [messages, showThinkingSpacer, isSendingMessage, streamingMessageIdx]);
+  }, [
+    messages,
+    toolOutputsMap,
+    showThinkingSpacer,
+    isSendingMessage,
+    streamingMessageIdx,
+  ]);
 
   // Auto-scroll when the thinking spacer first appears in the message history (i.e., upon send)
   const lastMessageIsThinkingSpacer = useMemo(() => {

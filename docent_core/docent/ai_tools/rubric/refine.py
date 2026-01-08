@@ -1,7 +1,11 @@
+import json
 import re
+
+from jsonschema.exceptions import SchemaError, ValidationError
 
 from docent._llm_util.llm_svc import BaseLLMService
 from docent._llm_util.providers.preference_types import ModelOption
+from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRunView
 from docent.data_models.chat.message import ChatMessage, ToolMessage, UserMessage
 from docent.data_models.chat.tool import (
@@ -12,6 +16,8 @@ from docent.data_models.chat.tool import (
 )
 from docent.judges import Rubric
 from docent_core.docent.ai_tools.rubric.rewrite import rewrite_rubric
+
+logger = get_logger(__name__)
 
 # TODO(mengk): if a user asks a statistical question, reframe it into a rubric question and then tell them to use the plotting functions to accomplish their goal.
 # TODO(mengk): ask for context on what the various transcripts are if it's not clear.
@@ -73,6 +79,7 @@ SYS_PROMPT_TEMPLATE = """
 </How to engage with the user>
 
 <Rules for using rewrite_rubric>
+    - You should invoke this tool when the user asks you to rewrite the rubric or change the schema. You can also invoke it yourself in accordance with the "how to engage with the user" section.
     - When you call this tool, provide instructions for how to perform the rewrite, based on what you have learned from engaging with the user. You may also pass an empty string to start.
     - The rewrite_rubric tool returns an output containing the new rubric and output schema. This is for your information, so you know how the rewrite was performed.
     - After calling rewrite_rubric, do NOT regurgitate the content of the rubric. The user can see it on their UI.
@@ -148,10 +155,38 @@ The rubric has been rewritten.
             function=tool_call.function,
             error=None,
         )
-    except Exception as e:
+    except json.JSONDecodeError as e:
+        error_msg = f"Failed to parse output schema as JSON: {e}"
+        logger.error(error_msg, exc_info=True)
         return None, ToolMessage(
-            content=f"Error rewriting rubric: {e}",
-            error={"detail": str(e)},
+            content=error_msg,
+            error={"detail": error_msg},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+    except ValidationError as e:
+        error_msg = f"Output schema validation failed: {e.message}"
+        logger.error(error_msg, exc_info=True)
+        return None, ToolMessage(
+            content=error_msg,
+            error={"detail": error_msg},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+    except SchemaError as e:
+        error_msg = f"Invalid JSON Schema: {e.message}"
+        logger.error(error_msg, exc_info=True)
+        return None, ToolMessage(
+            content=error_msg,
+            error={"detail": error_msg},
+            tool_call_id=tool_call.id,
+            function=tool_call.function,
+        )
+    except Exception as e:
+        logger.error(f"Unknown error rewriting rubric: {e}", exc_info=True)
+        return None, ToolMessage(
+            content="An unknown error occurred while rewriting the rubric.",
+            error={"detail": "Unknown error"},
             tool_call_id=tool_call.id,
             function=tool_call.function,
         )
