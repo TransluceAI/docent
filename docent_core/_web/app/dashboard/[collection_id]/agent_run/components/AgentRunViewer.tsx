@@ -1281,15 +1281,23 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                 {headerRightActions}
               </div>
               <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">
-                {Object.entries(agentRun.metadata).map(([key, value]) => (
-                  <span key={key} className="mr-3">
-                    <span className="font-medium text-muted-foreground">
-                      {key}:
-                    </span>{' '}
-                    {formatMetadataValue(value)}
+                {Object.keys(agentRun.metadata).length > 0 ? (
+                  <>
+                    {Object.entries(agentRun.metadata).map(([key, value]) => (
+                      <span key={key} className="mr-3">
+                        <span className="font-medium text-muted-foreground">
+                          {key}:
+                        </span>{' '}
+                        {formatMetadataValue(value)}
+                      </span>
+                    ))}
+                    ...
+                  </>
+                ) : (
+                  <span className="text-muted-foreground/50">
+                    No agent run metadata
                   </span>
-                ))}
-                ...
+                )}
               </div>
             </div>
             <ResizablePanelGroup
@@ -1480,6 +1488,36 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                           </div>
                         )}
                       </div>
+                      {selectedTranscriptId && (
+                        <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">
+                          {(() => {
+                            const transcriptMetadata =
+                              transcriptsById[selectedTranscriptId]?.metadata ||
+                              {};
+                            const metadataKeys =
+                              Object.keys(transcriptMetadata);
+                            return metadataKeys.length > 0 ? (
+                              <>
+                                {Object.entries(transcriptMetadata).map(
+                                  ([key, value]) => (
+                                    <span key={key} className="mr-3">
+                                      <span className="font-medium text-muted-foreground">
+                                        {key}:
+                                      </span>{' '}
+                                      {formatMetadataValue(value)}
+                                    </span>
+                                  )
+                                )}
+                                ...
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground/50">
+                                No transcript metadata
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
                       {selectedTranscriptId &&
                         (selectedTranscriptId
                           ? transcriptsById[selectedTranscriptId]
