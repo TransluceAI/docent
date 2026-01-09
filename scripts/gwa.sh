@@ -23,6 +23,16 @@ if [[ -z "$1" ]]; then
 fi
 
 branch="$1"
+
+# Warn if not on main branch
+current_branch="$(git branch --show-current)"
+if [[ "$current_branch" != "main" ]]; then
+  if ! gum confirm "Current branch is '$current_branch', not 'main'. Continue?"; then
+    echo "Aborted." >&2
+    exit 1
+  fi
+fi
+
 base="$(basename "$ROOT_DIR")"
 # Replace '/' with '--' in branch name to avoid nested folder structure
 safe_branch="${branch//\//-}"
