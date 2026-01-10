@@ -13,12 +13,6 @@ from docent_core.docent.workers.reflection_worker import reflection_job
 from docent_core.docent.workers.rubric_job_worker import rubric_job
 from docent_core.docent.workers.telemetry_ingest_worker import telemetry_ingest_job
 from docent_core.docent.workers.telemetry_worker import telemetry_processing_job
-from docent_core.investigator.workers.counterfactual_experiment_worker import (
-    counterfactual_experiment_job,
-)
-from docent_core.investigator.workers.simple_rollout_experiment_worker import (
-    simple_rollout_experiment_job,
-)
 
 # Job contexts differ per worker, so the dispatcher keeps the callable context parameter generic.
 JobHandler = Callable[[Any, SQLAJob], Coroutine[Any, Any, None]]
@@ -33,6 +27,4 @@ JOB_DISPATCHER_MAP: dict[str, JobHandler] = {
     WorkerFunction.AGENT_RUN_INGEST_JOB.value: agent_run_ingest_job,
     WorkerFunction.TELEMETRY_INGEST_JOB.value: telemetry_ingest_job,
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: telemetry_processing_job,
-    WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value: counterfactual_experiment_job,
-    WorkerFunction.SIMPLE_ROLLOUT_EXPERIMENT_JOB.value: simple_rollout_experiment_job,
 }

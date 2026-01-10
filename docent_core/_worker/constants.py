@@ -20,9 +20,6 @@ class WorkerFunction(str, Enum):
     TELEMETRY_PROCESSING_JOB = "telemetry_processing_job"
     TELEMETRY_INGEST_JOB = "telemetry_ingest_job"
     AGENT_RUN_INGEST_JOB = "agent_run_ingest_job"
-    # IUI (deprecated)
-    COUNTERFACTUAL_EXPERIMENT_JOB = "counterfactual_experiment_job"
-    SIMPLE_ROLLOUT_EXPERIMENT_JOB = "simple_rollout_experiment_job"
 
 
 # Tune per-job timeouts here; defaults keep existing behavior.
@@ -39,9 +36,6 @@ JOB_TIMEOUT_SECONDS_BY_TYPE: dict[str, int] = {
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
     WorkerFunction.TELEMETRY_INGEST_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
     WorkerFunction.AGENT_RUN_INGEST_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
-    # IUI (deprecated)
-    WorkerFunction.COUNTERFACTUAL_EXPERIMENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
-    WorkerFunction.SIMPLE_ROLLOUT_EXPERIMENT_JOB.value: DEFAULT_JOB_TIMEOUT_SECONDS,
 }
 
 

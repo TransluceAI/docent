@@ -14,7 +14,6 @@ import { collectionApi } from '../api/collectionApi';
 import { refinementApi } from '../api/refinementApi';
 import { chatApi } from '../api/chatApi';
 import { settingsApi } from '../api/settingsApi';
-import { investigatorApi } from '../api/investigatorApi';
 import { labelApi } from '../api/labelApi';
 import { orgApi } from '../api/orgApi';
 import { statusApi } from '@/components/MaintenanceBanner';
@@ -35,7 +34,6 @@ const store = configureStore({
     [refinementApi.reducerPath]: refinementApi.reducer,
     [chatApi.reducerPath]: chatApi.reducer,
     [settingsApi.reducerPath]: settingsApi.reducer,
-    [investigatorApi.reducerPath]: investigatorApi.reducer,
     [labelApi.reducerPath]: labelApi.reducer,
     [orgApi.reducerPath]: orgApi.reducer,
     [statusApi.reducerPath]: statusApi.reducer,
@@ -57,7 +55,6 @@ const store = configureStore({
       .concat(refinementApi.middleware)
       .concat(chatApi.middleware)
       .concat(settingsApi.middleware)
-      .concat(investigatorApi.middleware)
       .concat(labelApi.middleware)
       .concat(orgApi.middleware)
       .concat(statusApi.middleware),

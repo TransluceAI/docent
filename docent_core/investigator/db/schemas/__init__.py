@@ -1,1 +1,0 @@
-"""Investigator database schemas."""

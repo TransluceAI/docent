@@ -10,7 +10,6 @@ from docent._log_util import get_logger
 from docent_core._env_util import ENV
 from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
-from docent_core.investigator.db.contexts import WorkspaceContext
 
 logger = get_logger(__name__)
 
@@ -143,7 +142,7 @@ async def _enqueue_job(
 
 
 async def enqueue_job(
-    ctx: ViewContext | WorkspaceContext | TelemetryContext | None,
+    ctx: ViewContext | TelemetryContext | None,
     job_id: str,
     *,
     job_type: WorkerFunction | str,

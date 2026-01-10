@@ -27,7 +27,6 @@ from docent_core._worker.queue_metrics import queue_depth_metrics_loop
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
 from docent_core.docent.services.monoservice import MonoService
-from docent_core.investigator.db.contexts import WorkspaceContext
 
 logger = get_logger(__name__)
 
@@ -93,9 +92,7 @@ async def _worker_on_shutdown(ctx: dict[str, Any]):
         await task
 
 
-async def run_job(
-    _: Any, ctx: ViewContext | WorkspaceContext | TelemetryContext | None, job_id: str
-):
+async def run_job(_: Any, ctx: ViewContext | TelemetryContext | None, job_id: str):
     mono_svc = await MonoService.init()
     canceled = False
 
