@@ -145,9 +145,9 @@ def test_metadata_citations(
 ):
     """Test parsing of metadata citation patterns."""
     _cleaned, result = parse_citations(text)
-    assert len(result) == len(
-        expected_data
-    ), f"Failed for {test_description}: expected {len(expected_data)} citations, got {len(result)}"
+    assert len(result) == len(expected_data), (
+        f"Failed for {test_description}: expected {len(expected_data)} citations, got {len(result)}"
+    )
 
     # Convert results to tuples for comparison (item_alias, text_range_pattern)
     actual_data = [
@@ -156,9 +156,9 @@ def test_metadata_citations(
 
     # Verify all expected citations are present
     for expected in expected_data:
-        assert (
-            expected in actual_data
-        ), f"Missing citation {expected} in {test_description}. Got: {actual_data}"
+        assert expected in actual_data, (
+            f"Missing citation {expected} in {test_description}. Got: {actual_data}"
+        )
 
 
 @pytest.mark.unit
@@ -186,9 +186,9 @@ def test_parse_single_citation(
     result = parse_single_citation(citation_text)
     assert result is not None, f"Failed to parse '{citation_text}'"
     alias, text_range = result
-    assert (
-        alias == expected_alias
-    ), f"Failed for '{citation_text}': expected alias {expected_alias}, got {alias}"
+    assert alias == expected_alias, (
+        f"Failed for '{citation_text}': expected alias {expected_alias}, got {alias}"
+    )
     if expected_pattern:
         assert text_range is not None
         assert text_range.start_pattern == expected_pattern

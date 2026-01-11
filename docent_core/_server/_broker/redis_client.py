@@ -51,7 +51,9 @@ async def get_redis_client():
     async with _redis_lock:
         if _redis_client is None:
             url = get_redis_url()
-            _redis_client = ArqRedis(connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True))  # type: ignore
+            _redis_client = ArqRedis(
+                connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True)
+            )  # type: ignore
 
             logger.info(f"Checking Redis connection to {url}")
             await verify_redis_connection(_redis_client)

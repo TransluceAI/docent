@@ -23,7 +23,9 @@ class CollectionCollaborator(BaseModel):
         subject_type = (
             SubjectType.USER
             if sqla_acl.user_id
-            else SubjectType.ORGANIZATION if sqla_acl.organization_id else SubjectType.PUBLIC
+            else SubjectType.ORGANIZATION
+            if sqla_acl.organization_id
+            else SubjectType.PUBLIC
         )
         subject = sqla_acl.subject()
         if isinstance(subject, SQLAUser):
@@ -61,7 +63,9 @@ class ViewCollaborator(BaseModel):
         subject_type = (
             SubjectType.USER
             if sqla_acl.user_id
-            else SubjectType.ORGANIZATION if sqla_acl.organization_id else SubjectType.PUBLIC
+            else SubjectType.ORGANIZATION
+            if sqla_acl.organization_id
+            else SubjectType.PUBLIC
         )
         subject = sqla_acl.subject()
         if isinstance(subject, SQLAUser):

@@ -330,9 +330,11 @@ class ChartsService:
         if ctx.user is None:
             raise PermissionError("User must be authenticated to create charts")
 
-        corrected_x_key, corrected_series_key, corrected_y_key = (
-            await self._validate_and_correct_chart_keys(ctx, x_key, series_key, y_key)
-        )
+        (
+            corrected_x_key,
+            corrected_series_key,
+            corrected_y_key,
+        ) = await self._validate_and_correct_chart_keys(ctx, x_key, series_key, y_key)
 
         # Generate default name if not provided
         if name is None:
@@ -389,10 +391,12 @@ class ChartsService:
         current_series_key = updates.get("series_key", chart.series_key)
         current_y_key = updates.get("y_key", chart.y_key)
 
-        corrected_x_key, corrected_series_key, corrected_y_key = (
-            await self._validate_and_correct_chart_keys(
-                ctx, current_x_key, current_series_key, current_y_key
-            )
+        (
+            corrected_x_key,
+            corrected_series_key,
+            corrected_y_key,
+        ) = await self._validate_and_correct_chart_keys(
+            ctx, current_x_key, current_series_key, current_y_key
         )
 
         # Update the corrections in the updates dict
@@ -730,7 +734,9 @@ class ChartsService:
             bin_key = (
                 "|".join(bin_key_parts)
                 if len(bin_key_parts) > 1
-                else bin_key_parts[0] if bin_key_parts else "default"
+                else bin_key_parts[0]
+                if bin_key_parts
+                else "default"
             )
 
             # Get the measure value

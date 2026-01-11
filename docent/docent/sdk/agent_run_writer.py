@@ -173,7 +173,7 @@ class AgentRunWriter:
                     break
 
                 logger.info(
-                    f"Waiting for pending tasks to complete " f"({i}/{self._shutdown_timeout})s"
+                    f"Waiting for pending tasks to complete ({i}/{self._shutdown_timeout})s"
                 )
                 time.sleep(5)
 

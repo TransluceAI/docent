@@ -111,9 +111,9 @@ def compute_output_distributions(
     for result in indep_results:
         for key in agreement_keys:
             if (value := result.get(key)) is not None:  # Could be none if the key is optional
-                assert (
-                    value in raw_counts[key]
-                ), "this should never happen; the value must be in possible values, since judge results have been validated against the schema"
+                assert value in raw_counts[key], (
+                    "this should never happen; the value must be in possible values, since judge results have been validated against the schema"
+                )
                 raw_counts[key][value] += 1
 
     distributions: dict[str, JudgeOutputDistribution] = {}

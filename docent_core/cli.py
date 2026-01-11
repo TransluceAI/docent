@@ -68,8 +68,7 @@ def server(
             ENV["DD_PROFILING_ENABLED"] = "true"
             cmd = ["ddtrace-run"] + cmd
             logger.info(
-                "Datadog enabled with profiling. "
-                f"Sending traces to {dd_agent_host}:{dd_agent_port}"
+                f"Datadog enabled with profiling. Sending traces to {dd_agent_host}:{dd_agent_port}"
             )
 
     subprocess.run(cmd, check=True, env=ENV)

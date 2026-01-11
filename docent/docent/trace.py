@@ -566,7 +566,6 @@ class DocentTracer:
             return
 
         try:
-
             # Check for OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT environment variable
             default_attribute_limit = 1024 * 16
             env_value = os.environ.get("OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "0")

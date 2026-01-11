@@ -297,9 +297,9 @@ async def _parallelize_calls(
     _cache_responses()
 
     # At this point, all indices should have a result
-    assert all(
-        isinstance(r, LLMOutput) for r in responses
-    ), "Some indices were never set to an LLMOutput, which should never happen"
+    assert all(isinstance(r, LLMOutput) for r in responses), (
+        "Some indices were never set to an LLMOutput, which should never happen"
+    )
 
     return cast(list[LLMOutput], responses)
 

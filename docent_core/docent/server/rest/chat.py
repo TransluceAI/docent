@@ -114,7 +114,7 @@ async def create_session(
     except IntegrityError as e:
         # Foreign key violation (Postgres SQLSTATE 23503)
         if getattr(e.orig, "pgcode", None) == "23503":
-            raise HTTPException(status_code=404, detail=f"Agent run or judge result not found")
+            raise HTTPException(status_code=404, detail="Agent run or judge result not found")
         raise
     return {"session_id": sqla_session.id}
 

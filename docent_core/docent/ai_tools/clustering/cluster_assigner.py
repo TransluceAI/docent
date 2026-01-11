@@ -116,9 +116,9 @@ class LlmApiClusterAssigner(ClusterAssigner):
         llm_svc: LLMService,
         assignment_callback: AssignmentStreamingCallback | None = None,
     ) -> list[tuple[bool, str] | None]:
-        assert len(items) == len(
-            clusters
-        ), "Items, clusters, and attributes must be the same length"
+        assert len(items) == len(clusters), (
+            "Items, clusters, and attributes must be the same length"
+        )
 
         queries: list[MessagesInput] = [
             [

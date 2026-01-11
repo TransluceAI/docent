@@ -37,7 +37,6 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
         # Get the user from session_id
         if session_id := request.cookies.get(COOKIE_KEY):
-
             # For testing, we override get_mono_svc with a version that uses the test db
             mono_svc_factory = request.app.dependency_overrides.get(get_mono_svc, get_mono_svc)
             mono_svc = await mono_svc_factory()

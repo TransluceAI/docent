@@ -45,7 +45,6 @@ atexit.register(cleanup_temp_files)
 
 
 class S3File(BaseModel):
-
     key: str  # Logical key (what users see, e.g., "thing.json")
     physical_key: str
     size: int
@@ -299,7 +298,7 @@ async def ensure_file_available(filename: str) -> Path:
 
         # If it's a .gz file, decompress to temp for use
         if s3_key.endswith(".gz"):
-            console.print(f"[blue]Decompressing for use...[/blue]")
+            console.print("[blue]Decompressing for use...[/blue]")
             return _decompress_gz_file(cache_path, filename)
         else:
             return cache_path

@@ -12,7 +12,7 @@ from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 
 logger = get_logger(__name__)
 
-NO_LABEL_REFLECTION_SYSTEM_PROMPT = f"""
+NO_LABEL_REFLECTION_SYSTEM_PROMPT = """
 We are analyzing a transcript of an AI agent run according to a rubric.
 One or more AI judges has evaluated the transcript.
 
@@ -38,7 +38,7 @@ Your summaries must be concise. For brevity:
 Your output should include as many <summary> blocks you need to summarize all the AI results. Do not write anything outside the <summary> blocks.
 """
 
-LABEL_REFLECTION_SYSTEM_PROMPT = f"""
+LABEL_REFLECTION_SYSTEM_PROMPT = """
 We are analyzing a transcript of an AI agent run according to a rubric.
 One or more AI judges has evaluated the transcript. A human labeler has also evaluated the transcript.
 
@@ -263,7 +263,7 @@ async def run_reflection(
 
     results_text = "\n\n".join(
         [
-            f"<result {i+1}>\n{yaml.dump(r, width=float('inf'))}\n</result {i+1}>"
+            f"<result {i + 1}>\n{yaml.dump(r, width=float('inf'))}\n</result {i + 1}>"
             for i, r in enumerate(rollouts)
         ]
     )

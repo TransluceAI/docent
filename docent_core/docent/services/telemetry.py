@@ -22,9 +22,8 @@ from asyncpg.exceptions import DeadlockDetectedError
 from google.protobuf.json_format import MessageToDict
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 from redis.exceptions import LockError
-from sqlalchemy import Integer, and_, case
+from sqlalchemy import Integer, and_, case, delete, func, not_, or_, select, update
 from sqlalchemy import cast as sa_cast
-from sqlalchemy import delete, func, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Result
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -1911,11 +1910,11 @@ class TelemetryService:
                     self.session.bind  # type: ignore[arg-type]
                 )
                 async with async_session_maker() as verify_session:
-                    verification_result: Result[tuple[str, str | None]] = (
-                        await verify_session.execute(
-                            select(SQLATranscript.id, SQLATranscript.transcript_group_id).where(
-                                SQLATranscript.agent_run_id.in_(agent_run_ids)
-                            )
+                    verification_result: Result[
+                        tuple[str, str | None]
+                    ] = await verify_session.execute(
+                        select(SQLATranscript.id, SQLATranscript.transcript_group_id).where(
+                            SQLATranscript.agent_run_id.in_(agent_run_ids)
                         )
                     )
                     persisted: list[tuple[str, str | None]] = [
@@ -3044,7 +3043,6 @@ class TelemetryService:
                 and msg.text
                 and msg.text.strip() != ""
             ):
-
                 # Update the existing empty tool result with the new content
                 existing_msg_index = empty_tool_results[msg.tool_call_id]
 

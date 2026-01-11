@@ -585,7 +585,6 @@ class RubricService:
         # Check if we'll need the tag join before building query
         uses_tags = False
         if filter_obj is not None:
-
             uses_tags = filter_uses_tags(filter_obj)
 
         # Use DISTINCT when joining tags to prevent duplicates from multiple tag matches

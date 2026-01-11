@@ -23,10 +23,10 @@ from sqlalchemy.sql.schema import Table
 from sqlalchemy.sql.selectable import FromClause
 from sqlglot import exp
 from sqlglot.errors import ParseError
-from sqlglot.optimizer.scope import find_all_in_scope  # type: ignore[reportUnknownVariableType]
 from sqlglot.optimizer.scope import (
     Scope,
     build_scope,
+    find_all_in_scope,  # type: ignore[reportUnknownVariableType]
 )
 
 from docent._log_util import get_logger

@@ -789,7 +789,9 @@ class MonoService:
         async with self.db.session() as session:
             session.add_all(agent_run_data)
             session.add_all(transcript_group_data)
-            await session.flush()  # (mengk) seems necessary to avoid FK violations, for some strange reason
+            await (
+                session.flush()
+            )  # (mengk) seems necessary to avoid FK violations, for some strange reason
             session.add_all(transcript_data)
 
         logger.info(
@@ -915,7 +917,6 @@ class MonoService:
         collection_id: str,
         dql: str,
     ) -> DQLQueryResult:
-
         await ensure_dql_collection_access(
             mono_service=self,
             user=user,
@@ -1399,9 +1400,9 @@ class MonoService:
 
             # Check that the base filter is a ComplexFilter
             if view.base_filter is not None:
-                assert isinstance(
-                    view.base_filter, ComplexFilter
-                ), "Base filter must be a ComplexFilter"
+                assert isinstance(view.base_filter, ComplexFilter), (
+                    "Base filter must be a ComplexFilter"
+                )
 
             return ViewContext(
                 collection_id=view.collection_id,
@@ -1485,9 +1486,9 @@ class MonoService:
             )
 
         if view.base_filter is not None:
-            assert isinstance(
-                view.base_filter, ComplexFilter
-            ), f"Base filter must be a ComplexFilter, found {type(view.base_filter)}"
+            assert isinstance(view.base_filter, ComplexFilter), (
+                f"Base filter must be a ComplexFilter, found {type(view.base_filter)}"
+            )
 
         return ViewContext(
             collection_id=collection_id, view_id=view.id, base_filter=view.base_filter, user=user

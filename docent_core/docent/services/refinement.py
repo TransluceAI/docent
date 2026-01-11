@@ -393,9 +393,9 @@ class RefinementService:
         rsession = sq_rsession.to_pydantic()
         lock = anyio.Lock()
 
-        assert (
-            len(rsession.messages) > 0
-        ), "this should never happen; the initial message is inserted when the session is created."
+        assert len(rsession.messages) > 0, (
+            "this should never happen; the initial message is inserted when the session is created."
+        )
         rewrite_already_happened = any(
             message.tool_calls and message.tool_calls[0].function == "rewrite_rubric"
             for message in rsession.messages
@@ -448,7 +448,6 @@ class RefinementService:
 
             # If user or tool: generate asst continuation
             if last_message.role == "user" or last_message.role == "tool":
-
                 messages = rsession.messages
                 if last_message.role == "user":
                     user_message = UserMessage(content=last_message.content)

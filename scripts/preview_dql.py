@@ -23,7 +23,9 @@ TEST_USER = User(id="user-1", email="user@example.com", organization_ids=[], is_
 
 
 class _MockMonoService:
-    async def has_permission(self, *, user: User, resource_type: Any, resource_id: str, permission: Any) -> bool:  # type: ignore[override]
+    async def has_permission(
+        self, *, user: User, resource_type: Any, resource_id: str, permission: Any
+    ) -> bool:  # type: ignore[override]
         return True
 
 

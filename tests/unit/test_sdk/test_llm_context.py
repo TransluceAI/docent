@@ -12,12 +12,12 @@ from docent.data_models.citation import (
     TranscriptMetadataItem,
 )
 from docent.data_models.transcript import Transcript
-from docent.sdk.llm_context import _build_whitespace_flexible_regex  # type: ignore
-from docent.sdk.llm_context import _find_pattern_in_text  # type: ignore
 from docent.sdk.llm_context import (
     AgentRunRef,
     LLMContext,
     TranscriptRef,
+    _build_whitespace_flexible_regex,  # type: ignore
+    _find_pattern_in_text,  # type: ignore
     resolve_citations_with_context,
 )
 
@@ -381,8 +381,7 @@ def test_validate_citations_mixed() -> None:
     context.add(agent_run)
 
     text = (
-        "First [T0B1:<RANGE>I understand</RANGE>] then "
-        "[T0B1:<RANGE>nonexistent</RANGE>] and [T0B2]"
+        "First [T0B1:<RANGE>I understand</RANGE>] then [T0B1:<RANGE>nonexistent</RANGE>] and [T0B2]"
     )
     _, citations = resolve_citations_with_context(text, context, validate_text_ranges=True)
 

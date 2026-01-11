@@ -90,7 +90,11 @@ def safe_bool(col: Any) -> Any:
 def safe_float(col: Any) -> Any:
     """Safely cast a column to float using regex validation."""
     return case(
-        (cast(col, String).op("~")("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$"), cast(col, Float)), else_=None  # type: ignore
+        (
+            cast(col, String).op("~")("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$"),
+            cast(col, Float),
+        ),
+        else_=None,  # type: ignore
     )
 
 

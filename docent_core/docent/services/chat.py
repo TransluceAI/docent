@@ -204,7 +204,6 @@ class ChatService:
             if not force_create:
                 sqla_session = await self.get_session_by_run(agent_run_id, user_id, judge_result_id)
             if sqla_session is None:
-
                 # Ensure required fields are initialized so the instance is usable pre-flush
                 sqla_session = SQLAChatSession(
                     id=str(uuid4()),  # Explicitly set ID to avoid None during pre-flush usage
@@ -693,7 +692,7 @@ class ChatService:
 
         # Context is required for single-run sessions
         if ctx is None:
-            raise ValueError(f"ViewContext is required for single-run chat sessions")
+            raise ValueError("ViewContext is required for single-run chat sessions")
 
         # Get agent run for system prompt and citation parsing
         agent_run = await self.mono_svc.get_agent_run(

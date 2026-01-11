@@ -413,7 +413,7 @@ class MultiReflectionJudge(BaseJudge):
         # Construct *single* reflection prompt
         first_stage_results_text = "\n\n".join(
             [
-                f"Rollout {j+1}:\n{yaml.dump(r, width=float('inf'))}"
+                f"Rollout {j + 1}:\n{yaml.dump(r, width=float('inf'))}"
                 for j, r in enumerate(first_stage_results)
             ]
         )
@@ -621,7 +621,7 @@ class MultiReflectionJudge(BaseJudge):
             async def _execute_second_stage(i: int, combination: list[dict[str, Any]]):
                 pbar_third = tqdm(
                     total=n_reflection_rollouts_to_sample,
-                    desc=f"Stage 2: Combination {i+1}/{n_combinations_to_sample}",
+                    desc=f"Stage 2: Combination {i + 1}/{n_combinations_to_sample}",
                     leave=False,
                 )
 

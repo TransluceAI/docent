@@ -266,7 +266,7 @@ async def rewrite_rubric(
 
         instructions += "\n\n" + ANNOTATED_ARV_CTX_PROMPT.format(
             user_annotations_on_agent_runs="\n".join(
-                [f"Detail on agent run {i+1}:\n{detail}" for i, detail in enumerate(details)]
+                [f"Detail on agent run {i + 1}:\n{detail}" for i, detail in enumerate(details)]
             )
         )
 

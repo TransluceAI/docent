@@ -290,7 +290,9 @@ def update_llm_output(
         cur_text: str | None = llm_output_partial.completions[0].text
         cur_reasoning_tokens: str | None = llm_output_partial.completions[0].reasoning_tokens
         cur_finish_reason: FinishReasonType | None = llm_output_partial.completions[0].finish_reason
-        cur_tool_calls: list[ToolCallPartial | None] | None = llm_output_partial.completions[0].tool_calls  # type: ignore[assignment]
+        cur_tool_calls: list[ToolCallPartial | None] | None = llm_output_partial.completions[
+            0
+        ].tool_calls  # type: ignore[assignment]
         cur_model = llm_output_partial.model
     else:
         cur_text, cur_reasoning_tokens, cur_finish_reason, cur_model = None, None, None, None
@@ -336,7 +338,8 @@ def update_llm_output(
                 cur_tool_calls[index] = ToolCallPartial(
                     id=cur_tool_calls[index].id,  # type: ignore[union-attr]
                     function=cur_tool_calls[index].function,  # type: ignore[union-attr]
-                    arguments_raw=(cur_tool_calls[index].arguments_raw or "") + chunk.delta.partial_json,  # type: ignore[union-attr]
+                    arguments_raw=(cur_tool_calls[index].arguments_raw or "")
+                    + chunk.delta.partial_json,  # type: ignore[union-attr]
                     type="function",
                 )
         elif isinstance(chunk.delta, SignatureDelta):

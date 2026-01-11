@@ -18,7 +18,7 @@ def print_stats_with_intervals(name: str, mean: float, std: float, confidence_le
     """
     intervals_str = ", ".join(
         [
-            f"{int(level*100)}% interval: [{mean - stats.norm.ppf((1+level)/2) * std:.4f}, {mean + stats.norm.ppf((1+level)/2) * std:.4f}]"  # type: ignore
+            f"{int(level * 100)}% interval: [{mean - stats.norm.ppf((1 + level) / 2) * std:.4f}, {mean + stats.norm.ppf((1 + level) / 2) * std:.4f}]"  # type: ignore
             for level in confidence_levels
         ]
     )
