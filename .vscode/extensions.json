@@ -1,12 +1,10 @@
 {
   "recommendations": [
-    "ms-python.black-formatter",
-    "charliermarsh.ruff",
-    "ms-python.vscode-pylance",
+    "ms-python.python",
     "tamasfe.even-better-toml",
     "ms-toolsai.jupyter",
     "esbenp.prettier-vscode",
-    "cweijan.vscode-database-client2",
+    "charliermarsh.ruff",
     "astral-sh.ty"
   ]
 }

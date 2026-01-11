@@ -9,7 +9,7 @@
     "jupyter.allowUnauthorizedRemoteConnection": true,
     "python.defaultInterpreterPath": ".venv/bin/python",
     "[python]": {
-      "editor.defaultFormatter": "ms-python.black-formatter",
+      "editor.defaultFormatter": "charliermarsh.ruff",
       "editor.formatOnSave": true,
       "editor.rulers": [100]
     },
