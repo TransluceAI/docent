@@ -11,9 +11,9 @@ Always write test scripts for mengk to the directory: `personal/mengk/cc/`. Crea
 
 ## Script Modes
 
-### Interactive Mode
+### Interactive Mode (Default)
 
-If and only if the user explicitly asks for an "interactive" script, use the following format:
+By default, use the interactive format:
 
 1. Use `#%%` cell markers to create Jupyter-style interactive cells
 2. Include IPython autoreloading at the top of the script
@@ -31,9 +31,9 @@ Start the script with:
 
 Each logical section should be in its own `#%%` cell.
 
-### Non-Interactive Mode (Default)
+### Non-Interactive Mode
 
-For regular (non-interactive) scripts:
+If and only if the user explicitly asks for a "non-interactive" or "regular" script:
 - Write standard Python without `#%%` markers
 - Do NOT include autoreload setup
 - Use regular script structure
