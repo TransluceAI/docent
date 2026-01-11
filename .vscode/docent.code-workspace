@@ -8,6 +8,7 @@
   "settings": {
     "jupyter.allowUnauthorizedRemoteConnection": true,
     "python.defaultInterpreterPath": ".venv/bin/python",
+    "python.languageServer": "None",
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.formatOnSave": true,

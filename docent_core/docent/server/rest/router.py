@@ -1,12 +1,12 @@
-import itertools
 import os
 import tempfile
 import time
 import zipfile
 from copy import deepcopy
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Iterable, Iterator, Literal, TypeVar, cast
 
 import anyio
 from fastapi import (
@@ -85,6 +85,18 @@ user_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 ################
 # Dependencies #
 ################
+
+
+_T = TypeVar("_T")
+
+
+def batched(iterable: Iterable[_T], n: int) -> Iterator[tuple[_T, ...]]:
+    """Backport of itertools.batched for Python <3.12."""
+    if n < 1:
+        raise ValueError("n must be at least one")
+    it = iter(iterable)
+    while batch := tuple(islice(it, n)):
+        yield batch
 
 
 async def require_filter_in_collection(
@@ -621,7 +633,7 @@ async def import_runs_from_file(
             with open(temp_path, "rb") as _fh_ingest:
                 file_info, runs_generator = load_inspect.runs_from_file(_fh_ingest, format)
 
-                batches = itertools.batched(runs_generator, 100)
+                batches = batched(runs_generator, 100)
                 async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
                     for batch in batches:
                         await mono_svc.add_agent_runs(ctx, batch)

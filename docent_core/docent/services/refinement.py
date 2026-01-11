@@ -399,7 +399,7 @@ class RefinementService:
         rewrite_already_happened = any(
             message.tool_calls and message.tool_calls[0].function == "rewrite_rubric"
             for message in rsession.messages
-            if message.role == "assistant"
+            if isinstance(message, AssistantMessage)
         )
 
         async def _llm_callback(batch_index: int, llm_output: LLMOutput):
@@ -443,7 +443,7 @@ class RefinementService:
             last_message = rsession.messages[-1]
 
             # If the last message is an assistant message with no tool calls, break
-            if last_message.role == "assistant" and not last_message.tool_calls:
+            if isinstance(last_message, AssistantMessage) and not last_message.tool_calls:
                 break
 
             # If user or tool: generate asst continuation
@@ -484,7 +484,9 @@ class RefinementService:
                 rsession.messages.append(assistant_msg)
 
             # If assistant with tool calls: execute tool calls
-            elif last_message.role == "assistant" and (tool_calls := last_message.tool_calls):
+            elif isinstance(last_message, AssistantMessage) and (
+                tool_calls := last_message.tool_calls
+            ):
                 for tc in tool_calls:
                     try:
                         if tc.function == "rewrite_rubric":

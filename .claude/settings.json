@@ -25,7 +25,8 @@
       "WebSearch",
       "WebFetch",
       "Bash(gh pr:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(ty:*)"
     ],
     "deny": [],
     "ask": []

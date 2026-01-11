@@ -6,6 +6,7 @@
     "tamasfe.even-better-toml",
     "ms-toolsai.jupyter",
     "esbenp.prettier-vscode",
-    "cweijan.vscode-database-client2"
+    "cweijan.vscode-database-client2",
+    "astral-sh.ty"
   ]
 }

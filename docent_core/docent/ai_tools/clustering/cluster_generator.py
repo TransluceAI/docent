@@ -1,6 +1,6 @@
 import re
 from copy import deepcopy
-from typing import Callable, TypedDict, TypeVar, cast
+from typing import Callable, TypedDict, cast
 
 import numpy as np
 
@@ -56,9 +56,6 @@ def parse_cluster_output(raw_themes: str) -> list[str]:
     return themes
 
 
-T = TypeVar("T")  # ClusterType Object
-
-
 async def propose_clusters(
     items: list[str],
     llm_svc: LLMService,
@@ -66,8 +63,8 @@ async def propose_clusters(
     feedback_list: list[ClusterFeedback] | None = None,
     random_seed: int = 42,
     clustering_prompt_fn: Callable[[str, list[str]], str] | None = None,
-    output_extractor: Callable[[str], list[T]] = parse_cluster_output,
-) -> list[T]:
+    output_extractor: Callable[[str], list[str]] = parse_cluster_output,
+) -> list[str]:
     # Create a separate RNG for the outer sampling
     rng = np.random.RandomState(random_seed)
 

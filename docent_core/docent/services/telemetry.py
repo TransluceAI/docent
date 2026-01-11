@@ -38,6 +38,7 @@ from docent.data_models import (
     TranscriptGroup,
 )
 from docent.data_models.chat import (
+    AssistantMessage,
     ChatMessage,
     Content,
     ContentReasoning,
@@ -2979,11 +2980,11 @@ class TelemetryService:
         tool_call_ids: set[str] = set()
 
         # Extract from ToolMessage
-        if msg.role == "tool" and hasattr(msg, "tool_call_id") and msg.tool_call_id:
+        if isinstance(msg, ToolMessage) and msg.tool_call_id:
             tool_call_ids.add(msg.tool_call_id)
 
         # Extract from AssistantMessage tool_calls
-        if msg.role == "assistant" and hasattr(msg, "tool_calls") and msg.tool_calls:
+        if isinstance(msg, AssistantMessage) and msg.tool_calls:
             for tool_call in msg.tool_calls:
                 if tool_call.id:
                     tool_call_ids.add(tool_call.id)
@@ -3023,7 +3024,11 @@ class TelemetryService:
         # Find empty tool call results in existing thread
         empty_tool_results: Dict[str, int] = {}  # tool_call_id -> message_index
         for i, msg in enumerate(existing_thread):
-            if msg.role == "tool" and msg.tool_call_id and (not msg.text or msg.text.strip() == ""):
+            if (
+                isinstance(msg, ToolMessage)
+                and msg.tool_call_id
+                and (not msg.text or msg.text.strip() == "")
+            ):
                 empty_tool_results[msg.tool_call_id] = i
                 logger.debug(f"Found empty tool result for tool_call_id: {msg.tool_call_id}")
 
@@ -3033,7 +3038,7 @@ class TelemetryService:
         # Find corresponding non-empty tool call results in new messages
         for msg in new_messages:
             if (
-                msg.role == "tool"
+                isinstance(msg, ToolMessage)
                 and msg.tool_call_id
                 and msg.tool_call_id in empty_tool_results
                 and msg.text
@@ -3326,7 +3331,7 @@ class TelemetryService:
                     # Continue without tool calls from content
 
             content = content_parts
-            if len(content_parts) == 1 and content_parts[0].type == "text":
+            if len(content_parts) == 1 and isinstance(content_parts[0], ContentText):
                 content = content_parts[0].text
 
             # Handle structured tool calls

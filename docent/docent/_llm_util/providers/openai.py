@@ -33,6 +33,9 @@ from openai.types.chat import (
     ChatCompletionToolParam,
     ChatCompletionUserMessageParam,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall,
+)
 from openai.types.chat.chat_completion_message_tool_call_param import (
     Function as OpenAIFunctionParam,
 )
@@ -58,7 +61,15 @@ from docent._llm_util.data_models.llm_output import (
 )
 from docent._llm_util.providers.common import async_timeout_ctx
 from docent._log_util import get_logger
-from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
+from docent.data_models.chat import (
+    AssistantMessage,
+    ChatMessage,
+    Content,
+    ContentText,
+    ToolCall,
+    ToolInfo,
+    ToolMessage,
+)
 
 logger = get_logger(__name__)
 DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
@@ -93,7 +104,7 @@ def _parse_message_content(
     else:
         result: list[ChatCompletionContentPartTextParam] = []
         for sub_content in content:
-            if sub_content.type == "text":
+            if isinstance(sub_content, ContentText):
                 result.append(
                     ChatCompletionContentPartTextParam(type="text", text=sub_content.text)
                 )
@@ -113,7 +124,7 @@ def parse_chat_messages(messages: list[ChatMessage]) -> list[ChatCompletionMessa
                     content=_parse_message_content(message.content),
                 )
             )
-        elif message.role == "assistant":
+        elif isinstance(message, AssistantMessage):
             tool_calls = (
                 [
                     ChatCompletionMessageToolCallParam(
@@ -133,21 +144,21 @@ def parse_chat_messages(messages: list[ChatMessage]) -> list[ChatCompletionMessa
             if not tool_calls:
                 result.append(
                     ChatCompletionAssistantMessageParam(
-                        role=message.role, content=_parse_message_content(message.content)
+                        role="assistant", content=_parse_message_content(message.content)
                     )
                 )
             else:
                 result.append(
                     ChatCompletionAssistantMessageParam(
-                        role=message.role,
+                        role="assistant",
                         content=_parse_message_content(message.content),
                         tool_calls=tool_calls,
                     )
                 )
-        elif message.role == "tool":
+        elif isinstance(message, ToolMessage):
             result.append(
                 ChatCompletionToolMessageParam(
-                    role=message.role,
+                    role="tool",
                     content=_parse_message_content(message.content),
                     tool_call_id=str(message.tool_call_id),
                 )
@@ -649,7 +660,7 @@ def get_openai_embeddings_sync(
 
 def _parse_openai_tool_call(tc: ChatCompletionMessageToolCallUnion) -> ToolCall:
     # Only handle function tool calls, skip custom tool calls
-    if tc.type != "function":
+    if not isinstance(tc, ChatCompletionMessageFunctionToolCall):
         return ToolCall(
             id=tc.id,
             function="unknown",

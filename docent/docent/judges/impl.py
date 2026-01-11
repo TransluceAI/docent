@@ -63,7 +63,13 @@ class BaseJudge(ABC):
 
     @abstractmethod
     async def estimate_output_distrs(
-        self, agent_run: AgentRun, **kwargs: Any
+        self,
+        agent_run: AgentRun,
+        *,
+        n_initial_rollouts_to_sample: int | None = None,
+        n_combinations_to_sample: int | None = None,
+        n_reflection_rollouts_to_sample: int | None = None,
+        **kwargs: Any,
     ) -> None | tuple[dict[str, JudgeOutputDistribution], dict[str, Any]]:
         """Estimate the output distribution of each output key."""
 
@@ -82,7 +88,7 @@ class BaseJudge(ABC):
     async def one_rollout(
         self, agent_run: AgentRun
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
-        with agent_run_context() if self.docent_collection_id is not None else nullcontext():
+        async with agent_run_context() if self.docent_collection_id is not None else nullcontext():
             if self.cfg.rollout_type == "single_turn":
                 output, metadata, errors = await self.one_single_turn_rollout(agent_run)
             elif self.cfg.rollout_type == "multi_turn":
@@ -342,8 +348,16 @@ class MajorityVotingJudge(BaseJudge):
         )
 
     async def estimate_output_distrs(
-        self, agent_run: AgentRun, *, n_initial_rollouts_to_sample: int, **kwargs: Any
+        self,
+        agent_run: AgentRun,
+        *,
+        n_initial_rollouts_to_sample: int | None = None,
+        n_combinations_to_sample: int | None = None,
+        n_reflection_rollouts_to_sample: int | None = None,
+        **kwargs: Any,
     ) -> None | tuple[dict[str, JudgeOutputDistribution], dict[str, Any]]:
+        if n_initial_rollouts_to_sample is None:
+            raise ValueError("n_initial_rollouts_to_sample is required for MajorityVotingJudge")
         if self.cfg.n_rollouts_per_input > n_initial_rollouts_to_sample:
             raise ValueError(
                 "n_initial_rollouts_to_sample must be greater than or equal to cfg.n_rollouts_per_input"
@@ -536,11 +550,17 @@ class MultiReflectionJudge(BaseJudge):
         self,
         agent_run: AgentRun,
         *,
-        n_initial_rollouts_to_sample: int,
-        n_combinations_to_sample: int,
-        n_reflection_rollouts_to_sample: int,
+        n_initial_rollouts_to_sample: int | None = None,
+        n_combinations_to_sample: int | None = None,
+        n_reflection_rollouts_to_sample: int | None = None,
         **kwargs: Any,
     ) -> None | tuple[dict[str, JudgeOutputDistribution], dict[str, Any]]:
+        if n_initial_rollouts_to_sample is None:
+            raise ValueError("n_initial_rollouts_to_sample is required for MultiReflectionJudge")
+        if n_combinations_to_sample is None:
+            raise ValueError("n_combinations_to_sample is required for MultiReflectionJudge")
+        if n_reflection_rollouts_to_sample is None:
+            raise ValueError("n_reflection_rollouts_to_sample is required for MultiReflectionJudge")
         if self.cfg.n_rollouts_per_input > n_initial_rollouts_to_sample:
             raise ValueError(
                 "n_initial_rollouts_to_sample must be greater than or equal to cfg.n_rollouts_per_input"

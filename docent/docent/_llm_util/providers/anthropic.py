@@ -24,14 +24,17 @@ from anthropic.types import (
     RawMessageStartEvent,
     RawMessageStreamEvent,
     SignatureDelta,
+    TextBlock,
     TextBlockParam,
     TextDelta,
+    ThinkingBlock,
     ThinkingDelta,
     ToolChoiceAnyParam,
     ToolChoiceAutoParam,
     ToolChoiceParam,
     ToolParam,
     ToolResultBlockParam,
+    ToolUseBlock,
     ToolUseBlockParam,
 )
 from backoff.types import Details
@@ -58,7 +61,15 @@ from docent._llm_util.providers.common import (
     reasoning_budget,
 )
 from docent._log_util import get_logger
-from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
+from docent.data_models.chat import (
+    AssistantMessage,
+    ChatMessage,
+    Content,
+    ContentText,
+    ToolCall,
+    ToolInfo,
+    ToolMessage,
+)
 
 logger = get_logger(__name__)
 
@@ -89,7 +100,7 @@ def _parse_message_content(content: str | list[Content]) -> str | list[TextBlock
     else:
         result: list[TextBlockParam] = []
         for sub_content in content:
-            if sub_content.type == "text":
+            if isinstance(sub_content, ContentText):
                 result.append(TextBlockParam(text=sub_content.text, type="text"))
             else:
                 raise ValueError(f"Unsupported content type: {sub_content.type}")
@@ -108,7 +119,7 @@ def parse_chat_messages(messages: list[ChatMessage]) -> tuple[str | None, list[M
                     content=_parse_message_content(message.content),
                 )
             )
-        elif message.role == "assistant":
+        elif isinstance(message, AssistantMessage):
             message_content = _parse_message_content(message.content)
             # Build content list without creating empty text blocks
             if isinstance(message_content, str):
@@ -134,7 +145,7 @@ def parse_chat_messages(messages: list[ChatMessage]) -> tuple[str | None, list[M
                     content=all_content,
                 )
             )
-        elif message.role == "tool":
+        elif isinstance(message, ToolMessage):
             result.append(
                 MessageParam(
                     role="user",
@@ -290,7 +301,7 @@ def update_llm_output(
     elif isinstance(chunk, RawContentBlockStartEvent):
         # If a tool_use block starts, initialize a ToolCallPartial slot using the block index
         content_block = chunk.content_block
-        if content_block.type == "tool_use":
+        if isinstance(content_block, ToolUseBlock):
             # Ensure the tool_calls array exists and is long enough
             index = chunk.index
             cur_tool_calls = cur_tool_calls or []
@@ -467,13 +478,13 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
     tool_calls: list[ToolCall] = []
     reasoning_tokens = None
     for block in message.content:
-        if block.type == "text":
+        if isinstance(block, TextBlock):
             if text is not None:
                 raise ValueError(
                     "Anthropic API returned multiple text blocks; this was unexpected."
                 )
             text = block.text
-        elif block.type == "tool_use":
+        elif isinstance(block, ToolUseBlock):
             tool_calls.append(
                 ToolCall(
                     id=block.id,
@@ -482,7 +493,7 @@ def parse_anthropic_completion(message: Message | None, model: str) -> LLMOutput
                     type="function",
                 )
             )
-        elif block.type == "thinking":
+        elif isinstance(block, ThinkingBlock):
             reasoning_tokens = block.thinking
         else:
             raise ValueError(f"Unknown block type: {block.type}")

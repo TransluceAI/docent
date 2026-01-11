@@ -960,7 +960,9 @@ class AgentRunContext:
         )
         return self._sync_context.__enter__()
 
-    def __exit__(self, exc_type: type[BaseException], exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
         """Sync context manager exit."""
         if self._sync_context:
             self._sync_context.__exit__(exc_type, exc_val, exc_tb)

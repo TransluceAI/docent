@@ -2900,7 +2900,7 @@ class MonoService:
             if info.value_type is None or not info.path:
                 continue
             field_name = "metadata." + ".".join(info.path)
-            all_fields[field_name] = {"name": field_name, "type": info.value_type}
+            all_fields[field_name] = FilterableField(name=field_name, type=info.value_type)
 
         async with self.db.session() as session:
             if rubric_id is not None:
@@ -2937,7 +2937,7 @@ class MonoService:
         for rubric in rubrics:
             for path, field_type in _extract_schema_fields(rubric.output_schema):
                 field_name = f"rubric.{rubric.id}.{path}"
-                all_fields[field_name] = {"name": field_name, "type": field_type}
+                all_fields[field_name] = FilterableField(name=field_name, type=field_type)
 
         judge_where: ColumnElement[bool] | None = None
         if rubric_id is not None:
@@ -2960,10 +2960,10 @@ class MonoService:
                 if not info_rubric_id or info.value_type is None or not info.path:
                     continue
                 field_name = f"rubric.{info_rubric_id}." + ".".join(info.path)
-                all_fields[field_name] = {"name": field_name, "type": info.value_type}
+                all_fields[field_name] = FilterableField(name=field_name, type=info.value_type)
 
-        all_fields["agent_run_id"] = {"name": "agent_run_id", "type": "str"}
-        all_fields["tag"] = {"name": "tag", "type": "str"}
+        all_fields["agent_run_id"] = FilterableField(name="agent_run_id", type="str")
+        all_fields["tag"] = FilterableField(name="tag", type="str")
 
         return sorted(all_fields.values(), key=lambda f: f["name"])
 

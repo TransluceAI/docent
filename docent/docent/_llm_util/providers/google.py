@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from typing import Any, Literal, cast
 
 import backoff
@@ -26,7 +27,7 @@ from docent._llm_util.providers.common import (
     reasoning_budget,
 )
 from docent._log_util import get_logger
-from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
+from docent.data_models.chat import ChatMessage, Content, ContentText, ToolCall, ToolInfo
 
 
 def get_google_client_async(api_key: str | None = None) -> AsyncGoogle:
@@ -309,7 +310,9 @@ def _parse_chat_messages(
                 except Exception:
                     response_obj = {"result": tool_text}
 
-                part = _make_function_response_part(name=tool_name, response=response_obj, id=tool_id)  # type: ignore[arg-type]
+                part = _make_function_response_part(
+                    name=tool_name, response=response_obj, id=tool_id
+                )
                 result.append(types.Content(role="user", parts=[part]))
         elif message.role == "system":
             system_prompt = message.text
@@ -326,7 +329,7 @@ def _parse_message_content(content: str | list[Content]) -> list[types.Part]:
     else:
         result: list[types.Part] = []
         for sub_content in content:
-            if sub_content.type == "text":
+            if isinstance(sub_content, ContentText):
                 txt = (sub_content.text or "").strip()
                 if txt:
                     result.append(types.Part.from_text(text=txt))
@@ -397,7 +400,7 @@ def _parse_google_completion(message: types.GenerateContentResponse, model: str)
     )
 
 
-def _parse_tools(tools: list[ToolInfo]) -> list[types.Tool]:
+def _parse_tools(tools: list[ToolInfo]) -> list[types.Tool | Callable[..., Any]]:
     # Gemini expects a list of Tool objects, each with one or more FunctionDeclarations
     fds: list[types.FunctionDeclaration] = []
     for tool in tools:

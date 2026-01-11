@@ -22,7 +22,15 @@ from docent._llm_util.data_models.llm_output import (
     UsageMetrics,
 )
 from docent._log_util import get_logger
-from docent.data_models.chat import ChatMessage, Content, ToolCall, ToolInfo
+from docent.data_models.chat import (
+    AssistantMessage,
+    ChatMessage,
+    Content,
+    ContentText,
+    ToolCall,
+    ToolInfo,
+    ToolMessage,
+)
 
 logger = get_logger(__name__)
 
@@ -120,7 +128,7 @@ def _parse_message_content(
     else:
         result: list[dict[str, str]] = []
         for sub_content in content:
-            if sub_content.type == "text":
+            if isinstance(sub_content, ContentText):
                 result.append({"type": "text", "text": sub_content.text})
             else:
                 raise ValueError(f"Unsupported content type: {sub_content.type}")
@@ -139,7 +147,7 @@ def parse_chat_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
                     "content": _parse_message_content(message.content),
                 }
             )
-        elif message.role == "assistant":
+        elif isinstance(message, AssistantMessage):
             msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": _parse_message_content(message.content),
@@ -157,7 +165,7 @@ def parse_chat_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
                     for tc in message.tool_calls
                 ]
             result.append(msg)
-        elif message.role == "tool":
+        elif isinstance(message, ToolMessage):
             result.append(
                 {
                     "role": "tool",

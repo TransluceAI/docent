@@ -113,6 +113,7 @@ async def test_formatted_agent_run_roundtrip(mono_service: MonoService) -> None:
     restored_view = restored_context.build_agent_run_view("R0")
     assert isinstance(restored_view.agent_run, FormattedAgentRun)
     restored_formatted_transcript = restored_view.agent_run.transcripts[0]
+    assert isinstance(restored_formatted_transcript, FormattedTranscript)
     assert restored_formatted_transcript.id_to_original_index[msg2_id] == 2
 
 

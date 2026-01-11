@@ -163,11 +163,11 @@ asgi_app = FastAPI(lifespan=lifespan)
 # 1. Request logging middleware first
 # asgi_app.add_middleware(RequestLoggingMiddleware)
 # 2. Session authentication middleware second (after logging, before CORS)
-asgi_app.add_middleware(SessionAuthMiddleware)
+asgi_app.add_middleware(SessionAuthMiddleware)  # type: ignore[arg-type]
 
 # Configure CORS with environment-based settings
 cors_config = get_cors_configuration()
-asgi_app.add_middleware(CORSMiddleware, **cors_config)
+asgi_app.add_middleware(CORSMiddleware, **cors_config)  # type: ignore[arg-type]
 
 # Include broker router
 # asgi_app.include_router(broker_router, prefix="/broker")

@@ -119,7 +119,7 @@ def _parse_citations_in_messages(
     parsed_messages: list[DocentChatMessage] = []
 
     for message in messages:
-        if message.role == "assistant":
+        if isinstance(message, DocentAssistantMessage):
             try:
                 # Parse suggestions first, then citations from the content
                 content_text = message.text
@@ -876,7 +876,7 @@ class ChatService:
                             logger.warning(f"Failed to compute estimated_messages_tokens: {e}")
 
             # 3) If the last message is an assistant message with tool calls, execute the tool calls
-            elif last_message.role == "assistant" and last_message.tool_calls:
+            elif isinstance(last_message, DocentAssistantMessage) and last_message.tool_calls:
                 # Removing the agent writing labels feature for now
                 pass
 

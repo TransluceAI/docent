@@ -129,11 +129,12 @@ def compute_output_distributions(
             mean, estimate_var = value, (value * (1 - value))
             # TODO(mengk): change to the wilson score interval
             ci_95 = float(1.96 * np.sqrt(estimate_var / total)) if total > 0 else 0.0
-            distributions[agt_key][output_key] = {
+            estimate: EstimateWithCI = {
                 "mean": mean,
                 "var": estimate_var,
                 "n": total,
                 "ci_95": ci_95,
             }
+            distributions[agt_key][output_key] = estimate
 
     return distributions

@@ -1,11 +1,11 @@
 import gzip
-import itertools
 import json
 import os
 import time
 import webbrowser
+from itertools import islice
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Iterable, Iterator, Literal, TypeVar, cast
 
 import pandas as pd
 import requests
@@ -22,6 +22,18 @@ from docent.sdk.llm_context import LLMContext, LLMContextItem
 MAX_AGENT_RUN_PAYLOAD_BYTES = 100 * 1024 * 1024  # 100MB backend limit
 _AGENT_RUNS_PAYLOAD_PREFIX = b'{"agent_runs":['
 _AGENT_RUNS_PAYLOAD_SUFFIX = b"]}"
+
+
+_T = TypeVar("_T")
+
+
+def batched(iterable: Iterable[_T], n: int) -> Iterator[tuple[_T, ...]]:
+    """Backport of itertools.batched for Python <3.12."""
+    if n < 1:
+        raise ValueError("n must be at least one")
+    it = iter(iterable)
+    while batch := tuple(islice(it, n)):
+        yield batch
 
 
 def _serialize_agent_run(agent_run: AgentRun) -> bytes:
@@ -156,7 +168,8 @@ class Docent:
 
     def _handle_response_errors(self, response: requests.Response):
         """Handle API response and raise informative errors."""
-        if response.status_code >= 400:
+        status_code = cast(int | None, response.status_code)
+        if status_code is not None and status_code >= 400:
             try:
                 error_data = response.json()
                 detail = error_data.get("detail", response.text)
@@ -1134,7 +1147,7 @@ class Docent:
 
                 # Process runs in batches
                 runs_from_file = 0
-                batches = itertools.batched(runs_generator, batch_size)
+                batches = batched(runs_generator, batch_size)
 
                 with tqdm(
                     total=total_samples,
@@ -1200,10 +1213,10 @@ class Docent:
             # Opens browser to chat UI
             ```
         """
-        if isinstance(context, list):
-            context = LLMContext(items=context)
-        else:
+        if isinstance(context, LLMContext):
             context = context
+        else:
+            context = LLMContext(items=context)
 
         serialized_context = context.to_dict()
 

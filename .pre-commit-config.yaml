@@ -47,12 +47,15 @@ repos:
           - --remove-unused-variables
           - --in-place
 
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.396
+  - repo: local
     hooks:
-      - id: pyright
-        files: ^(docent/|docent_core/|tests/).*\.py$
-        args: ["--pythonpath", ".venv/bin/python"]
+      - id: ty
+        name: ty check
+        entry: uvx ty check
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
 
   - repo: local
     hooks:
