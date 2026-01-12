@@ -1,0 +1,21 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Docent",
+  "theme": "mint",
+  "colors": {
+    "primary": "#0f0f0f",
+    "light": "#6366f1",
+    "dark": "#4f46e5"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": ["quickstart"]
+      }
+    ]
+  },
+  "footerSocials": {
+    "github": "https://github.com/TransluceAI/docent"
+  }
+}
