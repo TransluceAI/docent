@@ -8,7 +8,6 @@
   "settings": {
     "jupyter.allowUnauthorizedRemoteConnection": true,
     "python.defaultInterpreterPath": ".venv/bin/python",
-    "python.languageServer": "None",
     "[python]": {
       "editor.defaultFormatter": "charliermarsh.ruff",
       "editor.formatOnSave": true,

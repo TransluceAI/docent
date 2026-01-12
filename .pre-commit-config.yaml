@@ -33,15 +33,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: local
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.396
     hooks:
-      - id: ty
-        name: ty check
-        entry: uvx ty check
-        language: system
-        types: [python]
-        pass_filenames: false
-        always_run: true
+      - id: pyright
+        files: ^(docent/|docent_core/|tests/).*\.py$
+        args: ["--pythonpath", ".venv/bin/python"]
 
   - repo: local
     hooks:

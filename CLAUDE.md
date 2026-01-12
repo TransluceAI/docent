@@ -2,12 +2,12 @@
 
 ## Python
 
-### Type Checking with `ty`
+### Type Checking with `pyright`
 
-Configuration is in `pyproject.toml`. Use `ty` for Python type checking:
+Configuration is in `pyproject.toml`. Use `pyright` for Python type checking:
 
 ```bash
-ty check
+pyright
 ```
 
 ### Linting and Formatting with `ruff`
