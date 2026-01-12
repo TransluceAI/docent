@@ -22,8 +22,14 @@ Start the script with:
 ```python
 #%%
 # IPython autoreload setup
-%load_ext autoreload
-%autoreload 2
+try:
+    from IPython import get_ipython
+    ipython = get_ipython()
+    if ipython is not None:
+        ipython.run_line_magic("load_ext", "autoreload")
+        ipython.run_line_magic("autoreload", "2")
+except Exception:
+    pass  # Not in IPython environment
 
 #%%
 # Your test code here
@@ -31,12 +37,15 @@ Start the script with:
 
 Each logical section should be in its own `#%%` cell.
 
+**Async note:** In interactive mode, you can use `await` directly at the top level. No need for `asyncio.run()`.
+
 ### Non-Interactive Mode
 
 If and only if the user explicitly asks for a "non-interactive" or "regular" script:
 - Write standard Python without `#%%` markers
 - Do NOT include autoreload setup
 - Use regular script structure
+- For async code, use `asyncio.run()` to execute coroutines
 
 ## Naming Convention
 
