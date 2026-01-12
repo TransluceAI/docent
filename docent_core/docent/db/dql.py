@@ -101,9 +101,9 @@ class AllowedTable:
     table: Table | FromClause
     allowed_columns: frozenset[str]
     collection_predicate_factory: "CollectionPredicateFactory | None" = None
-    aliases: frozenset[str] = field(default_factory=frozenset)
-    column_aliases: Mapping[str, str] = field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
-    json_field_paths: frozenset[str] = field(default_factory=frozenset)
+    aliases: frozenset[str] = field(default_factory=lambda: frozenset())
+    column_aliases: Mapping[str, str] = field(default_factory=lambda: {})
+    json_field_paths: frozenset[str] = field(default_factory=lambda: frozenset())
 
 
 @dataclass(frozen=True)

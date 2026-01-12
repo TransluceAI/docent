@@ -339,7 +339,7 @@ class DocentTracer:
         except AttributeError:
             return None
 
-        if span_context is None or not span_context.is_valid:
+        if not span_context.is_valid:
             return None
         return span
 

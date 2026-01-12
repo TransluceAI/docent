@@ -89,12 +89,13 @@ def safe_bool(col: Any) -> Any:
 
 def safe_float(col: Any) -> Any:
     """Safely cast a column to float using regex validation."""
+    # SQLAlchemy's cast() returns Cast[Unknown] when col is Any; this is a type stub limitation
     return case(
         (
             cast(col, String).op("~")("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$"),
-            cast(col, Float),
+            cast(col, Float),  # pyright: ignore[reportUnknownArgumentType]
         ),
-        else_=None,  # type: ignore
+        else_=None,
     )
 
 

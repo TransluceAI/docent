@@ -134,7 +134,7 @@ class DocentTracer:
         # Use separate tracer provider to avoid interfering with existing OTEL setup
         self._tracer_provider: Optional[TracerProvider] = None
         self._root_span: Optional[Span] = None
-        self._root_context: Context = Context()
+        self._root_context: Context | None = Context()
         self._tracer: Optional[trace.Tracer] = None
         self._initialized: bool = False
         self._cleanup_registered: bool = False
@@ -422,7 +422,7 @@ class DocentTracer:
                 self._root_span.end()
 
             self._root_span = None
-            self._root_context = None  # type: ignore
+            self._root_context = None
 
             # Shutdown our isolated tracer provider
             if self._tracer_provider:

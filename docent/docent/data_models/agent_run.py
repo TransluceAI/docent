@@ -46,7 +46,7 @@ class AgentRun(BaseModel):
     description: str | None = None
 
     transcripts: list[Transcript]
-    transcript_groups: list[TranscriptGroup] = Field(default_factory=list)
+    transcript_groups: list[TranscriptGroup] = Field(default_factory=lambda: [])
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     ##############

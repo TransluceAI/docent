@@ -94,7 +94,7 @@ class LLMOutput:
 
     model: str
     completions: list[LLMCompletion]
-    errors: list[LLMException] = field(default_factory=list)
+    errors: list[LLMException] = field(default_factory=lambda: [])
     usage: UsageMetrics = field(default_factory=UsageMetrics)
     from_cache: bool = False
     duration: float | None = None

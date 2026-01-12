@@ -51,9 +51,10 @@ async def get_redis_client():
     async with _redis_lock:
         if _redis_client is None:
             url = get_redis_url()
+            # redis-py type stubs don't fully type from_url's **kwargs
             _redis_client = ArqRedis(
-                connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True)
-            )  # type: ignore
+                connection_pool=redis.ConnectionPool.from_url(url, decode_responses=True)  # pyright: ignore[reportUnknownMemberType]
+            )
 
             logger.info(f"Checking Redis connection to {url}")
             await verify_redis_connection(_redis_client)

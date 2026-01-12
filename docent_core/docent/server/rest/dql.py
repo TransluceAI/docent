@@ -35,7 +35,7 @@ class DQLColumnSchema(BaseModel):
     data_type: str | None
     nullable: bool
     is_primary_key: bool
-    foreign_keys: list[DQLForeignKeySchema] = Field(default_factory=list)
+    foreign_keys: list[DQLForeignKeySchema] = Field(default_factory=lambda: [])
     alias_for: str | None = None
 
 

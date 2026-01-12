@@ -328,7 +328,7 @@ def update_llm_output(
             if (
                 cur_tool_calls is None
                 or index >= len(cur_tool_calls)
-                or cur_tool_calls[index] is None
+                or (existing := cur_tool_calls[index]) is None
             ):
                 # This should not happen with a well-behaved API, log and skip
                 logger.warning(
@@ -336,10 +336,9 @@ def update_llm_output(
                 )
             else:
                 cur_tool_calls[index] = ToolCallPartial(
-                    id=cur_tool_calls[index].id,  # type: ignore[union-attr]
-                    function=cur_tool_calls[index].function,  # type: ignore[union-attr]
-                    arguments_raw=(cur_tool_calls[index].arguments_raw or "")
-                    + chunk.delta.partial_json,  # type: ignore[union-attr]
+                    id=existing.id,
+                    function=existing.function,
+                    arguments_raw=(existing.arguments_raw or "") + chunk.delta.partial_json,
                     type="function",
                 )
         elif isinstance(chunk.delta, SignatureDelta):
