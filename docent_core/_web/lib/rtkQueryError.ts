@@ -7,16 +7,6 @@ type ErrorData =
   | null
   | undefined;
 
-type RtkQueryErrorLike =
-  | {
-      status?: number | string;
-      data?: ErrorData;
-      error?: string;
-    }
-  | {
-      message?: string;
-    };
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }

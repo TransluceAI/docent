@@ -4,12 +4,11 @@ import {
   TextSpanWithCitations,
 } from '@/lib/citationMatch';
 import { cn } from '@/lib/utils';
-import { useAppSelector } from '@/app/store/hooks';
+import { useAppDispatch, useAppSelector } from '@/app/store/hooks';
 import {
   setSelectedCommentId,
   setCommentSidebarCollapsed,
 } from '@/app/store/transcriptSlice';
-import { useAppDispatch } from '@/app/store/hooks';
 
 const getCitationColors = (
   role: string | undefined,

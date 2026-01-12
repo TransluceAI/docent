@@ -810,7 +810,8 @@ export default function ExperimentViewer({
         const next: MetadataFieldsById = { ...prev };
         idsToFields.forEach((fields, id) => {
           const current = new Set(prev[id] ?? []);
-          for (const field of fields) {
+          const fieldList = Array.from(fields);
+          for (const field of fieldList) {
             if (mode === 'add') {
               current.add(field);
             } else {
