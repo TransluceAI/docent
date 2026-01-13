@@ -54,6 +54,11 @@ class ValidationFailedException(LLMException):
         self.failed_output = failed_output
 
 
+class TimeoutException(LLMException):
+    error_type_id = "timeout"
+    user_message = "The request timed out. The model took too long to respond."
+
+
 LLM_ERROR_TYPES: list[type[LLMException]] = [
     LLMException,
     CompletionTooLongException,
@@ -62,4 +67,5 @@ LLM_ERROR_TYPES: list[type[LLMException]] = [
     NoResponseException,
     DocentUsageLimitException,
     ValidationFailedException,
+    TimeoutException,
 ]

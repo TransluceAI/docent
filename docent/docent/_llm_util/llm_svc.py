@@ -1,3 +1,4 @@
+import asyncio
 import time
 import traceback
 from functools import partial
@@ -19,6 +20,7 @@ from docent._llm_util.data_models.exceptions import (
     DocentUsageLimitException,
     LLMException,
     RateLimitException,
+    TimeoutException,
     ValidationFailedException,
 )
 from docent._llm_util.data_models.llm_output import (
@@ -192,6 +194,16 @@ async def _parallelize_calls(
                         )
                         cancelled_due_to_usage_limit = True
                         tg.cancel_scope.cancel()
+                        break
+                    except asyncio.TimeoutError as e:
+                        timeout_exception = TimeoutException(str(e) or "Request timed out")
+                        timeout_exception.__cause__ = e
+                        logger.error(f"Call to {model_name} timed out")
+                        result = LLMOutput(
+                            model=model_name,
+                            completions=[],
+                            errors=[timeout_exception],
+                        )
                         break
                     except Exception as e:
                         if not isinstance(e, LLMException):
