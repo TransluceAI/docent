@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import tempfile
@@ -834,8 +833,6 @@ async def get_agent_run_metadata(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
 ):
-    # Delay to simulate slow metadata retrieval for UI loading tests.
-    await asyncio.sleep(3)
     # Query metadata directly without loading full agent runs
     data = await mono_svc.get_metadata_for_agent_runs(
         ctx, request.agent_run_ids, fields=request.fields
