@@ -51,6 +51,14 @@ def get_text_content(element) -> str:
     return ""
 
 
+def wrap_code_block(code: str, lang: str = "python") -> str:
+    """Wrap code in a fenced code block, using 4 backticks if code contains triple backticks."""
+    code = code.strip()
+    if "```" in code:
+        return f"\n````{lang}\n{code}\n````\n"
+    return f"\n```{lang}\n{code}\n```\n"
+
+
 def convert_code_element(element: Tag) -> str:
     """Convert a code element to markdown inline code or code block."""
     code_text = element.get_text()
@@ -123,8 +131,8 @@ def convert_element(element, depth: int = 0) -> str:
         code_elem = element.find("code")
         if code_elem:
             code_text = code_elem.get_text()
-            return f"\n```python\n{code_text.strip()}\n```\n"
-        return f"\n```\n{element.get_text().strip()}\n```\n"
+            return wrap_code_block(code_text, "python")
+        return wrap_code_block(element.get_text(), "")
 
     elif tag == "a":
         href = element.get("href", "")
@@ -270,10 +278,10 @@ def convert_element(element, depth: int = 0) -> str:
             code_elem = element.find("code")
             if code_elem:
                 code_text = code_elem.get_text()
-                return f"\n```python\n{code_text.strip()}\n```\n"
+                return wrap_code_block(code_text, "python")
             pre_elem = element.find("pre")
             if pre_elem:
-                return f"\n```python\n{pre_elem.get_text().strip()}\n```\n"
+                return wrap_code_block(pre_elem.get_text(), "python")
 
         elif "doc-contents" in classes:
             # Documentation content - process all children

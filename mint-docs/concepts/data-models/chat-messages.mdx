@@ -821,7 +821,7 @@ ToolParam(
 
 <Accordion title="docent/data_models/chat/tool.py" icon="code">
 
-```python
+````python
 class ToolInfo(BaseModel):
     """Specification of a tool (JSON Schema compatible).
 
@@ -857,6 +857,6 @@ class ToolInfo(BaseModel):
     name: str
     description: str
     parameters: ToolParams = Field(default_factory=ToolParams)
-```
+````
 
 </Accordion>
