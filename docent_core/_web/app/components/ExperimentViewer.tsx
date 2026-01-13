@@ -1083,10 +1083,11 @@ export default function ExperimentViewer({
                   const existingLoadedFields =
                     (existing._loaded_fields as Set<string> | undefined) ??
                     new Set();
-                  const mergedLoadedFields = new Set([
-                    ...existingLoadedFields,
-                    ...fields,
-                  ]);
+                  const mergedLoadedFields = new Set<string>();
+                  existingLoadedFields.forEach((field) =>
+                    mergedLoadedFields.add(field)
+                  );
+                  fields.forEach((field) => mergedLoadedFields.add(field));
                   fetched[runId] = {
                     ...existing,
                     ...processed,
@@ -1105,10 +1106,11 @@ export default function ExperimentViewer({
                     const existingLoadedFields =
                       (existing._loaded_fields as Set<string> | undefined) ??
                       new Set();
-                    const mergedLoadedFields = new Set([
-                      ...existingLoadedFields,
-                      ...fields,
-                    ]);
+                    const mergedLoadedFields = new Set<string>();
+                    existingLoadedFields.forEach((field) =>
+                      mergedLoadedFields.add(field)
+                    );
+                    fields.forEach((field) => mergedLoadedFields.add(field));
                     next[runId] = {
                       ...existing,
                       ...processed,
