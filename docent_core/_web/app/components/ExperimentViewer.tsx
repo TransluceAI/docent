@@ -125,15 +125,7 @@ export default function ExperimentViewer({
     return `experiment-viewer-tab-${collectionId}`;
   }, [collectionId]);
 
-  const [activeTab, setActiveTab] = useState<'filters' | 'dql'>(() => {
-    if (typeof window === 'undefined') {
-      return 'filters';
-    }
-    const stored = tabStorageKey
-      ? window.localStorage.getItem(tabStorageKey)
-      : null;
-    return stored === 'dql' ? 'dql' : 'filters';
-  });
+  const [activeTab, setActiveTab] = useState<'filters' | 'dql'>('filters');
 
   useEffect(() => {
     if (!tabStorageKey) {
