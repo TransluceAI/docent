@@ -17,7 +17,6 @@ jobs:
       deployment_id: staging
       github_environment: staging
       # We use staging to test both deployment pathways
-      deploy_frontend_apprunner: true
       deploy_frontend_vercel: true
       vercel_environment: staging
       force_full_deploy: ${{ inputs.force_full_deploy || false }}

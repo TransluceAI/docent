@@ -130,7 +130,7 @@ class BaseJudge(ABC):
         for response_text in response_matches:
             try:
                 validated_output = parse_and_validate_output_str(
-                    response_text, self.cfg.output_schema, agent_run
+                    response_text, self.cfg.output_schema
                 )
                 return validated_output
             except ValidationFailedException:
@@ -140,9 +140,7 @@ class BaseJudge(ABC):
         # But only if the output _didn't_ contain a <response>...</response> tag
         if not response_matches:
             try:
-                validated_output = parse_and_validate_output_str(
-                    output_str, self.cfg.output_schema, agent_run
-                )
+                validated_output = parse_and_validate_output_str(output_str, self.cfg.output_schema)
                 return validated_output
             except ValidationFailedException:
                 pass

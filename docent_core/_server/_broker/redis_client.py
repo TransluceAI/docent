@@ -21,6 +21,9 @@ STREAM_KEY_FORMAT = "stream_{job_id}"
 STATE_KEY_FORMAT = "state_{job_id}"
 SUBSCRIPTIONS_KEY_FORMAT = "agent_run:subscriptions:{job_id}"
 
+# Result set streaming keys
+RESULT_SET_CHANNEL_FORMAT = "result_set:{result_set_id}"
+
 
 def get_redis_url() -> str:
     host = ENV.get("DOCENT_REDIS_HOST")
@@ -166,3 +169,17 @@ async def cancel_job(job_id: str) -> None:
     command_queue = f"commands_{job_id}"
 
     await redis_client.rpush(command_queue, "cancel")  # type: ignore
+
+
+async def publish_result_set_event(result_set_id: str, event_type: str, payload: dict[str, Any]):
+    """Publish an event for a result set (e.g., result_completed, job_status_changed).
+
+    Args:
+        result_set_id: The result set ID
+        event_type: Type of event (result_completed, job_status_changed)
+        payload: The event data
+    """
+    redis_client = await get_redis_client()
+    channel = RESULT_SET_CHANNEL_FORMAT.format(result_set_id=result_set_id)
+    message = {"type": event_type, **payload}
+    await redis_client.publish(channel, json.dumps(jsonable_encoder(message)))  # type: ignore

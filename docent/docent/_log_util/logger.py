@@ -1,7 +1,7 @@
 import logging
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, MutableMapping, Optional, Tuple
+from typing import IO, Any, Dict, Literal, MutableMapping, Optional, Tuple
 
 
 @dataclass
@@ -116,12 +116,13 @@ class LoggerAdapter(logging.LoggerAdapter[logging.Logger]):
         return self.info(msg, *args, **kwargs)
 
 
-def get_logger(namespace: str) -> LoggerAdapter:
+def get_logger(namespace: str, stream: IO[str] | None = None) -> LoggerAdapter:
     """
     Get a colored logger for the specified namespace.
 
     Args:
         namespace: The namespace for the logger
+        stream: Output stream for log messages. Defaults to sys.stdout.
 
     Returns:
         A configured logger instance with highlighting support
@@ -130,7 +131,7 @@ def get_logger(namespace: str) -> LoggerAdapter:
 
     # Only add handler if it doesn't exist
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(stream or sys.stdout)
         handler.setFormatter(ColoredFormatter())
         logger.addHandler(handler)
 

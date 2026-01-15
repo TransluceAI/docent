@@ -5,6 +5,24 @@ import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
 import React, { useRef } from 'react';
 import { useTextSelection } from '../providers/use-text-selection';
 
+export interface TextWithCitationsValue {
+  text: string;
+  citations: InlineCitation[];
+}
+
+export function hasTextWithCitations(
+  value: unknown
+): value is TextWithCitationsValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'text' in value &&
+    typeof (value as { text: unknown }).text === 'string' &&
+    'citations' in value &&
+    Array.isArray((value as { citations: unknown }).citations)
+  );
+}
+
 /**
  * Basic markdown patterns for inline formatting
  */
@@ -288,6 +306,8 @@ function formatCitationTarget(target: CitationTarget): string {
       return `Transcript ${extraShortUUID(target.item.transcript_id)} metadata`;
     case 'agent_run_metadata':
       return `Agent run ${extraShortUUID(target.item.agent_run_id)} metadata`;
+    case 'analysis_result':
+      return `Analysis ${extraShortUUID(target.item.result_id)}`;
   }
 }
 

@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ChevronRight, X, Plus, Eye, EyeOff } from 'lucide-react';
-import { cn, formatTokenCount } from '@/lib/utils';
+import { ChevronRight, Plus } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useCitationNavigation } from '@/providers/CitationNavigationProvider';
-import { CitationTarget } from '@/app/types/citationTypes';
 import {
   LLMContextSpec,
   useAddConversationContextItemMutation,
@@ -12,348 +11,23 @@ import {
   useRemoveConversationContextItemMutation,
   useUpdateConversationContextSelectionMutation,
 } from '@/app/api/chatApi';
+import { resultSetApi } from '@/app/api/resultSetApi';
+import { useAppDispatch } from '@/app/store/hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip';
-
-type AgentRunContextItem = {
-  type: 'agent_run';
-  id: string;
-  alias: string;
-  transcript_ids: string[];
-  collection_id: string;
-  visible: boolean;
-};
-
-type FormattedAgentRunContextItem = {
-  type: 'formatted_agent_run';
-  id: string;
-  alias: string;
-  transcript_ids: string[];
-  collection_id: string;
-  visible: boolean;
-};
-
-type TranscriptContextItem = {
-  type: 'transcript';
-  id: string;
-  alias: string;
-  collection_id: string;
-  agent_run_id: string;
-  visible: boolean;
-};
-
-type FormattedTranscriptContextItem = {
-  type: 'formatted_transcript';
-  id: string;
-  alias: string;
-  collection_id: string;
-  agent_run_id: string;
-  visible: boolean;
-};
-
-type SerializedContextItem =
-  | AgentRunContextItem
-  | FormattedAgentRunContextItem
-  | TranscriptContextItem
-  | FormattedTranscriptContextItem;
+  SerializedContextItem,
+  parseContextSerialized,
+  makeSyntheticCitation,
+  getItemKey,
+  isItemSelected,
+  ContextItemCard,
+} from '@/components/context-items';
 
 interface ConversationContextSectionProps {
   contextSerialized?: LLMContextSpec;
   sessionId: string | null;
   itemTokenEstimates?: Record<string, number> | null;
-}
-
-function shortUUID(uuid: string): string {
-  return uuid.split('-')[0];
-}
-
-// Convert data sent by the server into a format that's convenient to render
-function parseContextSerialized(
-  contextSerialized: LLMContextSpec | undefined
-): SerializedContextItem[] {
-  if (!contextSerialized) {
-    return [];
-  }
-
-  const version = contextSerialized.version;
-  const supportedVersion = version === '3';
-  if (!supportedVersion && version !== undefined) {
-    console.warn(
-      `Unsupported context serialization version: ${contextSerialized.version}`
-    );
-    return [];
-  }
-
-  const rootItems = contextSerialized.root_items || [];
-  const itemsByAlias = contextSerialized.items || {};
-  const inlineData = contextSerialized.inline_data || {};
-
-  const agent_run_to_transcripts: Record<string, string[]> = {};
-
-  for (const alias in itemsByAlias) {
-    const ref = itemsByAlias[alias];
-    if (ref.type !== 'transcript') {
-      continue;
-    }
-    const agentRunId = ref.agent_run_id;
-    if (!agent_run_to_transcripts[agentRunId]) {
-      agent_run_to_transcripts[agentRunId] = [];
-    }
-    agent_run_to_transcripts[agentRunId].push(ref.id);
-  }
-
-  const items: SerializedContextItem[] = [];
-  const visibilityMap = contextSerialized.visibility || {};
-
-  for (const rootItem of rootItems) {
-    const ref = itemsByAlias[rootItem];
-    if (!ref) {
-      continue;
-    }
-
-    if (ref.type === 'agent_run') {
-      const agentRunId = ref.id;
-      const collectionId = ref.collection_id;
-      const item: AgentRunContextItem | FormattedAgentRunContextItem = {
-        type: inlineData[agentRunId] ? 'formatted_agent_run' : 'agent_run',
-        id: agentRunId,
-        alias: rootItem,
-        transcript_ids: agent_run_to_transcripts[agentRunId] || [],
-        collection_id: collectionId,
-        visible: visibilityMap[rootItem] !== false,
-      };
-
-      items.push(item);
-    } else if (ref.type === 'transcript') {
-      const transcriptId = ref.id;
-      const agentRunId = ref.agent_run_id;
-      const collectionId = ref.collection_id;
-      const item: TranscriptContextItem | FormattedTranscriptContextItem = {
-        type: inlineData[transcriptId] ? 'formatted_transcript' : 'transcript',
-        id: transcriptId,
-        alias: rootItem,
-        collection_id: collectionId,
-        agent_run_id: agentRunId,
-        visible: visibilityMap[rootItem] !== false,
-      };
-      items.push(item);
-    }
-  }
-
-  return items;
-}
-
-function getItemKey(item: SerializedContextItem, index: number): string {
-  switch (item.type) {
-    case 'agent_run':
-      return `agent-run-${index}-${item.id}`;
-    case 'formatted_agent_run':
-      return `formatted-agent-run-${index}-${item.id}`;
-    case 'transcript':
-      return `transcript-${index}-${item.id}`;
-    case 'formatted_transcript':
-      return `formatted-transcript-${index}-${item.id}`;
-  }
-}
-
-function isItemSelected(
-  item: SerializedContextItem,
-  selectedCitation: CitationTarget | null
-): boolean {
-  if (!selectedCitation) {
-    return false;
-  }
-
-  const citationItem = selectedCitation.item;
-
-  switch (item.type) {
-    case 'agent_run':
-    case 'formatted_agent_run':
-      return item.id === citationItem.agent_run_id;
-    case 'transcript':
-    case 'formatted_transcript':
-      return (
-        'transcript_id' in citationItem &&
-        item.id === citationItem.transcript_id
-      );
-  }
-}
-
-function makeSyntheticCitation(
-  item: SerializedContextItem
-): CitationTarget | undefined {
-  switch (item.type) {
-    case 'agent_run':
-    case 'formatted_agent_run': {
-      const firstTranscriptId = item.transcript_ids[0];
-      if (!firstTranscriptId) {
-        return undefined;
-      }
-      return {
-        item: {
-          item_type: 'block_content',
-          agent_run_id: item.id,
-          collection_id: item.collection_id,
-          transcript_id: firstTranscriptId,
-          block_idx: 0,
-        },
-        text_range: null,
-      };
-    }
-    case 'transcript':
-    case 'formatted_transcript':
-      return {
-        item: {
-          item_type: 'block_content',
-          agent_run_id: item.agent_run_id,
-          collection_id: item.collection_id,
-          transcript_id: item.id,
-          block_idx: 0,
-        },
-        text_range: null,
-      };
-  }
-}
-
-function ContextItem({
-  item,
-  index,
-  isSelected,
-  tokenEstimate,
-  onSelect,
-  onRemove,
-  isRemoving,
-  onToggleVisible,
-}: {
-  item: SerializedContextItem;
-  index: number;
-  isSelected: boolean;
-  tokenEstimate?: number;
-  onSelect: (key: string) => void;
-  onRemove?: () => void;
-  isRemoving?: boolean;
-  onToggleVisible?: () => void;
-}) {
-  const key = getItemKey(item, index);
-
-  let badge: string;
-  let title: string;
-  let subtitle: string | undefined;
-
-  switch (item.type) {
-    case 'agent_run':
-    case 'formatted_agent_run': {
-      const transcriptCount = item.transcript_ids.length;
-      const transcriptLabel =
-        transcriptCount === 1
-          ? '1 transcript'
-          : `${transcriptCount} transcripts`;
-      badge =
-        item.type === 'formatted_agent_run'
-          ? 'Formatted Agent Run'
-          : 'Agent Run';
-      title = `Agent Run ${shortUUID(item.id)}`;
-      subtitle = transcriptLabel;
-      break;
-    }
-    case 'transcript':
-    case 'formatted_transcript': {
-      badge =
-        item.type === 'formatted_transcript'
-          ? 'Formatted Transcript'
-          : 'Transcript';
-      title = `Transcript ${shortUUID(item.id)}`;
-      break;
-    }
-  }
-
-  return (
-    <div className="flex items-start gap-2">
-      <button
-        className={cn(
-          'flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors',
-          isSelected
-            ? 'border-indigo-border bg-indigo-muted text-primary'
-            : 'border-border bg-background text-muted-foreground hover:bg-indigo-muted/40 hover:text-primary',
-          !item.visible && 'opacity-50'
-        )}
-        onClick={() => {
-          onSelect(key);
-        }}
-      >
-        <div className="flex flex-1 flex-col">
-          <div className="flex flex-row items-center gap-2">
-            <span className="font-medium text-sm">{title}</span>
-            <span className="rounded-full bg-indigo-muted px-2 py-0.5 text-[10px] uppercase text-indigo-text">
-              {badge}
-            </span>
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {tokenEstimate !== undefined && (
-              <span className="text-xs text-muted-foreground">
-                {formatTokenCount(tokenEstimate)} tokens
-              </span>
-            )}
-            {subtitle && (
-              <span>
-                {' | '} {subtitle}
-              </span>
-            )}
-          </div>
-        </div>
-        {onToggleVisible && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleVisible();
-                }}
-              >
-                {item.visible ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{item.visible ? 'Hide from context' : 'Show in context'}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {onRemove && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove();
-                }}
-                disabled={isRemoving}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Remove from context</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </button>
-    </div>
-  );
 }
 
 export function ConversationContextSection({
@@ -384,9 +58,74 @@ export function ConversationContextSection({
     [contextSerialized]
   );
 
-  const { agentRunCount, transcriptCount } = useMemo(() => {
+  const resultSetIdsWithCollection = useMemo(() => {
+    const resultSetMap = new Map<
+      string,
+      { resultSetId: string; collectionId: string }
+    >();
+    for (const item of items) {
+      if (item.type === 'result_set') {
+        resultSetMap.set(item.id, {
+          resultSetId: item.id,
+          collectionId: item.collection_id,
+        });
+      } else if (item.type === 'analysis_result') {
+        if (!resultSetMap.has(item.result_set_id)) {
+          resultSetMap.set(item.result_set_id, {
+            resultSetId: item.result_set_id,
+            collectionId: item.collection_id,
+          });
+        }
+      }
+    }
+    return Array.from(resultSetMap.values());
+  }, [items]);
+
+  const dispatch = useAppDispatch();
+  const [resultSetNames, setResultSetNames] = useState<
+    Map<string, string | null>
+  >(new Map());
+
+  useEffect(() => {
+    if (resultSetIdsWithCollection.length === 0) {
+      setResultSetNames(new Map());
+      return;
+    }
+
+    const fetchNames = async () => {
+      const nameMap = new Map<string, string | null>();
+      const promises = resultSetIdsWithCollection.map(
+        async ({ resultSetId, collectionId }) => {
+          try {
+            const result = await dispatch(
+              resultSetApi.endpoints.getResultSet.initiate({
+                collectionId,
+                resultSetIdOrName: resultSetId,
+              })
+            ).unwrap();
+            nameMap.set(resultSetId, result.name ?? null);
+          } catch {
+            nameMap.set(resultSetId, null);
+          }
+        }
+      );
+      await Promise.all(promises);
+      setResultSetNames(nameMap);
+    };
+
+    fetchNames();
+  }, [resultSetIdsWithCollection, dispatch]);
+
+  const {
+    agentRunCount,
+    transcriptCount,
+    resultSetCount,
+    analysisResultCount,
+  } = useMemo(() => {
     let agentRuns = 0;
     let transcripts = 0;
+    let resultSets = 0;
+    let analysisResults = 0;
     for (const item of items) {
       if (item.type === 'agent_run' || item.type === 'formatted_agent_run') {
         agentRuns++;
@@ -395,9 +134,18 @@ export function ConversationContextSection({
         item.type === 'formatted_transcript'
       ) {
         transcripts++;
+      } else if (item.type === 'result_set') {
+        resultSets++;
+      } else if (item.type === 'analysis_result') {
+        analysisResults++;
       }
     }
-    return { agentRunCount: agentRuns, transcriptCount: transcripts };
+    return {
+      agentRunCount: agentRuns,
+      transcriptCount: transcripts,
+      resultSetCount: resultSets,
+      analysisResultCount: analysisResults,
+    };
   }, [items]);
 
   const isValidLookupData = useMemo(() => {
@@ -545,7 +293,10 @@ export function ConversationContextSection({
                 )}
               />
               Context
-              {(agentRunCount > 0 || transcriptCount > 0) && (
+              {(agentRunCount > 0 ||
+                transcriptCount > 0 ||
+                resultSetCount > 0 ||
+                analysisResultCount > 0) && (
                 <span
                   className={cn(
                     'flex items-center gap-2 transition-opacity',
@@ -564,19 +315,34 @@ export function ConversationContextSection({
                       {transcriptCount === 1 ? 'transcript' : 'transcripts'}
                     </span>
                   )}
+                  {resultSetCount > 0 && (
+                    <span className="rounded-full bg-indigo-muted px-2 py-0.5 text-[10px] uppercase text-indigo-text">
+                      {resultSetCount}{' '}
+                      {resultSetCount === 1 ? 'result set' : 'result sets'}
+                    </span>
+                  )}
+                  {analysisResultCount > 0 && (
+                    <span className="rounded-full bg-indigo-muted px-2 py-0.5 text-[10px] uppercase text-indigo-text">
+                      {analysisResultCount}{' '}
+                      {analysisResultCount === 1
+                        ? 'analysis result'
+                        : 'analysis results'}
+                    </span>
+                  )}
                 </span>
               )}
             </button>
             {isExpanded && (
               <div className="flex flex-col gap-2">
                 {items.map((item, index) => (
-                  <ContextItem
+                  <ContextItemCard
                     key={getItemKey(item, index)}
                     item={item}
-                    index={index}
                     isSelected={isItemSelected(item, selectedCitation)}
                     tokenEstimate={itemTokenEstimates?.[item.alias]}
-                    onSelect={handleContextSelect}
+                    onItemClick={() =>
+                      handleContextSelect(getItemKey(item, index))
+                    }
                     onRemove={
                       sessionId ? () => handleRemove(item.id) : undefined
                     }
@@ -584,6 +350,7 @@ export function ConversationContextSection({
                     onToggleVisible={
                       sessionId ? () => handleToggleVisible(item) : undefined
                     }
+                    resultSetNames={resultSetNames}
                   />
                 ))}
                 {!isAdding ? (

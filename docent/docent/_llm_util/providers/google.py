@@ -106,7 +106,7 @@ async def get_google_chat_completion_async(
                 thinking_config=thinking_cfg,
                 max_output_tokens=max_new_tokens,
                 system_instruction=system,
-                tools=_parse_tools(tools) if tools else None,
+                tools=cast(Any, _parse_tools(tools)) if tools else None,
                 tool_config=(
                     types.ToolConfig(function_calling_config=_parse_tool_choice(tool_choice))
                     if tool_choice is not None
@@ -170,7 +170,7 @@ async def get_google_chat_completion_streaming_async(
                     thinking_config=thinking_cfg,
                     max_output_tokens=max_new_tokens,
                     system_instruction=system,
-                    tools=_parse_tools(tools) if tools else None,
+                    tools=cast(Any, _parse_tools(tools)) if tools else None,
                     tool_config=(
                         types.ToolConfig(function_calling_config=_parse_tool_choice(tool_choice))
                         if tool_choice is not None

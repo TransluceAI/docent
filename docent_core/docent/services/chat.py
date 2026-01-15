@@ -302,13 +302,11 @@ class ChatService:
 
         return None
 
-    async def add_context_item(self, sq_chat_session: SQLAChatSession, item_id: str) -> ChatSession:
+    async def add_context_item(
+        self, sq_chat_session: SQLAChatSession, lookup: AgentRunRef | TranscriptRef
+    ) -> ChatSession:
         if sq_chat_session.context_serialized is None:
             raise ValueError("Cannot add context item to a session without context")
-
-        lookup = await self.lookup_context_item(item_id)
-        if lookup is None:
-            raise ValueError(f"Item {item_id} not found")
 
         if sq_chat_session.collection_id and sq_chat_session.collection_id != lookup.collection_id:
             raise ValueError("Item collection does not match session collection")
@@ -317,10 +315,10 @@ class ChatService:
 
         if lookup.type == "agent_run":
             agent_runs = await self.mono_svc.get_agent_runs(
-                ctx=None, agent_run_ids=[item_id], apply_base_filter=False
+                ctx=None, agent_run_ids=[lookup.id], apply_base_filter=False
             )
             if not agent_runs:
-                raise ValueError(f"Agent run {item_id} not found")
+                raise ValueError(f"Agent run {lookup.id} not found")
 
             agent_run = agent_runs[0]
             _ = spec.add_agent_run_from_object(
@@ -331,7 +329,7 @@ class ChatService:
         else:
             assert isinstance(lookup, TranscriptRef)
             _ = spec.add_transcript(
-                id=item_id,
+                id=lookup.id,
                 agent_run_id=lookup.agent_run_id,
                 collection_id=lookup.collection_id,
                 is_root=True,

@@ -8,6 +8,7 @@ from docent_core.docent.workers.centroid_assignment_worker import (
     clustering_job,
 )
 from docent_core.docent.workers.chat_worker import chat_job
+from docent_core.docent.workers.llm_result_worker import llm_result_job
 from docent_core.docent.workers.refinement_worker import refinement_agent_job
 from docent_core.docent.workers.reflection_worker import reflection_job
 from docent_core.docent.workers.rubric_job_worker import rubric_job
@@ -24,6 +25,7 @@ JOB_DISPATCHER_MAP: dict[str, JobHandler] = {
     WorkerFunction.CHAT_JOB.value: chat_job,
     WorkerFunction.CLUSTERING_JOB.value: clustering_job,
     WorkerFunction.REFLECTION_JOB.value: reflection_job,
+    WorkerFunction.LLM_RESULT_JOB.value: llm_result_job,
     WorkerFunction.AGENT_RUN_INGEST_JOB.value: agent_run_ingest_job,
     WorkerFunction.TELEMETRY_INGEST_JOB.value: telemetry_ingest_job,
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: telemetry_processing_job,

@@ -9,6 +9,7 @@ from docent_core.docent.server.rest.code_samples import code_samples_router
 from docent_core.docent.server.rest.dql import dql_router
 from docent_core.docent.server.rest.label import label_router
 from docent_core.docent.server.rest.refinement import refinement_router
+from docent_core.docent.server.rest.result_set import result_set_router
 from docent_core.docent.server.rest.router import public_router, user_router
 from docent_core.docent.server.rest.rubric import rubric_router
 from docent_core.docent.server.rest.settings import settings_router
@@ -32,6 +33,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": rubric_router,
         "prefix": "/rest/rubric",
+    },
+    {
+        "router": result_set_router,
+        "prefix": "/rest/results",
     },
     {
         "router": label_router,

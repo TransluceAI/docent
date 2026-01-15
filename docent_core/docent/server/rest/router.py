@@ -30,7 +30,7 @@ from docent._log_util.logger import get_logger
 from docent.data_models.agent_run import (
     AgentRun,
     AgentRunTree,
-    FilterableField,
+    FilterableFieldWithSamples,
 )
 from docent.loaders import load_inspect
 from docent_core._server._analytics.posthog import AnalyticsClient
@@ -689,12 +689,17 @@ async def import_runs_from_file(
 
 @user_router.get("/{collection_id}/agent_run_metadata_fields")
 async def agent_run_metadata_fields(
+    include_sample_values: bool = False,
+    sample_limit: int = 10,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
-) -> dict[str, list[FilterableField]]:
-    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(
-        ctx, include_judge_result_metadata=False
+) -> dict[str, list[FilterableFieldWithSamples]]:
+    fields: list[FilterableFieldWithSamples] = await mono_svc.get_agent_run_metadata_fields(
+        ctx,
+        include_sample_values=include_sample_values,
+        sample_limit=sample_limit,
+        include_judge_result_metadata=False,
     )
     fields.append({"name": "created_at", "type": "str"})
 
@@ -706,9 +711,9 @@ async def agent_run_sortable_fields(
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
-) -> dict[str, list[FilterableField]]:
+) -> dict[str, list[FilterableFieldWithSamples]]:
     """Get sortable fields for agent runs."""
-    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(
+    fields: list[FilterableFieldWithSamples] = await mono_svc.get_agent_run_metadata_fields(
         ctx, include_judge_result_metadata=False
     )
     fields.append({"name": "created_at", "type": "str"})

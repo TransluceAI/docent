@@ -445,6 +445,21 @@ class ProviderPreferences(PublicProviderPreferences):
             ),
         ]
 
+    @cached_property
+    def default_analysis_models(self) -> list[ModelOption]:
+        return [
+            ModelOption(provider="openai", model_name="gpt-5-mini", reasoning_effort="low"),
+            ModelOption(
+                provider="google",
+                model_name="gemini-3-flash-preview",
+            ),
+            ModelOption(
+                provider="anthropic",
+                model_name="claude-sonnet-4-5",
+                reasoning_effort="medium",
+            ),
+        ]
+
 
 # Initialize the singleton preferences object
 PROVIDER_PREFERENCES = ProviderPreferences()

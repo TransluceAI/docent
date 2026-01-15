@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "docent": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["tool", "run", "--from", "docent-python", "docent-mcp"]
+    }
+  }
+}

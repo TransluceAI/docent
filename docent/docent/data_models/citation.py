@@ -67,12 +67,20 @@ class TranscriptBlockContentItem(ResolvedCitationItem):
     content_idx: int | None = None
 
 
+class AnalysisResultItem(ResolvedCitationItem):
+    item_type: Literal["analysis_result"] = "analysis_result"
+    result_set_id: str
+    result_id: str
+    collection_id: str
+
+
 ResolvedCitationItemUnion = Annotated[
     Union[
         AgentRunMetadataItem,
         TranscriptMetadataItem,
         TranscriptBlockMetadataItem,
         TranscriptBlockContentItem,
+        AnalysisResultItem,
     ],
     Discriminator("item_type"),
 ]

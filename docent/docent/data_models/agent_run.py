@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 from uuid import uuid4
 
 from pydantic import (
@@ -17,6 +17,7 @@ from docent._log_util import get_logger
 from docent.data_models.citation import (
     AgentRunMetadataItem,
     Comment,
+    TranscriptBlockContentItem,
     TranscriptBlockMetadataItem,
     TranscriptMetadataItem,
 )
@@ -363,8 +364,7 @@ class AgentRunView:
                     self._block_metadata_comment_index.setdefault(
                         (citation_item.transcript_id, citation_item.block_idx), []
                     ).append(comment)
-                else:
-                    # Must be TranscriptBlockContentItem
+                elif isinstance(citation_item, TranscriptBlockContentItem):
                     self._block_content_comment_index.setdefault(
                         (citation_item.transcript_id, citation_item.block_idx), []
                     ).append(comment)
@@ -603,3 +603,13 @@ FilterableFieldType = Literal["str", "bool", "int", "float"]
 class FilterableField(TypedDict):
     name: str
     type: FilterableFieldType
+
+
+class FieldValueSample(TypedDict):
+    value: str
+    count: int
+
+
+class FilterableFieldWithSamples(FilterableField):
+    sample_values: NotRequired[list[FieldValueSample]]
+    total_unique_values: NotRequired[int]

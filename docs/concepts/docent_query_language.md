@@ -12,6 +12,7 @@ Queries can only run over a single collection by design (if you need multi-colle
 | `transcripts` | Individual transcripts tied to an agent run; stores serialized messages and per-transcript metadata. |
 | `transcript_groups` | Hierarchical groupings of transcripts for runs. |
 | `judge_results` | Scored rubric outputs keyed by agent run and rubric version. |
+| `results` | Individual LLM analysis results from result sets. |
 
 ### `agent_runs`
 
@@ -62,6 +63,22 @@ Queries can only run over a single collection by design (if you need multi-colle
 | `output` | JSON representation of rubric outputs. |
 | `result_metadata` | Optional JSON metadata attached to the result. |
 | `result_type` | Enum describing the rubric output type. |
+
+### `results`
+
+| Column | Description |
+| --- | --- |
+| `id` | Result identifier (UUID). |
+| `result_set_id` | Parent result set identifier; joins back to `result_sets.id`. |
+| `llm_context_spec` | JSON specification describing the LLM context used. |
+| `prompt_segments` | The user prompt sent to the LLM. |
+| `user_metadata` | Optional JSON metadata supplied by the user. |
+| `output` | JSON output from the LLM (for string schemas: `{"output": str, "citations": [...]}`). |
+| `error_json` | JSON error details if the LLM call failed. |
+| `input_tokens` | Number of input tokens consumed. |
+| `output_tokens` | Number of output tokens generated. |
+| `model` | Model identifier used for the request. |
+| `created_at` | Timestamp when the result was created. |
 
 ### JSON Metadata Paths
 

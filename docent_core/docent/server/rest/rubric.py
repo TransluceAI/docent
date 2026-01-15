@@ -226,9 +226,9 @@ async def get_judge_result_filter_fields(
     Returns metadata fields, tag, agent_run_id, and rubric output fields
     scoped to the specified rubric and optional version.
     """
-    from docent.data_models.agent_run import FilterableField
+    from docent.data_models.agent_run import FilterableFieldWithSamples
 
-    fields: list[FilterableField] = await mono_svc.get_agent_run_metadata_fields(
+    fields: list[FilterableFieldWithSamples] = await mono_svc.get_agent_run_metadata_fields(
         ctx,
         rubric_id=rubric_id,
         rubric_version=version,

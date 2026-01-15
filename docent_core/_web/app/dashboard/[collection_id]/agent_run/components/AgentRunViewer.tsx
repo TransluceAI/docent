@@ -82,6 +82,11 @@ interface AgentRunViewerProps {
   allConversationCitations?: CitationTarget[];
   headerLeftActions?: React.ReactNode;
   headerRightActions?: React.ReactNode;
+  hideTopRow?: boolean;
+  onRequestOpenRunMetadata?: (args: {
+    citedKey?: string;
+    textRange?: CitationTargetTextRange;
+  }) => void;
 }
 
 // Controlled metadata intent (run/transcript/message) for opening dialogs
@@ -265,6 +270,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       allConversationCitations,
       headerLeftActions,
       headerRightActions,
+      hideTopRow = false,
+      onRequestOpenRunMetadata,
     },
     ref
   ) => {
@@ -827,6 +834,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         switch (item.item_type) {
           case 'agent_run_metadata':
             // Run-level metadata
+            if (onRequestOpenRunMetadata) {
+              onRequestOpenRunMetadata({
+                citedKey: item.metadata_key,
+                textRange,
+              });
+              setActiveCommentTab('list');
+              return;
+            }
             setMetadataIntent({
               type: 'run',
               citedKey: item.metadata_key,
@@ -1064,7 +1079,11 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
             if (citation.target.item.item_type === 'agent_run_metadata') {
               return true;
             }
-            // There are only four item_types, safe to assume that these three have a transcript_id
+            // Exclude analysis_result citations (they don't have transcript_id)
+            if (citation.target.item.item_type === 'analysis_result') {
+              return false;
+            }
+            // The remaining types (transcript_metadata, block_metadata, block_content) have transcript_id
             return checkInTranscript(citation.target.item.transcript_id);
           });
         }
@@ -1231,55 +1250,57 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         {agentRun && (
           <>
             <div className="flex flex-col gap-1 agent-run-viewer">
-              <div className="flex items-center justify-between space-x-1">
-                <div className="flex items-center space-x-1">
-                  {headerLeftActions}
-                  <span className="font-semibold text-sm shrink-0">
-                    Agent Run
-                  </span>
-                  <UuidPill uuid={agentRun?.id} />
-                  {agentRun && (
-                    <MetadataPopover.Root
-                      open={metadataIntent?.type === 'run'}
-                      onOpenChange={(open) => {
-                        setMetadataIntent(open ? { type: 'run' } : null);
-                      }}
-                    >
-                      <MetadataPopover.DefaultTrigger />
-                      <MetadataPopover.Content title="Agent Run Metadata">
-                        <MetadataPopover.Body metadata={agentRun.metadata}>
-                          {(md) => (
-                            <MetadataBlock
-                              metadata={md}
-                              showSearchControls={true}
-                              citedKey={
-                                metadataIntent?.type === 'run'
-                                  ? metadataIntent.citedKey
-                                  : undefined
-                              }
-                              textRange={
-                                metadataIntent?.type === 'run'
-                                  ? metadataIntent.textRange
-                                  : undefined
-                              }
-                              onAddComment={
-                                hasWritePermission
-                                  ? (key) =>
-                                      handleAddComment({
-                                        type: 'agent_run',
-                                        metadataKey: key,
-                                      })
-                                  : undefined
-                              }
-                            />
-                          )}
-                        </MetadataPopover.Body>
-                      </MetadataPopover.Content>
-                    </MetadataPopover.Root>
-                  )}
+              {!hideTopRow && (
+                <div className="flex items-center justify-between space-x-1">
+                  <div className="flex items-center space-x-1">
+                    {headerLeftActions}
+                    <span className="font-semibold text-sm shrink-0">
+                      Agent Run
+                    </span>
+                    <UuidPill uuid={agentRun?.id} />
+                    {agentRun && (
+                      <MetadataPopover.Root
+                        open={metadataIntent?.type === 'run'}
+                        onOpenChange={(open) => {
+                          setMetadataIntent(open ? { type: 'run' } : null);
+                        }}
+                      >
+                        <MetadataPopover.DefaultTrigger />
+                        <MetadataPopover.Content title="Agent Run Metadata">
+                          <MetadataPopover.Body metadata={agentRun.metadata}>
+                            {(md) => (
+                              <MetadataBlock
+                                metadata={md}
+                                showSearchControls={true}
+                                citedKey={
+                                  metadataIntent?.type === 'run'
+                                    ? metadataIntent.citedKey
+                                    : undefined
+                                }
+                                textRange={
+                                  metadataIntent?.type === 'run'
+                                    ? metadataIntent.textRange
+                                    : undefined
+                                }
+                                onAddComment={
+                                  hasWritePermission
+                                    ? (key) =>
+                                        handleAddComment({
+                                          type: 'agent_run',
+                                          metadataKey: key,
+                                        })
+                                    : undefined
+                                }
+                              />
+                            )}
+                          </MetadataPopover.Body>
+                        </MetadataPopover.Content>
+                      </MetadataPopover.Root>
+                    )}
+                  </div>
+                  {headerRightActions}
                 </div>
-                {headerRightActions}
-              </div>
+              )}
               <div className="text-xs text-muted-foreground flex items-center overflow-hidden truncate">
                 {Object.keys(agentRun.metadata).length > 0 ? (
                   <>

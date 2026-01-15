@@ -16,6 +16,7 @@ dependencies = [
     "inspect-ai>=0.3.132",
     "orjson>=3.11.3",
     "jsonschema>=4.24.0",
+    "python-dotenv>=1.0.0",
     # LLM
     "tiktoken>=0.7.0",
     "openai>=1.68.0",
@@ -36,7 +37,13 @@ dependencies = [
     "opentelemetry-instrumentation-google-generativeai>=0.40.14",
     # Client data science
     "pandas>=2.3.3",
+    # MCP server
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
 ]
+
+[project.scripts]
+docent-mcp = "docent.mcp:main_sync"
 
 [build-system]
 requires = ["hatchling"]

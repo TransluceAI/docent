@@ -48,9 +48,15 @@ from sqlalchemy.sql import FromClause, lateral, text
 from sqlalchemy.types import Numeric
 
 from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun, FilterableField, FilterableFieldType
+from docent.data_models.agent_run import (
+    AgentRun,
+    FieldValueSample,
+    FilterableFieldType,
+    FilterableFieldWithSamples,
+)
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent.judges import ResultType
+from docent.sdk.llm_context import LLMContextSpec
 from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job, get_redis_client
 from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
@@ -1786,6 +1792,104 @@ class MonoService:
             else:
                 return []
 
+    async def get_field_value_samples(
+        self,
+        ctx: ViewContext,
+        field_name: str,
+        *,
+        sample_limit: int = 10,
+    ) -> tuple[list[FieldValueSample], int]:
+        async with self.db.session() as session:
+            field_parts = field_name.split(".")
+
+            if field_parts[0] == "metadata" and len(field_parts) > 1:
+                json_path_parts = field_parts[1:]
+                for part in json_path_parts:
+                    if not part.replace("_", "").replace("-", "").isalnum():
+                        return ([], 0)
+
+                field_expr = SQLAAgentRun.metadata_json
+                for part in json_path_parts[:-1]:
+                    field_expr = field_expr.op("->")(part)
+                value_expr = field_expr.op("->>")(json_path_parts[-1])
+
+                total_stmt = select(func.count(distinct(value_expr))).where(value_expr.isnot(None))
+                total_stmt = ctx.apply_base_filter(total_stmt)
+
+                samples_stmt = (
+                    select(
+                        value_expr.label("value"),
+                        func.count(distinct(SQLAAgentRun.id)).label("count"),
+                    )
+                    .where(value_expr.isnot(None))
+                    .group_by(value_expr)
+                    .order_by(
+                        func.count(distinct(SQLAAgentRun.id)).desc(),
+                        value_expr.asc(),
+                    )
+                    .limit(sample_limit)
+                )
+                samples_stmt = ctx.apply_base_filter(samples_stmt)
+
+                total_result = await session.execute(total_stmt)
+                total_unique_values = int(total_result.scalar_one() or 0)
+
+                sample_result = await session.execute(samples_stmt)
+                sample_rows = sample_result.mappings().all()
+                samples: list[FieldValueSample] = [
+                    {"value": str(row["value"]), "count": int(row["count"])}
+                    for row in sample_rows
+                    if row["value"] is not None
+                ]
+                return (samples, total_unique_values)
+
+            if field_parts[0] == "tag" and len(field_parts) == 1:
+                value_expr = SQLATag.value
+                total_stmt = (
+                    select(func.count(distinct(value_expr)))
+                    .select_from(SQLATag)
+                    .join(SQLAAgentRun, SQLAAgentRun.id == SQLATag.agent_run_id)
+                )
+                total_stmt = total_stmt.where(
+                    SQLATag.collection_id == ctx.collection_id,
+                    value_expr.isnot(None),
+                )
+                total_stmt = ctx.apply_base_filter(total_stmt)
+
+                samples_stmt = (
+                    select(
+                        value_expr.label("value"),
+                        func.count(distinct(SQLATag.agent_run_id)).label("count"),
+                    )
+                    .select_from(SQLATag)
+                    .join(SQLAAgentRun, SQLAAgentRun.id == SQLATag.agent_run_id)
+                    .where(
+                        SQLATag.collection_id == ctx.collection_id,
+                        value_expr.isnot(None),
+                    )
+                    .group_by(value_expr)
+                    .order_by(
+                        func.count(distinct(SQLATag.agent_run_id)).desc(),
+                        value_expr.asc(),
+                    )
+                    .limit(sample_limit)
+                )
+                samples_stmt = ctx.apply_base_filter(samples_stmt)
+
+                total_result = await session.execute(total_stmt)
+                total_unique_values = int(total_result.scalar_one() or 0)
+
+                sample_result = await session.execute(samples_stmt)
+                sample_rows = sample_result.mappings().all()
+                samples = [
+                    {"value": str(row["value"]), "count": int(row["count"])}
+                    for row in sample_rows
+                    if row["value"] is not None
+                ]
+                return (samples, total_unique_values)
+
+            return ([], 0)
+
     async def count_base_agent_runs(self, ctx: ViewContext) -> int:
         async with self.db.session() as session:
             query = select(func.count()).select_from(SQLAAgentRun)
@@ -2887,6 +2991,126 @@ class MonoService:
             return None
         return Permission(max(all_perm_strs, key=lambda p: PERMISSION_LEVELS[p]))
 
+    async def get_readable_collection_ids(
+        self,
+        user: User,
+        collection_ids: set[str],
+    ) -> set[str]:
+        """Return the subset of collection_ids the user can READ.
+
+        Uses a single query to check permissions on multiple collections at once.
+        """
+        if not collection_ids:
+            return set()
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLAAccessControlEntry.collection_id)
+                .where(SQLAAccessControlEntry.collection_id.in_(collection_ids))
+                .where(
+                    or_(
+                        SQLAAccessControlEntry.is_public,
+                        SQLAAccessControlEntry.user_id == user.id,
+                        SQLAAccessControlEntry.organization_id.in_(user.organization_ids or []),
+                    )
+                )
+                .where(
+                    SQLAAccessControlEntry.permission.in_(
+                        [Permission.READ.value, Permission.WRITE.value, Permission.ADMIN.value]
+                    )
+                )
+                .distinct()
+            )
+            return set(result.scalars().all())
+
+    async def verify_context_access(
+        self,
+        user: User,
+        spec: LLMContextSpec,
+    ) -> None:
+        """Verify user can access all items in a context spec.
+
+        1. Batch query actual collection_ids for all referenced items
+        2. Verify claimed collection_ids match actual
+        3. Check user has READ permission on all collections
+
+        Raises PermissionError if any check fails.
+        """
+        from docent.sdk.llm_context import AgentRunRef, ResultRef, TranscriptRef
+
+        agent_run_refs: list[AgentRunRef] = []
+        transcript_refs: list[TranscriptRef] = []
+        result_refs: list[ResultRef] = []
+
+        for ref in spec.items.values():
+            if isinstance(ref, AgentRunRef):
+                agent_run_refs.append(ref)
+            elif isinstance(ref, TranscriptRef):
+                transcript_refs.append(ref)
+            else:
+                result_refs.append(ref)
+
+        actual_collections: dict[str, str] = {}
+
+        async with self.db.session() as session:
+            if agent_run_refs:
+                agent_run_ids = [ref.id for ref in agent_run_refs]
+                result = await session.execute(
+                    select(SQLAAgentRun.id, SQLAAgentRun.collection_id).where(
+                        SQLAAgentRun.id.in_(agent_run_ids)
+                    )
+                )
+                for row in result.all():
+                    actual_collections[row[0]] = row[1]
+
+            if transcript_refs:
+                transcript_ids = [ref.id for ref in transcript_refs]
+                result = await session.execute(
+                    select(SQLATranscript.id, SQLATranscript.collection_id).where(
+                        SQLATranscript.id.in_(transcript_ids)
+                    )
+                )
+                for row in result.all():
+                    actual_collections[row[0]] = row[1]
+
+            if result_refs:
+                from docent_core.docent.db.schemas.result_tables import (
+                    SQLAResult,
+                    SQLAResultSet,
+                )
+
+                result_ids = [ref.id for ref in result_refs]
+                result = await session.execute(
+                    select(SQLAResult.id, SQLAResultSet.collection_id)
+                    .join(SQLAResultSet, SQLAResult.result_set_id == SQLAResultSet.id)
+                    .where(SQLAResult.id.in_(result_ids))
+                )
+                for row in result.all():
+                    actual_collections[row[0]] = row[1]
+
+        all_refs = [*agent_run_refs, *transcript_refs, *result_refs]
+        claimed_collections: set[str] = set()
+
+        for ref in all_refs:
+            actual = actual_collections.get(ref.id)
+            if actual is None:
+                raise PermissionError(f"Item {ref.id} not found")
+            if actual != ref.collection_id:
+                raise PermissionError(
+                    f"Item {ref.id} does not belong to claimed collection {ref.collection_id}"
+                )
+            claimed_collections.add(ref.collection_id)
+
+        if not claimed_collections:
+            return
+
+        readable = await self.get_readable_collection_ids(user, claimed_collections)
+        unauthorized = claimed_collections - readable
+        if unauthorized:
+            raise PermissionError(
+                f"User lacks READ permission on collections: {', '.join(sorted(unauthorized))}"
+            )
+
     async def set_acl_permission(
         self,
         subject_type: SubjectType,
@@ -3298,7 +3522,9 @@ class MonoService:
         rubric_id: str | None = None,
         rubric_version: int | None = None,
         include_judge_result_metadata: bool = True,
-    ) -> list[FilterableField]:
+        include_sample_values: bool = False,
+        sample_limit: int = 10,
+    ) -> list[FilterableFieldWithSamples]:
         """Expose agent run filter fields derived from JSON metadata and related tables.
 
         Args:
@@ -3308,7 +3534,7 @@ class MonoService:
             include_judge_result_metadata: If False, skip discovering result_metadata fields
         """
 
-        all_fields: dict[str, FilterableField] = {}
+        all_fields: dict[str, FilterableFieldWithSamples] = {}
 
         agent_run_infos = await self.get_json_metadata_fields_for_column(
             ctx.collection_id,
@@ -3320,7 +3546,9 @@ class MonoService:
             if info.value_type is None or not info.path:
                 continue
             field_name = "metadata." + ".".join(info.path)
-            all_fields[field_name] = FilterableField(name=field_name, type=info.value_type)
+            all_fields[field_name] = FilterableFieldWithSamples(
+                name=field_name, type=info.value_type
+            )
 
         async with self.db.session() as session:
             if rubric_id is not None:
@@ -3357,7 +3585,9 @@ class MonoService:
         for rubric in rubrics:
             for path, field_type in _extract_schema_fields(rubric.output_schema):
                 field_name = f"rubric.{rubric.id}.{path}"
-                all_fields[field_name] = FilterableField(name=field_name, type=field_type)
+                all_fields[field_name] = FilterableFieldWithSamples(
+                    name=field_name, type=field_type
+                )
 
         # Query label sets for the collection and extract fields from their schemas
         async with self.db.session() as session:
@@ -3369,7 +3599,9 @@ class MonoService:
         for label_set in label_sets:
             for path, field_type in _extract_schema_fields(label_set.label_schema):
                 field_name = f"label.{label_set.id}.{path}"
-                all_fields[field_name] = {"name": field_name, "type": field_type}
+                all_fields[field_name] = FilterableFieldWithSamples(
+                    name=field_name, type=field_type
+                )
 
         judge_where: ColumnElement[bool] | None = None
         if rubric_id is not None:
@@ -3392,12 +3624,30 @@ class MonoService:
                 if not info_rubric_id or info.value_type is None or not info.path:
                     continue
                 field_name = f"rubric.{info_rubric_id}." + ".".join(info.path)
-                all_fields[field_name] = FilterableField(name=field_name, type=info.value_type)
+                all_fields[field_name] = FilterableFieldWithSamples(
+                    name=field_name, type=info.value_type
+                )
 
-        all_fields["agent_run_id"] = FilterableField(name="agent_run_id", type="str")
-        all_fields["tag"] = FilterableField(name="tag", type="str")
+        all_fields["agent_run_id"] = FilterableFieldWithSamples(name="agent_run_id", type="str")
+        all_fields["tag"] = FilterableFieldWithSamples(name="tag", type="str")
 
-        return sorted(all_fields.values(), key=lambda f: f["name"])
+        fields = sorted(all_fields.values(), key=lambda f: f["name"])
+        if include_sample_values:
+            for field in fields:
+                if field["type"] != "str":
+                    continue
+                name = field["name"]
+                if not (name.startswith("metadata.") or name == "tag"):
+                    continue
+                samples, total_unique_values = await self.get_field_value_samples(
+                    ctx, name, sample_limit=sample_limit
+                )
+                if total_unique_values <= 0:
+                    continue
+                field["sample_values"] = samples
+                field["total_unique_values"] = total_unique_values
+
+        return fields
 
 
 def sort_transcript_groups_by_parent_order(

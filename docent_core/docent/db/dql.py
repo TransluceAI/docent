@@ -33,6 +33,7 @@ from docent._log_util import get_logger
 from docent.data_models.agent_run import FilterableFieldType
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
 from docent_core.docent.db.schemas.label import SQLALabel, SQLATag
+from docent_core.docent.db.schemas.result_tables import SQLAResult, SQLAResultSet
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLAJudgeResultCentroid,
@@ -481,6 +482,28 @@ def _judge_result_centroid_collection_predicate(
     return exp.Exists(this=subquery)
 
 
+def _result_collection_predicate(table_alias: str, collection_id: str) -> SqlGlotExpression:
+    """Filter results by ensuring their linked result_set belongs to the collection."""
+
+    subquery = (
+        exp.select(exp.Literal.string("1"))  # type: ignore[reportUnknownMemberType]
+        .from_(SQLAResultSet.__tablename__)  # type: ignore[reportUnknownMemberType]
+        .where(  # type: ignore[reportUnknownMemberType]
+            exp.and_(  # type: ignore[reportUnknownMemberType]
+                exp.EQ(
+                    this=exp.column("collection_id", table=SQLAResultSet.__tablename__),
+                    expression=exp.Literal.string(collection_id),  # type: ignore[reportUnknownMemberType]
+                ),
+                exp.EQ(
+                    this=exp.column("id", table=SQLAResultSet.__tablename__),
+                    expression=exp.column("result_set_id", table=table_alias),
+                ),
+            )
+        )
+    )
+    return exp.Exists(this=subquery)
+
+
 class DQLRegistry:
     """Keeps track of which database tables and columns DQL callers may access."""
 
@@ -667,6 +690,12 @@ def build_default_registry(
         table=SQLAJudgeResultCentroid.__table__,
         allowed_columns=_columns_for(SQLAJudgeResultCentroid.__table__),
         collection_predicate_factory=_judge_result_centroid_collection_predicate,
+    )
+    registry.register_table(
+        name=SQLAResult.__tablename__,
+        table=SQLAResult.__table__,
+        allowed_columns=_columns_for(SQLAResult.__table__),
+        collection_predicate_factory=_result_collection_predicate,
     )
 
     if json_fields:

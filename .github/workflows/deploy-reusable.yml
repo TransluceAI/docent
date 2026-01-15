@@ -16,11 +16,6 @@ on:
         required: false
         type: boolean
         default: false
-      deploy_frontend_apprunner:
-        description: "Deploy frontend to App Runner"
-        required: false
-        type: boolean
-        default: false
       vercel_environment:
         description: "Vercel environment (production or preview)"
         required: false
@@ -236,53 +231,3 @@ jobs:
       - name: Deploy Project Artifacts to Vercel
         run: |
           vercel deploy --prebuilt --target=${{ inputs.vercel_environment }} --token=${{ secrets.VERCEL_TOKEN }}
-
-  frontend-apprunner-deploy:
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.github_environment }}
-    needs: [changes, backend-deploy]
-    # Run if frontend deploy enabled AND (frontend changed OR force_full_deploy) AND backend didn't fail
-    if: ${{ always() && inputs.deploy_frontend_apprunner && (needs.changes.outputs.frontend == 'true' || inputs.force_full_deploy) && needs.backend-deploy.result != 'failure' }}
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push frontend to ECR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.frontend
-          platforms: linux/amd64
-          push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}/${{ inputs.deployment_id }}/frontend:latest
-          build-args: |
-            NEXT_PUBLIC_API_HOST=${{ vars.NEXT_PUBLIC_API_HOST }}
-          cache-from: type=gha,scope=frontend-${{ inputs.deployment_id }}
-          cache-to: type=gha,mode=max,scope=frontend-${{ inputs.deployment_id }}
-
-      - name: Deploy App Runner Frontend
-        env:
-          AWS_PAGER: ""
-        run: |
-          set -euo pipefail
-          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='${{ env.PROJECT_NAME }}-${{ inputs.deployment_id }}-frontend'].ServiceArn | [0]" --output text)
-          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "None" ]; then
-            echo "Frontend App Runner service not found" >&2
-            exit 1
-          fi
-          echo "Triggering manual App Runner frontend deployment for $SERVICE_ARN"
-          aws apprunner start-deployment --service-arn "$SERVICE_ARN"

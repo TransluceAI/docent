@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, Request
 
 from docent_core.docent.db.schemas.auth_models import User
-from docent_core.docent.server.dependencies.database import get_mono_svc
+from docent_core.docent.server.dependencies.database import get_mono_svc, require_collection_exists
 from docent_core.docent.services.monoservice import MonoService
 
 
@@ -47,7 +47,7 @@ async def get_user_anonymous_ok(
 
 
 async def get_default_view_ctx(
-    collection_id: str,
+    collection_id: str = Depends(require_collection_exists),
     mono_svc: MonoService = Depends(get_mono_svc),
     user: User = Depends(get_user_anonymous_ok),
 ):

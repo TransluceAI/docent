@@ -22,6 +22,18 @@ export type LLMContextSpec = {
         agent_run_id: string;
         collection_id: string;
       }
+    | {
+        type: 'result_set';
+        id: string;
+        collection_id: string;
+        cutoff_datetime?: string;
+      }
+    | {
+        type: 'result';
+        id: string;
+        result_set_id: string;
+        collection_id: string;
+      }
   >;
   inline_data: Record<string, any>;
   visibility?: Record<string, boolean>;
@@ -401,6 +413,19 @@ export const chatApi = createApi({
       ],
     }),
 
+    createFollowupFromResult: build.mutation<
+      { session_id: string },
+      { collectionId: string; resultId: string }
+    >({
+      query: ({ collectionId, resultId }) => ({
+        url: `/${collectionId}/followup-from-result/${resultId}`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'ChatSession' as const, id: `collection-${arg.collectionId}` },
+      ],
+    }),
+
     deleteConversation: build.mutation<
       { status: string },
       { sessionId: string; collectionId?: string }
@@ -448,5 +473,6 @@ export const {
   useUpdateConversationContextSelectionMutation,
   useGetCollectionChatsQuery,
   useCreateCollectionConversationMutation,
+  useCreateFollowupFromResultMutation,
   useDeleteConversationMutation,
 } = chatApi;

@@ -13,6 +13,8 @@ class WorkerFunction(str, Enum):
     CENTROID_ASSIGNMENT_JOB = "centroid_assignment_job"  # Deprecated
     CLUSTERING_JOB = "clustering_job"
     REFLECTION_JOB = "reflection_job"
+    # LLM Results
+    LLM_RESULT_JOB = "llm_result_job"
     # Agent and chat
     REFINEMENT_AGENT_JOB = "refinement_agent_job"
     CHAT_JOB = "chat_job"

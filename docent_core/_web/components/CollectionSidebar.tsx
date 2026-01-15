@@ -9,11 +9,13 @@ import {
   Scale,
   ListChecks,
   MessagesSquare,
+  FlaskConical,
   ChartColumn,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useGetCollectionNameQuery } from '@/app/api/collectionApi';
+import { useGetResultSetsQuery } from '@/app/api/resultSetApi';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -46,8 +48,13 @@ export function CollectionSidebar() {
   const { data: collectionNameResp } = useGetCollectionNameQuery(collectionId, {
     skip: !collectionId,
   });
+  const { data: resultSets } = useGetResultSetsQuery(
+    { collectionId },
+    { skip: !collectionId }
+  );
   const collectionName = collectionNameResp?.name ?? 'Collection';
   const isCollapsed = state === 'collapsed';
+  const hasResults = resultSets && resultSets.length > 0;
 
   // Menu items.
   const items = [
@@ -76,6 +83,15 @@ export function CollectionSidebar() {
       url: `/dashboard/${collectionId}/chat`,
       icon: MessagesSquare,
     },
+    ...(hasResults
+      ? [
+          {
+            title: 'Results',
+            url: `/dashboard/${collectionId}/results`,
+            icon: FlaskConical,
+          },
+        ]
+      : []),
     {
       title: 'Ingestion Jobs',
       url: `/dashboard/${collectionId}/jobs`,

@@ -5,19 +5,22 @@ import time
 import webbrowser
 from itertools import islice
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Literal, TypeVar, cast
+from typing import IO, Any, Iterable, Iterator, Literal, TypeVar, cast
 
 import pandas as pd
 import requests
+from dotenv import dotenv_values
 from pydantic_core import to_jsonable_python
 from tqdm import tqdm
 
-from docent._log_util.logger import get_logger
+from docent._llm_util.providers.preference_types import ModelOption
+from docent._log_util.logger import LoggerAdapter, get_logger
 from docent.data_models.agent_run import AgentRun
 from docent.data_models.judge import Label
 from docent.judges.util.meta_schema import validate_judge_result_schema
 from docent.loaders import load_inspect
 from docent.sdk.llm_context import LLMContext, LLMContextItem
+from docent.sdk.llm_request import ExternalAnalysisResult, LLMRequest
 
 MAX_AGENT_RUN_PAYLOAD_BYTES = 100 * 1024 * 1024  # 100MB backend limit
 _AGENT_RUNS_PAYLOAD_PREFIX = b'{"agent_runs":['
@@ -86,7 +89,45 @@ def _yield_agent_run_batches_by_size(
         yield len(current_serialized), _build_agent_runs_payload(current_serialized)
 
 
-logger = get_logger(__name__)
+def load_config_file(
+    config_file: str | Path | None = None,
+    logger: LoggerAdapter | None = None,
+) -> dict[str, str]:
+    """Load configuration from a dotenv file.
+
+    Args:
+        config_file: Optional explicit path to a config file. If not provided,
+            searches for 'docent.env' starting from the current working directory
+            and traversing up the directory tree.
+        logger: Optional logger for status messages.
+
+    Returns:
+        Dictionary of configuration values loaded from the file. Returns an empty
+        dict if no file is found.
+    """
+    if config_file is not None:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_file}")
+        if logger:
+            logger.info(f"Loading config from {config_path}")
+        values = dotenv_values(config_path)
+        return {k: v for k, v in values.items() if v is not None}
+
+    current_dir = Path.cwd()
+    while True:
+        candidate = current_dir / "docent.env"
+        if candidate.exists():
+            if logger:
+                logger.info(f"Found config file at {candidate}")
+            values = dotenv_values(candidate)
+            return {k: v for k, v in values.items() if v is not None}
+
+        if current_dir == current_dir.parent:
+            break
+        current_dir = current_dir.parent
+
+    return {}
 
 
 class Docent:
@@ -106,9 +147,12 @@ class Docent:
     def __init__(
         self,
         *,
-        domain: str = "docent.transluce.org",
+        domain: str | None = None,
         use_https: bool = True,
         api_key: str | None = None,
+        collection_id: str | None = None,
+        config_file: str | Path | None = None,
+        log_stream: IO[str] | None = None,
         # Deprecated
         server_url: str | None = None,  # Use domain instead
         web_url: str | None = None,  # Use domain instead
@@ -117,9 +161,17 @@ class Docent:
 
         Args:
             domain: The domain of the Docent instance. Defaults to "docent.transluce.org".
-                The API and web URLs will be constructed from this domain automatically.
+                The API and web URLs will be constructed from this domain automatically (unless overridden).
             api_key: API key for authentication. If not provided, will attempt to read
-                from the DOCENT_API_KEY environment variable.
+                from the DOCENT_API_KEY environment variable or from a config file.
+            collection_id: Default collection ID to use for API calls. If not provided,
+                will attempt to read from DOCENT_COLLECTION_ID in the config file or environment.
+                Methods that require a collection_id will use this default if not explicitly passed.
+            config_file: Optional path to a dotenv config file. If not provided, will search
+                for 'docent.env' in the current directory and parent directories.
+                Supports DOCENT_API_KEY, DOCENT_API_URL, DOCENT_FRONTEND_URL, DOCENT_DOMAIN,
+                and DOCENT_COLLECTION_ID.
+            log_stream: Output stream for log messages. Defaults to sys.stdout.
             server_url: (Deprecated) Direct URL of the Docent API server. Use `domain` instead.
             web_url: (Deprecated) Direct URL of the Docent web UI. Use `domain` instead.
 
@@ -128,40 +180,59 @@ class Docent:
 
         Example:
             >>> client = Docent(domain="my-instance.docent.com", api_key="sk-...")
+            >>> # Or use a config file with default collection
+            >>> client = Docent(config_file="/path/to/config.env")
+            >>> # Or let it auto-discover docent.env
+            >>> client = Docent()
         """
+        self._logger = get_logger(__name__, stream=log_stream)
+
         # Warn about deprecated parameters
         if server_url is not None:
-            logger.warning(
+            self._logger.warning(
                 "The 'server_url' parameter is deprecated and will be removed in a future version. "
                 "Please use 'domain' instead."
             )
         if web_url is not None:
-            logger.warning(
+            self._logger.warning(
                 "The 'web_url' parameter is deprecated and will be removed in a future version. "
                 "Please use 'domain' instead."
             )
 
+        # Load config file
+        config = load_config_file(config_file, logger=self._logger)
+
+        # Set domain; precedence: param > config file > default
+        domain = domain or config.get("DOCENT_DOMAIN") or "docent.transluce.org"
         self._domain = domain
 
-        # Set server URL; server_url takes precedence over domain
+        # Set server URL; precedence: server_url param > config file > domain
         prefix = "https://" if use_https else "http://"
-        server_url = (server_url or f"{prefix}api.{domain}").rstrip("/")
+        server_url = (server_url or config.get("DOCENT_API_URL") or f"{prefix}api.{domain}").rstrip(
+            "/"
+        )
         if not server_url.endswith("/rest"):
             server_url = f"{server_url}/rest"
         self._server_url = server_url
 
-        # Set web URL; web_url takes precedence over domain
-        self._web_url = (web_url or f"{prefix}{domain}").rstrip("/")
+        # Set web URL; precedence: web_url param > config file > domain
+        self._web_url = (
+            web_url or config.get("DOCENT_FRONTEND_URL") or f"{prefix}{domain}"
+        ).rstrip("/")
+
+        # Set default collection ID; precedence: param > config file > None
+        self.default_collection_id: str | None = collection_id or config.get("DOCENT_COLLECTION_ID")
 
         # Use requests.Session for connection pooling and persistent headers
         self._session = requests.Session()
 
-        api_key = api_key or os.getenv("DOCENT_API_KEY")
+        # Set API key; precedence: param > config file > env
+        api_key = api_key or config.get("DOCENT_API_KEY") or os.getenv("DOCENT_API_KEY")
 
         if api_key is None:
             raise ValueError(
-                "api_key is required. Please provide an "
-                "api_key or set the DOCENT_API_KEY environment variable."
+                "api_key is required. Please provide an api_key, set the DOCENT_API_KEY "
+                "environment variable, or include DOCENT_API_KEY in a docent.env file."
             )
 
         self._login(api_key)
@@ -186,7 +257,7 @@ class Docent:
         response = self._session.get(url)
         self._handle_response_errors(response)
 
-        logger.info("Logged in with API key")
+        self._logger.info("Logged in with API key")
         return
 
     def create_collection(
@@ -227,9 +298,9 @@ class Docent:
         if collection_id is None:
             raise ValueError("Failed to create collection: 'collection_id' missing in response.")
 
-        logger.info(f"Successfully created Collection with id='{collection_id}'")
+        self._logger.info(f"Successfully created Collection with id='{collection_id}'")
 
-        logger.info(
+        self._logger.info(
             f"Collection creation complete. Frontend available at: {self._web_url}/dashboard/{collection_id}"
         )
         return collection_id
@@ -262,7 +333,7 @@ class Docent:
         response = self._session.put(url, json=payload)
         self._handle_response_errors(response)
 
-        logger.info(f"Successfully updated Collection '{collection_id}'")
+        self._logger.info(f"Successfully updated Collection '{collection_id}'")
 
     def add_agent_runs(
         self,
@@ -302,7 +373,7 @@ class Docent:
         """
 
         if batch_size is not None:
-            logger.warning(
+            self._logger.warning(
                 "The 'batch_size' parameter is deprecated and will be removed in a future version. "
                 "We have transitioned to a new batching strategy based on the size of the payload."
             )
@@ -342,7 +413,7 @@ class Docent:
                 pbar.update(batch_size)
 
         if not wait:
-            logger.info(
+            self._logger.info(
                 f"Enqueued {total_runs} agent runs to Collection '{collection_id}' "
                 f"({len(job_ids)} job(s)). Use get_agent_run_job_status() to check progress."
             )
@@ -354,14 +425,14 @@ class Docent:
 
         # Wait for all jobs to complete
         if job_ids:
-            logger.info(
+            self._logger.info(
                 f"Uploaded {total_runs} agent runs in {len(job_ids)} batch(es). "
                 f"Waiting for server-side processing to complete... "
                 f"(set wait=False to skip waiting)"
             )
             self._wait_for_jobs(collection_id, job_ids, poll_interval)
 
-        logger.info(
+        self._logger.info(
             f"Successfully added {total_runs} agent runs to Collection '{collection_id}'. "
             f"All {len(job_ids)} job(s) completed."
         )
@@ -837,7 +908,7 @@ class Docent:
         response = self._session.post(url)
         self._handle_response_errors(response)
 
-        logger.info(f"Successfully made Collection '{collection_id}' public")
+        self._logger.info(f"Successfully made Collection '{collection_id}' public")
         return response.json()
 
     def share_collection_with_email(self, collection_id: str, email: str) -> dict[str, Any]:
@@ -859,7 +930,7 @@ class Docent:
 
         self._handle_response_errors(response)
 
-        logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
+        self._logger.info(f"Successfully shared Collection '{collection_id}' with {email}")
         return response.json()
 
     def get_my_organizations(self) -> list[dict[str, Any]]:
@@ -1078,7 +1149,7 @@ class Docent:
         agent_run_ids = [str(row[0]) for row in rows if row]
 
         if result.get("truncated"):
-            logger.warning(
+            self._logger.warning(
                 "DQL query truncated at applied limit %s; returning %s agent run IDs",
                 result.get("applied_limit"),
                 len(agent_run_ids),
@@ -1124,10 +1195,10 @@ class Docent:
         eval_files = list(root_path.rglob("*.eval"))
 
         if not eval_files:
-            logger.info(f"No .eval files found in {fpath}")
+            self._logger.info(f"No .eval files found in {fpath}")
             return
 
-        logger.info(f"Found {len(eval_files)} .eval files in {fpath}")
+        self._logger.info(f"Found {len(eval_files)} .eval files in {fpath}")
 
         total_runs_added = 0
         batch_size = 100
@@ -1138,7 +1209,7 @@ class Docent:
             total_samples = load_inspect.get_total_samples(eval_file, format="eval")
 
             if total_samples == 0:
-                logger.info(f"No samples found in {eval_file}")
+                self._logger.info(f"No samples found in {eval_file}")
                 continue
 
             # Load runs from file
@@ -1171,9 +1242,9 @@ class Docent:
                         file_pbar.update(len(batch_list))
 
             total_runs_added += runs_from_file
-            logger.info(f"Added {runs_from_file} runs from {eval_file}")
+            self._logger.info(f"Added {runs_from_file} runs from {eval_file}")
 
-        logger.info(
+        self._logger.info(
             f"Successfully ingested {total_runs_added} total agent runs from {len(eval_files)} files"
         )
 
@@ -1236,7 +1307,7 @@ class Docent:
             raise ValueError("Failed to create chat session: 'session_id' missing in response")
 
         chat_url = f"{self._web_url}/chat/{session_id}"
-        logger.info(f"Chat session created. Opening browser to: {chat_url}")
+        self._logger.info(f"Chat session created. Opening browser to: {chat_url}")
 
         webbrowser.open(chat_url)
 
@@ -1262,7 +1333,7 @@ class Docent:
             ```
         """
         agent_run_url = f"{self._web_url}/dashboard/{collection_id}/agent_run/{agent_run_id}"
-        logger.info(f"Opening agent run in browser: {agent_run_url}")
+        self._logger.info(f"Opening agent run in browser: {agent_run_url}")
 
         webbrowser.open(agent_run_url)
 
@@ -1311,7 +1382,315 @@ class Docent:
         if judge_result_id is not None:
             url += f"/result/{judge_result_id}"
 
-        logger.info(f"Opening rubric in browser: {url}")
+        self._logger.info(f"Opening rubric in browser: {url}")
         webbrowser.open(url)
 
+        return url
+
+    ###################
+    # Result Sets     #
+    ###################
+
+    def submit_llm_requests(
+        self,
+        collection_id: str,
+        requests: list[LLMRequest],
+        result_set_name: str | None = None,
+        exists_ok: bool = False,
+        model_string: str | None = None,
+        reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
+        output_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Submit LLM requests for processing.
+
+        Creates a result set and submits requests for background LLM processing.
+        Prints the result set URL and returns submission details.
+
+        Args:
+            collection_id: ID of the Collection.
+            requests: List of LLMRequest objects to process.
+            result_set_name: Optional name for the result set. Uses hierarchical
+                naming convention (e.g., "analysis/v1/clusters").
+            exists_ok: If True, append to existing result set with same name.
+                If False (default), raise error if name already exists.
+            model_string: Optional model override in the form "<provider>/<model_name>".
+            reasoning_effort: Optional reasoning effort hint passed to the provider, if supported.
+            output_schema: JSON schema for LLM output. Defaults to simple string with citations.
+                For structured output, provide an object schema with properties.
+
+        Returns:
+            dict containing:
+                - result_set_id: UUID of the result set
+                - job_id: UUID of the processing job
+                - url: Frontend URL to view results
+
+        Raises:
+            ValueError: If requests list is empty.
+            requests.exceptions.HTTPError: If the API request fails.
+
+        Example:
+            ```python
+            from docent.sdk import Docent
+            from docent.sdk.llm_request import LLMRequest
+            from docent.sdk.llm_context import Prompt, AgentRunRef
+
+            client = Docent()
+            run = AgentRunRef(id="run_id", collection_id=collection_id)
+
+            requests = [
+                LLMRequest(prompt=Prompt([run, "Analyze this trace..."]))
+            ]
+
+            result = client.submit_llm_requests(
+                collection_id,
+                requests,
+                result_set_name="analysis/experiment_1",
+            )
+            print(f"View results at: {result['url']}")
+            ```
+        """
+        if not requests:
+            raise ValueError("requests must be a non-empty list")
+
+        # Use name or generate placeholder
+        id_or_name = result_set_name or "unnamed"
+
+        url = f"{self._server_url}/results/{collection_id}/submit/{id_or_name}"
+        analysis_model: dict[str, Any] | None = None
+        if model_string is not None:
+            if "/" not in model_string:
+                raise ValueError("model_string must be in the form '<provider>/<model_name>'")
+            provider, model_name = model_string.split("/", 1)
+            analysis_model = ModelOption(
+                provider=provider,
+                model_name=model_name,
+                reasoning_effort=reasoning_effort,
+            ).model_dump()
+
+        payload: dict[str, Any] = {
+            "requests": [r.model_dump() for r in requests],
+            "exists_ok": exists_ok,
+            "analysis_model": analysis_model,
+        }
+        if output_schema is not None:
+            payload["output_schema"] = output_schema
+
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+
+        result = response.json()
+        full_url = f"{self._web_url}{result['url']}"
+
+        self._logger.info(f"Submitted {len(requests)} LLM requests to result set")
+        print(f"Result set ID: {result['result_set_id']}")
+        print(f"View results at: {full_url}")
+
+        return {
+            "result_set_id": result["result_set_id"],
+            "job_id": result.get("job_id"),
+            "url": full_url,
+        }
+
+    def submit_results(
+        self,
+        collection_id: str,
+        results: list[ExternalAnalysisResult],
+        result_set_name: str | None = None,
+        exists_ok: bool = False,
+    ) -> dict[str, Any]:
+        """Submit pre-computed results directly.
+
+        For use when you've run analysis locally (e.g., with a local LLM)
+        and want to upload the results to Docent for viewing.
+
+        Args:
+            collection_id: ID of the Collection.
+            results: List of ExternalAnalysisResult objects to upload.
+            result_set_name: Optional name for the result set.
+            exists_ok: If True, append to existing result set with same name.
+
+        Returns:
+            dict containing:
+                - result_set_id: UUID of the result set
+                - url: Frontend URL to view results
+
+        Raises:
+            ValueError: If results list is empty.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        if not results:
+            raise ValueError("results must be a non-empty list")
+
+        id_or_name = result_set_name or "unnamed"
+
+        url = f"{self._server_url}/results/{collection_id}/submit/{id_or_name}"
+        payload = {
+            "results": [r.model_dump() for r in results],
+            "exists_ok": exists_ok,
+        }
+
+        response = self._session.post(url, json=payload)
+        self._handle_response_errors(response)
+
+        result = response.json()
+        full_url = f"{self._web_url}{result['url']}"
+
+        self._logger.info(f"Submitted {len(results)} results to result set")
+        print(f"Result set ID: {result['result_set_id']}")
+        print(f"View results at: {full_url}")
+
+        return {
+            "result_set_id": result["result_set_id"],
+            "url": full_url,
+        }
+
+    def get_result_set(
+        self,
+        collection_id: str,
+        name_or_id: str,
+    ) -> dict[str, Any]:
+        """Get a result set by name or ID.
+
+        Args:
+            collection_id: ID of the Collection.
+            name_or_id: Name or UUID of the result set.
+
+        Returns:
+            dict containing result set metadata (id, name, output_schema, created_at,
+            result_count, first_prompt_preview).
+
+        Raises:
+            requests.exceptions.HTTPError: If the result set is not found or API fails.
+        """
+        url = f"{self._server_url}/results/{collection_id}/result-sets/{name_or_id}"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def get_result_set_dataframe(
+        self,
+        collection_id: str,
+        name_or_id: str,
+        with_auto_joins: bool = False,
+        include_incomplete: bool = False,
+    ) -> "pd.DataFrame":
+        """Get result set contents as a pandas DataFrame.
+
+        Args:
+            collection_id: ID of the Collection.
+            name_or_id: Name or UUID of the result set.
+            with_auto_joins: If True, automatically join related data for columns
+                ending in _result_id or _run_id.
+            include_incomplete: If False (default), only return successful results.
+                If True, also include in-progress and errored results.
+
+        Returns:
+            pd.DataFrame: DataFrame containing results with flattened columns.
+                Nested dicts in user_metadata, output, and joined are expanded
+                into prefixed columns (e.g., user_metadata.field, output.score).
+
+        Raises:
+            requests.exceptions.HTTPError: If the result set is not found or API fails.
+        """
+        url = f"{self._server_url}/results/{collection_id}/results/{name_or_id}"
+        params = {"with_auto_joins": with_auto_joins, "include_incomplete": include_incomplete}
+        response = self._session.get(url, params=params)
+        self._handle_response_errors(response)
+
+        results: list[dict[str, Any]] = response.json()
+
+        flattened_results: list[dict[str, Any]] = []
+        for result in results:
+            flat: dict[str, Any] = {}
+            for key, value in result.items():
+                if key == "user_metadata" and isinstance(value, dict):
+                    nested = cast(dict[str, Any], value)
+                    for sub_key, sub_value in nested.items():
+                        flat[f"user_metadata.{sub_key}"] = sub_value
+                elif key == "output" and isinstance(value, dict):
+                    nested = cast(dict[str, Any], value)
+                    for sub_key, sub_value in nested.items():
+                        flat[f"output.{sub_key}"] = sub_value
+                elif key == "joined" and isinstance(value, dict):
+                    joined = cast(dict[str, Any], value)
+                    for prefix, joined_data in joined.items():
+                        if isinstance(joined_data, dict):
+                            joined_nested = cast(dict[str, Any], joined_data)
+                            for sub_key, sub_value in joined_nested.items():
+                                flat[f"joined.{prefix}.{sub_key}"] = sub_value
+                else:
+                    flat[key] = value
+            flattened_results.append(flat)
+
+        return pd.DataFrame(flattened_results)
+
+    def get_metadata_fields(
+        self,
+        collection_id: str,
+        include_sample_values: bool = False,
+        sample_limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Get the available metadata fields for agent runs in a collection.
+
+        Args:
+            collection_id: ID of the Collection.
+            include_sample_values: Whether to include sample values for each field.
+            sample_limit: Maximum number of sample values to return per field.
+
+        Returns:
+            List of metadata field dictionaries with 'name', 'type', and optionally
+            'sample_values' and 'total_unique_values'.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/agent_run_metadata_fields"
+        params = {
+            "include_sample_values": str(include_sample_values).lower(),
+            "sample_limit": sample_limit,
+        }
+        response = self._session.get(url, params=params)
+        self._handle_response_errors(response)
+        return response.json().get("fields", [])
+
+    def list_result_sets(
+        self,
+        collection_id: str,
+        prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List result sets in a collection.
+
+        Args:
+            collection_id: ID of the Collection.
+            prefix: Optional name prefix to filter result sets (e.g., "analysis/v1").
+
+        Returns:
+            list of result set metadata dictionaries, sorted by most recent first.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/results/{collection_id}/result-sets"
+        params = {"prefix": prefix} if prefix else None
+        response = self._session.get(url, params=params)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def open_result_set(
+        self,
+        collection_id: str,
+        name_or_id: str,
+    ) -> str:
+        """Open a result set in the browser.
+
+        Args:
+            collection_id: ID of the Collection.
+            name_or_id: Name or UUID of the result set.
+
+        Returns:
+            str: The URL that was opened.
+        """
+        url = f"{self._web_url}/dashboard/{collection_id}/results/{name_or_id}"
+        self._logger.info(f"Opening result set in browser: {url}")
+        webbrowser.open(url)
         return url

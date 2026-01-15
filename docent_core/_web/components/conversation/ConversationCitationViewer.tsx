@@ -67,6 +67,18 @@ export function ConversationCitationViewer({
     );
   }
 
+  // Analysis result citations don't have an agent run to display
+  if (selectedCitation.item.item_type === 'analysis_result') {
+    return (
+      <div className="flex h-full items-center justify-center p-3">
+        <div className="text-center text-muted-foreground">
+          <p className="text-sm">Analysis Result</p>
+          <p className="mt-2 text-xs">View this result in the results panel</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-hidden p-3">
       <AgentRunViewer

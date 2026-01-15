@@ -8,11 +8,19 @@ export interface CitationTargetTextRange {
   end_pattern: string | null;
 }
 
+export interface AnalysisResultItem {
+  item_type: 'analysis_result';
+  result_set_id: string;
+  result_id: string;
+  collection_id: string;
+}
+
 export type ResolvedCitationItem =
   | AgentRunMetadataItem
   | TranscriptMetadataItem
   | TranscriptBlockMetadataItem
-  | TranscriptBlockContentItem;
+  | TranscriptBlockContentItem
+  | AnalysisResultItem;
 
 export interface AgentRunMetadataItem {
   item_type: 'agent_run_metadata';

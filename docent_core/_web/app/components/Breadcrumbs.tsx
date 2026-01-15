@@ -10,6 +10,7 @@ import {
   type LucideIcon,
   Search,
   Home,
+  FlaskConical,
   ChartColumn,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
 import { useGetCollectionNameQuery } from '@/app/api/collectionApi';
+import { useGetResultSetQuery } from '@/app/api/resultSetApi';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { cn } from '@/lib/utils';
 import UuidPill from '@/components/UuidPill';
@@ -42,18 +44,34 @@ const Breadcrumbs: React.FC = () => {
     agent_run_id: agentRunId,
     job_id: jobId,
     session_id: sessionId,
+    result_set_id_or_name: resultSetIdOrNameParam,
   }: {
     collection_id?: string;
     agent_run_id?: string;
     job_id?: string;
     session_id?: string;
+    result_set_id_or_name?: string;
   } = allParams;
+
+  let resultSetIdOrName = resultSetIdOrNameParam;
+  if (Array.isArray(resultSetIdOrNameParam)) {
+    resultSetIdOrName = resultSetIdOrNameParam.join('/');
+  }
+  if (resultSetIdOrName) {
+    resultSetIdOrName = decodeURIComponent(resultSetIdOrName);
+  }
 
   const pathname = usePathname();
   const { data } = useGetCollectionNameQuery(
     collectionId ? collectionId : skipToken
   );
   const collectionName = data?.name;
+
+  const { data: resultSetData } = useGetResultSetQuery(
+    collectionId && resultSetIdOrName
+      ? { collectionId, resultSetIdOrName }
+      : skipToken
+  );
 
   const crumbs: Record<string, Crumb> = {
     dashboard: {
@@ -73,6 +91,9 @@ const Breadcrumbs: React.FC = () => {
     },
     chat: {
       title: 'Chat',
+    },
+    results: {
+      title: 'Result Set',
     },
   };
 
@@ -103,6 +124,11 @@ const Breadcrumbs: React.FC = () => {
       icon: MessagesSquare,
       url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}/chat`,
     },
+    results: {
+      title: 'Results',
+      icon: FlaskConical,
+      url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}/results`,
+    },
     settings: {
       title: 'Settings',
       icon: Settings,
@@ -124,6 +150,10 @@ const Breadcrumbs: React.FC = () => {
     // Handle chats -> session_id
     if (param === 'chat') {
       resolvedParam = 'session';
+    }
+    // Handle results -> result_set_id_or_name (special case: may be UUID or name)
+    if (param === 'results') {
+      return resultSetData?.id ?? resultSetIdOrName;
     }
 
     const slugLookup = resolvedParam.toLowerCase() + '_id';
@@ -171,7 +201,16 @@ const Breadcrumbs: React.FC = () => {
         };
       }
     })
-    .filter((crumb) => crumb !== undefined);
+    .filter(
+      (
+        crumb
+      ): crumb is {
+        title: string;
+        url: string;
+        icon?: LucideIcon;
+        uuid: string | undefined;
+      } => !!crumb?.title
+    );
 
   const isSettingsPage = pathname.startsWith('/settings');
 

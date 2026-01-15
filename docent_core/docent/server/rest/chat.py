@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, AsyncContextManager, Callable, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,13 +13,20 @@ from docent._llm_util.providers.preference_types import (
 )
 from docent._log_util import get_logger
 from docent.data_models.agent_run import SelectionSpec
+from docent.data_models.chat.message import DocentAssistantMessage, UserMessage
+from docent.data_models.citation import InlineCitation
+from docent.sdk.llm_context import LLMContextSpec
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server.util import generator_to_sse_stream
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.chat import ChatSession, ChatSessionSummary, SQLAChatSession
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
-from docent_core.docent.server.dependencies.database import AsyncSession, get_session
+from docent_core.docent.server.dependencies.database import (
+    AsyncSession,
+    get_session,
+    get_session_cm_factory,
+)
 from docent_core.docent.server.dependencies.permissions import (
     Permission,
     require_agent_run_in_collection,
@@ -37,6 +44,9 @@ from docent_core.docent.server.dependencies.user import (
 from docent_core.docent.services.chat import ChatService
 from docent_core.docent.services.llms import PROVIDER_PREFERENCES
 from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.result_set import ResultSetService
+from docent_core.docent.utils.citation_transform import transform_output_for_chat
+from docent_core.docent.utils.llm_context import segments_to_aliased_string
 
 logger = get_logger(__name__)
 
@@ -46,6 +56,15 @@ chat_router = APIRouter(dependencies=[Depends(get_user_anonymous_ok)])
 ################
 # Dependencies #
 ################
+
+
+def get_result_set_service(
+    session: AsyncSession = Depends(get_session),
+    session_cm_factory: Callable[[], AsyncContextManager[AsyncSession]] = Depends(
+        get_session_cm_factory
+    ),
+) -> ResultSetService:
+    return ResultSetService(session, session_cm_factory)
 
 
 async def get_chat_session(
@@ -117,6 +136,71 @@ async def create_session(
             raise HTTPException(status_code=404, detail="Agent run or judge result not found")
         raise
     return {"session_id": sqla_session.id}
+
+
+@chat_router.post("/{collection_id}/followup-from-result/{result_id}")
+async def create_followup_from_result(
+    collection_id: str,
+    result_id: str,
+    user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
+    chat_svc: ChatService = Depends(get_chat_service),
+    result_set_svc: ResultSetService = Depends(get_result_set_service),
+    analytics: AnalyticsClient = Depends(use_posthog_user_context),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+) -> dict[str, str]:
+    """
+    Create a new collection-scoped multi-object conversation derived from a stored analysis result.
+
+    The server loads the result to derive context + seeded messages rather than trusting the client.
+    """
+    result = await result_set_svc.get_result_by_id(result_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    # Verify the result belongs to a result set in this collection
+    result_set = await result_set_svc.get_result_set(result.result_set_id, collection_id)
+    if result_set is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    if result.output is None:
+        raise HTTPException(status_code=400, detail="Result has no output to follow up on")
+
+    context_serialized = result.llm_context_spec or {}
+
+    # Transform output with citation fields into chat-compatible format.
+    # This handles both default schema and custom schemas with nested citations.
+    output_text, citation_dicts = transform_output_for_chat(result.output)
+    citations: list[InlineCitation] | None = None
+    if citation_dicts:
+        try:
+            citations = [InlineCitation.model_validate(c) for c in citation_dicts]
+        except Exception:
+            citations = None
+
+    sqla_chat_session = await chat_svc.create_conversation_session(
+        user_id=user.id,
+        context_serialized=context_serialized,
+        collection_id=collection_id,
+    )
+    sqla_chat_session.messages = [
+        UserMessage(content=segments_to_aliased_string(result.prompt_segments)).model_dump(),
+        DocentAssistantMessage(content=output_text, citations=citations).model_dump(),
+    ]
+
+    await session.commit()
+
+    analytics.track_event(
+        "conversation_followup_created_from_result",
+        properties={
+            "session_id": sqla_chat_session.id,
+            "collection_id": collection_id,
+            "result_id": result_id,
+            "result_set_id": result_set.id,
+        },
+    )
+
+    return {"session_id": sqla_chat_session.id}
 
 
 @chat_router.get("/{collection_id}/{agent_run_id}/job/{job_id}/listen")
@@ -247,10 +331,17 @@ async def create_collection_conversation(
     user: User = Depends(get_authenticated_user),
     session: AsyncSession = Depends(get_session),
     chat_svc: ChatService = Depends(get_chat_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
     _perm: None = Depends(require_collection_permission(Permission.READ)),
 ) -> dict[str, str]:
     context_serialized = request.context_serialized or {}
+    if context_serialized:
+        spec = LLMContextSpec.model_validate(context_serialized)
+        try:
+            await mono_svc.verify_context_access(user, spec)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
     sqla_session = await chat_svc.create_conversation_session(
         user.id,
         context_serialized=context_serialized,
@@ -283,6 +374,7 @@ async def create_conversation(
     request: CreateConversationRequest,
     user: User = Depends(get_authenticated_user),
     session: AsyncSession = Depends(get_session),
+    mono_svc: MonoService = Depends(get_mono_svc),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ) -> dict[str, str]:
     """Create a new chat session with multiple objects via LLMContext.
@@ -291,6 +383,11 @@ async def create_conversation(
     Unlike the single-run chat endpoint, this accepts a serialized LLMContext containing
     multiple agent runs, transcripts, or other objects.
     """
+    spec = LLMContextSpec.model_validate(request.context_serialized)
+    try:
+        await mono_svc.verify_context_access(user, spec)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     chat_model: ModelOption | None = None
     if request.model_string is not None:
@@ -365,15 +462,23 @@ class AddContextItemRequest(BaseModel):
 async def add_conversation_context_item(
     session_id: str,
     request: AddContextItemRequest,
+    user: User = Depends(get_authenticated_user),
     chat_svc: ChatService = Depends(get_chat_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
     session: AsyncSession = Depends(get_session),
     sq_chat_session: SQLAChatSession = Depends(get_chat_session),
 ) -> ChatSession:
     if sq_chat_session.context_serialized is None:
         raise HTTPException(status_code=400, detail="Session has no context to modify")
 
+    lookup = await chat_svc.lookup_context_item(request.item_id)
+    if lookup is None:
+        raise HTTPException(status_code=404, detail=f"Item {request.item_id} not found")
+
+    await require_collection_permission(Permission.READ)(lookup.collection_id, user, mono_svc)
+
     try:
-        updated = await chat_svc.add_context_item(sq_chat_session, request.item_id)
+        updated = await chat_svc.add_context_item(sq_chat_session, lookup)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

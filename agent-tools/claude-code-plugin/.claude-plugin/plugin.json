@@ -1,0 +1,7 @@
+{
+  "name": "docent",
+  "version": "0.1.0",
+  "description": "Docent AI analysis tools",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

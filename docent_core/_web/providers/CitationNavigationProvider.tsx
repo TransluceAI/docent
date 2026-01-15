@@ -6,7 +6,7 @@ import { NavigateToCitation } from '@/components/CitationRenderer';
 import { CitationTarget } from '@/app/types/citationTypes';
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
-interface CitationNavigationContextValue {
+export interface CitationNavigationContextValue {
   registerHandler: (handler: NavigateToCitation | null) => void;
   navigateToCitation: NavigateToCitation;
   prepareForNavigation: () => void;
@@ -14,7 +14,7 @@ interface CitationNavigationContextValue {
   selectedCitation: CitationTarget | null;
 }
 
-const CitationNavigationContext =
+export const CitationNavigationContext =
   React.createContext<CitationNavigationContextValue | null>(null);
 
 export function useCitationNavigation(): CitationNavigationContextValue | null {
@@ -119,6 +119,12 @@ export function wrapCitationHandlerWithRouting(
   setPendingCitation?: (target: CitationTarget, source?: string) => void
 ): NavigateToCitation {
   return ({ target, source }) => {
+    // Analysis result citations don't have agent_run_id - let the handler deal with them directly
+    if (target.item.item_type === 'analysis_result') {
+      handler({ target, source });
+      return;
+    }
+
     const citedAgentRunId = target.item.agent_run_id;
 
     if (citedAgentRunId === context.currentAgentRunId) {

@@ -16,30 +16,37 @@ export function citationTargetToId(target: CitationTarget): string {
   // Create minimal JSON representation
   const minimalItem: any = {
     t: target.item.item_type,
-    a: target.item.agent_run_id,
     c: target.item.collection_id,
   };
 
   // Add type-specific fields
   switch (target.item.item_type) {
     case 'agent_run_metadata':
+      minimalItem.a = target.item.agent_run_id;
       minimalItem.k = target.item.metadata_key;
       break;
     case 'transcript_metadata':
+      minimalItem.a = target.item.agent_run_id;
       minimalItem.ti = target.item.transcript_id;
       minimalItem.k = target.item.metadata_key;
       break;
     case 'block_metadata':
+      minimalItem.a = target.item.agent_run_id;
       minimalItem.ti = target.item.transcript_id;
       minimalItem.b = target.item.block_idx;
       minimalItem.k = target.item.metadata_key;
       break;
     case 'block_content':
+      minimalItem.a = target.item.agent_run_id;
       minimalItem.ti = target.item.transcript_id;
       minimalItem.b = target.item.block_idx;
       if (target.item.content_idx !== undefined) {
         minimalItem.ci = target.item.content_idx;
       }
+      break;
+    case 'analysis_result':
+      minimalItem.rs = target.item.result_set_id;
+      minimalItem.ri = target.item.result_id;
       break;
   }
 
@@ -113,23 +120,31 @@ export function citationTargetFromId(id: string): CitationTarget {
     // Add type-specific fields
     switch (itemType) {
       case 'agent_run_metadata':
+        item.agent_run_id = minimal.i.a;
         item.metadata_key = minimal.i.k;
         break;
       case 'transcript_metadata':
+        item.agent_run_id = minimal.i.a;
         item.transcript_id = minimal.i.ti;
         item.metadata_key = minimal.i.k;
         break;
       case 'block_metadata':
+        item.agent_run_id = minimal.i.a;
         item.transcript_id = minimal.i.ti;
         item.block_idx = minimal.i.b;
         item.metadata_key = minimal.i.k;
         break;
       case 'block_content':
+        item.agent_run_id = minimal.i.a;
         item.transcript_id = minimal.i.ti;
         item.block_idx = minimal.i.b;
         if (minimal.i.ci !== undefined) {
           item.content_idx = minimal.i.ci;
         }
+        break;
+      case 'analysis_result':
+        item.result_set_id = minimal.i.rs;
+        item.result_id = minimal.i.ri;
         break;
       default:
         throw new Error(`Unknown item type: ${itemType}`);

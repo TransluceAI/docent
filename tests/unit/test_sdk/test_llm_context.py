@@ -15,6 +15,9 @@ from docent.data_models.transcript import Transcript
 from docent.sdk.llm_context import (
     AgentRunRef,
     LLMContext,
+    Prompt,
+    PromptData,
+    ResultRef,
     TranscriptRef,
     _build_whitespace_flexible_regex,  # type: ignore
     _find_pattern_in_text,  # type: ignore
@@ -425,3 +428,209 @@ def test_validate_citations_without_range() -> None:
     assert len(citations) == 2
     assert citations[0].target.text_range is None
     assert citations[1].target.text_range is None
+
+
+# =============================================================================
+# Prompt class tests
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_prompt_basic_construction() -> None:
+    """Test basic Prompt construction with a ref and text."""
+    run = AgentRunRef(id="run1", collection_id="col1")
+    prompt = Prompt([run, "Summarize this run."])
+
+    assert len(prompt.segments) == 2
+    assert prompt.segments[0] == {"alias": "R0"}
+    assert prompt.segments[1] == "Summarize this run."
+    assert "R0" in prompt.spec.items
+    assert prompt.spec.items["R0"].id == "run1"
+
+
+@pytest.mark.unit
+def test_prompt_multiple_refs() -> None:
+    """Test Prompt with multiple different refs."""
+    run1 = AgentRunRef(id="run1", collection_id="col1")
+    run2 = AgentRunRef(id="run2", collection_id="col1")
+    prompt = Prompt(["Here is run 1:", run1, "Here is run 2:", run2, "Compare them."])
+
+    assert len(prompt.segments) == 5
+    assert prompt.segments[0] == "Here is run 1:"
+    assert prompt.segments[1] == {"alias": "R0"}
+    assert prompt.segments[2] == "Here is run 2:"
+    assert prompt.segments[3] == {"alias": "R1"}
+    assert prompt.segments[4] == "Compare them."
+
+    assert len(prompt.spec.items) == 2
+    assert prompt.spec.items["R0"].id == "run1"
+    assert prompt.spec.items["R1"].id == "run2"
+
+
+@pytest.mark.unit
+def test_prompt_same_ref_multiple_times() -> None:
+    """Test that the same ref appearing multiple times maps to the same alias."""
+    run = AgentRunRef(id="run1", collection_id="col1")
+    prompt = Prompt(["Consider:", run, "Notice that ", run, " is interesting."])
+
+    assert len(prompt.segments) == 5
+    assert prompt.segments[1] == {"alias": "R0"}
+    assert prompt.segments[3] == {"alias": "R0"}
+
+    # Only one item in spec since it's the same ref
+    assert len(prompt.spec.items) == 1
+
+
+@pytest.mark.unit
+def test_prompt_ref_deduplication_by_id() -> None:
+    """Test that refs with same id/collection_id are deduplicated."""
+    run1 = AgentRunRef(id="run1", collection_id="col1")
+    run2 = AgentRunRef(id="run1", collection_id="col1")  # Same as run1
+    prompt = Prompt([run1, "and", run2])
+
+    # Both refs should map to the same alias
+    assert len(prompt.spec.items) == 1
+    assert prompt.segments[0] == prompt.segments[2]
+
+
+@pytest.mark.unit
+def test_prompt_to_storage() -> None:
+    """Test to_storage() produces typed segments."""
+    run = AgentRunRef(id="run1", collection_id="col1")
+    prompt = Prompt([run, "Summarize this."])
+
+    spec_dict, segments = prompt.to_storage()
+
+    assert "items" in spec_dict
+    assert spec_dict["items"]["R0"]["id"] == "run1"
+    assert len(segments) == 2
+    assert segments[0] == {"alias": "R0"}
+    assert segments[1] == "Summarize this."
+
+
+@pytest.mark.unit
+def test_prompt_with_transcript_ref() -> None:
+    """Test Prompt with TranscriptRef."""
+    t_ref = TranscriptRef(id="t1", agent_run_id="run1", collection_id="col1")
+    prompt = Prompt([t_ref, "Analyze this transcript."])
+
+    assert len(prompt.segments) == 2
+    assert prompt.segments[0] == {"alias": "T0"}
+    assert prompt.spec.items["T0"].id == "t1"
+
+
+@pytest.mark.unit
+def test_prompt_with_result_ref() -> None:
+    """Test Prompt with ResultRef."""
+    r_ref = ResultRef(id="res1", result_set_id="rs1", collection_id="col1")
+    prompt = Prompt([r_ref, "Follow up on this result."])
+
+    assert len(prompt.segments) == 2
+    assert prompt.segments[0] == {"alias": "A0"}
+    assert prompt.spec.items["A0"].id == "res1"
+
+
+@pytest.mark.unit
+def test_prompt_mixed_ref_types() -> None:
+    """Test Prompt with different ref types."""
+    run = AgentRunRef(id="run1", collection_id="col1")
+    transcript = TranscriptRef(id="t1", agent_run_id="run1", collection_id="col1")
+    prompt = Prompt([run, "contains", transcript])
+
+    assert len(prompt.spec.items) == 2
+    assert "R0" in prompt.spec.items
+    assert "T0" in prompt.spec.items
+
+
+@pytest.mark.unit
+def test_prompt_pydantic_serialization() -> None:
+    """Test PromptData serialization via Pydantic."""
+    run = AgentRunRef(id="run1", collection_id="col1")
+    prompt = Prompt([run, "Text here", run])
+
+    serialized = prompt.model_dump(mode="json")
+
+    assert "segments" in serialized
+    assert "spec" in serialized
+    assert serialized["segments"][0] == {"alias": "R0"}
+    assert serialized["segments"][1] == "Text here"
+    assert serialized["segments"][2] == {"alias": "R0"}
+
+
+@pytest.mark.unit
+def test_prompt_pydantic_deserialization() -> None:
+    """Test PromptData deserialization from dict."""
+    data = {
+        "segments": [{"alias": "R0"}, "Some text", {"alias": "R0"}],
+        "spec": {
+            "version": "3",
+            "root_items": ["R0"],
+            "items": {"R0": {"type": "agent_run", "id": "run1", "collection_id": "col1"}},
+            "inline_data": {},
+            "visibility": {},
+        },
+    }
+
+    prompt = PromptData.model_validate(data)
+
+    assert len(prompt.segments) == 3
+    assert prompt.segments[0] == {"alias": "R0"}
+    assert prompt.segments[1] == "Some text"
+    assert prompt.segments[2] == {"alias": "R0"}
+
+
+@pytest.mark.unit
+def test_prompt_text_only() -> None:
+    """Test Prompt with only text segments."""
+    prompt = Prompt(["Just some text", "and more text"])
+
+    assert len(prompt.segments) == 2
+    assert prompt.segments[0] == "Just some text"
+    assert prompt.segments[1] == "and more text"
+    assert len(prompt.spec.items) == 0
+
+
+# =============================================================================
+# render_segments tests
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_render_segments_typed_format(sample_agent_run: AgentRun) -> None:
+    """Test render_segments with typed segment format."""
+    context = LLMContext()
+    context.add(sample_agent_run, collection_id="col1")
+
+    # Typed segments format
+    segments: list[str | dict[str, str]] = [
+        "Here is the run:",
+        {"alias": "R0"},
+        "That was interesting.",
+    ]
+
+    result = context.render_segments(segments)
+
+    assert "Here is the run:\n\n" in result
+    assert "R0" in result  # Alias should appear in rendered content
+    assert "\n\nThat was interesting." in result
+
+
+@pytest.mark.unit
+def test_render_segments_first_full_subsequent_alias(sample_agent_run: AgentRun) -> None:
+    """Test that first occurrence is full, subsequent are just [alias]."""
+    context = LLMContext()
+    context.add(sample_agent_run, collection_id="col1")
+
+    segments: list[str | dict[str, str]] = [
+        {"alias": "R0"},
+        "Notice that",
+        {"alias": "R0"},
+        "is interesting.",
+    ]
+
+    result = context.render_segments(segments)
+
+    assert "\n\nNotice that [R0] is interesting." in result
+
+    # First R0 should have full content (including the transcript)
+    assert "Hello" in result  # Content from sample_transcript
