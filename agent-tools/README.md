@@ -8,7 +8,7 @@ The SKILL.md file is shared. Before sharing either tool, copy the SKILL.md file 
 
 ```bash
 # For Cursor
-cp SKILL.md cursor-quickstart/.cursor/rules/docent.mdc
+bash zip-cursor-quickstart.sh
 # For Claude Code
 cp SKILL.md claude-code-plugin/skills/docent/SKILL.md
 ```

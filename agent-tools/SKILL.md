@@ -15,7 +15,7 @@ Docent is a platform for analyzing AI agent behavior using large language models
 ## General guidelines
 * If the user asks you to "summarize the agent runs", "classify the results", or similar, they do not necessarily mean that you (the coding agent) should do so directly. In most cases, it is better to use the Docent SDK to submit an LLM analysis request. Then you may open the results of that analysis to show the user.
 * Agent runs contain metadata. Metadata varies by collection. Do not make assumptions about the structure of run metadata. Use the `get_metadata_fields` MCP tool to find out.
-* If you are writing code that will submit LLMRequests, you are encouraged to write it out as a script so you can improve and re-use it later. Unless otherwise instructed, you may place analysis scripts in the current working directory. Quick DQL queries can be done in scripts or inline with the Bash tool at your discretion.
+* If you are writing code that will submit LLMRequests, you are encouraged to write it out as a script so you can improve and re-use it later. Unless otherwise instructed, you may place analysis scripts in the current working directory. Quick DQL queries can be done in scripts or inline with the Bash tool at your discretion. Run your scripts with `uv run`.
 * If you're not sure what collection the user is talking about, check for a docent.env file in the working directory. Otherwise, ask the user to paste the collection UUID.
 
 Start with these imports when using the Docent SDK:

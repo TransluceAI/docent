@@ -3,5 +3,5 @@ name = "docent-agentic-analysis-quickstart"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "docent-python>=0.1.43a0",
+    "docent-python>=0.1.45a0",
 ]
