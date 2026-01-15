@@ -7,19 +7,13 @@ Agentically conduct analysis on Docent using Claude Code and Cursor. Docent now 
 
 Coding agents can flexibly automate multi-step workflows that are time-consuming when manual or beneficial to conduct in parallel. For instance, your agent can support:
 
-- **Comparing between checkpoints**. Prompt the agent to identify what changed between multiple versions of a model. In order to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?", the agent can compare a successful and failed run against each other at scale.
+- **Comparing between checkpoints**. Suppose you want to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?" You can now prompt the agent to compare pairs of successful and failed runs in order to identify changes between multiple versions of a model.
 - **Triaging before deep analysis**: Improve cost-efficiency by focusing your expensive classifier runs. You can prompt your agent to:
   1. Do a first pass with a cheap model for tagging possible issues ("sycophancy," "copyright," "biorisk," etc), conservatively including potential false positives
   2. Then use a more expensive model with detailed, issue-specific rubrics over only the relevant parts of the collection. Assign a detailed sycophancy classifier to run over the transcripts tagged "sycophancy" and a copyright classifier to run over the transcripts tagged "copyright."
 - **Managing long context**: Flexibly control context when analyzing collections with long traces or many transcripts. To summarize failures across a large collection, your agent can batch transcripts, extract key observations from each batch, and then clustering and observe patterns from the batched observations. Recursively passing the results from previous analyses improves your agent's ability to handle collection-level queries at scale.
 
 Your coding agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
-
-### Video Overview
-<video controls width="100%">
-  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/agentic-analysis-demo.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
-</video>
 
 ## Quickstart
 
