@@ -5,13 +5,15 @@ description: Use Claude Code and Cursor to automate investigations in Docent
 
 Agentically conduct analysis on Docent using Claude Code and Cursor. Docent now integrates with agent harnesses to turn natural language commands into SDK scripts you can modify and rerun.
 
-The Docent Agent can flexibly support multi-step workflows that are time-consuming to implement manually or beneficial to conduct in parallel. For instance, the agent can support:
+Coding agents can flexibly automate multi-step workflows that are time-consuming when manual or beneficial to conduct in parallel. For instance, your agent can support:
 
-- **Comparing between checkpoints**. The Docent agent can help identify what changed between multiple versions of a model. In order to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?", the agent can compare a successful and failed run against each other at scale.
-- **Triage before deep analysis**: The Docent agent can triage runs before engaging in analysis at scale, improving cost efficiency. For instance, the Docent agent can pre-screen a collection using a cheap model to tag each run with issues like "sycophancy," "copyright," or "biorisk." A judge with a more detailed rubric and expensive model can then grade harms on only the most suspicious runs.
-- **Managing long context**: In collections with long traces or a large volume of transcripts, the Docent agent supports a range of methods for supporting context management. The agent can recursively summarize extracting key observations from each batch, and then observe patterns in the key observations. Recursively passing the results from previous analyses lets the agent handle collection-level questions over large collections of data.
+- **Comparing between checkpoints**. Prompt the agent to identify what changed between multiple versions of a model. In order to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?", the agent can compare a successful and failed run against each other at scale.
+- **Triage before deep analysis**: Your agent can triage runs before engaging in analysis at scale, improving cost efficiency. Focus expensive analysis by prompting the agent to:
+  1. Do a first pass with a cheap model for tagging possible issues ("sycophancy," "copyright," "biorisk," etc), conservatively including potential false positives
+  2. Then use a more expensive model with detailed, issue-specific rubrics over only the relevant parts of the collection. Assign a detailed sycophancy judge to run over the transcripts tagged "sycophancy" and a copyright judge to run over the transcripts tagged "copyright."
+- **Managing long context**: Flexibly control context when analyzing collections with long traces or many transcripts. To summarize failures across a large collection, your agent can batch transcripts, extract key observations from each batch, and then clustering and observe patterns from the batched observations. Recursively passing the results from previous analyses improves your agent's ability to handle collection-level queries at scale.
 
-The Docent Agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
+Your coding agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
 
 ### Video Overview
 <video controls width="100%">
@@ -29,13 +31,17 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
   <Tab title="Cursor Template">
     ### Step 1: Download our template folder and open it in Cursor.
 
-    Download the [template folder](https://drive.google.com/file/d/1JDUi5jLkwJrHzUzBVl5mwHHDjKwfrByP/view?usp=sharing) and open it in Cursor.
+    [Click here](/assets/cursor-quickstart.zip) to download our template folder. Open it in a new Cursor workspace.
 
-    The `agentic_analysis_quickstart/` directory contains:
+    The template directory contains:
 
     - **`pyproject.toml`**: a minimal Python project configuration listing `docent-python` as a dependency.
     - **`docent.env`**: contains configurable environment variables. You'll need to set `DOCENT_API_KEY` and `DOCENT_COLLECTION_ID`
     - **`.cursor/rules/docent.md`** and **`.cursor/mcp.json`**: configuration files for Cursor defining an MCP server and outlining rules for how the agent should use Docent.
+
+    <Frame>
+          <img src="/images/agentic-analysis/open-template-in-cursor.png" alt="Open template in Cursor" />
+    </Frame>
 
     ### Step 2: Fill in `DOCENT_API_KEY` and `DOCENT_COLLECTION_ID` in `docent.env`
 
@@ -43,7 +49,7 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
     2. The `DOCENT_COLLECTION_ID` is the UUID of the collection you want to analyze. You can find it in two places:
 
     <AccordionGroup>
-      <Accordion title="From the collections table" defaultOpen>
+      <Accordion title="From the collections table">
         Click the ID next to any collection in the Docent Dashboard to copy it.
         <Frame>
           <img src="/images/agentic-analysis/copy-collection-id.png" alt="Copy collection ID from dashboard" />
@@ -56,6 +62,12 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
         </Frame>
       </Accordion>
     </AccordionGroup>
+
+    ### Step 3: Prompt Cursor.
+    For best results, describe your target workflow as precisely as possible.
+    <Frame>
+        <img src="/images/agentic-analysis/example-cursor-prompt.png" alt="Prompt Cursor" />
+    </Frame>
   </Tab>
 
   <Tab title="Existing Workspace">
@@ -85,7 +97,7 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
     The `DOCENT_COLLECTION_ID` is the UUID of the collection you want to analyze. You can copy it quickly by clicking on the ID from the Docent Dashboard or at the top of the page inside a collection.
 
     <AccordionGroup>
-      <Accordion title="From the collections table" defaultOpen>
+      <Accordion title="From the collections table">
         Click the ID next to any collection in the Docent Dashboard to copy it.
         <Frame>
           <img src="/images/agentic-analysis/copy-collection-id.png" alt="Copy collection ID from dashboard" />
