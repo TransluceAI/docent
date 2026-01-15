@@ -10,7 +10,7 @@ Coding agents can flexibly automate multi-step workflows that are time-consuming
 - **Comparing between checkpoints**. Prompt the agent to identify what changed between multiple versions of a model. In order to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?", the agent can compare a successful and failed run against each other at scale.
 - **Triage before deep analysis**: Your agent can triage runs before engaging in analysis at scale, improving cost efficiency. Focus expensive analysis by prompting the agent to:
   1. Do a first pass with a cheap model for tagging possible issues ("sycophancy," "copyright," "biorisk," etc), conservatively including potential false positives
-  2. Then use a more expensive model with detailed, issue-specific rubrics over only the relevant parts of the collection. Assign a detailed sycophancy judge to run over the transcripts tagged "sycophancy" and a copyright judge to run over the transcripts tagged "copyright."
+  2. Then use a more expensive model with detailed, issue-specific rubrics over only the relevant parts of the collection. Assign a detailed sycophancy classifier to run over the transcripts tagged "sycophancy" and a copyright classifier to run over the transcripts tagged "copyright."
 - **Managing long context**: Flexibly control context when analyzing collections with long traces or many transcripts. To summarize failures across a large collection, your agent can batch transcripts, extract key observations from each batch, and then clustering and observe patterns from the batched observations. Recursively passing the results from previous analyses improves your agent's ability to handle collection-level queries at scale.
 
 Your coding agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
@@ -308,4 +308,4 @@ result = client.submit_llm_requests(
 
 - For best results, be precise when telling the coding agent what workflow you want to execute
 - The LLM can only cite items that were directly passed as part of the prompt. It cannot, for example, cite items that were cited by a result that was passed as part of the prompt. If the LLM gets confused about this fact, mention it in your prompt. We're working on a cleaner solution.
-- We're currently adding functionality to analyze judge results. Stay tuned!
+- We're currently adding functionality to analyze Docent judge results. Stay tuned!
