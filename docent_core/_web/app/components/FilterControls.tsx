@@ -29,6 +29,7 @@ import { SmartValueInput } from './SmartValueInput';
 import { SingleCombobox } from './Combobox';
 import { StepFilter } from './StepFilter';
 import { formatFilterFieldLabel } from '../utils/formatMetadataField';
+import { useGetRubricsQuery } from '@/app/api/rubricApi';
 
 const isStepEqualityPrimitiveFilter = (
   filterItem: CollectionFilter
@@ -43,6 +44,19 @@ const isStepEqualityPrimitiveFilter = (
     typeof filterItem.value === 'number' && Number.isInteger(filterItem.value);
 
   return isStepField && isEqualityOp && isIntegerValue;
+};
+
+const RUBRIC_SNIPPET_LIMIT = 80;
+
+const buildRubricSnippet = (rubricText: string): string | null => {
+  const normalized = rubricText.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.length <= RUBRIC_SNIPPET_LIMIT) {
+    return normalized;
+  }
+  return `${normalized.slice(0, RUBRIC_SNIPPET_LIMIT).trim()}...`;
 };
 
 interface FilterControlsProps {
@@ -75,6 +89,23 @@ export const FilterControls = ({
   const [hasStepFilterDraft, setHasStepFilterDraft] = useState(false);
   const valueFieldRef = useRef<HTMLInputElement>(null);
   const isNullOperator = metadataOp === 'is';
+  const { data: rubrics } = useGetRubricsQuery(
+    { collectionId },
+    { skip: !collectionId }
+  );
+  const rubricContextById = useMemo(() => {
+    const context = new Map<
+      string,
+      { version: number; snippet: string | null }
+    >();
+    (rubrics ?? []).forEach((rubric) => {
+      context.set(rubric.id, {
+        version: rubric.version,
+        snippet: buildRubricSnippet(rubric.rubric_text),
+      });
+    });
+    return context;
+  }, [rubrics]);
 
   // Populate form when initialFilter is provided
   useEffect(() => {
@@ -301,6 +332,57 @@ export const FilterControls = ({
     }
   };
 
+  const filterFieldOptions = useMemo(
+    () =>
+      metadataFields.map((field) => {
+        const label = formatFilterFieldLabel(field.name);
+        const keywords = [field.name, label];
+        if (field.name.startsWith('rubric.')) {
+          const parts = field.name.split('.');
+          const rubricId = parts[1];
+          const rubricContext = rubricId
+            ? rubricContextById.get(rubricId)
+            : undefined;
+          if (rubricContext?.snippet) {
+            keywords.push(rubricContext.snippet);
+          }
+        }
+        return { value: field.name, label, keywords };
+      }),
+    [metadataFields, rubricContextById]
+  );
+
+  const renderFilterOptionLabel = useCallback(
+    (option: { value: string; label: React.ReactNode }) => {
+      if (!option.value.startsWith('rubric.')) {
+        return option.label;
+      }
+      const parts = option.value.split('.');
+      const rubricId = parts[1];
+      if (!rubricId) {
+        return option.label;
+      }
+      const rubricContext = rubricContextById.get(rubricId);
+      if (!rubricContext) {
+        return option.label;
+      }
+      const contextLabel = rubricContext.snippet
+        ? `v${rubricContext.version} - ${rubricContext.snippet}`
+        : `v${rubricContext.version}`;
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-foreground truncate">
+            {option.label}
+          </span>
+          <span className="text-[10px] font-light text-muted-foreground truncate">
+            {contextLabel}
+          </span>
+        </div>
+      );
+    },
+    [rubricContextById]
+  );
+
   return (
     <div className="space-y-1.5">
       {/* Input form */}
@@ -312,10 +394,7 @@ export const FilterControls = ({
           <SingleCombobox
             value={metadataKey || null}
             onChange={handleFieldChange}
-            options={metadataFields.map((field) => ({
-              value: field.name,
-              label: formatFilterFieldLabel(field.name),
-            }))}
+            options={filterFieldOptions}
             placeholder="Select field"
             searchPlaceholder="Search fields..."
             emptyMessage="No fields found."
@@ -323,6 +402,7 @@ export const FilterControls = ({
             commandInputClassName="h-8 text-xs"
             commandListClassName="custom-scrollbar"
             optionClassName="font-mono text-xs"
+            renderOptionLabel={renderFilterOptionLabel}
             popoverClassName="max-w-[640px]"
             popoverStyle={{
               width: 'auto',

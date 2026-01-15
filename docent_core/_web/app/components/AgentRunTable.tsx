@@ -24,6 +24,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   Columns3,
   Copy,
   Loader2,
@@ -32,6 +33,12 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -65,6 +72,7 @@ import { toast } from 'sonner';
 import { ComplexFilter } from '@/app/types/collectionTypes';
 import { copyDqlToClipboard } from '@/app/utils/copyDql';
 import { formatFilterFieldLabel } from '@/app/utils/formatMetadataField';
+import { copyToClipboard } from '@/lib/utils';
 
 export type AgentRunTableRow = {
   agentRunId: string;
@@ -414,6 +422,16 @@ export const AgentRunTable = memo(function AgentRunTable({
   useEffect(() => {
     setHasMounted(true);
   }, []);
+  useEffect(() => {
+    return () => {
+      if (
+        copyResetTimeoutRef.current !== null &&
+        typeof window !== 'undefined'
+      ) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
   const [isExporting, setIsExporting] = useState(false);
   const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
     useDownloadApiKey();
@@ -437,6 +455,12 @@ export const AgentRunTable = memo(function AgentRunTable({
     x: number;
     y: number;
   } | null>(null);
+  const [viewValueCell, setViewValueCell] = useState<{
+    columnKey: string;
+    value: unknown;
+  } | null>(null);
+  const [isValueCopied, setIsValueCopied] = useState(false);
+  const copyResetTimeoutRef = useRef<number | null>(null);
   const skipNextRowClickRef = useRef(false);
   const columnSearchInputRef = useRef<HTMLInputElement | null>(null);
   const handleColumnsMenuOpenChange = useCallback((open: boolean) => {
@@ -1031,6 +1055,55 @@ export const AgentRunTable = memo(function AgentRunTable({
     setContextMenuCell(null);
   }, []);
 
+  const handleViewValue = useCallback((columnKey: string, value: unknown) => {
+    setViewValueCell({ columnKey, value });
+  }, []);
+
+  const handleCopyValue = useCallback(async (text: string) => {
+    const success = await copyToClipboard(text);
+    if (!success) {
+      return;
+    }
+    setIsValueCopied(true);
+    if (copyResetTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+    if (typeof window !== 'undefined') {
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setIsValueCopied(false);
+        copyResetTimeoutRef.current = null;
+      }, 2000);
+    }
+  }, []);
+
+  const viewValueLabel = useMemo(() => {
+    if (!viewValueCell) {
+      return '';
+    }
+    return formatFilterFieldLabel(viewValueCell.columnKey);
+  }, [viewValueCell]);
+
+  const viewValueText = useMemo(() => {
+    if (!viewValueCell) {
+      return '';
+    }
+    const value = viewValueCell.value;
+    if (value === null) {
+      return 'null';
+    }
+    if (value === undefined) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (error) {
+      return String(value);
+    }
+  }, [viewValueCell]);
+
   // Prepare sortable fields for the select
   const sortOptions = useMemo(
     () => [
@@ -1521,9 +1594,85 @@ export const AgentRunTable = memo(function AgentRunTable({
             >
               Clear filters then add filter
             </button>
+            <button
+              className="flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => {
+                skipNextRowClickRef.current = true;
+                handleViewValue(
+                  contextMenuCell.columnKey,
+                  contextMenuCell.value
+                );
+                handleContextMenuClose();
+              }}
+            >
+              View value
+            </button>
+            <button
+              className="flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => {
+                skipNextRowClickRef.current = true;
+                void handleCopyValue(
+                  formatCellValue(contextMenuCell.value, true)
+                );
+                handleContextMenuClose();
+              }}
+            >
+              Copy value
+            </button>
           </div>
         </>
       )}
+      <Dialog
+        open={Boolean(viewValueCell)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setViewValueCell(null);
+            setIsValueCopied(false);
+            if (
+              copyResetTimeoutRef.current !== null &&
+              typeof window !== 'undefined'
+            ) {
+              window.clearTimeout(copyResetTimeoutRef.current);
+              copyResetTimeoutRef.current = null;
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader className="flex flex-row items-start justify-between gap-3 pr-10">
+            <DialogTitle className="text-base font-semibold break-words">
+              {viewValueLabel}
+            </DialogTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void handleCopyValue(viewValueText);
+              }}
+              className="h-7 gap-2 text-xs"
+              aria-label="Copy cell value"
+            >
+              {isValueCopied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto rounded border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+            {viewValueText || (
+              <span className="text-muted-foreground">(empty)</span>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });
