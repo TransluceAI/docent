@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence, cast
 
 from docent._log_util import get_logger
+from docent.judges import ResultType
 from docent_core.docent.db.filters import (
     AgentRunIdFilter,
     CollectionFilter,
@@ -53,6 +54,7 @@ class CodeSampleService:
         sort_direction: Literal["asc", "desc"],
         base_filter: ComplexFilter | None,
         limit: int | None,
+        rubric_versions: Mapping[str, int] | None = None,
         format: SampleFormat = SampleFormat.PYTHON,
     ) -> PythonSample:
         dql_query = CodeSampleService.build_agent_runs_dql_query(
@@ -61,6 +63,7 @@ class CodeSampleService:
             sort_direction=sort_direction,
             base_filter=base_filter,
             limit=limit,
+            rubric_versions=rubric_versions,
         )
         description = "Fetches agent runs via DQL and loads them into pandas."
         filename = f"agent_runs_{collection_id}"
@@ -154,15 +157,30 @@ class CodeSampleService:
         sort_direction: Literal["asc", "desc"],
         base_filter: ComplexFilter | None,
         limit: int | None,
+        rubric_versions: Mapping[str, int] | None = None,
         table_alias: str = "ar",
     ) -> str:
+        rubric_ids = sorted(CodeSampleService.collect_rubric_ids(columns, base_filter, sort_field))
+        rubric_ctes: list[str] = []
+        rubric_sources: dict[str, str] = {}
+        if rubric_ids:
+            rubric_ctes, rubric_sources = CodeSampleService._build_rubric_ctes(
+                rubric_ids,
+                rubric_versions=rubric_versions,
+            )
+
         unique_columns: list[str] = []
         for col in ["agent_run_id", *columns]:
             if col not in unique_columns:
                 unique_columns.append(col)
 
         select_lines = [
-            CodeSampleService._build_select_expression(column, table_alias)
+            CodeSampleService._build_select_expression(
+                column,
+                table_alias,
+                rubric_versions=rubric_versions,
+                rubric_sources=rubric_sources,
+            )
             for column in unique_columns
         ]
 
@@ -171,14 +189,23 @@ class CodeSampleService:
             sort_expr = f"{table_alias}.id"
         elif sort_field:
             sort_expr = CodeSampleService._build_field_expression(
-                sort_field.split("."), table_alias
+                sort_field.split("."),
+                table_alias,
+                rubric_versions=rubric_versions,
+                rubric_sources=rubric_sources,
             )
         if not sort_expr:
             sort_expr = f"{table_alias}.created_at"
 
-        where_clause = CodeSampleService.build_where_clause(base_filter, table_alias)
+        where_clause = CodeSampleService.build_where_clause(
+            base_filter,
+            table_alias,
+            rubric_versions=rubric_versions,
+            rubric_sources=rubric_sources,
+        )
 
         lines = [
+            *(["WITH", ",\n".join(rubric_ctes)] if rubric_ctes else []),
             "SELECT",
             ",\n".join(f"  {line}" for line in select_lines),
             f"FROM agent_runs {table_alias}",
@@ -206,7 +233,12 @@ class CodeSampleService:
         where_clauses.append(f"jr.rubric_version = {rubric_version}")
 
         run_filter_condition = (
-            CodeSampleService._build_collection_filter_clause(runs_filter, "ar")
+            CodeSampleService._build_collection_filter_clause(
+                runs_filter,
+                "ar",
+                rubric_versions=None,
+                rubric_sources=None,
+            )
             if runs_filter
             else None
         )
@@ -346,10 +378,57 @@ class CodeSampleService:
         return candidate or "field"
 
     @staticmethod
-    def build_where_clause(filter_obj: ComplexFilter | None, table_alias: str) -> str:
+    def collect_rubric_ids(
+        columns: Sequence[str],
+        base_filter: ComplexFilter | None,
+        sort_field: str | None = None,
+    ) -> set[str]:
+        rubric_ids: set[str] = set()
+        for column in columns:
+            rubric_info = CodeSampleService._parse_rubric_column(column)
+            if rubric_info is not None:
+                rubric_ids.add(rubric_info[0])
+        if sort_field:
+            rubric_info = CodeSampleService._parse_rubric_column(sort_field)
+            if rubric_info is not None:
+                rubric_ids.add(rubric_info[0])
+        if base_filter:
+            rubric_ids.update(CodeSampleService._collect_rubric_ids_from_filter(base_filter))
+        return rubric_ids
+
+    @staticmethod
+    def _collect_rubric_ids_from_filter(filter_obj: CollectionFilter) -> set[str]:
+        if getattr(filter_obj, "disabled", False):
+            return set()
+        if isinstance(filter_obj, PrimitiveFilter):
+            if filter_obj.key_path and filter_obj.key_path[0] == "rubric":
+                if len(filter_obj.key_path) >= 2:
+                    return {filter_obj.key_path[1]}
+            return set()
+        if isinstance(filter_obj, ComplexFilter):
+            rubric_ids: set[str] = set()
+            for sub_filter in filter_obj.filters:
+                rubric_ids.update(CodeSampleService._collect_rubric_ids_from_filter(sub_filter))
+            return rubric_ids
+        if isinstance(filter_obj, AgentRunIdFilter):
+            return set()
+        return set()
+
+    @staticmethod
+    def build_where_clause(
+        filter_obj: ComplexFilter | None,
+        table_alias: str,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
+    ) -> str:
         if not filter_obj:
             return ""
-        condition = CodeSampleService._build_collection_filter_clause(filter_obj, table_alias)
+        condition = CodeSampleService._build_collection_filter_clause(
+            filter_obj,
+            table_alias,
+            rubric_versions=rubric_versions,
+            rubric_sources=rubric_sources,
+        )
         return f"WHERE {condition}" if condition else ""
 
     @staticmethod
@@ -425,15 +504,190 @@ class CodeSampleService:
         return accessor
 
     @staticmethod
+    def _build_tag_list_expression(table_alias: str) -> str:
+        return (
+            "(SELECT array_agg(t.value ORDER BY t.value) "
+            "FROM tags t "
+            f"WHERE t.agent_run_id = {table_alias}.id "
+            f"AND t.collection_id = {table_alias}.collection_id)"
+        )
+
+    @staticmethod
+    def _build_tag_sort_expression(table_alias: str) -> str:
+        return (
+            "(SELECT string_agg(t.value, ',' ORDER BY t.value) "
+            "FROM tags t "
+            f"WHERE t.agent_run_id = {table_alias}.id "
+            f"AND t.collection_id = {table_alias}.collection_id)"
+        )
+
+    @staticmethod
+    def _build_tag_filter_clause(
+        filter_obj: PrimitiveFilter,
+        table_alias: str,
+    ) -> str | None:
+        if len(filter_obj.key_path) != 1:
+            raise ValueError("Tag filters do not support nested paths.")
+
+        op = str(filter_obj.op)
+        if op == "is":
+            normalized = (
+                filter_obj.value.strip().lower() if isinstance(filter_obj.value, str) else None
+            )
+            if normalized == "null":
+                return (
+                    "NOT EXISTS ("
+                    "SELECT 1 FROM tags t "
+                    f"WHERE t.agent_run_id = {table_alias}.id "
+                    f"AND t.collection_id = {table_alias}.collection_id)"
+                )
+            if normalized == "not null":
+                return (
+                    "EXISTS ("
+                    "SELECT 1 FROM tags t "
+                    f"WHERE t.agent_run_id = {table_alias}.id "
+                    f"AND t.collection_id = {table_alias}.collection_id)"
+                )
+            formatted_value = CodeSampleService._format_value(filter_obj.value)
+            return (
+                "EXISTS ("
+                "SELECT 1 FROM tags t "
+                f"WHERE t.agent_run_id = {table_alias}.id "
+                f"AND t.collection_id = {table_alias}.collection_id "
+                f"AND t.value IS {formatted_value})"
+            )
+
+        formatted_value = CodeSampleService._format_value(filter_obj.value)
+        if op in {"==", "!=", ">", ">=", "<", "<=", "~*", "!~*"}:
+            sql_op = "=" if op == "==" else op
+            return (
+                "EXISTS ("
+                "SELECT 1 FROM tags t "
+                f"WHERE t.agent_run_id = {table_alias}.id "
+                f"AND t.collection_id = {table_alias}.collection_id "
+                f"AND t.value {sql_op} {formatted_value})"
+            )
+
+        return None
+
+    @staticmethod
+    def _build_json_text_accessor(base: str, path: Sequence[str]) -> str:
+        if not path:
+            raise ValueError("JSON path cannot be empty")
+        accessor = base
+        for segment in path[:-1]:
+            accessor = f"{accessor}->'{CodeSampleService._escape_literal(segment)}'"
+        last_segment = CodeSampleService._escape_literal(path[-1])
+        return f"{accessor}->>'{last_segment}'"
+
+    @staticmethod
+    def _build_rubric_version_clause(rubric_id: str, rubric_version: int | None) -> str:
+        if rubric_version is not None:
+            return f"jr.rubric_version = {int(rubric_version)}"
+        escaped_id = CodeSampleService._escape_literal(rubric_id)
+        result_type = CodeSampleService._escape_literal(ResultType.DIRECT_RESULT.value)
+        return (
+            "jr.rubric_version = ("
+            "SELECT MAX(jr_version.rubric_version) "
+            "FROM judge_results jr_version "
+            f"WHERE jr_version.rubric_id = '{escaped_id}' "
+            f"AND jr_version.result_type = '{result_type}'"
+            ")"
+        )
+
+    @staticmethod
+    def _build_rubric_modal_expression(
+        rubric_id: str,
+        json_path: Sequence[str],
+        table_alias: str,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
+        comparison_value: object | None = None,
+    ) -> str:
+        if not json_path:
+            raise ValueError("Rubric path cannot be empty")
+        value_expr = CodeSampleService._build_json_text_accessor("jr.output", json_path)
+        rubric_source = rubric_sources.get(rubric_id) if rubric_sources else None
+        where_clauses = [f"jr.agent_run_id = {table_alias}.id"]
+        if rubric_source is None:
+            rubric_version = rubric_versions.get(rubric_id) if rubric_versions else None
+            version_clause = CodeSampleService._build_rubric_version_clause(
+                rubric_id, rubric_version
+            )
+            escaped_id = CodeSampleService._escape_literal(rubric_id)
+            result_type = CodeSampleService._escape_literal(ResultType.DIRECT_RESULT.value)
+            where_clauses.extend(
+                [
+                    f"jr.rubric_id = '{escaped_id}'",
+                    version_clause,
+                    f"jr.result_type = '{result_type}'",
+                ]
+            )
+        from_clause = f"{rubric_source} jr" if rubric_source else "judge_results jr"
+        where_sql = " AND ".join(where_clauses)
+        modal_expr = (
+            "(SELECT rubric_counts.rubric_value "
+            "FROM ("
+            f"SELECT {value_expr} AS rubric_value, COUNT(1) AS value_count "
+            f"FROM {from_clause} "
+            f"WHERE {where_sql} "
+            f"GROUP BY {value_expr}"
+            ") rubric_counts "
+            "ORDER BY rubric_counts.value_count DESC, "
+            "rubric_counts.rubric_value ASC NULLS LAST "
+            "LIMIT 1)"
+        )
+        if isinstance(comparison_value, (int, float)):
+            return f"CAST({modal_expr} AS DOUBLE PRECISION)"
+        if isinstance(comparison_value, bool):
+            return f"CAST({modal_expr} AS BOOLEAN)"
+        return modal_expr
+
+    @staticmethod
+    def _parse_rubric_column(column: str) -> tuple[str, list[str]] | None:
+        if not column.startswith("rubric."):
+            return None
+        parts = column.split(".")
+        if len(parts) < 3:
+            return None
+        rubric_id = parts[1]
+        if not rubric_id:
+            return None
+        return rubric_id, parts[2:]
+
+    @staticmethod
     def _build_field_expression(
-        key_path: Sequence[str], table_alias: str, comparison_value: object | None = None
+        key_path: Sequence[str],
+        table_alias: str,
+        comparison_value: object | None = None,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
     ) -> str | None:
         if not key_path:
             return None
 
         root, *rest = key_path
-        if root == "metadata" and rest:
+        if root == "metadata":
+            if not rest:
+                return None
             return CodeSampleService._build_metadata_accessor(rest, table_alias, comparison_value)
+        if root == "rubric":
+            if len(rest) < 2:
+                return None
+            rubric_id = rest[0]
+            json_path = rest[1:]
+            return CodeSampleService._build_rubric_modal_expression(
+                rubric_id,
+                json_path,
+                table_alias,
+                rubric_versions=rubric_versions,
+                rubric_sources=rubric_sources,
+                comparison_value=comparison_value,
+            )
+        if root == "tag":
+            if rest:
+                return None
+            return CodeSampleService._build_tag_sort_expression(table_alias)
         if root == "agent_run_id":
             return f"{table_alias}.id"
         if root == "created_at":
@@ -451,12 +705,24 @@ class CodeSampleService:
         return f"'{CodeSampleService._escape_literal(str(value))}'"
 
     @staticmethod
-    def _build_primitive_clause(filter_obj: PrimitiveFilter, table_alias: str) -> str | None:
+    def _build_primitive_clause(
+        filter_obj: PrimitiveFilter,
+        table_alias: str,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
+    ) -> str | None:
         if filter_obj.disabled or filter_obj.supports_sql is False:
             return None
 
+        if filter_obj.key_path and filter_obj.key_path[0] == "tag":
+            return CodeSampleService._build_tag_filter_clause(filter_obj, table_alias)
+
         field_expr = CodeSampleService._build_field_expression(
-            filter_obj.key_path, table_alias, filter_obj.value
+            filter_obj.key_path,
+            table_alias,
+            filter_obj.value,
+            rubric_versions=rubric_versions,
+            rubric_sources=rubric_sources,
         )
         if not field_expr:
             return None
@@ -493,7 +759,10 @@ class CodeSampleService:
 
     @staticmethod
     def _build_collection_filter_clause(
-        filter_obj: CollectionFilter, table_alias: str
+        filter_obj: CollectionFilter,
+        table_alias: str,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
     ) -> str | None:
         if (
             getattr(filter_obj, "disabled", False)
@@ -502,7 +771,12 @@ class CodeSampleService:
             return None
 
         if isinstance(filter_obj, PrimitiveFilter):
-            return CodeSampleService._build_primitive_clause(filter_obj, table_alias)
+            return CodeSampleService._build_primitive_clause(
+                filter_obj,
+                table_alias,
+                rubric_versions=rubric_versions,
+                rubric_sources=rubric_sources,
+            )
         if isinstance(filter_obj, AgentRunIdFilter):
             return CodeSampleService._build_agent_run_id_clause(filter_obj, table_alias)
 
@@ -510,7 +784,12 @@ class CodeSampleService:
         inner = [
             clause
             for clause in (
-                CodeSampleService._build_collection_filter_clause(child, table_alias)
+                CodeSampleService._build_collection_filter_clause(
+                    child,
+                    table_alias,
+                    rubric_versions=rubric_versions,
+                    rubric_sources=rubric_sources,
+                )
                 for child in getattr(filter_obj, "filters", [])
             )
             if clause
@@ -521,12 +800,95 @@ class CodeSampleService:
         return f"({joiner.join(inner)})"
 
     @staticmethod
-    def _build_select_expression(column: str, table_alias: str) -> str:
+    def _build_select_expression(
+        column: str,
+        table_alias: str,
+        rubric_versions: Mapping[str, int] | None = None,
+        rubric_sources: Mapping[str, str] | None = None,
+    ) -> str:
         if column == "agent_run_id":
             return f"{table_alias}.id AS agent_run_id"
+        if column == "tag":
+            expr = CodeSampleService._build_tag_list_expression(table_alias)
+            return f"{expr} AS tag"
         if column.startswith("metadata."):
             path = column.split(".")[1:]
             expr = CodeSampleService._build_metadata_accessor(path, table_alias)
             alias = column.replace(".", "_")
             return f"{expr} AS {alias}"
+        if column.startswith("rubric."):
+            rubric_info = CodeSampleService._parse_rubric_column(column)
+            if rubric_info is None:
+                parts = column.split(".")
+                if len(parts) >= 2 and parts[1]:
+                    alias = CodeSampleService._build_rubric_column_alias(
+                        parts[1],
+                        parts[2:],
+                        rubric_sources=rubric_sources,
+                    )
+                else:
+                    alias = CodeSampleService._sanitize_identifier(column.replace(".", "_"))
+                return f"NULL AS {alias}"
+            rubric_id, json_path = rubric_info
+            expr = CodeSampleService._build_rubric_modal_expression(
+                rubric_id,
+                json_path,
+                table_alias,
+                rubric_versions=rubric_versions,
+                rubric_sources=rubric_sources,
+            )
+            alias = CodeSampleService._build_rubric_column_alias(
+                rubric_id,
+                json_path,
+                rubric_sources=rubric_sources,
+            )
+            return f"{expr} AS {alias}"
         return f"{table_alias}.{column} AS {column}"
+
+    @staticmethod
+    def _build_rubric_column_alias(
+        rubric_id: str,
+        json_path: Sequence[str],
+        rubric_sources: Mapping[str, str] | None = None,
+    ) -> str:
+        prefix = rubric_sources.get(rubric_id) if rubric_sources else None
+        if not prefix:
+            short_id = rubric_id.split("-", maxsplit=1)[0]
+            prefix = CodeSampleService._sanitize_identifier(f"rubric_{short_id}")
+        parts = [prefix, *[part for part in json_path if part]]
+        return CodeSampleService._sanitize_identifier("_".join(parts))
+
+    @staticmethod
+    def _build_rubric_ctes(
+        rubric_ids: Sequence[str],
+        rubric_versions: Mapping[str, int] | None = None,
+    ) -> tuple[list[str], dict[str, str]]:
+        ctes: list[str] = []
+        alias_map: dict[str, str] = {}
+        alias_counts: dict[str, int] = {}
+        for index, rubric_id in enumerate(rubric_ids):
+            short_id = rubric_id.split("-", maxsplit=1)[0]
+            base_alias = CodeSampleService._sanitize_identifier(f"rubric_{short_id}")
+            alias_index = alias_counts.get(base_alias, 0)
+            alias_counts[base_alias] = alias_index + 1
+            alias = base_alias if alias_index == 0 else f"{base_alias}_{alias_index}"
+            alias_map[rubric_id] = alias
+            escaped_id = CodeSampleService._escape_literal(rubric_id)
+            rubric_version = rubric_versions.get(rubric_id) if rubric_versions else None
+            version_clause = CodeSampleService._build_rubric_version_clause(
+                rubric_id, rubric_version
+            )
+            result_type = CodeSampleService._escape_literal(ResultType.DIRECT_RESULT.value)
+            cte = "\n".join(
+                [
+                    f"  {alias} AS (",
+                    "    SELECT jr.agent_run_id, jr.output",
+                    "    FROM judge_results jr",
+                    f"    WHERE jr.rubric_id = '{escaped_id}'",
+                    f"      AND {version_clause}",
+                    f"      AND jr.result_type = '{result_type}'",
+                    "  )",
+                ]
+            )
+            ctes.append(cte)
+        return ctes, alias_map

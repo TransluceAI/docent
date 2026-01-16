@@ -4,9 +4,11 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 
 from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
+from docent_core.docent.db.schemas.rubric import SQLARubric
 from docent_core.docent.server.dependencies.database import get_mono_svc
 from docent_core.docent.server.dependencies.services import get_rubric_service
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
@@ -107,6 +109,27 @@ async def create_python_sample(
 
     try:
         if isinstance(request, AgentRunSampleRequest):
+            rubric_versions: dict[str, int] | None = None
+            rubric_ids = CodeSampleService.collect_rubric_ids(
+                request.columns,
+                request.base_filter,
+                request.sort_field,
+            )
+            if rubric_ids:
+                async with mono_svc.db.session() as session:
+                    result = await session.execute(
+                        select(SQLARubric.id, func.max(SQLARubric.version))
+                        .where(
+                            SQLARubric.collection_id == request.collection_id,
+                            SQLARubric.id.in_(sorted(rubric_ids)),
+                        )
+                        .group_by(SQLARubric.id)
+                    )
+                    rubric_versions = {
+                        rubric_id: version
+                        for rubric_id, version in result.all()
+                        if version is not None
+                    }
             sample = CodeSampleService.build_agent_runs_sample(
                 api_key=request.api_key,
                 server_url=server_url,
@@ -116,6 +139,7 @@ async def create_python_sample(
                 sort_direction=request.sort_direction,
                 base_filter=request.base_filter,
                 limit=request.limit,
+                rubric_versions=rubric_versions,
                 format=sample_format,
             )
         elif isinstance(request, DqlSampleRequest):
