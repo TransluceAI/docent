@@ -150,9 +150,19 @@ class SQLARubric(SQLABase):
         if self.prompt_templates is not None:
             kwargs["prompt_templates"] = [PromptTemplateMessage(**t) for t in self.prompt_templates]
         elif self.system_prompt_template is not None:
+            # For backwards compatibility only! No new rubrics should use this codepath.
+
+            # Strip out citation placeholder because we auto-append that now
             template_content = AgentRunTemplateFormatter.strip_citation_placeholder(
                 self.system_prompt_template
             )
+
+            # NOTE(mengk): very janky hack to add the <response> tag to pre-10/2025 rubrics
+            # By default the parser expects this.
+            if "<response>" not in template_content:
+                template_content = f"{template_content}\nOutput your final adjudication surrounded by <response>...</response> tags."
+
+            # Create the prompt template list in accordance with the new system.
             kwargs["prompt_templates"] = [
                 PromptTemplateMessage(role="user", content=template_content)
             ]
