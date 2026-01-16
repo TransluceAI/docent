@@ -37,6 +37,7 @@ from docent._llm_util.providers.provider_registry import (
 )
 from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, ToolInfo, parse_chat_message
+from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
 
@@ -90,6 +91,7 @@ async def _parallelize_calls(
     semaphore: Semaphore,
     # use_tqdm: bool,
     cache: LLMCache | None = None,
+    response_format: ResponseFormat | None = None,
 ):
     base_func = partial(
         single_output_getter,
@@ -103,6 +105,7 @@ async def _parallelize_calls(
         logprobs=logprobs,
         top_logprobs=top_logprobs,
         timeout=timeout,
+        response_format=response_format,
     )
 
     responses: list[LLMOutput | None] = [None for _ in inputs]
@@ -143,6 +146,7 @@ async def _parallelize_calls(
                     temperature=temperature,
                     logprobs=logprobs,
                     top_logprobs=top_logprobs,
+                    response_format=response_format,
                 )
                 if cache is not None
                 else None
@@ -271,6 +275,7 @@ async def _parallelize_calls(
                 temperature=temperature,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                response_format=response_format,
             )
             return len(indices)
         else:
@@ -351,6 +356,7 @@ class BaseLLMService:
         validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
         use_cache: bool = False,
+        response_format: ResponseFormat | None = None,
         _api_key_overrides: dict[str, str] = dict(),
     ) -> list[LLMOutput]:
         """Request completions from a configured LLM provider."""
@@ -424,6 +430,7 @@ class BaseLLMService:
                 timeout=timeout,
                 semaphore=self._semaphore,
                 cache=cache,
+                response_format=response_format,
             )
             assert len(outputs) == len(inputs), "Number of outputs must match number of messages"
 

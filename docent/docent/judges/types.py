@@ -1,20 +1,30 @@
 import enum
-import json
-from string import Formatter
 from typing import Any, Callable, Literal, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from docent._llm_util.providers.preference_types import PUBLIC_PROVIDER_PREFERENCES, ModelOption
 from docent._log_util import get_logger
-from docent.data_models.agent_run import AgentRun, AgentRunView
+from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat.message import (
+    AssistantMessage,
+    ChatMessage,
+    SystemMessage,
+    UserMessage,
+)
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent.judges.util.meta_schema import validate_judge_result_schema
+from docent.judges.util.template_formatter import AgentRunTemplateFormatter
 from docent.sdk.llm_context import LLMContext, resolve_citations_with_context
 
 logger = get_logger(__name__)
 
+############
+# Defaults #
+############
+
+# Prompt templates for various "default" judges
 DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
 Here is a rubric that we are using to judge transcripts of AI agent runs.
 
@@ -34,8 +44,6 @@ When you are finished, output your final adjudication, surrounded by <response>.
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}
-
-{citation_instructions}
 """.strip()
 
 DEFAULT_MULTI_TURN_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
@@ -57,8 +65,6 @@ When you are finished going through the decision procedure, output your final ad
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}
-
-{citation_instructions}
 """.strip()
 
 DEFAULT_EXPOSED_REASONING_JUDGE_SYSTEM_PROMPT_TEMPLATE = """
@@ -80,15 +86,9 @@ When you are finished, output your final adjudication in the assistant message, 
 
 The JSON object you produce must adhere to the following schema:
 {output_schema}
-
-{citation_instructions}
 """.strip()
 
-DEFAULT_CITATION_INSTRUCTIONS = f"""
-For strings which require citations (according to the `citations: True` property), you must also follow these instructions:
-{TEXT_RANGE_CITE_INSTRUCTION}
-""".strip()
-
+# Other judge defaults
 DEFAULT_JUDGE_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -99,13 +99,34 @@ DEFAULT_JUDGE_OUTPUT_SCHEMA = {
     "required": ["label", "explanation"],
     # Allow additional properties though, as their presence is not breaking
 }
-
 DEFAULT_JUDGE_MODEL = PUBLIC_PROVIDER_PREFERENCES.default_judge_models[0]
+
+# Citation instructions
+JUDGE_CITATION_INSTRUCTIONS = f"""
+For strings which require citations (according to the `citations: True` property), you must also follow these instructions:
+{TEXT_RANGE_CITE_INSTRUCTION}
+""".strip()
 
 
 class JudgeVariant(str, enum.Enum):
     MAJORITY = "majority"
     MULTI_REFLECT = "multi-reflect"
+
+
+class OutputParsingMode(str, enum.Enum):
+    """Defines how LLM output is parsed to extract the JSON response."""
+
+    CONSTRAINED_DECODING = (
+        "constrained_decoding"  # Parse entire output as JSON (assumes constrained decoding)
+    )
+    XML_KEY = "xml_key"  # Extract content from within XML tags
+
+
+class PromptTemplateMessage(BaseModel):
+    """A single message in a prompt template for flexible judge configuration."""
+
+    role: Literal["system", "user", "assistant"]
+    content: str
 
 
 class Rubric(BaseModel):
@@ -120,64 +141,76 @@ class Rubric(BaseModel):
     version: int = 1
 
     # What the judge actually does
-    rubric_text: str
     n_rollouts_per_input: int = 1
     judge_variant: JudgeVariant = JudgeVariant.MAJORITY
-    # TODO(mengk): add this to the database
-    # No need right now because multi-turn is still very experimental.
-    rollout_type: Literal["single_turn", "multi_turn"] = "single_turn"
+    rollout_type: Literal["single_turn"] = "single_turn"  # TODO(mengk): add to DB
 
-    # Default instructions for the judge
-    system_prompt_template: str = DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE
-    citation_instructions: str = DEFAULT_CITATION_INSTRUCTIONS
+    # Prompt templates
+    prompt_templates: list[PromptTemplateMessage] = Field(
+        default_factory=lambda: [
+            PromptTemplateMessage(role="user", content=DEFAULT_JUDGE_SYSTEM_PROMPT_TEMPLATE)
+        ]
+    )
+
+    # Auto-optimizable parameters
+    rubric_text: str
     output_schema: dict[str, Any] = DEFAULT_JUDGE_OUTPUT_SCHEMA
 
-    # How to run the judge
+    # LLM config
     judge_model: ModelOption = DEFAULT_JUDGE_MODEL
 
-    def materialize_system_prompt(self, agent_run: AgentRun) -> str:
-        """Construct the full prompt text for rubric evaluation.
+    # Output parsing
+    output_parsing_mode: OutputParsingMode = OutputParsingMode.XML_KEY
+    response_xml_key: str = "response"  # Only used when mode is XML_KEY
 
-        This is the canonical implementation of prompt construction - use this function
-        anywhere you need to construct a rubric evaluation prompt (including cost estimation).
+    def materialize_messages(self, agent_run: AgentRun) -> list[ChatMessage]:
+        """Construct the message list for rubric evaluation.
+
+        Uses the prompt_templates system.
+
+        Args:
+            agent_run: The agent run being judged
+
+        Returns:
+            A list of ChatMessage objects ready for LLM completion
         """
+        citation_instructions = (
+            JUDGE_CITATION_INSTRUCTIONS if _schema_requests_citations(self.output_schema) else ""
+        )
+        formatter = AgentRunTemplateFormatter(
+            agent_run=agent_run,
+            rubric_text=self.rubric_text,
+            output_schema=self.output_schema,
+        )
 
-        output_schema_text = json.dumps(self.output_schema, indent=2)
+        # Format each template message
+        messages: list[ChatMessage] = []
+        for i, template in enumerate(self.prompt_templates):
+            # No need to strip citation instructions here, as this is a new codepath
+            content = formatter.format_template(template.content)
 
-        # We've already validated that the system prompt template has these keys
-        prompt = self.system_prompt_template.format(
-            rubric=self.rubric_text,
-            agent_run=AgentRunView.from_agent_run(agent_run).to_text(),
-            output_schema=output_schema_text,
-            # Only include citation instructions if the schema requests citations
-            citation_instructions=(
-                self.citation_instructions if _schema_requests_citations(self.output_schema) else ""
-            ),
-        ).strip()
+            # Auto-append citation instructions to the last message
+            if i == len(self.prompt_templates) - 1 and citation_instructions:
+                content = f"{content}\n\n{citation_instructions}"
 
-        return prompt
+            if template.role == "system":
+                messages.append(SystemMessage(content=content))
+            elif template.role == "user":
+                messages.append(UserMessage(content=content))
+            elif template.role == "assistant":
+                messages.append(AssistantMessage(content=content))
 
-    @field_validator("system_prompt_template")
+        return messages
+
+    @field_validator("prompt_templates")
     @classmethod
-    def validate_system_prompt_template(cls, system_prompt_template: str):
-        # Extract all field names from the template
-        formatter = Formatter()
-        field_names = {
-            field_name
-            for _, field_name, _, _ in formatter.parse(system_prompt_template)
-            if field_name is not None
-        }
-
-        # Check for required fields
-        required_fields = {"agent_run", "output_schema", "rubric", "citation_instructions"}
-        missing_fields = required_fields - field_names
-
-        if missing_fields:
-            raise ValueError(
-                f"system_prompt_template must contain the following placeholders: {missing_fields}"
-            )
-
-        return system_prompt_template
+    def validate_prompt_templates(
+        cls, prompt_templates: list[PromptTemplateMessage]
+    ) -> list[PromptTemplateMessage]:
+        if not prompt_templates:
+            raise ValueError("prompt_templates must include at least one template message.")
+        AgentRunTemplateFormatter.validate_template_variables([t.content for t in prompt_templates])
+        return prompt_templates
 
     @field_validator("output_schema")
     @classmethod
@@ -190,14 +223,37 @@ class Rubric(BaseModel):
         validate_judge_result_schema(output_schema)
         return output_schema
 
+    @model_validator(mode="after")
+    def validate_output_parsing_mode_configuration(self) -> "Rubric":
+        """Validate output parsing mode configuration.
 
-class MultiTurnRubric(Rubric):
-    system_prompt_template: str = DEFAULT_MULTI_TURN_JUDGE_SYSTEM_PROMPT_TEMPLATE
-    rollout_type: Literal["single_turn", "multi_turn"] = "multi_turn"
+        Rules:
+        - When mode is XML_KEY, at least one template must mention the XML key
+        """
+        if self.output_parsing_mode == OutputParsingMode.XML_KEY:
+            # Validate that the XML key is mentioned in at least one template
+            # Only check the templates that will actually be used at runtime
+            xml_tag = f"<{self.response_xml_key}>"
+            templates_to_check = [t.content for t in self.prompt_templates]
+            if not any(xml_tag in template for template in templates_to_check):
+                raise ValueError(
+                    f"When output_parsing_mode is XML_KEY, at least one template must contain "
+                    f"the XML tag '<{self.response_xml_key}>'. "
+                    f"Either add '{xml_tag}' to your templates or change the response_xml_key."
+                )
+
+        return self
 
 
 class ExposedReasoningRubric(Rubric):
-    system_prompt_template: str = DEFAULT_EXPOSED_REASONING_JUDGE_SYSTEM_PROMPT_TEMPLATE
+    prompt_templates: list[PromptTemplateMessage] = Field(
+        default_factory=lambda: [
+            PromptTemplateMessage(
+                role="user",
+                content=DEFAULT_EXPOSED_REASONING_JUDGE_SYSTEM_PROMPT_TEMPLATE,
+            )
+        ]
+    )
 
 
 class ResultType(enum.Enum):

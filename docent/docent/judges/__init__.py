@@ -4,6 +4,8 @@ from docent.judges.types import (
     JudgeResultCompletionCallback,
     JudgeResultWithCitations,
     JudgeVariant,
+    OutputParsingMode,
+    PromptTemplateMessage,
     ResultType,
     Rubric,
 )
@@ -15,9 +17,11 @@ __all__ = [
     "BaseJudge",
     # Types
     "Rubric",
+    "PromptTemplateMessage",
     "JudgeResult",
     "JudgeResultWithCitations",
     "JudgeResultCompletionCallback",
     "ResultType",
     "JudgeVariant",
+    "OutputParsingMode",
 ]

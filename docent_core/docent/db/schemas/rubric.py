@@ -26,7 +26,15 @@ from docent_core.docent.db.schemas.label import TABLE_LABEL, SQLALabel
 if TYPE_CHECKING:
     from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 
-from docent.judges import JudgeResult, JudgeVariant, ResultType, Rubric
+from docent.judges import (
+    JudgeResult,
+    JudgeVariant,
+    OutputParsingMode,
+    PromptTemplateMessage,
+    ResultType,
+    Rubric,
+)
+from docent.judges.util.template_formatter import AgentRunTemplateFormatter
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.schemas.tables import TABLE_AGENT_RUN, TABLE_COLLECTION
 
@@ -45,35 +53,36 @@ RESULT_TYPE_ENUM = Enum(ResultType, name="resulttype")
 class SQLARubric(SQLABase):
     __tablename__ = TABLE_RUBRIC
 
+    # Primary key
     id: Mapped[str] = mapped_column(String(36), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     collection_id: Mapped[str] = mapped_column(
         String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
     )
 
-    rubric_text: Mapped[str] = mapped_column(Text, nullable=False)
-    # Nullable for bwd compat
+    # What the judge actually does (nullable for bwd compat)
     n_rollouts_per_input: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
-    # Nullable for bwd compat
     judge_variant: Mapped[JudgeVariant | None] = mapped_column(
         Enum(JudgeVariant), nullable=True, default=JudgeVariant.MAJORITY
     )
 
-    # Nullable for bwd compat
+    # Prompt templates (nullable for bwd compat)
+    prompt_templates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     system_prompt_template: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Nullable for bwd compat
     citation_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Follows https://json-schema.org standard
-    output_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
+    # Auto-optimizable parameters
+    rubric_text: Mapped[str] = mapped_column(Text, nullable=False)
+    output_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)  # JSON schema
+
+    # LLM config
     judge_model: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
-    # --- START DEPRECATED ---
-    high_level_description: Mapped[str] = mapped_column(Text, nullable=True)
-    inclusion_rules: Mapped[list[str]] = mapped_column(JSONB, nullable=True)
-    exclusion_rules: Mapped[list[str]] = mapped_column(JSONB, nullable=True)
-    # --- END DEPRECATED ---
+    # Output parsing (nullable for bwd compat)
+    output_parsing_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    response_xml_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
@@ -110,10 +119,15 @@ class SQLARubric(SQLABase):
             rubric_text=rubric.rubric_text,
             n_rollouts_per_input=rubric.n_rollouts_per_input,
             judge_variant=rubric.judge_variant,
-            system_prompt_template=rubric.system_prompt_template,
-            citation_instructions=rubric.citation_instructions,
             output_schema=rubric.output_schema,
             judge_model=rubric.judge_model.model_dump(),
+            prompt_templates=(
+                [t.model_dump() for t in rubric.prompt_templates]
+                if rubric.prompt_templates
+                else None
+            ),
+            output_parsing_mode=rubric.output_parsing_mode.value,
+            response_xml_key=rubric.response_xml_key,
         )
 
     def to_pydantic(self) -> Rubric:
@@ -133,10 +147,19 @@ class SQLARubric(SQLABase):
             kwargs["n_rollouts_per_input"] = self.n_rollouts_per_input
         if self.judge_variant is not None:
             kwargs["judge_variant"] = self.judge_variant
-        if self.system_prompt_template is not None:
-            kwargs["system_prompt_template"] = self.system_prompt_template
-        if self.citation_instructions is not None:
-            kwargs["citation_instructions"] = self.citation_instructions
+        if self.prompt_templates is not None:
+            kwargs["prompt_templates"] = [PromptTemplateMessage(**t) for t in self.prompt_templates]
+        elif self.system_prompt_template is not None:
+            template_content = AgentRunTemplateFormatter.strip_citation_placeholder(
+                self.system_prompt_template
+            )
+            kwargs["prompt_templates"] = [
+                PromptTemplateMessage(role="user", content=template_content)
+            ]
+        if self.output_parsing_mode is not None:
+            kwargs["output_parsing_mode"] = OutputParsingMode(self.output_parsing_mode)
+        if self.response_xml_key is not None:
+            kwargs["response_xml_key"] = self.response_xml_key
 
         return Rubric(**kwargs)
 

@@ -28,6 +28,7 @@ from docent._llm_util.providers.common import (
 )
 from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, Content, ContentText, ToolCall, ToolInfo
+from docent.data_models.chat.response_format import ResponseFormat
 
 
 def get_google_client_async(api_key: str | None = None) -> AsyncGoogle:
@@ -82,7 +83,12 @@ async def get_google_chat_completion_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 5.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
+    if response_format is not None:
+        raise NotImplementedError(
+            "Structured outputs (response_format) are not implemented for Google yet."
+        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Google yet."
@@ -145,7 +151,12 @@ async def get_google_chat_completion_streaming_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 5.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
+    if response_format is not None:
+        raise NotImplementedError(
+            "Structured outputs (response_format) are not implemented for Google yet."
+        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Google yet."

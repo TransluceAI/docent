@@ -40,6 +40,10 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
     Function as OpenAIFunctionParam,
 )
 from openai.types.shared_params.function_definition import FunctionDefinition
+from openai.types.shared_params.response_format_json_schema import (
+    JSONSchema,
+    ResponseFormatJSONSchema,
+)
 
 from docent._llm_util.data_models.exceptions import (
     CompletionTooLongException,
@@ -70,6 +74,7 @@ from docent.data_models.chat import (
     ToolInfo,
     ToolMessage,
 )
+from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
 DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
@@ -194,6 +199,42 @@ def parse_tools(tools: list[ToolInfo]) -> list[ChatCompletionToolParam]:
     return result
 
 
+def _build_response_format(
+    response_format: ResponseFormat | None,
+) -> ResponseFormatJSONSchema | None:
+    """Build OpenAI response_format dict from unified ResponseFormat.
+
+    Converts the unified ResponseFormat specification to OpenAI's
+    expected response_format structure for structured outputs.
+
+    Args:
+        response_format: The unified response format specification, or None.
+
+    Returns:
+        OpenAI response_format dict if provided, empty dict otherwise.
+
+    Raises:
+        ValueError: If response_format.type is not 'json_schema'.
+    """
+    if response_format is None:
+        return None
+
+    if response_format.type != "json_schema":
+        raise ValueError(
+            f"Unsupported response format type: {response_format.type}. "
+            "Only 'json_schema' is currently supported."
+        )
+
+    return ResponseFormatJSONSchema(
+        type="json_schema",
+        json_schema=JSONSchema(
+            name=response_format.name,
+            strict=response_format.strict,
+            schema=response_format.schema_,
+        ),
+    )
+
+
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception,),
@@ -215,16 +256,14 @@ async def get_openai_chat_completion_streaming_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 30.0,
+    response_format: ResponseFormat | None = None,
 ):
-    input_messages = parse_chat_messages(messages)
-    input_tools = parse_tools(tools) if tools else omit
-
     try:
         async with async_timeout_ctx(timeout):
             stream = await client.chat.completions.create(
                 model=model_name,
-                messages=input_messages,
-                tools=input_tools,
+                messages=parse_chat_messages(messages),
+                tools=parse_tools(tools) if tools else omit,
                 tool_choice=tool_choice or omit,
                 max_completion_tokens=max_new_tokens,
                 temperature=temperature,
@@ -233,6 +272,7 @@ async def get_openai_chat_completion_streaming_async(
                 top_logprobs=top_logprobs,
                 stream_options={"include_usage": True},
                 stream=True,
+                response_format=_build_response_format(response_format) or omit,
             )
 
             llm_output_partial = None
@@ -406,22 +446,21 @@ async def get_openai_chat_completion_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 5.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
-    input_messages = parse_chat_messages(messages)
-    input_tools = parse_tools(tools) if tools else omit
-
     try:
         async with async_timeout_ctx(timeout):  # type: ignore
             raw_output = await client.chat.completions.create(
                 model=model_name,
-                messages=input_messages,
-                tools=input_tools,
+                messages=parse_chat_messages(messages),
+                tools=parse_tools(tools) if tools else omit,
                 tool_choice=tool_choice or omit,
                 max_completion_tokens=max_new_tokens,
                 temperature=temperature,
                 reasoning_effort=reasoning_effort or omit,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                response_format=_build_response_format(response_format) or omit,
             )
 
             # If the completion is empty and was truncated (likely due to too much reasoning), raise an exception

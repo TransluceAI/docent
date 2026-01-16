@@ -26,6 +26,7 @@ from docent._llm_util.providers.openrouter import (
     get_openrouter_chat_completion_streaming_async,
 )
 from docent.data_models.chat import ChatMessage, ToolInfo
+from docent.data_models.chat.response_format import ResponseFormat
 
 
 class SingleOutputGetter(Protocol):
@@ -49,6 +50,7 @@ class SingleOutputGetter(Protocol):
         logprobs: bool,
         top_logprobs: int | None,
         timeout: float,
+        response_format: ResponseFormat | None,
     ) -> LLMOutput:
         """Get a single completion from an LLM.
 
@@ -64,6 +66,7 @@ class SingleOutputGetter(Protocol):
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of most likely tokens to return probabilities for.
             timeout: Maximum time to wait for a response in seconds.
+            response_format: Optional structured output format specification.
 
         Returns:
             LLMOutput: The model's response.
@@ -93,6 +96,7 @@ class SingleStreamingOutputGetter(Protocol):
         logprobs: bool,
         top_logprobs: int | None,
         timeout: float,
+        response_format: ResponseFormat | None,
     ) -> LLMOutput:
         """Get a streaming completion from an LLM.
 
@@ -109,6 +113,7 @@ class SingleStreamingOutputGetter(Protocol):
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of most likely tokens to return probabilities for.
             timeout: Maximum time to wait for a response in seconds.
+            response_format: Optional structured output format specification.
 
         Returns:
             LLMOutput: The complete model response after streaming finishes.

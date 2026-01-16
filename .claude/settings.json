@@ -5,6 +5,8 @@
       "Bash(python -m py_compile:*)",
       "Bash(python -m pyright:*)",
       "Bash(python -m pytest:*)",
+      "Bash(pyright:*)",
+      "Bash(pytest:*)",
       "Bash(npx tsc:*)",
       "Bash(npx --package=typescript tsc:*)",
       "Bash(git:*)",

@@ -13,6 +13,9 @@
           "type": "string",
           "enum": ["string", "integer", "number", "boolean", "array", "object"]
         },
+        "title": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         },
@@ -99,6 +102,8 @@
   "additionalProperties": false,
   "properties": {
     "type": { "const": "object" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
     "additionalProperties": { "const": false },
     "required": {
       "type": "array",

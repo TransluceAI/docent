@@ -62,6 +62,7 @@ class LLMCompletion(BaseModel):
         tool_calls: List of tool calls made during the completion.
         finish_reason: Reason why the completion finished.
         top_logprobs: Probability distribution for top token choices.
+        reasoning_tokens: Extended thinking tokens (for reasoning models).
     """
 
     text: str | None = None

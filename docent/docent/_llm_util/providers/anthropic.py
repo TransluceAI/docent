@@ -70,6 +70,7 @@ from docent.data_models.chat import (
     ToolInfo,
     ToolMessage,
 )
+from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
 
@@ -217,7 +218,12 @@ async def get_anthropic_chat_completion_streaming_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 5.0,
+    response_format: ResponseFormat | None = None,
 ):
+    if response_format is not None:
+        raise NotImplementedError(
+            "Structured outputs (response_format) are not implemented for Anthropic yet."
+        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Anthropic yet."
@@ -399,6 +405,7 @@ async def get_anthropic_chat_completion_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 5.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
     """
     Note from kevin 1/29/2025:
@@ -409,6 +416,10 @@ async def get_anthropic_chat_completion_async(
         We should actually implement this at some point, but it does not work.
     """
 
+    if response_format is not None:
+        raise NotImplementedError(
+            "Structured outputs (response_format) are not implemented for Anthropic yet."
+        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Anthropic yet."

@@ -2,7 +2,7 @@ import random
 import re
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
-from typing import Any, Sequence, cast
+from typing import Any, cast
 
 import anyio
 import yaml
@@ -14,14 +14,12 @@ from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._llm_util.llm_svc import BaseLLMService
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.chat import ResponseFormat
 from docent.data_models.chat.message import (
-    AssistantMessage,
     ChatMessage,
-    ToolMessage,
     UserMessage,
 )
-from docent.data_models.chat.tool import ToolInfo
-from docent.judges.types import JudgeResult, JudgeVariant, ResultType, Rubric
+from docent.judges.types import JudgeResult, JudgeVariant, OutputParsingMode, ResultType, Rubric
 from docent.judges.util.parse_output import parse_and_validate_output_str
 from docent.judges.util.voting import (
     JudgeOutputDistribution,
@@ -58,7 +56,14 @@ class BaseJudge(ABC):
         )
 
     @abstractmethod
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
+    async def __call__(
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
+    ) -> JudgeResult:
         """Returns None if all rollouts failed to produce a valid output."""
 
     @abstractmethod
@@ -86,14 +91,20 @@ class BaseJudge(ABC):
         return _validation_callback
 
     async def one_rollout(
-        self, agent_run: AgentRun
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float,
+        max_new_tokens: int,
+        timeout: float,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
         async with agent_run_context() if self.docent_collection_id is not None else nullcontext():
             if self.cfg.rollout_type == "single_turn":
-                output, metadata, errors = await self.one_single_turn_rollout(agent_run)
-            elif self.cfg.rollout_type == "multi_turn":
-                output, metadata, errors = await self.one_multi_turn_rollout(
-                    agent_run, max_turns=10, max_steps_per_turn=5
+                output, metadata, errors = await self.one_single_turn_rollout(
+                    agent_run,
+                    temperature=temperature,
+                    max_new_tokens=max_new_tokens,
+                    timeout=timeout,
                 )
             else:
                 raise ValueError(f"Invalid rollout type: {self.cfg.rollout_type}")
@@ -113,9 +124,7 @@ class BaseJudge(ABC):
     def _validate_first_response_tag_or_entire_output(
         self, output_str: str, agent_run: AgentRun
     ) -> dict[str, Any] | None:
-        """Validate the first <response> tag in the output string.
-        For backward compatibility, also try to validate the entire output as JSON, for
-            old system prompts that don't ask for <response> tags.
+        """Validate LLM output based on the configured parsing mode.
 
         Args:
             output_str: The output string to validate
@@ -124,7 +133,32 @@ class BaseJudge(ABC):
         Returns:
             The validated output if successful, None otherwise
         """
-        response_matches = re.findall(r"<response>(.*?)</response>", output_str, re.DOTALL)
+        if self.cfg.output_parsing_mode == OutputParsingMode.CONSTRAINED_DECODING:
+            return self._parse_constrained_output(output_str, agent_run)
+        else:  # XML_KEY mode
+            return self._parse_xml_key_output(output_str, agent_run)
+
+    def _parse_constrained_output(
+        self, output_str: str, agent_run: AgentRun
+    ) -> dict[str, Any] | None:
+        """Parse output assuming entire string is valid JSON (constrained decoding).
+
+        No forgiving JSON parsing is needed since constrained decoding guarantees valid JSON.
+        """
+        try:
+            return parse_and_validate_output_str(output_str, self.cfg.output_schema)
+        except Exception:
+            return None
+
+    def _parse_xml_key_output(self, output_str: str, agent_run: AgentRun) -> dict[str, Any] | None:
+        """Parse output by extracting content from XML tags.
+
+        Uses the configured response_xml_key to find the response content.
+        Falls back to parsing entire output if no XML tags found (backward compatibility).
+        """
+        xml_key = self.cfg.response_xml_key
+        pattern = rf"<{re.escape(xml_key)}>(.*?)</{re.escape(xml_key)}>"
+        response_matches = re.findall(pattern, output_str, re.DOTALL)
 
         # Try to validate any match; take the first
         for response_text in response_matches:
@@ -137,7 +171,7 @@ class BaseJudge(ABC):
                 continue  # Try the next match if validation fails
 
         # Try to validate the entire output as JSON
-        # But only if the output _didn't_ contain a <response>...</response> tag
+        # But only if the output _didn't_ contain a matching XML tag
         if not response_matches:
             try:
                 validated_output = parse_and_validate_output_str(output_str, self.cfg.output_schema)
@@ -152,16 +186,33 @@ class BaseJudge(ABC):
     ########################
 
     async def one_single_turn_rollout(
-        self, agent_run: AgentRun
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float,
+        max_new_tokens: int,
+        timeout: float,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
-        prompt = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
+        messages = self.cfg.materialize_messages(agent_run)
+
+        # Build response_format for constrained decoding
+        response_format: ResponseFormat | None = None
+        if self.cfg.output_parsing_mode == OutputParsingMode.CONSTRAINED_DECODING:
+            response_format = ResponseFormat(
+                name="judge_response",
+                schema=self.cfg.output_schema,
+                strict=True,
+            )
+
         outputs = await self.llm_svc.get_completions(
-            inputs=[prompt],
+            inputs=[messages],
             model_options=[self.cfg.judge_model],
-            max_new_tokens=16384,
-            timeout=180.0,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            timeout=timeout,
             use_cache=False,
             validation_callback=self._get_validation_callback(agent_run),
+            response_format=response_format,
         )
         llm_output = outputs[0]
         output_str = llm_output.first_text
@@ -182,85 +233,6 @@ class BaseJudge(ABC):
             [ValidationFailedException("Validation failed", failed_output=output_str)],
         )
 
-    #######################
-    # Multi-turn rollouts #
-    #######################
-
-    async def one_multi_turn_rollout(
-        self, agent_run: AgentRun, max_turns: int, max_steps_per_turn: int
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
-        raise NotImplementedError(
-            "This function is not implemented properly yet; this is prototype code."
-        )
-
-        msgs = [UserMessage(content=self.cfg.materialize_system_prompt(agent_run))]
-        for _ in range(max_turns):
-            msgs = await self.agent_one_turn(msgs, max_steps_per_turn=max_steps_per_turn)
-
-            last_msg_content = msgs[-1].text if msgs else None
-            # Extract all <response>...</response> tags from the current message
-            # Return if we find a valid response; otherwise, continue
-            validated_output = self._validate_first_response_tag_or_entire_output(
-                last_msg_content or "", agent_run
-            )
-            if validated_output is not None:
-                # When returning, strip out the system message, which duplicates the agent run
-                # content many times.
-                return validated_output, {"rollout_messages": msgs[1:]}, None
-
-        # No <response>...</response> tags with valid JSON,so return None
-        return None, None, [LLMException("Unknown failure")]
-
-    async def agent_one_turn(self, init_msgs: Sequence[ChatMessage], max_steps_per_turn: int):
-        """Given a list of messages, run one turn of the agent.
-        The agent may invoke tools, so we loop until there are no more to handle.
-        """
-        raise NotImplementedError(
-            "This function is not implemented properly yet; this is prototype code."
-        )
-
-        msgs = list(init_msgs)  # Shallow copy is fine
-        for _ in range(max_steps_per_turn):
-            last_msg = msgs[-1]
-            if last_msg.role == "system" or last_msg.role == "user" or last_msg.role == "tool":
-                outputs = await self.llm_svc.get_completions(
-                    inputs=[msgs],
-                    model_options=[self.cfg.judge_model],
-                    tools=[
-                        ToolInfo(
-                            name="step_finished",
-                            description="Call this tool to indicate that you have finished one step in the decision procedure",
-                        )
-                    ],
-                    max_new_tokens=16384,
-                    timeout=180.0,
-                    use_cache=False,
-                )
-                output = outputs[0].first
-                if output is None:
-                    # FIXME(mengk): handle empty completion
-                    raise ValueError("Empty completion in agent one turn")
-                new_assistant_msg = AssistantMessage(
-                    content=output.text or "", tool_calls=output.tool_calls
-                )
-                msgs.append(new_assistant_msg)
-            elif last_msg.role == "assistant":
-                if last_msg.tool_calls is not None:
-                    msgs.extend(
-                        [
-                            ToolMessage(
-                                content="Step completed",
-                                tool_call_id=tool_call.id,
-                            )
-                            for tool_call in last_msg.tool_calls
-                        ]
-                    )
-                else:
-                    break  # Terminate if there are no more tool calls to handle
-            else:
-                raise ValueError(f"Unknown message role: {last_msg.role}")
-        return msgs
-
 
 class SingleRolloutJudge(BaseJudge):
     """Rolls out the judge once."""
@@ -268,8 +240,20 @@ class SingleRolloutJudge(BaseJudge):
     def __init__(self, cfg: Rubric, llm_svc: BaseLLMService):
         super().__init__(cfg, llm_svc)
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
-        output, metadata, errors = await self.one_rollout(agent_run)
+    async def __call__(
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
+    ) -> JudgeResult:
+        output, metadata, errors = await self.one_rollout(
+            agent_run,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            timeout=timeout,
+        )
         if output is None:
             return self._build_failure_result(agent_run, errors)
         else:
@@ -291,13 +275,25 @@ class MajorityVotingJudge(BaseJudge):
     ):
         super().__init__(cfg, llm_svc, docent_collection_id)
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
+    async def __call__(
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
+    ) -> JudgeResult:
         indep_results_raw: list[dict[str, Any] | None] = []
         indep_rollout_metadata: list[dict[str, Any] | None] = []
         indep_errors: list[list[LLMException] | None] = []
 
         async def _execute():
-            result, metadata, errors = await self.one_rollout(agent_run)
+            result, metadata, errors = await self.one_rollout(
+                agent_run,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                timeout=timeout,
+            )
             indep_results_raw.append(result)
             indep_rollout_metadata.append(metadata)
             indep_errors.append(errors)
@@ -352,6 +348,9 @@ class MajorityVotingJudge(BaseJudge):
         n_initial_rollouts_to_sample: int | None = None,
         n_combinations_to_sample: int | None = None,
         n_reflection_rollouts_to_sample: int | None = None,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
         **kwargs: Any,
     ) -> None | tuple[dict[str, JudgeOutputDistribution], dict[str, Any]]:
         if n_initial_rollouts_to_sample is None:
@@ -366,7 +365,12 @@ class MajorityVotingJudge(BaseJudge):
         pbar = tqdm(total=n_initial_rollouts_to_sample, desc="Independent rollouts", leave=False)
 
         async def _execute():
-            result, metadata, _ = await self.one_rollout(agent_run)
+            result, metadata, _ = await self.one_rollout(
+                agent_run,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                timeout=timeout,
+            )
             if result is not None:
                 indep_results.append(result)
                 indep_rollout_metadata.append(metadata)
@@ -402,7 +406,13 @@ class MultiReflectionJudge(BaseJudge):
         super().__init__(cfg, llm_svc, docent_collection_id)
 
     async def one_rollout_second_stage(
-        self, agent_run: AgentRun, first_stage_results: list[dict[str, Any]]
+        self,
+        agent_run: AgentRun,
+        first_stage_results: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_new_tokens: int,
+        timeout: float,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[LLMException] | None]:
         """Reflect on the results of the first stage of rollouts.
         TODO(mengk): this is only done in a single-turn way. We should generalize this to multi-turn.
@@ -421,21 +431,30 @@ class MultiReflectionJudge(BaseJudge):
             f"Please reflect on these answers. Consider all the information and evidence presented. "
             f"Return a final answer in the same JSON format as before."
         )
-        reflection_prompt = [
-            # Original system prompt
-            {"role": "system", "content": self.cfg.materialize_system_prompt(agent_run)},
-            # Additional reflection instruction as a user message (kind of awkward)
-            {"role": "user", "content": reflection_instruction},
+        base_messages = self.cfg.materialize_messages(agent_run)
+        reflection_prompt: list[ChatMessage] = list(base_messages) + [
+            UserMessage(content=reflection_instruction),
         ]
+
+        # Build response_format for constrained decoding
+        response_format: ResponseFormat | None = None
+        if self.cfg.output_parsing_mode == OutputParsingMode.CONSTRAINED_DECODING:
+            response_format = ResponseFormat(
+                name="judge_response",
+                schema=self.cfg.output_schema,
+                strict=True,
+            )
 
         # Ask the judge to reflect on the others' results
         outputs = await self.llm_svc.get_completions(
             inputs=[reflection_prompt],
             model_options=[self.cfg.judge_model],
-            max_new_tokens=16384,
-            timeout=180.0,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            timeout=timeout,
             use_cache=False,
             validation_callback=self._get_validation_callback(agent_run),
+            response_format=response_format,
         )
         llm_output = outputs[0]
         output_str = llm_output.first_text
@@ -452,7 +471,14 @@ class MultiReflectionJudge(BaseJudge):
             [ValidationFailedException("Validation failed", failed_output=output_str)],
         )
 
-    async def __call__(self, agent_run: AgentRun) -> JudgeResult:
+    async def __call__(
+        self,
+        agent_run: AgentRun,
+        *,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
+    ) -> JudgeResult:
         rubric = self.cfg
 
         indep_results_raw: list[dict[str, Any] | None] = []
@@ -460,7 +486,12 @@ class MultiReflectionJudge(BaseJudge):
         indep_errors: list[list[LLMException] | None] = []
 
         async def _execute():
-            result, metadata, errors = await self.one_rollout(agent_run)
+            result, metadata, errors = await self.one_rollout(
+                agent_run,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                timeout=timeout,
+            )
             indep_results_raw.append(result)
             indep_rollout_metadata.append(metadata)
             indep_errors.append(errors)
@@ -494,7 +525,11 @@ class MultiReflectionJudge(BaseJudge):
 
             async def _execute_second_stage():
                 result, metadata, errors = await self.one_rollout_second_stage(
-                    agent_run, indep_results
+                    agent_run,
+                    indep_results,
+                    temperature=temperature,
+                    max_new_tokens=max_new_tokens,
+                    timeout=timeout,
                 )
                 candidate_final_results_raw.append(result)
                 candidate_final_rollout_metadata.append(metadata)
@@ -551,6 +586,9 @@ class MultiReflectionJudge(BaseJudge):
         n_initial_rollouts_to_sample: int | None = None,
         n_combinations_to_sample: int | None = None,
         n_reflection_rollouts_to_sample: int | None = None,
+        temperature: float = 1.0,
+        max_new_tokens: int = 16384,
+        timeout: float = 180.0,
         **kwargs: Any,
     ) -> None | tuple[dict[str, JudgeOutputDistribution], dict[str, Any]]:
         if n_initial_rollouts_to_sample is None:
@@ -583,7 +621,12 @@ class MultiReflectionJudge(BaseJudge):
         )
 
         async def _execute_first_stage():
-            result, metadata, _ = await self.one_rollout(agent_run)
+            result, metadata, _ = await self.one_rollout(
+                agent_run,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                timeout=timeout,
+            )
             if result is not None:
                 first_step_rollouts.append(result)
                 first_step_rollout_metadata.append(metadata)
@@ -625,7 +668,11 @@ class MultiReflectionJudge(BaseJudge):
 
                 async def _execute_second_stage_inner():
                     result, metadata, _ = await self.one_rollout_second_stage(
-                        agent_run, combination
+                        agent_run,
+                        combination,
+                        temperature=temperature,
+                        max_new_tokens=max_new_tokens,
+                        timeout=timeout,
                     )
                     if result is not None:
                         second_step_rollouts[i].append(result)

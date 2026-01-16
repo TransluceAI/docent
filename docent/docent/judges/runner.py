@@ -40,6 +40,9 @@ async def run_rubric(
     *,
     n_rollouts_per_input: int | list[int] = 1,
     show_progress: bool = True,
+    temperature: float = 1.0,
+    max_new_tokens: int = 16384,
+    timeout: float = 180.0,
 ) -> list[JudgeResult]:
     if not agent_runs:
         raise ValueError("agent_runs must be a non-empty sequence")
@@ -100,7 +103,12 @@ async def run_rubric(
                 return
 
             for _ in range(rollouts_per_run[index]):
-                result = await judge(agent_run)
+                result = await judge(
+                    agent_run,
+                    temperature=temperature,
+                    max_new_tokens=max_new_tokens,
+                    timeout=timeout,
+                )
                 rollout_results.append(result)
                 progress_bar.update()
 

@@ -1,7 +1,7 @@
 import jsonschema
 import pytest
 
-from docent.judges.types import Rubric
+from docent.judges.types import OutputParsingMode, PromptTemplateMessage, Rubric
 from docent.judges.util.meta_schema import validate_judge_result_schema
 
 
@@ -248,3 +248,46 @@ def test_rubric_model_validate_with_invalid_schema_raises_validation_error():
     # Using model_validate should trigger the output_schema validator
     with pytest.raises(jsonschema.ValidationError, match="'properties' is a required property"):
         Rubric.model_validate(valid_rubric.model_dump() | {"output_schema": invalid_schema})
+
+
+# --- Tests for XML key validation with prompt_templates ---
+
+
+def test_rubric_xml_key_validation_fails_when_prompt_templates_missing_xml_tag():
+    """Validates that XML_KEY mode checks prompt_templates when set.
+
+    Previously, the validator incorrectly checked the default template as well as prompt_templates,
+    allowing validation to pass when prompt_templates lacked the XML tag but the default
+    template contained it. This caused silent runtime failures.
+    """
+    # Include required template variables to pass the template validation
+    template_content = (
+        "Rubric: {rubric}\nAgent run: {agent_run}\nSchema: {output_schema}\n"
+        "Output JSON without XML tags."
+    )
+    with pytest.raises(ValueError, match="must contain the XML tag '<response>'"):
+        Rubric(
+            rubric_text="Example rubric",
+            output_schema=_valid_schema(),
+            prompt_templates=[
+                PromptTemplateMessage(role="user", content=template_content),
+            ],
+            output_parsing_mode=OutputParsingMode.XML_KEY,
+        )
+
+
+def test_rubric_xml_key_validation_passes_when_prompt_templates_contains_xml_tag():
+    """Verifies validation passes when prompt_templates contains the required XML tag."""
+    template_content = (
+        "Rubric: {rubric}\nAgent run: {agent_run}\nSchema: {output_schema}\n"
+        "Output your response in <response>...</response> tags."
+    )
+    rubric = Rubric(
+        rubric_text="Example rubric",
+        output_schema=_valid_schema(),
+        prompt_templates=[
+            PromptTemplateMessage(role="user", content=template_content),
+        ],
+        output_parsing_mode=OutputParsingMode.XML_KEY,
+    )
+    assert rubric.output_parsing_mode == OutputParsingMode.XML_KEY

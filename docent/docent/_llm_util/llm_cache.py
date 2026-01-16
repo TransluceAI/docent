@@ -9,6 +9,7 @@ from typing import Literal
 from docent._llm_util.data_models.llm_output import LLMOutput
 from docent._log_util import get_logger
 from docent.data_models.chat import ChatMessage, ToolInfo
+from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,7 @@ class LLMCache:
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> str:
         """Create a deterministic hash key from messages and model."""
         # Convert messages to a stable string representation
@@ -71,10 +73,15 @@ class LLMCache:
             json.dumps([tool.model_dump() for tool in tools], sort_keys=True) if tools else None
         )
 
-        # Combine all parameters into a single string
-        key_str = (
-            f"{message_str}:{model_name}:{tools_str}:{tool_choice}:{reasoning_effort}:{temperature}"
+        # Convert response_format to a stable string representation if present
+        response_format_str = (
+            json.dumps(response_format.model_dump(by_alias=True), sort_keys=True)
+            if response_format
+            else None
         )
+
+        # Combine all parameters into a single string
+        key_str = f"{message_str}:{model_name}:{tools_str}:{tool_choice}:{reasoning_effort}:{temperature}:{response_format_str}"
         if logprobs:
             key_str += f":{top_logprobs}"
         return hashlib.sha256(key_str.encode()).hexdigest()
@@ -90,6 +97,7 @@ class LLMCache:
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> LLMOutput | None:
         """Get cached completion for a conversation if it exists."""
 
@@ -102,6 +110,7 @@ class LLMCache:
             temperature=temperature,
             logprobs=logprobs,
             top_logprobs=top_logprobs,
+            response_format=response_format,
         )
 
         with self._get_connection() as conn:
@@ -125,6 +134,7 @@ class LLMCache:
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> None:
         """Cache a completion for a conversation."""
 
@@ -137,6 +147,7 @@ class LLMCache:
             temperature=temperature,
             logprobs=logprobs,
             top_logprobs=top_logprobs,
+            response_format=response_format,
         )
 
         with self._get_connection() as conn:
@@ -158,6 +169,7 @@ class LLMCache:
         temperature: float = 1.0,
         logprobs: bool = False,
         top_logprobs: int | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> None:
         """Cache a completion for a conversation."""
 
@@ -172,6 +184,7 @@ class LLMCache:
                 temperature=temperature,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                response_format=response_format,
             )
             keys.append(key)
 

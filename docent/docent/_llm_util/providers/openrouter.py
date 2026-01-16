@@ -31,6 +31,7 @@ from docent.data_models.chat import (
     ToolInfo,
     ToolMessage,
 )
+from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,7 @@ class OpenRouterClient:
         max_tokens: int = 32,
         temperature: float = 1.0,
         timeout: float = 30.0,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make an async chat completion request."""
         url = f"{self.base_url}/chat/completions"
@@ -74,6 +76,8 @@ class OpenRouterClient:
             payload["tools"] = tools
         if tool_choice:
             payload["tool_choice"] = tool_choice
+        if response_format:
+            payload["response_format"] = response_format
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -203,6 +207,37 @@ def parse_tools(tools: list[ToolInfo]) -> list[dict[str, Any]]:
     return result
 
 
+def _build_response_format(response_format: ResponseFormat | None) -> dict[str, Any] | None:
+    """Convert ResponseFormat to OpenRouter's response_format parameter.
+
+    Args:
+        response_format: The unified response format specification.
+
+    Returns:
+        OpenRouter-formatted response_format dict, or None if not provided.
+
+    Raises:
+        ValueError: If response_format.type is not a supported format type.
+    """
+    if response_format is None:
+        return None
+
+    if response_format.type != "json_schema":
+        raise ValueError(
+            f"Unsupported response format type: {response_format.type}. "
+            "Only 'json_schema' is currently supported."
+        )
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": response_format.name,
+            "strict": response_format.strict,
+            "schema": response_format.schema_,
+        },
+    }
+
+
 def _parse_openrouter_tool_call(tc: dict[str, Any]) -> ToolCall:
     """Parse tool call from OpenRouter response."""
     if tc.get("type") != "function":
@@ -232,7 +267,10 @@ def _parse_openrouter_tool_call(tc: dict[str, Any]) -> ToolCall:
     )
 
 
-def parse_openrouter_completion(response: dict[str, Any], model: str) -> LLMOutput:
+def parse_openrouter_completion(
+    response: dict[str, Any],
+    model: str,
+) -> LLMOutput:
     """Parse OpenRouter completion response."""
     choices = response.get("choices", [])
     if not choices:
@@ -252,10 +290,11 @@ def parse_openrouter_completion(response: dict[str, Any], model: str) -> LLMOutp
     for choice in choices:
         message = choice.get("message", {})
         tool_calls_data = message.get("tool_calls")
+        content = message.get("content")
 
         completions.append(
             LLMCompletion(
-                text=message.get("content"),
+                text=content,
                 finish_reason=choice.get("finish_reason"),
                 tool_calls=(
                     [_parse_openrouter_tool_call(tc) for tc in tool_calls_data]
@@ -292,6 +331,7 @@ async def get_openrouter_chat_completion_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 30.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
     """Get completion from OpenRouter."""
     if logprobs or top_logprobs is not None:
@@ -304,6 +344,7 @@ async def get_openrouter_chat_completion_async(
 
     input_messages = parse_chat_messages(messages)
     input_tools = parse_tools(tools) if tools else None
+    input_response_format = _build_response_format(response_format)
 
     response = await client.chat_completions_create(
         model=model_name,
@@ -313,6 +354,7 @@ async def get_openrouter_chat_completion_async(
         max_tokens=max_new_tokens,
         temperature=temperature,
         timeout=timeout,
+        response_format=input_response_format,
     )
 
     output = parse_openrouter_completion(response, model_name)
@@ -346,6 +388,7 @@ async def get_openrouter_chat_completion_streaming_async(
     logprobs: bool = False,
     top_logprobs: int | None = None,
     timeout: float = 30.0,
+    response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
     """Get streaming completion from OpenRouter (falls back to non-streaming)."""
     logger.warning("Streaming not yet implemented for OpenRouter, using non-streaming.")
@@ -362,6 +405,7 @@ async def get_openrouter_chat_completion_streaming_async(
         logprobs=logprobs,
         top_logprobs=top_logprobs,
         timeout=timeout,
+        response_format=response_format,
     )
 
 

@@ -10,6 +10,7 @@ from docent.data_models.chat.message import (
     parse_chat_message,
     parse_docent_chat_message,
 )
+from docent.data_models.chat.response_format import ResponseFormat
 from docent.data_models.chat.tool import (
     ToolCall,
     ToolCallContent,
@@ -28,6 +29,7 @@ __all__ = [
     "Content",
     "ContentReasoning",
     "ContentText",
+    "ResponseFormat",
     "ToolCall",
     "ToolCallContent",
     "ToolInfo",

@@ -20,6 +20,7 @@ from docent._llm_util.model_registry import estimate_cost_cents
 from docent._llm_util.providers.preference_types import ModelOption, PublicProviderPreferences
 from docent._log_util import get_logger
 from docent.data_models.chat import ToolInfo
+from docent.data_models.chat.response_format import ResponseFormat
 from docent_core._env_util import ENV
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAModelApiKey
@@ -176,6 +177,7 @@ class LLMService(BaseLLMService):
         validation_callback: AsyncLLMOutputStreamingCallback | None = None,
         completion_callback: AsyncLLMOutputStreamingCallback | None = None,
         use_cache: bool = False,
+        response_format: ResponseFormat | None = None,
         _api_key_overrides: dict[str, str] = dict(),
     ) -> list[LLMOutput]:
         if _api_key_overrides:
@@ -235,6 +237,7 @@ class LLMService(BaseLLMService):
             validation_callback=validation_callback,
             completion_callback=usage_recording_callback,
             use_cache=use_cache,
+            response_format=response_format,
             _api_key_overrides=_api_key_overrides,
         )
 

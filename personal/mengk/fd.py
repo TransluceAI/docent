@@ -52,12 +52,12 @@ cfg = Rubric(
 # %%
 
 j = MajorityVotingJudge(cfg=cfg, llm_svc=BaseLLMService())
-prompt = [SystemMessage(content=cfg.materialize_system_prompt(agent_runs[0]))]
+prompt = [SystemMessage(content=cfg._materialize_system_prompt(agent_runs[0]))]
 # await j.agent_one_turn(prompt, max_steps_per_turn=10)
 
 # %%
 
-cfg.materialize_system_prompt(agent_runs[0])
+cfg._materialize_system_prompt(agent_runs[0])
 
 # %%
 
