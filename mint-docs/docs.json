@@ -10,6 +10,7 @@
     "family": "Open Sans"
   },
   "favicon": "/images/favicon.ico",
+  "thumbnail": "light",
   "navbar": {
     "links": [
       {
