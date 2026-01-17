@@ -32,6 +32,7 @@ import {
 import { DqlExecuteResponse } from '@/app/types/dqlTypes';
 import { registerDqlCompletionProvider } from '@/app/utils/dqlCompletions';
 import { copyDqlToClipboard } from '@/app/utils/copyDql';
+import { DEFAULT_DQL_QUERY } from '@/app/utils/dqlDefaults';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -60,11 +61,160 @@ interface DQLEditorProps {
   onResultChange?: (result: DqlExecuteResponse | null) => void;
   initialErrorMessage?: string | null;
   onErrorMessageChange?: (message: string | null) => void;
+  initialSchemaVisible?: boolean;
+  onSchemaVisibleChange?: (visible: boolean) => void;
+  readOnly?: boolean;
+  autoRunKey?: string | null;
 }
 
-export const DEFAULT_DQL_QUERY =
-  'SELECT id, name, created_at FROM agent_runs ORDER BY created_at DESC LIMIT 20';
+const LEGACY_DEFAULT_DQL_QUERY =
+  'WITH base_runs AS (\n' +
+  '  SELECT id, name, created_at, metadata_json\n' +
+  '  FROM agent_runs\n' +
+  '  ORDER BY created_at DESC\n' +
+  '  LIMIT 20\n' +
+  '),\n' +
+  'tag_agg AS (\n' +
+  '  SELECT t.agent_run_id, array_agg(t.value ORDER BY t.value) AS tags\n' +
+  '  FROM tags t\n' +
+  '  JOIN base_runs br ON br.id = t.agent_run_id\n' +
+  '  GROUP BY t.agent_run_id\n' +
+  '),\n' +
+  'label_agg AS (\n' +
+  '  SELECT\n' +
+  '    l.agent_run_id,\n' +
+  '    jsonb_agg(\n' +
+  '      jsonb_build_object(\n' +
+  "        'label_set_id', l.label_set_id,\n" +
+  "        'label_set_name', ls.name,\n" +
+  "        'label_value', l.label_value\n" +
+  '      )\n' +
+  '      ORDER BY ls.name\n' +
+  '    ) AS labels\n' +
+  '  FROM labels l\n' +
+  '  JOIN label_sets ls ON ls.id = l.label_set_id\n' +
+  '  JOIN base_runs br ON br.id = l.agent_run_id\n' +
+  '  GROUP BY l.agent_run_id\n' +
+  '),\n' +
+  'judge_agg AS (\n' +
+  '  SELECT\n' +
+  '    jr.agent_run_id,\n' +
+  '    jsonb_agg(\n' +
+  '      jsonb_build_object(\n' +
+  "        'rubric_id', jr.rubric_id,\n" +
+  "        'rubric_version', jr.rubric_version,\n" +
+  "        'result_type', jr.result_type,\n" +
+  "        'output', jr.output,\n" +
+  "        'result_metadata', jr.result_metadata\n" +
+  '      )\n' +
+  '      ORDER BY jr.rubric_id, jr.rubric_version\n' +
+  '    ) AS rubric_results\n' +
+  '  FROM judge_results jr\n' +
+  '  JOIN base_runs br ON br.id = jr.agent_run_id\n' +
+  '  GROUP BY jr.agent_run_id\n' +
+  ')\n' +
+  'SELECT\n' +
+  '  br.id,\n' +
+  '  br.name,\n' +
+  '  br.created_at,\n' +
+  '  br.metadata_json,\n' +
+  '  tag_agg.tags,\n' +
+  '  label_agg.labels,\n' +
+  '  judge_agg.rubric_results\n' +
+  'FROM base_runs br\n' +
+  'LEFT JOIN tag_agg ON tag_agg.agent_run_id = br.id\n' +
+  'LEFT JOIN label_agg ON label_agg.agent_run_id = br.id\n' +
+  'LEFT JOIN judge_agg ON judge_agg.agent_run_id = br.id\n' +
+  'ORDER BY br.created_at DESC';
 const NORMALIZED_DEFAULT_QUERY = DEFAULT_DQL_QUERY.replace(/\s+/g, ' ').trim();
+const NORMALIZED_LEGACY_QUERY = LEGACY_DEFAULT_DQL_QUERY.replace(
+  /\s+/g,
+  ' '
+).trim();
+
+const escapeMetadataSegment = (segment: string) => segment.replace(/'/g, "''");
+
+const metadataFieldExpression = (path: string[]) => {
+  if (!path.length) {
+    return 'br.metadata_json';
+  }
+  const parents = path.slice(0, -1).map(escapeMetadataSegment);
+  const last = escapeMetadataSegment(path[path.length - 1]);
+  const base = parents.reduce(
+    (current, segment) => `${current}->'${segment}'`,
+    'br.metadata_json'
+  );
+  return `${base}->>'${last}'`;
+};
+
+const buildDefaultQueryWithMetadata = (metadataFieldNames: string[]) => {
+  const seen = new Set<string>();
+  const aliases: string[] = [];
+  const metadataSelects = metadataFieldNames.reduce<string[]>((acc, field) => {
+    if (!field.startsWith('metadata.')) {
+      return acc;
+    }
+    const path = field.split('.').slice(1).filter(Boolean);
+    if (!path.length) {
+      return acc;
+    }
+    const alias = `metadata.${path.join('.')}`;
+    if (seen.has(alias)) {
+      return acc;
+    }
+    seen.add(alias);
+    aliases.push(alias);
+    const expression = metadataFieldExpression(path);
+    acc.push(`  ${expression} AS "${alias}"`);
+    return acc;
+  }, []);
+
+  const selectLines = [
+    '  br.id',
+    '  br.name',
+    '  br.created_at',
+    ...aliases.map((alias) => `  rm."${alias}"`),
+    '  rr.rubric_id',
+    '  rr.rubric_version',
+    '  rr.result_type',
+    '  rr.output',
+    '  rr.result_metadata',
+  ];
+  const selectClause = selectLines.join(',\n');
+
+  return (
+    'WITH base_runs AS (\n' +
+    '  SELECT id, name, created_at, metadata_json\n' +
+    '  FROM agent_runs\n' +
+    '  ORDER BY created_at DESC\n' +
+    '  LIMIT 20\n' +
+    '),\n' +
+    'run_metadata AS (\n' +
+    '  SELECT\n' +
+    '    br.id AS agent_run_id' +
+    (metadataSelects.length > 0 ? `,\n${metadataSelects.join(',\n')}` : '') +
+    '\n' +
+    '  FROM base_runs br\n' +
+    '),\n' +
+    'rubric_results AS (\n' +
+    '  SELECT\n' +
+    '    jr.agent_run_id,\n' +
+    '    jr.rubric_id,\n' +
+    '    jr.rubric_version,\n' +
+    '    jr.result_type,\n' +
+    '    jr.output,\n' +
+    '    jr.result_metadata\n' +
+    '  FROM judge_results jr\n' +
+    '  JOIN base_runs br ON br.id = jr.agent_run_id\n' +
+    ')\n' +
+    'SELECT\n' +
+    `${selectClause}\n` +
+    'FROM base_runs br\n' +
+    'LEFT JOIN run_metadata rm ON rm.agent_run_id = br.id\n' +
+    'LEFT JOIN rubric_results rr ON rr.agent_run_id = br.id\n' +
+    'ORDER BY br.created_at DESC'
+  );
+};
 
 const normalizeQueryValue = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
@@ -288,6 +438,10 @@ const DQLEditor = ({
   onResultChange,
   initialErrorMessage,
   onErrorMessageChange,
+  initialSchemaVisible,
+  onSchemaVisibleChange,
+  readOnly = false,
+  autoRunKey,
 }: DQLEditorProps) => {
   const [query, setQuery] = useState<string>(initialQuery ?? DEFAULT_DQL_QUERY);
   const [hasUserEditedQuery, setHasUserEditedQuery] = useState<boolean>(
@@ -300,12 +454,15 @@ const DQLEditor = ({
     initialErrorMessage ?? null
   );
   const { resolvedTheme } = useTheme();
-  const [isSchemaVisible, setIsSchemaVisible] = useState(false);
+  const [isSchemaVisible, setIsSchemaVisible] = useState(
+    initialSchemaVisible ?? false
+  );
   const [isExporting, setIsExporting] = useState(false);
   const { getApiKey: getDownloadApiKey, isLoading: isApiKeyLoading } =
     useDownloadApiKey();
   const [isDownloadingSample, setIsDownloadingSample] = useState(false);
   const latestRequestIdRef = useRef(0);
+  const previousAutoRunKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (initialQuery === undefined) {
@@ -348,6 +505,13 @@ const DQLEditor = ({
     }
   }, [initialErrorMessage, errorMessage]);
 
+  useEffect(() => {
+    if (initialSchemaVisible === undefined) {
+      return;
+    }
+    setIsSchemaVisible(initialSchemaVisible);
+  }, [initialSchemaVisible]);
+
   const {
     data: schemaData,
     isLoading: isSchemaLoading,
@@ -364,6 +528,10 @@ const DQLEditor = ({
     () => metadataFieldsData?.fields ?? [],
     [metadataFieldsData]
   );
+  const metadataFieldNames = useMemo(() => {
+    const names = metadataFields.map((field) => field.name);
+    return names.sort((a, b) => a.localeCompare(b));
+  }, [metadataFields]);
 
   const monacoInstanceRef = useRef<Monaco | null>(null);
   const completionDisposableRef = useRef<monacoEditor.IDisposable | null>(null);
@@ -380,8 +548,9 @@ const DQLEditor = ({
       scrollBeyondLastLine: false,
       automaticLayout: true,
       ariaLabel: 'Docent Query Language editor',
+      readOnly,
     }),
-    []
+    [readOnly]
   );
 
   const agentRunsTable = useMemo(
@@ -400,6 +569,11 @@ const DQLEditor = ({
     const columns = agentRunsTable.columns
       .filter((column) => !column.alias_for)
       .filter((column) => column.name.toLowerCase() !== 'text_for_search')
+      .filter(
+        (column) =>
+          column.name.toLowerCase() !== 'collection_id' &&
+          column.name.toLowerCase() !== 'metadata_json'
+      )
       .map((column) => column.name)
       .filter((name) => name && name.trim().length > 0);
 
@@ -420,6 +594,9 @@ const DQLEditor = ({
     if (!agentRunsDefaultQuery) {
       return;
     }
+    if (initialQuery !== undefined) {
+      return;
+    }
 
     if (query === agentRunsDefaultQuery) {
       return;
@@ -433,7 +610,33 @@ const DQLEditor = ({
       setQuery(agentRunsDefaultQuery);
       onQueryChange?.(agentRunsDefaultQuery);
     }
-  }, [agentRunsDefaultQuery, hasUserEditedQuery, onQueryChange, query]);
+  }, [
+    agentRunsDefaultQuery,
+    hasUserEditedQuery,
+    initialQuery,
+    onQueryChange,
+    query,
+  ]);
+
+  const normalizedQuery = useMemo(() => normalizeQueryValue(query), [query]);
+
+  useEffect(() => {
+    if (!metadataFieldNames.length) {
+      return;
+    }
+    const isDefaultQuery =
+      normalizedQuery === NORMALIZED_DEFAULT_QUERY ||
+      normalizedQuery === NORMALIZED_LEGACY_QUERY;
+    if (!isDefaultQuery) {
+      return;
+    }
+    const nextQuery = buildDefaultQueryWithMetadata(metadataFieldNames);
+    if (normalizeQueryValue(nextQuery) === normalizedQuery) {
+      return;
+    }
+    setQuery(nextQuery);
+    onQueryChange?.(nextQuery);
+  }, [metadataFieldNames, normalizedQuery, onQueryChange]);
 
   useEffect(() => {
     setIsSchemaVisible(false);
@@ -496,6 +699,21 @@ const DQLEditor = ({
       query,
     ]
   );
+
+  useEffect(() => {
+    if (!autoRunKey) {
+      return;
+    }
+    if (previousAutoRunKeyRef.current === autoRunKey) {
+      return;
+    }
+    previousAutoRunKeyRef.current = autoRunKey;
+    const nextQuery = initialQuery ?? query;
+    if (!collectionId || !nextQuery.trim()) {
+      return;
+    }
+    void handleRunQuery(nextQuery);
+  }, [autoRunKey, collectionId, handleRunQuery, initialQuery, query]);
 
   const displayColumns = useMemo(() => {
     if (!result) {
@@ -588,12 +806,15 @@ const DQLEditor = ({
 
   const handleEditorChange = useCallback(
     (value?: string) => {
+      if (readOnly) {
+        return;
+      }
       const nextValue = value ?? '';
       setQuery(nextValue);
       onQueryChange?.(nextValue);
       setHasUserEditedQuery(true);
     },
-    [onQueryChange]
+    [onQueryChange, readOnly]
   );
 
   const handleEditorMount = useCallback<OnMount>(
@@ -662,14 +883,32 @@ const DQLEditor = ({
         <div className="flex flex-col gap-2 flex-shrink-0">
           <div className="flex items-center justify-between">
             <Label>Docent Query Language</Label>
-            <a
-              href="https://transluce.mintlify.app/concepts/docent-query-language"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline"
-            >
-              Documentation
-            </a>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsSchemaVisible((prev) => {
+                    const next = !prev;
+                    onSchemaVisibleChange?.(next);
+                    return next;
+                  });
+                }}
+              >
+                {isSchemaVisible
+                  ? 'Hide Schema Explorer'
+                  : 'Show Schema Explorer'}
+              </Button>
+              <a
+                href="https://transluce.mintlify.app/concepts/docent-query-language"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline"
+              >
+                Documentation
+              </a>
+            </div>
           </div>
           <div className="border rounded-md h-48">
             <Editor
@@ -683,16 +922,7 @@ const DQLEditor = ({
             />
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 sm:gap-3 flex-shrink-0">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto"
-            onClick={() => setIsSchemaVisible((prev) => !prev)}
-          >
-            {isSchemaVisible ? 'Hide Schema Explorer' : 'Show Schema Explorer'}
-          </Button>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-end gap-2 sm:gap-3 flex-shrink-0">
           <Button
             onClick={() => {
               void handleRunQuery();
@@ -706,7 +936,7 @@ const DQLEditor = ({
         </div>
 
         {errorMessage && (
-          <div className="border border-red-border bg-red-bg/20 text-red-text rounded-md p-3 text-sm">
+          <div className="border border-red-border bg-red-bg/20 text-red-text rounded-md p-3 text-sm whitespace-pre-line">
             {errorMessage}
           </div>
         )}

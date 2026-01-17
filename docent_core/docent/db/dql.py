@@ -32,7 +32,7 @@ from sqlglot.optimizer.scope import (
 from docent._log_util import get_logger
 from docent.data_models.agent_run import FilterableFieldType
 from docent_core.docent.db.schemas.auth_models import Permission, ResourceType, User
-from docent_core.docent.db.schemas.label import SQLALabel, SQLATag
+from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet, SQLATag
 from docent_core.docent.db.schemas.result_tables import SQLAResult, SQLAResultSet
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
@@ -674,6 +674,12 @@ def build_default_registry(
         collection_predicate_factory=_label_collection_predicate,
     )
     registry.register_table(
+        name=SQLALabelSet.__tablename__,
+        table=SQLALabelSet.__table__,
+        allowed_columns=_columns_for(SQLALabelSet.__table__),
+        collection_predicate_factory=_column_equals_collection("collection_id"),
+    )
+    registry.register_table(
         name=SQLATag.__tablename__,
         table=SQLATag.__table__,
         allowed_columns=_columns_for(SQLATag.__table__),
@@ -1084,8 +1090,19 @@ def _ensure_allowed_expressions(expression: SqlGlotExpression) -> None:
 
     for node in expression.walk():
         if not isinstance(node, ALLOWED_EXPRESSION_TYPES):
+            rendered = ""
+            try:
+                rendered = _render_sql(node, "postgres").strip()
+            except Exception:
+                rendered = str(node).strip()
+            if rendered:
+                if len(rendered) > 160:
+                    rendered = rendered[:157] + "..."
+                detail = f"\n\nOffending DQL fragment: {rendered}"
+            else:
+                detail = ""
             raise DQLValidationError(
-                f"Expression type '{type(node).__name__}' is not allowed in Docent Query Language."
+                f"Expression type '{type(node).__name__}' is not allowed in Docent Query Language.{detail}"
             )
 
 

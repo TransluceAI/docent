@@ -12,6 +12,7 @@ from docent_core.docent.server.dependencies.database import (
 from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
 from docent_core.docent.services.charts import ChartsService
 from docent_core.docent.services.chat import ChatService
+from docent_core.docent.services.data_tables import DataTablesService
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import LLMService
@@ -99,6 +100,10 @@ def get_job_service(
 
 def get_chart_service(session: AsyncSession = Depends(get_session)) -> ChartsService:
     return ChartsService(session)
+
+
+def get_data_table_service(session: AsyncSession = Depends(get_session)) -> DataTablesService:
+    return DataTablesService(session)
 
 
 def get_onboarding_service(

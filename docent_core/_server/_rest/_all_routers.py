@@ -6,6 +6,7 @@ from docent_core._server._rest.onboarding import onboarding_router
 from docent_core.docent.server.rest.chart import chart_router
 from docent_core.docent.server.rest.chat import chat_router
 from docent_core.docent.server.rest.code_samples import code_samples_router
+from docent_core.docent.server.rest.data_table import data_table_router
 from docent_core.docent.server.rest.dql import dql_router
 from docent_core.docent.server.rest.label import label_router
 from docent_core.docent.server.rest.refinement import refinement_router
@@ -57,6 +58,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": chat_router,
         "prefix": "/rest/chat",
+    },
+    {
+        "router": data_table_router,
+        "prefix": "/rest/data-table",
     },
     {
         "router": dql_router,

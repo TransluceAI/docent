@@ -1,6 +1,7 @@
 import docent_core._db_service.schemas.base as base
 import docent_core.docent.db.schemas.chart as chart
 import docent_core.docent.db.schemas.chat as chat
+import docent_core.docent.db.schemas.data_table as data_table
 import docent_core.docent.db.schemas.label as label
 import docent_core.docent.db.schemas.refinement as refinement
 import docent_core.docent.db.schemas.result_tables as result_tables
@@ -12,6 +13,7 @@ __all__ = [
     "rubric",
     "refinement",
     "chart",
+    "data_table",
     "tables",
     "chat",
     "label",

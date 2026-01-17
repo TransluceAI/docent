@@ -39,6 +39,7 @@ from sqlalchemy import (
     tuple_,
     update,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -96,6 +97,7 @@ from docent_core.docent.db.schemas.auth_models import (
 )
 from docent_core.docent.db.schemas.chart import SQLAChart
 from docent_core.docent.db.schemas.chat import SQLAChatSession
+from docent_core.docent.db.schemas.data_table import SQLADataTable
 from docent_core.docent.db.schemas.label import SQLALabel, SQLALabelSet, SQLATag
 from docent_core.docent.db.schemas.refinement import SQLARefinementAgentSession
 from docent_core.docent.db.schemas.rubric import SQLAJudgeResult, SQLARubric
@@ -126,6 +128,7 @@ from docent_core.docent.db.schemas.tables import (
     SQLAUserOrganization,
     SQLAView,
 )
+from docent_core.docent.services.data_tables import DEFAULT_DATA_TABLE_DQL, DEFAULT_DATA_TABLE_NAME
 
 logger = get_logger(__name__)
 
@@ -225,6 +228,17 @@ def _pick_modal_value(values: Sequence[Any]) -> tuple[Any, int]:
         key=lambda item: (-item[1], _serialize_modal_value(representatives[item[0]])),
     )[0]
     return representatives[modal_key], modal_count
+
+
+def _log_compiled_query(label: str, query: Any) -> None:
+    try:
+        compiled = query.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    except Exception as exc:  # pragma: no cover - debug-only
+        logger.info("agent_run_table_sql label=%s error=%s", label, exc)
+        return
+    logger.info("agent_run_table_sql label=%s sql=%s", label, compiled)
 
 
 class _NotGiven:
@@ -491,6 +505,16 @@ class MonoService:
                     id=collection_id, name=name, description=description, created_by=user.id
                 )
             )
+            session.add(
+                SQLADataTable(
+                    id=str(uuid4()),
+                    collection_id=collection_id,
+                    created_by=user.id,
+                    name=DEFAULT_DATA_TABLE_NAME,
+                    dql=DEFAULT_DATA_TABLE_DQL,
+                    state_json=None,
+                )
+            )
 
         # Create ACL entry for the user
         await self.set_acl_permission(
@@ -684,6 +708,12 @@ class MonoService:
         # Delete charts
         async with self.db.session() as session:
             await session.execute(delete(SQLAChart).where(SQLAChart.collection_id == collection_id))
+
+        # Delete data tables
+        async with self.db.session() as session:
+            await session.execute(
+                delete(SQLADataTable).where(SQLADataTable.collection_id == collection_id)
+            )
 
         # Delete all refinement agent sessions for rubrics in this collection
         async with self.db.session() as session:
@@ -1081,6 +1111,7 @@ class MonoService:
             if limit is not None:
                 query = query.limit(limit)
 
+            _log_compiled_query("agent_run_ids", query)
             result = await session.execute(query)
             agent_run_ids = result.scalars().all()
             return list(agent_run_ids)
@@ -1388,12 +1419,15 @@ class MonoService:
             batch_size = 10_000
             for i in range(0, len(agent_run_ids), batch_size):
                 batch_ids = agent_run_ids[i : i + batch_size]
+                batch_index = i // batch_size
+
                 query = select(SQLAAgentRun.id, SQLAAgentRun.metadata_json, SQLAAgentRun.created_at)
                 if apply_base_filter:
                     query = ctx.apply_base_filter(query)
                 # TODO(mengk): use LIMIT and OFFSET instead of the IDs
                 query = query.where(SQLAAgentRun.id.in_(batch_ids))
 
+                _log_compiled_query(f"agent_run_metadata:{batch_index}", query)
                 result = await session.execute(query)
                 for run_id, metadata, created_at in result.all():
                     # Structure the response with metadata in a separate key
@@ -1423,6 +1457,7 @@ class MonoService:
                         )
                         .group_by(SQLATag.agent_run_id)
                     )
+                    _log_compiled_query(f"agent_run_metadata_tags:{batch_index}", tag_query)
                     tag_result = await session.execute(tag_query)
                     for run_id, tag_values in tag_result.all():
                         if not tag_values:
@@ -1436,6 +1471,10 @@ class MonoService:
                     label_query = select(SQLALabel.agent_run_id, SQLALabel.label_value).where(
                         SQLALabel.label_set_id == label_set_id,
                         SQLALabel.agent_run_id.in_(batch_ids),
+                    )
+                    _log_compiled_query(
+                        f"agent_run_metadata_labels:{label_set_id}:{batch_index}",
+                        label_query,
                     )
                     label_result = await session.execute(label_query)
                     for run_id, label_value in label_result.all():
@@ -1465,6 +1504,7 @@ class MonoService:
                             SQLAJudgeResult.rubric_version,
                         ).in_(rubric_pairs),
                     )
+                    _log_compiled_query(f"agent_run_metadata_rubric:{batch_index}", rubric_query)
                     rubric_result = await session.execute(rubric_query)
                     outputs_by_run: dict[tuple[str, str], list[dict[str, Any]]] = {}
                     for run_id, rubric_id, output in rubric_result.all():

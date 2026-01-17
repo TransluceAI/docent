@@ -21,7 +21,7 @@ from docent.data_models.citation import (
     TranscriptBlockMetadataItem,
     TranscriptMetadataItem,
 )
-from docent.data_models.metadata_util import dump_metadata
+from docent.data_models.metadata_util import deep_merge_metadata, dump_metadata
 from docent.data_models.transcript import Transcript, TranscriptGroup, render_metadata_comments
 
 logger = get_logger(__name__)
@@ -99,6 +99,16 @@ class AgentRun(BaseModel):
     def transcript_group_dict(self) -> dict[str, TranscriptGroup]:
         """Returns a dictionary mapping transcript group IDs to TranscriptGroup objects."""
         return {tg.id: tg for tg in self.transcript_groups}
+
+    def merge_metadata(self, metadata: dict[str, Any] | None) -> None:
+        """
+        Merge metadata into the agent run metadata in-place.
+
+        Uses a deep merge so nested dictionaries accumulate without losing existing keys.
+        """
+        if not metadata:
+            return
+        deep_merge_metadata(self.metadata, metadata)
 
     def to_text(
         self,

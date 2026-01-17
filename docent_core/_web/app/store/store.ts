@@ -8,6 +8,7 @@ import transcriptReducer from './transcriptSlice';
 import embedReducer from './embedSlice';
 import { collabApi } from '@/lib/permissions/collabSlice';
 import { chartApi } from '../api/chartApi';
+import { dataTableApi } from '../api/dataTableApi';
 import { rubricApi } from '../api/rubricApi';
 import rubricReducer from './rubricSlice';
 import { collectionApi } from '../api/collectionApi';
@@ -30,6 +31,7 @@ const store = configureStore({
     refinement: refinementReducer,
     [collabApi.reducerPath]: collabApi.reducer,
     [chartApi.reducerPath]: chartApi.reducer,
+    [dataTableApi.reducerPath]: dataTableApi.reducer,
     [rubricApi.reducerPath]: rubricApi.reducer,
     [collectionApi.reducerPath]: collectionApi.reducer,
     [refinementApi.reducerPath]: refinementApi.reducer,
@@ -52,6 +54,7 @@ const store = configureStore({
     })
       .concat(collabApi.middleware)
       .concat(chartApi.middleware)
+      .concat(dataTableApi.middleware)
       .concat(rubricApi.middleware)
       .concat(collectionApi.middleware)
       .concat(refinementApi.middleware)

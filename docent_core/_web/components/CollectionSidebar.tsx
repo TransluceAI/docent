@@ -11,6 +11,7 @@ import {
   MessagesSquare,
   FlaskConical,
   ChartColumn,
+  Table,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -62,6 +63,11 @@ export function CollectionSidebar() {
       title: 'Agent Runs',
       url: `/dashboard/${collectionId}`,
       icon: Layers,
+    },
+    {
+      title: 'Data Tables',
+      url: `/dashboard/${collectionId}/data_tables`,
+      icon: Table,
     },
     {
       title: 'Rubrics',
