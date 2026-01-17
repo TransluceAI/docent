@@ -143,7 +143,7 @@ export default function HomePage() {
               </p>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href="https://transluce.mintlify.app/quickstart"
+                  href="https://docs.transluce.org/quickstart"
                   target="_blank"
                   className="inline-flex items-center gap-1"
                 >

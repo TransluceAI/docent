@@ -8,12 +8,12 @@
 </p> -->
 
 <!-- <p align="center">
-  <a href="https://transluce.mintlify.app">Docs</a> - <a href="https://github.com/TransluceAI/docent/issues/new?assignees=&labels=bug">Bug reports</a> - <a href="https://transluce.org/docent/slack">Community</a> - <a href="https://transluce.org/docent/changelog">Changelog</a>
+  <a href="https://docs.transluce.org">Docs</a> - <a href="https://github.com/TransluceAI/docent/issues/new?assignees=&labels=bug">Bug reports</a> - <a href="https://transluce.org/docent/slack">Community</a> - <a href="https://transluce.org/docent/changelog">Changelog</a>
 </p> -->
 
 ### Quickstart
 
-To get started, check out the [quickstart guide](https://transluce.mintlify.app/quickstart).
+To get started, check out the [quickstart guide](https://docs.transluce.org/quickstart).
 
 ### Helpful Links
 
@@ -24,6 +24,6 @@ To get started, check out the [quickstart guide](https://transluce.mintlify.app/
 
 - (VSCode) Open Docent via [`docent.code-workspace`](.vscode/docent.code-workspace), which sets up formatting and linting.
 - Install pre-commit hooks: `pre-commit install`.
-- Follow the [self-host guide (manual version)](https://transluce.mintlify.app/self-hosting/self-host-docent) to self-host Docent on your machine.
-- Follow the [quickstart guide](https://transluce.mintlify.app/quickstart) to ingest some sample transcripts.
+- Follow the [self-host guide (manual version)](https://docs.transluce.org/self-hosting/self-host-docent) to self-host Docent on your machine.
+- Follow the [quickstart guide](https://docs.transluce.org/quickstart) to ingest some sample transcripts.
 - To view your database through a GUI, install the [DB Client](https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-database-client2) VSCode extension.
