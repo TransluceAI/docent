@@ -10,11 +10,16 @@
     "family": "Open Sans"
   },
   "favicon": "/images/favicon.ico",
+  "thumbnail": "light",
   "navbar": {
     "links": [
       {
         "label": "About Transluce",
         "href": "https://transluce.org"
+      },
+      {
+        "label": "Slack Community",
+        "href": "https://join.slack.com/t/docentcommunity/shared_invite/zt-39uln1o3q-DObXadOIKN_IGc73ZOjgnA"
       }
     ],
     "primary": {
