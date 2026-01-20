@@ -14,9 +14,10 @@ build:
 mkdocs:
   configuration: mkdocs.yml
 
-# Optionally, but recommended,
-# declare the Python requirements required to build your documentation
-# See https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
+# Install from pyproject.toml with docs extra
 python:
   install:
-    - requirements: docs/requirements-locked.txt
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
