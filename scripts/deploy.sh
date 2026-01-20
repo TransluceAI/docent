@@ -4,6 +4,10 @@ set -e
 # Determine the parent directory of this script
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
 
+# Save the current ref so we can restore it at the end of the script.
+ORIGINAL_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+ORIGINAL_COMMIT="$(git rev-parse HEAD)"
+
 # Parse arguments
 TARGET_BRANCHES=""
 SOURCE_BRANCH="main"
@@ -99,3 +103,11 @@ for TARGET_BRANCH in "${TARGET_ARRAY[@]}"; do
 
   echo "=== Completed: $TARGET_BRANCH ==="
 done
+
+if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
+  echo "Switching back to the previously active commit: $ORIGINAL_COMMIT"
+  git checkout --detach "$ORIGINAL_COMMIT"
+else
+  echo "Switching back to the previously active branch: $ORIGINAL_BRANCH"
+  git checkout "$ORIGINAL_BRANCH"
+fi
