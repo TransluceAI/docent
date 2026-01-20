@@ -636,19 +636,18 @@ async def import_runs_from_file(
                 file_info, runs_generator = load_inspect.runs_from_file(_fh_ingest, format)
 
                 batches = batched(runs_generator, 100)
-                async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-                    for batch in batches:
-                        await mono_svc.add_agent_runs(ctx, batch)
-                        runs_added += len(batch)
+                for batch in batches:
+                    await mono_svc.add_agent_runs(ctx, batch)
+                    runs_added += len(batch)
 
-                        # Stream progress update
-                        await send_stream.send(
-                            {
-                                "phase": "progress",
-                                "uploaded": runs_added,
-                                "total": count_new_runs,
-                            }
-                        )
+                    # Stream progress update
+                    await send_stream.send(
+                        {
+                            "phase": "progress",
+                            "uploaded": runs_added,
+                            "total": count_new_runs,
+                        }
+                    )
 
             t_end = time.perf_counter()
 

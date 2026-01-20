@@ -67,17 +67,16 @@ async def create_chart(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ) -> dict[str, str]:
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        async with mono_svc.db.session() as session:
-            chart_service = ChartsService(session)
-            chart_id = await chart_service.create_chart(
-                ctx=ctx,
-                name=request.name,
-                series_key=request.series_key,
-                x_key=request.x_key,
-                y_key=request.y_key,
-                chart_type=request.chart_type,
-            )
+    async with mono_svc.db.session() as session:
+        chart_service = ChartsService(session)
+        chart_id = await chart_service.create_chart(
+            ctx=ctx,
+            name=request.name,
+            series_key=request.series_key,
+            x_key=request.x_key,
+            y_key=request.y_key,
+            chart_type=request.chart_type,
+        )
 
     analytics.track_event(
         "create_chart",
@@ -125,8 +124,7 @@ async def update_chart(
 
     async with mono_svc.db.session() as session:
         chart_service = ChartsService(session)
-        async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-            await chart_service.update_chart(ctx=ctx, chart_id=chart_id, updates=update_fields)
+        await chart_service.update_chart(ctx=ctx, chart_id=chart_id, updates=update_fields)
 
     analytics.track_event(
         "update_chart",
@@ -150,8 +148,7 @@ async def delete_chart(
 ):
     async with mono_svc.db.session() as session:
         chart_service = ChartsService(session)
-        async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-            await chart_service.delete_chart(ctx, chart_id)
+        await chart_service.delete_chart(ctx, chart_id)
 
     return {"status": "ok"}
 

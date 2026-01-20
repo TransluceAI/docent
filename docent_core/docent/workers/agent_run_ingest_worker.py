@@ -81,10 +81,9 @@ async def agent_run_ingest_job(ctx: ViewContext, job: SQLAJob) -> None:
     except Exception as e:
         raise RuntimeError(f"Failed to parse/validate request: {e}") from e
 
-    # Use advisory lock to prevent concurrent mutations and check space atomically
-    async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
-        await mono_svc.check_space_for_runs(ctx, len(runs_request.agent_runs))
-        await mono_svc.add_agent_runs(ctx, runs_request.agent_runs)
+    # Check space and add runs (no lock - soft limit allows slight overages in race conditions)
+    await mono_svc.check_space_for_runs(ctx, len(runs_request.agent_runs))
+    await mono_svc.add_agent_runs(ctx, runs_request.agent_runs)
 
     total_duration = time.monotonic() - start_time
     logger.info(
