@@ -768,7 +768,7 @@ async def get_metadata_field_range(
 @user_router.get("/{collection_id}/agent_run")
 async def get_agent_run(
     agent_run_id: str,
-    apply_base_where_clause: bool = False,
+    apply_base_where_clause: bool = True,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
@@ -790,7 +790,7 @@ async def get_agent_run(
 @user_router.get("/{collection_id}/agent_run_with_tree")
 async def get_agent_run_with_tree(
     agent_run_id: str,
-    apply_base_where_clause: bool = False,
+    apply_base_where_clause: bool = True,
     full_tree: bool = False,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),

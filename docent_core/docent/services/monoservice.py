@@ -1564,7 +1564,7 @@ class MonoService:
                 )
 
     async def get_agent_run(
-        self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = False
+        self, ctx: ViewContext, agent_run_id: str, apply_base_where_clause: bool = True
     ) -> AgentRun | None:
         """
         Get an AgentRun from the database by its ID.
