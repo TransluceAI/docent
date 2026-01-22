@@ -582,7 +582,12 @@ class Docent:
         return response.json()
 
     def get_rubric_run_state(
-        self, collection_id: str, rubric_id: str, version: int | None = None
+        self,
+        collection_id: str,
+        rubric_id: str,
+        version: int | None = None,
+        filter_dict: dict[str, Any] | None = None,
+        include_failures: bool = False,
     ) -> dict[str, Any]:
         """Get rubric run state for a given collection and rubric.
 
@@ -590,6 +595,8 @@ class Docent:
             collection_id: ID of the Collection.
             rubric_id: The ID of the rubric to get run state for.
             version: The version of the rubric to get run state for. If None, the latest version is used.
+            filter_dict: Optional filter dictionary to apply to the results.
+            include_failures: Whether to include failed results in the response.
 
         Returns:
             dict: Dictionary containing rubric run state with results, job_id, and total_results_needed.
@@ -598,7 +605,14 @@ class Docent:
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/rubric_run_state"
-        response = self._session.get(url, params={"version": version})
+        body = {
+            "filter_dict": filter_dict,
+            "include_failures": include_failures,
+        }
+        params: dict[str, Any] = {}
+        if version is not None:
+            params["version"] = version
+        response = self._session.post(url, json=body, params=params)
         self._handle_response_errors(response)
         return response.json()
 

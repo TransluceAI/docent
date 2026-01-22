@@ -556,7 +556,7 @@ wheels = [
 
 [[package]]
 name = "docent-python"
-version = "0.1.45a0"
+version = "0.1.46a0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
