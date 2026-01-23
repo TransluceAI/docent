@@ -63,6 +63,27 @@ def _is_retryable_error(exception: BaseException) -> bool:
     return False
 
 
+def _build_response_format_config(
+    response_format: ResponseFormat | None,
+    *,
+    model_name: str,
+) -> dict[str, Any]:
+    """Build Gemini structured output config from unified ResponseFormat."""
+    if response_format is None:
+        return {}
+
+    if response_format.type != "json_schema":
+        raise ValueError(
+            f"Unsupported response format type: {response_format.type} for model {model_name}. "
+            "Only 'json_schema' is currently supported."
+        )
+
+    return {
+        "response_mime_type": "application/json",
+        "response_json_schema": response_format.schema_,
+    }
+
+
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception),
@@ -85,16 +106,16 @@ async def get_google_chat_completion_async(
     timeout: float = 5.0,
     response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
-    if response_format is not None:
-        raise NotImplementedError(
-            "Structured outputs (response_format) are not implemented for Google yet."
-        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Google yet."
         )
 
     system, input_messages = _parse_chat_messages(messages, tools_provided=bool(tools))
+    response_format_config = _build_response_format_config(
+        response_format,
+        model_name=model_name,
+    )
 
     async with async_timeout_ctx(timeout):
         thinking_cfg = None
@@ -118,6 +139,7 @@ async def get_google_chat_completion_async(
                     if tool_choice is not None
                     else None
                 ),
+                **response_format_config,
             ),
         )
 
@@ -153,16 +175,16 @@ async def get_google_chat_completion_streaming_async(
     timeout: float = 5.0,
     response_format: ResponseFormat | None = None,
 ) -> LLMOutput:
-    if response_format is not None:
-        raise NotImplementedError(
-            "Structured outputs (response_format) are not implemented for Google yet."
-        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Google yet."
         )
 
     system, input_messages = _parse_chat_messages(messages, tools_provided=bool(tools))
+    response_format_config = _build_response_format_config(
+        response_format,
+        model_name=model_name,
+    )
 
     try:
         async with async_timeout_ctx(timeout):
@@ -187,6 +209,7 @@ async def get_google_chat_completion_streaming_async(
                         if tool_choice is not None
                         else None
                     ),
+                    **response_format_config,
                 ),
             )
 

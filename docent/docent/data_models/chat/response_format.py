@@ -15,6 +15,7 @@ class ResponseFormat(BaseModel):
     - OpenAI: response_format parameter
     - Anthropic: output_format parameter (with beta header)
     - OpenRouter: response_format parameter (same as OpenAI)
+    - Google Gemini: response_mime_type + response_json_schema in GenerateContentConfig
 
     Attributes:
         type: The format type. Currently only "json_schema" is supported.
