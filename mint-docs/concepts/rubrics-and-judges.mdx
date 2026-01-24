@@ -217,7 +217,7 @@ Some reasoning models support a `reasoning_effort` parameter that controls how m
 Defines how the LLM output is parsed:
 
 - `XML_KEY` (default): Extract JSON from within XML tags (e.g., `<response>...</response>`). When using this mode, at least one prompt template must contain the XML tag `<{response_xml_key}>` (e.g., `<response>` by default).
-- `CONSTRAINED_DECODING`: Parse entire output as JSON (uses structured output). Supported by OpenAI and OpenRouter. Not yet implemented for Anthropic or Google (will raise `NotImplementedError`).
+- `CONSTRAINED_DECODING`: Parse entire output as JSON (uses structured output). Supported by OpenAI, OpenRouter, and Anthropic. Not yet implemented for Google (will raise `NotImplementedError`).
 
 ```python
 from docent.judges.types import OutputParsingMode

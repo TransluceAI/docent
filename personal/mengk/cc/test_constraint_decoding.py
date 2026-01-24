@@ -148,12 +148,25 @@ google_rubric = Rubric(
     rubric_text=RUBRIC_TEXT,
     output_schema=OUTPUT_SCHEMA,
     output_parsing_mode=OutputParsingMode.CONSTRAINED_DECODING,
-    judge_model=ModelOption(provider="google", model_name="gemini-3.0-flash-preview"),
+    judge_model=ModelOption(provider="google", model_name="gemini-3-flash-preview"),
     n_rollouts_per_input=1,
 )
 
 print(f"Google rubric created with model: {google_rubric.judge_model}")
 print(f"Output parsing mode: {google_rubric.output_parsing_mode}")
+
+#%%
+# Create rubric with Anthropic model (using constraint decoding)
+anthropic_rubric = Rubric(
+    rubric_text=RUBRIC_TEXT,
+    output_schema=OUTPUT_SCHEMA,
+    output_parsing_mode=OutputParsingMode.CONSTRAINED_DECODING,
+    judge_model=ModelOption(provider="anthropic", model_name="claude-opus-4-5-20251101"),
+    n_rollouts_per_input=1,
+)
+
+print(f"Anthropic rubric created with model: {anthropic_rubric.judge_model}")
+print(f"Output parsing mode: {anthropic_rubric.output_parsing_mode}")
 
 #%%
 # Create LLM service and build judges
@@ -164,12 +177,14 @@ openai_judge = build_judge(openai_rubric, llm_svc)
 minimax_m2_judge = build_judge(minimax_m2_rubric, llm_svc)
 minimax_m2_1_judge = build_judge(minimax_m2_1_rubric, llm_svc)
 google_judge = build_judge(google_rubric, llm_svc)
+anthropic_judge = build_judge(anthropic_rubric, llm_svc)
 
 print(f"OpenRouter judge type: {type(openrouter_judge).__name__}")
 print(f"OpenAI judge type: {type(openai_judge).__name__}")
 print(f"Minimax M2 judge type: {type(minimax_m2_judge).__name__}")
 print(f"Minimax M2.1 judge type: {type(minimax_m2_1_judge).__name__}")
 print(f"Google judge type: {type(google_judge).__name__}")
+print(f"Anthropic judge type: {type(anthropic_judge).__name__}")
 
 #%%
 # Test OpenRouter judge with constraint decoding
@@ -232,6 +247,19 @@ print("=" * 60)
 for agent_run in [agent_run_1, agent_run_2, agent_run_3]:
     print(f"\n--- Testing: {agent_run.name} ---")
     result = await google_judge(agent_run, temperature=0.0)
+    print(f"Result type: {result.result_type}")
+    print(f"Output: {result.output}")
+    print(f"Expected: {agent_run.metadata.get('expected_answer')}")
+
+#%%
+# Test Anthropic judge with constraint decoding
+print("=" * 60)
+print("Testing Anthropic Judge with Constraint Decoding")
+print("=" * 60)
+
+for agent_run in [agent_run_1, agent_run_2, agent_run_3]:
+    print(f"\n--- Testing: {agent_run.name} ---")
+    result = await anthropic_judge(agent_run, temperature=0.0)
     print(f"Result type: {result.result_type}")
     print(f"Output: {result.output}")
     print(f"Expected: {agent_run.metadata.get('expected_answer')}")
@@ -326,7 +354,7 @@ print(
 CONSTRAINED_DECODING mode:
 - Uses JSON schema to force valid JSON output from the LLM
 - No XML tags needed; entire output is the JSON response
-- Tested providers: OpenRouter, OpenAI, Minimax M2/M2.1, Google Gemini
+- Tested providers: OpenRouter, OpenAI, Minimax M2/M2.1, Google Gemini, Anthropic
 
 XML_KEY mode (with custom "output" tag):
 - LLM outputs free-form text with JSON wrapped in <output>...</output> tags

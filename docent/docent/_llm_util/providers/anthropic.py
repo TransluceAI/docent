@@ -73,6 +73,7 @@ from docent.data_models.chat import (
 from docent.data_models.chat.response_format import ResponseFormat
 
 logger = get_logger(__name__)
+ANTHROPIC_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13"
 
 
 def _print_backoff_message(e: Details):
@@ -188,6 +189,25 @@ def _parse_tool_choice(tool_choice: Literal["auto", "required"] | None) -> ToolC
         return ToolChoiceAnyParam(type="any")
 
 
+def _build_output_format(response_format: ResponseFormat | None) -> dict[str, Any] | None:
+    if response_format is None:
+        return None
+    if response_format.strict is False:
+        raise NotImplementedError(
+            "Anthropic structured outputs do not support strict=False; "
+            "set ResponseFormat.strict=True."
+        )
+    if response_format.type != "json_schema":
+        raise ValueError(
+            f"Unsupported response format type: {response_format.type}. "
+            "Only 'json_schema' is currently supported."
+        )
+    return {
+        "type": "json_schema",
+        "schema": response_format.schema_,
+    }
+
+
 def _convert_anthropic_error(e: Exception):
     if isinstance(e, BadRequestError):
         if "context limit" in e.message.lower() or "prompt is too long" in e.message.lower():
@@ -220,10 +240,6 @@ async def get_anthropic_chat_completion_streaming_async(
     timeout: float = 5.0,
     response_format: ResponseFormat | None = None,
 ):
-    if response_format is not None:
-        raise NotImplementedError(
-            "Structured outputs (response_format) are not implemented for Anthropic yet."
-        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Anthropic yet."
@@ -251,6 +267,14 @@ async def get_anthropic_chat_completion_streaming_async(
                 create_kwargs["tool_choice"] = tool_choice_param
             if system is not None:
                 create_kwargs["system"] = system
+            if response_format is not None:
+                output_format = _build_output_format(response_format)
+                extra_headers = dict(create_kwargs.get("extra_headers", {}))
+                extra_headers["anthropic-beta"] = ANTHROPIC_STRUCTURED_OUTPUTS_BETA
+                create_kwargs["extra_headers"] = extra_headers
+                extra_body = dict(create_kwargs.get("extra_body", {}))
+                extra_body["output_format"] = output_format
+                create_kwargs["extra_body"] = extra_body
 
             stream = cast(
                 AsyncStream[RawMessageStreamEvent],
@@ -420,10 +444,6 @@ async def get_anthropic_chat_completion_async(
         We should actually implement this at some point, but it does not work.
     """
 
-    if response_format is not None:
-        raise NotImplementedError(
-            "Structured outputs (response_format) are not implemented for Anthropic yet."
-        )
     if logprobs or top_logprobs is not None:
         raise NotImplementedError(
             "We have not implemented logprobs or top_logprobs for Anthropic yet."
@@ -450,6 +470,14 @@ async def get_anthropic_chat_completion_async(
                 create_kwargs["tool_choice"] = tool_choice_param
             if system is not None:
                 create_kwargs["system"] = system
+            if response_format is not None:
+                output_format = _build_output_format(response_format)
+                extra_headers = dict(create_kwargs.get("extra_headers", {}))
+                extra_headers["anthropic-beta"] = ANTHROPIC_STRUCTURED_OUTPUTS_BETA
+                create_kwargs["extra_headers"] = extra_headers
+                extra_body = dict(create_kwargs.get("extra_body", {}))
+                extra_body["output_format"] = output_format
+                create_kwargs["extra_body"] = extra_body
 
             raw_output = cast(Message, await client.messages.create(**create_kwargs))
 
