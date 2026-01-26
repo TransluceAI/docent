@@ -2,8 +2,10 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { BASE_URL } from '@/app/constants';
 import { Collection, ComplexFilter } from '@/app/types/collectionTypes';
 import {
+  DqlAutogenMessage,
   DqlExecutePayload,
   DqlExecuteResponse,
+  DqlGenerateResponse,
   DqlSchemaResponse,
 } from '@/app/types/dqlTypes';
 import { TranscriptMetadataField } from '@/app/types/experimentViewerTypes';
@@ -261,6 +263,21 @@ export const collectionApi = createApi({
         body: { dql },
       }),
     }),
+    generateDql: build.mutation<
+      DqlGenerateResponse,
+      {
+        collectionId: string;
+        messages: DqlAutogenMessage[];
+        current_query: string | null;
+        model: string | null;
+      }
+    >({
+      query: ({ collectionId, messages, current_query, model }) => ({
+        url: `/dql/${collectionId}/generate`,
+        method: 'POST',
+        body: { messages, current_query, model },
+      }),
+    }),
     previewImportRunsFromFile: build.mutation<
       {
         status: string;
@@ -363,6 +380,7 @@ export const {
   useGetAgentRunIngestJobQuery,
   useGetDqlSchemaQuery,
   useExecuteDqlQueryMutation,
+  useGenerateDqlMutation,
   usePreviewImportRunsFromFileMutation,
   useImportRunsFromFileStreamQuery,
   useLazyImportRunsFromFileStreamQuery,

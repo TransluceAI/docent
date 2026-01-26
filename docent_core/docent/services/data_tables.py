@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -14,24 +15,111 @@ from docent_core.docent.db.schemas.data_table import SQLADataTable
 
 DEFAULT_DATA_TABLE_NAME = "All runs"
 
-
-def _escape_metadata_segment(segment: str) -> str:
-    return segment.replace("'", "''")
-
-
-def _metadata_field_expression(path: list[str]) -> str:
-    base = "br.metadata_json"
-    if not path:
-        return base
-    *parents, last = path
-    for segment in parents:
-        base += f"->'{_escape_metadata_segment(segment)}'"
-    return f"{base}->>'{_escape_metadata_segment(last)}'"
+# Limit number of rubric CTEs in default query to avoid overly complex queries
+MAX_RUBRIC_CTES = 5
 
 
-def build_default_data_table_dql(metadata_fields: list[str] | None = None) -> str:
-    metadata_selects: list[str] = []
-    metadata_aliases: list[str] = []
+@dataclass(frozen=True)
+class RubricInfo:
+    """Rubric information needed for building default DQL with modal CTEs."""
+
+    id: str
+    version: int
+    output_fields: list[str]
+
+
+def _sanitize_identifier(name: str) -> str:
+    """Sanitize a string for use as a SQL identifier."""
+    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    if sanitized and sanitized[0].isdigit():
+        sanitized = "_" + sanitized
+    return sanitized or "_"
+
+
+def _escape_literal(value: str) -> str:
+    """Escape a string for use as a SQL literal."""
+    return value.replace("'", "''")
+
+
+def _build_rubric_ctes(rubrics: list[RubricInfo]) -> tuple[list[str], dict[str, str]]:
+    """Build CTEs for rubrics using mode() WITHIN GROUP for multiple rollouts.
+
+    Returns (cte_strings, rubric_id -> alias map).
+    """
+    ctes: list[str] = []
+    alias_map: dict[str, str] = {}
+    alias_counts: dict[str, int] = {}
+
+    for rubric in rubrics:
+        short_id = rubric.id.split("-", maxsplit=1)[0]
+        base_alias = _sanitize_identifier(f"rubric_{short_id}_modes")
+        alias_index = alias_counts.get(base_alias, 0)
+        alias_counts[base_alias] = alias_index + 1
+        alias = base_alias if alias_index == 0 else f"{base_alias}_{alias_index}"
+        alias_map[rubric.id] = alias
+
+        escaped_id = _escape_literal(rubric.id)
+
+        # Build mode() expressions for output fields (default to label if none specified)
+        fields = rubric.output_fields if rubric.output_fields else ["label"]
+        mode_lines: list[str] = []
+        for field in sorted(fields):
+            escaped_field = _escape_literal(field)
+            sanitized_field = _sanitize_identifier(field)
+            mode_lines.append(
+                f"    mode() WITHIN GROUP (ORDER BY jr.output->>'{escaped_field}') "
+                f"AS {sanitized_field}"
+            )
+
+        mode_clause = ",\n".join(mode_lines)
+
+        cte = "\n".join(
+            [
+                f"  {alias} AS (",
+                "    SELECT",
+                "      jr.agent_run_id,",
+                mode_clause,
+                "    FROM judge_results jr",
+                f"    WHERE jr.rubric_id = '{escaped_id}'",
+                f"      AND jr.rubric_version = {rubric.version}",
+                "      AND jr.result_type = 'DIRECT_RESULT'",
+                "    GROUP BY jr.agent_run_id",
+                "  )",
+            ]
+        )
+        ctes.append(cte)
+
+    return ctes, alias_map
+
+
+def build_default_data_table_dql(
+    metadata_fields: list[str] | None = None,
+    rubrics: list[RubricInfo] | None = None,
+) -> str:
+    """Build a default query showing agent_runs with metadata and rubric results.
+
+    Includes modal CTEs for rubrics (up to MAX_RUBRIC_CTES) to handle multiple
+    rollouts via mode() WITHIN GROUP aggregation.
+    """
+    select_columns = ["ar.id", "ar.name", "ar.created_at"]
+
+    # Build rubric CTEs (limited to MAX_RUBRIC_CTES)
+    rubrics_to_include = (rubrics or [])[:MAX_RUBRIC_CTES]
+    rubric_ctes, rubric_aliases = _build_rubric_ctes(rubrics_to_include)
+
+    # Add rubric field selects
+    for rubric in rubrics_to_include:
+        alias = rubric_aliases.get(rubric.id)
+        if not alias:
+            continue
+        fields = rubric.output_fields if rubric.output_fields else ["label"]
+        short_id = rubric.id.split("-", maxsplit=1)[0]
+        for field in sorted(fields):
+            sanitized_field = _sanitize_identifier(field)
+            col_alias = f"rubric_{short_id}_{field}"
+            select_columns.append(f'{alias}.{sanitized_field} AS "{col_alias}"')
+
+    # Add metadata field extractions if provided
     seen: set[str] = set()
     for field in metadata_fields or []:
         if not field.startswith("metadata."):
@@ -43,58 +131,41 @@ def build_default_data_table_dql(metadata_fields: list[str] | None = None) -> st
         if alias in seen:
             continue
         seen.add(alias)
-        metadata_aliases.append(alias)
-        expression = _metadata_field_expression(path)
-        metadata_selects.append(f'  {expression} AS "{alias}"')
+        # Build JSON path expression: metadata_json->>'field' or metadata_json->'a'->>'b'
+        *parents, last = path
+        base = "ar.metadata_json"
+        for segment in parents:
+            escaped = segment.replace("'", "''")
+            base += f"->'{escaped}'"
+        escaped_last = last.replace("'", "''")
+        expression = f"{base}->>'{escaped_last}'"
+        select_columns.append(f'{expression} AS "{alias}"')
 
-    metadata_columns = [f'  rm."{alias}"' for alias in metadata_aliases]
-    select_lines = [
-        "  br.id",
-        "  br.name",
-        "  br.created_at",
-        *metadata_columns,
-        "  rr.rubric_id",
-        "  rr.rubric_version",
-        "  rr.result_type",
-        "  rr.output",
-        "  rr.result_metadata",
-    ]
-    select_clause = ",\n".join(select_lines)
+    columns_str = ",\n  ".join(select_columns)
 
-    return (
-        "WITH base_runs AS (\n"
-        "  SELECT id, name, created_at, metadata_json\n"
-        "  FROM agent_runs\n"
-        "  ORDER BY created_at DESC\n"
-        "  LIMIT 20\n"
-        "),\n"
-        "run_metadata AS (\n"
-        "  SELECT\n"
-        "    br.id AS agent_run_id"
-        + (",\n" + ",\n".join(metadata_selects) if metadata_selects else "")
-        + "\n"
-        "  FROM base_runs br\n"
-        "),\n"
-        "rubric_results AS (\n"
-        "  SELECT\n"
-        "    jr.agent_run_id,\n"
-        "    jr.rubric_id,\n"
-        "    jr.rubric_version,\n"
-        "    jr.result_type,\n"
-        "    jr.output,\n"
-        "    jr.result_metadata\n"
-        "  FROM judge_results jr\n"
-        "  JOIN base_runs br ON br.id = jr.agent_run_id\n"
-        ")\n"
-        "SELECT\n"
-        f"{select_clause}\n"
-        "FROM base_runs br\n"
-        "LEFT JOIN run_metadata rm ON rm.agent_run_id = br.id\n"
-        "LEFT JOIN rubric_results rr ON rr.agent_run_id = br.id\n"
-        "ORDER BY br.created_at DESC"
-    )
+    # Build JOIN clauses for rubric CTEs
+    join_clauses: list[str] = []
+    for rubric in rubrics_to_include:
+        alias = rubric_aliases.get(rubric.id)
+        if alias:
+            join_clauses.append(f"LEFT JOIN {alias} ON {alias}.agent_run_id = ar.id")
+
+    # Build the query
+    lines: list[str] = []
+    if rubric_ctes:
+        lines.append("WITH")
+        lines.append(",\n".join(rubric_ctes))
+    lines.append("SELECT")
+    lines.append(f"  {columns_str}")
+    lines.append("FROM agent_runs ar")
+    lines.extend(join_clauses)
+    lines.append("ORDER BY ar.created_at DESC")
+    lines.append("LIMIT 20")
+
+    return "\n".join(lines)
 
 
+# Basic default query without rubric CTEs (used as fallback)
 DEFAULT_DATA_TABLE_DQL = build_default_data_table_dql()
 
 
@@ -155,6 +226,7 @@ class DataTablesService:
         dql: str | None = None,
         state: dict[str, Any] | None = None,
         metadata_fields: list[str] | None = None,
+        rubrics: list[RubricInfo] | None = None,
     ) -> DataTableSpec:
         if ctx.user is None:
             raise PermissionError("User must be authenticated to create data tables.")
@@ -163,7 +235,7 @@ class DataTablesService:
         if name is None or not name.strip():
             name = await self._next_default_name(ctx)
         if dql is None or not dql.strip():
-            dql = build_default_data_table_dql(metadata_fields)
+            dql = build_default_data_table_dql(metadata_fields, rubrics)
 
         data_table = SQLADataTable(
             id=data_table_id,

@@ -1,7 +1,7 @@
 """data tables
 
 Revision ID: 665580d96b03
-Revises: 45642a30c03f
+Revises: 10c961252f56
 Create Date: 2026-01-12 23:22:35.765070
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "665580d96b03"
-down_revision: Union[str, Sequence[str], None] = "45642a30c03f"
+down_revision: Union[str, Sequence[str], None] = "10c961252f56"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

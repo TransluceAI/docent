@@ -29,7 +29,7 @@ from docent_core.docent.db.dql import (
 )
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAAgentRun
-from docent_core.docent.services.monoservice import MAX_DQL_RESULT_LIMIT, MonoService
+from docent_core.docent.services.dql import MAX_DQL_RESULT_LIMIT, DQLService
 
 COLLECTION_ID = "test-collection"
 TEST_USER = User(id="user-1", email="user@example.com", organization_ids=[], is_anonymous=False)
@@ -751,27 +751,30 @@ class _DummyDB:
         yield self._session
 
 
-class _StubMonoService(MonoService):
-    def __init__(self, db: _DummyDB, *, allowed: bool = True) -> None:
-        super().__init__(db)  # type: ignore[arg-type]
-        self._allowed = allowed
-
-    async def has_permission(self, *, user, resource_type, resource_id, permission) -> bool:  # type: ignore[override]
-        return self._allowed
-
-    async def get_json_metadata_fields_map(self, collection_id: str) -> dict[str, Any]:  # type: ignore[override]
-        return {}
-
-
 @pytest.mark.asyncio
 async def test_execute_dql_query_sets_read_only_rls_context() -> None:
-    session = _RecordingSession()
-    service = _StubMonoService(_DummyDB(session))
-    result = await service.execute_dql_query(
-        user=TEST_USER,
-        collection_id=COLLECTION_ID,
-        dql="SELECT id FROM agent_runs",
-    )
+    import docent_core.docent.services.dql as dql_service_module
+
+    # Patch the permission check to allow access for this test
+    # Must patch in the services.dql module where it's imported
+    async def allow_access(mono_service, user, collection_id):  # type: ignore[override]
+        pass
+
+    original_ensure = dql_service_module.ensure_dql_collection_access
+    dql_service_module.ensure_dql_collection_access = allow_access
+
+    try:
+        session = _RecordingSession()
+        db = _DummyDB(session)
+        dql_service = DQLService(db)  # type: ignore[arg-type]
+        result = await dql_service.execute_query(
+            user=TEST_USER,
+            collection_id=COLLECTION_ID,
+            dql="SELECT id FROM agent_runs",
+            json_fields={},
+        )
+    finally:
+        dql_service_module.ensure_dql_collection_access = original_ensure
 
     query_sql, query_params = next(
         (sql, params) for sql, params in session.statements if "FROM agent_runs" in sql

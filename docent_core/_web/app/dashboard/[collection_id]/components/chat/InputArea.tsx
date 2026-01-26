@@ -228,11 +228,11 @@ export default function InputArea({
             value={input}
             onChange={handleInput}
             className={cn(
-              'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden p-0 border-none shadow-none resize-none focus-visible:ring-0',
+              'min-h-[48px] max-h-[calc(75dvh)] overflow-hidden p-0 border-none shadow-none resize-none focus-visible:ring-0',
               className
             )}
             disabled={disabled || errorMessage != undefined}
-            rows={1}
+            rows={2}
             autoFocus
             onKeyDown={(event) => {
               if (

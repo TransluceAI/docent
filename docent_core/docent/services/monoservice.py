@@ -5,13 +5,10 @@ import json
 from collections import Counter
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from time import perf_counter
 from typing import (
     Any,
     AsyncIterator,
-    Final,
     Iterator,
     Literal,
     ParamSpec,
@@ -42,7 +39,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.sql import FromClause, lateral, text
@@ -62,19 +59,7 @@ from docent_core._db_service.db import DocentDB
 from docent_core._server._broker.redis_client import enqueue_job, get_redis_client
 from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
-from docent_core.docent.db.dql import (
-    DQLExecutionError,
-    JsonFieldInfo,
-    QueryExpression,
-    SelectedColumn,
-    apply_limit_cap,
-    build_default_registry,
-    ensure_dql_collection_access,
-    extract_selected_columns,
-    get_query_limit_value,
-    parameterize_expression,
-    parse_dql_query,
-)
+from docent_core.docent.db.dql import JsonFieldInfo
 from docent_core.docent.db.filters import (
     CollectionFilter,
     ComplexFilter,
@@ -137,7 +122,6 @@ T = TypeVar("T")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 EMPTY_TEXT_ARRAY = literal_column("'{}'::text[]")  # type: ignore[reportUnknownVariableType]
-MAX_DQL_RESULT_LIMIT: Final[int] = 10_000
 
 
 def _infer_filter_type_from_types(
@@ -249,19 +233,6 @@ class _NotGiven:
 
 
 NOT_GIVEN = _NotGiven()
-
-
-@dataclass(slots=True)
-class DQLQueryResult:
-    columns: tuple[str, ...]
-    rows: list[tuple[Any, ...]]
-    selected_columns: list[SelectedColumn]
-    truncated: bool
-    execution_time_ms: float
-    compiled_sql: str
-    requested_limit: int | None
-    applied_limit: int
-    row_count: int
 
 
 class MonoService:
@@ -1115,101 +1086,6 @@ class MonoService:
             result = await session.execute(query)
             agent_run_ids = result.scalars().all()
             return list(agent_run_ids)
-
-    ########
-    # DQL  #
-    ########
-
-    async def execute_dql_query(
-        self,
-        *,
-        user: User,
-        collection_id: str,
-        dql: str,
-    ) -> DQLQueryResult:
-        await ensure_dql_collection_access(
-            mono_service=self,
-            user=user,
-            collection_id=collection_id,
-        )
-
-        json_field_map = await self.get_json_metadata_fields_map(collection_id)
-        registry = build_default_registry(
-            collection_id=collection_id,
-            json_fields=json_field_map,
-        )
-        expression = parse_dql_query(
-            dql,
-            registry=registry,
-            collection_id=collection_id,
-        )
-        selected_columns = extract_selected_columns(expression)
-        query_expression = cast(QueryExpression, expression)
-        requested_limit = get_query_limit_value(query_expression)
-        server_cap = MAX_DQL_RESULT_LIMIT
-        applied_limit = server_cap if requested_limit is None else min(requested_limit, server_cap)
-
-        if requested_limit is None or requested_limit > server_cap:
-            fetch_limit = server_cap + 1
-        else:
-            fetch_limit = requested_limit + 1
-
-        apply_limit_cap(query_expression, fetch_limit)
-        compiled_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]
-        parameterized_sql, parameters = parameterize_expression(expression, "postgres")
-        statement = text(parameterized_sql)
-        logger.info(
-            "Executing DQL query for collection_id=%s user_id=%s fetch_limit=%s sql=%s params=%s",
-            collection_id,
-            user.id,
-            fetch_limit,
-            parameterized_sql,
-            parameters,
-        )
-
-        start_time = perf_counter()
-        async with self.db.dql_session(collection_id) as session:
-            try:
-                result = await session.execute(statement, parameters or {})
-            except SQLAlchemyError as exc:
-                message = str(getattr(exc, "orig", exc)).strip()
-                if not message:
-                    message = "Failed to execute query."
-                raise DQLExecutionError(message) from exc
-
-            columns = tuple(result.keys())
-            raw_rows = result.fetchall()
-            result.close()
-        execution_time_ms = (perf_counter() - start_time) * 1000.0
-
-        has_extra = len(raw_rows) == fetch_limit
-        if has_extra:
-            raw_rows = raw_rows[:-1]
-
-        rows = [tuple(row) for row in raw_rows]
-
-        row_count = len(rows)
-        truncated = has_extra
-        logger.debug(
-            "DQL query finished for collection_id=%s user_id=%s row_count=%s truncated=%s execution_time_ms=%.2f",
-            collection_id,
-            user.id,
-            row_count,
-            truncated,
-            execution_time_ms,
-        )
-
-        return DQLQueryResult(
-            columns=tuple(str(column) for column in columns),
-            rows=rows,
-            selected_columns=selected_columns,
-            truncated=truncated,
-            execution_time_ms=execution_time_ms,
-            compiled_sql=compiled_sql,
-            requested_limit=requested_limit,
-            applied_limit=applied_limit,
-            row_count=row_count,
-        )
 
     async def get_agent_runs(
         self,

@@ -37,6 +37,7 @@ import {
   useUpdateDataTableMutation,
 } from '@/app/api/dataTableApi';
 import type { DataTable, DataTableState } from '@/app/types/dataTableTypes';
+import type { DqlExecuteResponse } from '@/app/types/dqlTypes';
 import DQLEditor from '@/app/components/DQLEditor';
 
 const AUTO_SAVE_DEBOUNCE_MS = 700;
@@ -70,6 +71,7 @@ export default function DataTableExplorer({
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [draftTableId, setDraftTableId] = useState<string | null>(null);
   const [localNames, setLocalNames] = useState<Record<string, string>>({});
+  const resultCacheRef = useRef<Record<string, DqlExecuteResponse | null>>({});
 
   const { data: dataTables = [], isLoading } = useListDataTablesQuery(
     { collectionId: collectionId ?? '' },
@@ -383,14 +385,27 @@ export default function DataTableExplorer({
     }));
   }, []);
 
+  const handleResultChange = useCallback(
+    (result: DqlExecuteResponse | null) => {
+      if (!activeTable) {
+        return;
+      }
+      resultCacheRef.current[activeTable.id] = result;
+    },
+    [activeTable]
+  );
+
   const schemaVisible = draftState.schemaVisible ?? false;
   const headerName = activeTable ? getDisplayName(activeTable) : UNTITLED_NAME;
+  const cachedResult = activeTable
+    ? resultCacheRef.current[activeTable.id]
+    : undefined;
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden border rounded-lg bg-card">
       {isListOpen && (
         <div className="w-64 border-r bg-muted/30 flex flex-col min-h-0">
-          <div className="flex items-center justify-between px-3 py-2 border-b">
+          <div className="flex items-center justify-between h-10 px-3 border-b">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Data Tables
             </span>
@@ -411,6 +426,7 @@ export default function DataTableExplorer({
                 size="icon"
                 variant="ghost"
                 onClick={() => setIsListOpen(false)}
+                disabled={dataTables.length === 0}
               >
                 <PanelLeftClose className="h-4 w-4" />
               </Button>
@@ -463,7 +479,7 @@ export default function DataTableExplorer({
                           type="button"
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                          className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10"
                           onClick={(event) => event.stopPropagation()}
                         >
                           <MoreVertical className="h-3.5 w-3.5" />
@@ -499,20 +515,20 @@ export default function DataTableExplorer({
       )}
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            {!isListOpen && (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => setIsListOpen(true)}
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            )}
-            {activeTable ? (
-              editingTitleId === activeTable.id && canEdit ? (
+        {activeTable && (
+          <div className="flex flex-wrap items-center justify-between h-10 gap-3 border-b px-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {!isListOpen && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setIsListOpen(true)}
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              )}
+              {editingTitleId === activeTable.id && canEdit ? (
                 <Input
                   ref={titleInputRef}
                   value={draftName}
@@ -537,50 +553,48 @@ export default function DataTableExplorer({
                 <span className="text-sm font-semibold truncate max-w-[16rem]">
                   {normalizeName(headerName)}
                 </span>
-              )
-            ) : (
-              <span className="text-sm text-muted-foreground">
-                Select a data table
-              </span>
-            )}
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {isUpdating && <span>Saving...</span>}
+              {canEdit && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDuplicate(activeTable)}
+                    disabled={isDuplicating}
+                  >
+                    Duplicate
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(activeTable)}
+                  >
+                    Delete
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {isUpdating && <span>Saving...</span>}
-            {canEdit && activeTable && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDuplicate(activeTable)}
-                  disabled={isDuplicating}
-                >
-                  Duplicate
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDelete(activeTable)}
-                >
-                  Delete
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+        )}
 
         <div className="flex-1 min-h-0 min-w-0 p-3">
           {activeTable ? (
             <DQLEditor
-              key={activeTable.id}
+              dataTableId={activeTable.id}
               collectionId={collectionId ?? undefined}
               initialQuery={draftDql}
               onQueryChange={setDraftDql}
+              initialResult={cachedResult}
+              onResultChange={handleResultChange}
               initialSchemaVisible={schemaVisible}
               onSchemaVisibleChange={handleSchemaVisibleChange}
+              initialChatState={activeTable.state?.chatState}
               readOnly={!canEdit}
-              autoRunKey={activeTable.id}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-sm text-muted-foreground">

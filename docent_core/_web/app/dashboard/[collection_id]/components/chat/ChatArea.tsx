@@ -17,6 +17,7 @@ interface ChatAreaProps {
   onSendMessage: (message: string) => void;
   onCancelMessage?: () => void;
   onRetry?: () => void;
+  onApplyQuery?: (query: string) => void;
   isSendingMessage?: boolean;
   headerElement?: ReactNode;
   suggestedMessages?: SuggestedMessage[];
@@ -35,6 +36,7 @@ export function ChatArea({
   onSendMessage,
   onCancelMessage,
   onRetry,
+  onApplyQuery,
   isSendingMessage = false,
   headerElement,
   suggestedMessages,
@@ -47,7 +49,6 @@ export function ChatArea({
   inputAreaClassName,
 }: ChatAreaProps) {
   const {
-    isAtBottom,
     containerRef,
     endRef,
     onViewportEnter,
@@ -101,6 +102,7 @@ export function ChatArea({
           index === messages.length - 1 &&
           message.role === 'assistant'
         }
+        onApplyQuery={onApplyQuery}
       />
     ));
     if (showThinkingSpacer) {
@@ -124,6 +126,7 @@ export function ChatArea({
     showThinkingSpacer,
     isSendingMessage,
     streamingMessageIdx,
+    onApplyQuery,
   ]);
 
   // Auto-scroll when the thinking spacer first appears in the message history (i.e., upon send)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,15 +9,21 @@ from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import Permission
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.permissions import require_collection_permission
-from docent_core.docent.server.dependencies.services import get_data_table_service, get_mono_svc
+from docent_core.docent.server.dependencies.services import (
+    get_data_table_service,
+    get_mono_svc,
+    get_rubric_service,
+)
 from docent_core.docent.server.dependencies.user import get_default_view_ctx
 from docent_core.docent.services.data_tables import (
     DEFAULT_DATA_TABLE_DQL,
     DataTableSpec,
     DataTablesService,
+    RubricInfo,
     build_default_data_table_dql,
 )
 from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.rubric import RubricService
 
 data_table_router = APIRouter()
 
@@ -51,10 +57,22 @@ def _serialize_data_table(data_table: DataTableSpec) -> DataTableResponse:
 
 def _get_metadata_field_name(field: Any) -> str | None:
     if isinstance(field, dict):
-        name = field.get("name")
+        field_dict = cast(dict[str, Any], field)
+        name = field_dict.get("name")
         return name if isinstance(name, str) else None
     name = getattr(field, "name", None)
     return name if isinstance(name, str) else None
+
+
+def _extract_output_fields_from_schema(output_schema: dict[str, Any]) -> list[str]:
+    """Extract field names from a JSON Schema's properties."""
+    if not output_schema:
+        return []
+    properties = output_schema.get("properties")
+    if properties is None or not isinstance(properties, dict):
+        return []
+    props_dict = cast(dict[str, Any], properties)
+    return sorted(props_dict.keys())
 
 
 @data_table_router.get("/{collection_id}")
@@ -86,12 +104,16 @@ async def create_data_table(
     request: CreateDataTableRequest,
     ctx: ViewContext = Depends(get_default_view_ctx),
     mono_svc: MonoService = Depends(get_mono_svc),
+    rubric_svc: RubricService = Depends(get_rubric_service),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
     data_table_service: DataTablesService = Depends(get_data_table_service),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ) -> DataTableResponse:
     metadata_fields: list[str] | None = None
+    rubrics: list[RubricInfo] | None = None
+
     if request.dql is None or not request.dql.strip():
+        # Fetch metadata fields
         metadata_fields = sorted(
             [
                 field_name
@@ -101,6 +123,25 @@ async def create_data_table(
             ]
         )
 
+        # Fetch rubrics with results to include in default query
+        all_rubrics = await rubric_svc.get_all_rubrics(collection_id, latest_only=True)
+        rubrics_with_results: list[RubricInfo] = []
+        for rubric in all_rubrics:
+            stats = await rubric_svc.get_rubric_version_stats(rubric.id)
+            if stats is None:
+                continue
+            _sqla_rubric, result_count = stats
+            if result_count > 0:
+                output_fields = _extract_output_fields_from_schema(rubric.output_schema)
+                rubrics_with_results.append(
+                    RubricInfo(
+                        id=rubric.id,
+                        version=rubric.version,
+                        output_fields=output_fields,
+                    )
+                )
+        rubrics = rubrics_with_results if rubrics_with_results else None
+
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
         data_table = await data_table_service.create_data_table(
             ctx,
@@ -108,6 +149,7 @@ async def create_data_table(
             dql=request.dql,
             state=request.state,
             metadata_fields=metadata_fields,
+            rubrics=rubrics,
         )
 
     analytics.track_event(

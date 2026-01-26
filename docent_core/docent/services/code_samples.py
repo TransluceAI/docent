@@ -150,6 +150,29 @@ class CodeSampleService:
         )
 
     @staticmethod
+    def _collect_rubric_fields(
+        columns: Sequence[str],
+        sort_field: str | None = None,
+    ) -> dict[str, set[str]]:
+        """Collect which fields are needed for each rubric.
+
+        Returns a mapping of rubric_id -> set of field names.
+        """
+        rubric_fields: dict[str, set[str]] = {}
+        all_columns = [*columns]
+        if sort_field:
+            all_columns.append(sort_field)
+
+        for column in all_columns:
+            rubric_info = CodeSampleService._parse_rubric_column(column)
+            if rubric_info is not None:
+                rubric_id, json_path = rubric_info
+                if json_path:
+                    field_name = json_path[0] if len(json_path) == 1 else "_".join(json_path)
+                    rubric_fields.setdefault(rubric_id, set()).add(field_name)
+        return rubric_fields
+
+    @staticmethod
     def build_agent_runs_dql_query(
         *,
         columns: Sequence[str],
@@ -160,14 +183,16 @@ class CodeSampleService:
         rubric_versions: Mapping[str, int] | None = None,
         table_alias: str = "ar",
     ) -> str:
-        # Collect rubric IDs and build CTEs
+        # Collect rubric IDs and fields, then build CTEs with mode() aggregation
         rubric_ids = sorted(CodeSampleService.collect_rubric_ids(columns, base_filter, sort_field))
+        rubric_fields = CodeSampleService._collect_rubric_fields(columns, sort_field)
         rubric_ctes: list[str] = []
         rubric_sources: dict[str, str] = {}
         if rubric_ids:
             rubric_ctes, rubric_sources = CodeSampleService._build_rubric_ctes(
                 rubric_ids,
                 rubric_versions=rubric_versions,
+                rubric_fields=rubric_fields,
             )
 
         # Collect label set IDs and build CTEs
@@ -220,11 +245,21 @@ class CodeSampleService:
             label_sources=label_sources,
         )
 
+        # Build JOIN clauses for rubric CTEs
+        join_clauses: list[str] = []
+        for rubric_id in rubric_ids:
+            cte_alias = rubric_sources.get(rubric_id)
+            if cte_alias:
+                join_clauses.append(
+                    f"LEFT JOIN {cte_alias} ON {cte_alias}.agent_run_id = {table_alias}.id"
+                )
+
         lines = [
             *(["WITH", ",\n".join(all_ctes)] if all_ctes else []),
             "SELECT",
             ",\n".join(f"  {line}" for line in select_lines),
             f"FROM agent_runs {table_alias}",
+            *join_clauses,
             where_clause,
             f"ORDER BY {sort_expr} {'ASC' if sort_direction == 'asc' else 'DESC'}",
         ]
@@ -782,39 +817,52 @@ class CodeSampleService:
         rubric_sources: Mapping[str, str] | None = None,
         comparison_value: object | None = None,
     ) -> str:
+        """Build expression to get the modal value for a rubric field.
+
+        When a CTE exists (rubric_sources), references the pre-computed column directly.
+        Otherwise, falls back to a subquery approach.
+        """
         if not json_path:
             raise ValueError("Rubric path cannot be empty")
-        value_expr = CodeSampleService._build_json_text_accessor("jr.output", json_path)
+
         rubric_source = rubric_sources.get(rubric_id) if rubric_sources else None
-        where_clauses = [f"jr.agent_run_id = {table_alias}.id"]
-        if rubric_source is None:
+
+        if rubric_source:
+            # Use the pre-computed modal value from the CTE
+            # The CTE has columns like: agent_run_id, label, explanation, etc.
+            field_name = json_path[0] if len(json_path) == 1 else "_".join(json_path)
+            sanitized_field = CodeSampleService._sanitize_identifier(field_name)
+            # The CTE alias will be joined in the FROM clause
+            modal_expr = f"{rubric_source}.{sanitized_field}"
+        else:
+            # Fallback to subquery approach (for filters or when no CTE)
+            value_expr = CodeSampleService._build_json_text_accessor("jr.output", json_path)
             rubric_version = rubric_versions.get(rubric_id) if rubric_versions else None
             version_clause = CodeSampleService._build_rubric_version_clause(
                 rubric_id, rubric_version
             )
             escaped_id = CodeSampleService._escape_literal(rubric_id)
             result_type = CodeSampleService._escape_literal(ResultType.DIRECT_RESULT.value)
-            where_clauses.extend(
-                [
-                    f"jr.rubric_id = '{escaped_id}'",
-                    version_clause,
-                    f"jr.result_type = '{result_type}'",
-                ]
+            where_clauses = [
+                f"jr.agent_run_id = {table_alias}.id",
+                f"jr.rubric_id = '{escaped_id}'",
+                version_clause,
+                f"jr.result_type = '{result_type}'",
+            ]
+            where_sql = " AND ".join(where_clauses)
+            modal_expr = (
+                "(SELECT rubric_counts.rubric_value "
+                "FROM ("
+                f"SELECT {value_expr} AS rubric_value, COUNT(1) AS value_count "
+                "FROM judge_results jr "
+                f"WHERE {where_sql} "
+                f"GROUP BY {value_expr}"
+                ") rubric_counts "
+                "ORDER BY rubric_counts.value_count DESC, "
+                "rubric_counts.rubric_value ASC NULLS LAST "
+                "LIMIT 1)"
             )
-        from_clause = f"{rubric_source} jr" if rubric_source else "judge_results jr"
-        where_sql = " AND ".join(where_clauses)
-        modal_expr = (
-            "(SELECT rubric_counts.rubric_value "
-            "FROM ("
-            f"SELECT {value_expr} AS rubric_value, COUNT(1) AS value_count "
-            f"FROM {from_clause} "
-            f"WHERE {where_sql} "
-            f"GROUP BY {value_expr}"
-            ") rubric_counts "
-            "ORDER BY rubric_counts.value_count DESC, "
-            "rubric_counts.rubric_value ASC NULLS LAST "
-            "LIMIT 1)"
-        )
+
         if isinstance(comparison_value, (int, float)):
             return f"CAST({modal_expr} AS DOUBLE PRECISION)"
         if isinstance(comparison_value, bool):
@@ -1097,13 +1145,21 @@ class CodeSampleService:
     def _build_rubric_ctes(
         rubric_ids: Sequence[str],
         rubric_versions: Mapping[str, int] | None = None,
+        rubric_fields: Mapping[str, set[str]] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
+        """Build CTEs for rubrics using mode() WITHIN GROUP for multiple rollouts.
+
+        Args:
+            rubric_ids: List of rubric IDs to build CTEs for
+            rubric_versions: Mapping of rubric_id -> version number
+            rubric_fields: Mapping of rubric_id -> set of field names to extract
+        """
         ctes: list[str] = []
         alias_map: dict[str, str] = {}
         alias_counts: dict[str, int] = {}
-        for _, rubric_id in enumerate(rubric_ids):
+        for rubric_id in rubric_ids:
             short_id = rubric_id.split("-", maxsplit=1)[0]
-            base_alias = CodeSampleService._sanitize_identifier(f"rubric_{short_id}")
+            base_alias = CodeSampleService._sanitize_identifier(f"rubric_{short_id}_modes")
             alias_index = alias_counts.get(base_alias, 0)
             alias_counts[base_alias] = alias_index + 1
             alias = base_alias if alias_index == 0 else f"{base_alias}_{alias_index}"
@@ -1114,14 +1170,34 @@ class CodeSampleService:
                 rubric_id, rubric_version
             )
             result_type = CodeSampleService._escape_literal(ResultType.DIRECT_RESULT.value)
+
+            # Build mode() expressions for each requested field
+            fields: set[str] = rubric_fields.get(rubric_id, set()) if rubric_fields else set()
+            if not fields:
+                # Default to common fields if none specified
+                fields = {"label", "explanation"}
+
+            mode_lines: list[str] = []
+            for field in sorted(fields):
+                escaped_field = CodeSampleService._escape_literal(field)
+                mode_lines.append(
+                    f"    mode() WITHIN GROUP (ORDER BY jr.output->>'{escaped_field}') "
+                    f"AS {CodeSampleService._sanitize_identifier(field)}"
+                )
+
+            mode_clause = ",\n".join(mode_lines)
+
             cte = "\n".join(
                 [
                     f"  {alias} AS (",
-                    "    SELECT jr.agent_run_id, jr.output",
+                    "    SELECT",
+                    "      jr.agent_run_id,",
+                    mode_clause,
                     "    FROM judge_results jr",
                     f"    WHERE jr.rubric_id = '{escaped_id}'",
                     f"      AND {version_clause}",
                     f"      AND jr.result_type = '{result_type}'",
+                    "    GROUP BY jr.agent_run_id",
                     "  )",
                 ]
             )

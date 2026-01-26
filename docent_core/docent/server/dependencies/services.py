@@ -3,8 +3,10 @@ from typing import AsyncContextManager, Callable
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from docent_core._db_service.db import DocentDB
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.server.dependencies.database import (
+    get_db,
     get_mono_svc,
     get_session,
     get_session_cm_factory,
@@ -13,6 +15,8 @@ from docent_core.docent.server.dependencies.user import get_user_anonymous_ok
 from docent_core.docent.services.charts import ChartsService
 from docent_core.docent.services.chat import ChatService
 from docent_core.docent.services.data_tables import DataTablesService
+from docent_core.docent.services.dql import DQLService
+from docent_core.docent.services.dql_generator import DQLGeneratorService
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.label import LabelService
 from docent_core.docent.services.llms import LLMService
@@ -104,6 +108,17 @@ def get_chart_service(session: AsyncSession = Depends(get_session)) -> ChartsSer
 
 def get_data_table_service(session: AsyncSession = Depends(get_session)) -> DataTablesService:
     return DataTablesService(session)
+
+
+def get_dql_service(db: DocentDB = Depends(get_db)) -> DQLService:
+    return DQLService(db)
+
+
+def get_dql_generator_service(
+    dql_svc: DQLService = Depends(get_dql_service),
+    llm_svc: LLMService = Depends(get_llm_svc),
+) -> DQLGeneratorService:
+    return DQLGeneratorService(dql_svc, llm_svc)
 
 
 def get_onboarding_service(

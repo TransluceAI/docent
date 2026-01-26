@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pydantic_core import to_jsonable_python
 
+from docent._llm_util.providers.preference_types import ModelOption
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.dql import (
-    AllowedTable,
     DQLExecutionError,
     DQLParseError,
     DQLValidationError,
@@ -18,8 +18,20 @@ from docent_core.docent.db.dql import (
 from docent_core.docent.db.schemas.auth_models import Permission
 from docent_core.docent.server.dependencies.database import get_mono_svc
 from docent_core.docent.server.dependencies.permissions import require_view_permission
+from docent_core.docent.server.dependencies.services import (
+    get_dql_generator_service,
+    get_dql_service,
+    get_rubric_service,
+)
 from docent_core.docent.server.dependencies.user import get_default_view_ctx
-from docent_core.docent.services.monoservice import DQLQueryResult, MonoService
+from docent_core.docent.services.dql import DQLQueryResult, DQLService
+from docent_core.docent.services.dql_generator import (
+    DQLGeneratorMessage,
+    DQLGeneratorService,
+    RubricSchemaInfo,
+)
+from docent_core.docent.services.monoservice import MonoService
+from docent_core.docent.services.rubric import RubricService
 
 dql_router = APIRouter()
 
@@ -45,8 +57,30 @@ class DQLTableSchema(BaseModel):
     columns: list[DQLColumnSchema]
 
 
+class DQLRubricSchema(BaseModel):
+    """Schema information for a rubric's output structure."""
+
+    id: str
+    version: int
+    name: str | None = None
+    output_fields: list[str] = Field(default_factory=list)
+
+
 class DQLSchemaResponse(BaseModel):
     tables: list[DQLTableSchema]
+    rubrics: list[DQLRubricSchema] = Field(default_factory=lambda: [])
+
+
+def _extract_output_fields_from_schema(output_schema: dict[str, Any]) -> list[str]:
+    """Extract field names from a JSON Schema's properties."""
+    if not output_schema:
+        return []
+    properties = output_schema.get("properties")
+    if properties is None or not isinstance(properties, dict):
+        return []
+    # Cast to dict[str, Any] since JSON Schema properties are string-keyed
+    props_dict: dict[str, Any] = properties  # type: ignore[reportUnknownVariableType]
+    return sorted(props_dict.keys())
 
 
 class DQLExecuteRequest(BaseModel):
@@ -64,6 +98,12 @@ class DQLSelectedColumnModel(BaseModel):
     source_columns: list[DQLColumnReferenceModel]
 
 
+class DQLLinkHint(BaseModel):
+    link_type: Literal["agent_run", "rubric"]
+    value_kind: Literal["agent_run_id", "transcript_id", "rubric_id"]
+    transcript_id_map: dict[str, str] | None = None
+
+
 class DQLExecuteResponse(BaseModel):
     columns: list[str]
     rows: list[list[Any]]
@@ -73,116 +113,11 @@ class DQLExecuteResponse(BaseModel):
     requested_limit: int | None
     applied_limit: int
     selected_columns: list[DQLSelectedColumnModel]
-
-
-def _build_foreign_keys(column: Any) -> list[DQLForeignKeySchema]:
-    foreign_keys: list[DQLForeignKeySchema] = []
-    for fk in getattr(column, "foreign_keys", []):
-        target_column = getattr(fk, "column", None)
-        if target_column is not None and getattr(target_column, "table", None) is not None:
-            foreign_keys.append(
-                DQLForeignKeySchema(
-                    column=column.key,
-                    target_table=str(target_column.table.name),
-                    target_column=str(target_column.name),
-                )
-            )
-    return foreign_keys
-
-
-def _table_to_schema(table: AllowedTable) -> DQLTableSchema:
-    table_obj = table.table
-    column_schemas: list[DQLColumnSchema] = []
-    actual_columns: set[str] = set()
-    column_objects: dict[str, Any] = {}
-    if hasattr(table_obj, "c"):
-        for column in table_obj.c:
-            column_name = getattr(column, "key", None)
-            if column_name is None:
-                continue
-            column_name_lower = column_name.lower()
-            actual_columns.add(column_name_lower)
-            if column_name_lower not in table.allowed_columns:
-                continue
-            data_type = None
-            column_type = getattr(column, "type", None)
-            if column_type is not None:
-                data_type = str(column_type)
-            column_objects[column_name_lower] = column
-            column_schemas.append(
-                DQLColumnSchema(
-                    name=str(column_name),
-                    data_type=data_type,
-                    nullable=bool(getattr(column, "nullable", True)),
-                    is_primary_key=bool(getattr(column, "primary_key", False)),
-                    foreign_keys=_build_foreign_keys(column),
-                    alias_for=None,
-                )
-            )
-
-    extra_columns = sorted(col for col in table.allowed_columns if col not in actual_columns)
-    for extra_column in extra_columns:
-        column_schemas.append(
-            DQLColumnSchema(
-                name=extra_column,
-                data_type="json",
-                nullable=True,
-                is_primary_key=False,
-                foreign_keys=[],
-                alias_for=None,
-            )
-        )
-
-    for alias_name, target_name in table.column_aliases.items():
-        canonical_column = column_objects.get(target_name)
-        data_type = None
-        nullable = True
-        foreign_keys: list[DQLForeignKeySchema] = []
-
-        if canonical_column is not None:
-            column_type = getattr(canonical_column, "type", None)
-            if column_type is not None:
-                data_type = str(column_type)
-            nullable = bool(getattr(canonical_column, "nullable", True))
-            foreign_keys = _build_foreign_keys(canonical_column)
-
-        column_schemas.append(
-            DQLColumnSchema(
-                name=alias_name,
-                data_type=data_type,
-                nullable=nullable,
-                is_primary_key=False,
-                foreign_keys=foreign_keys,
-                alias_for=target_name,
-            )
-        )
-
-    return DQLTableSchema(
-        name=table.name,
-        aliases=sorted(table.aliases),
-        columns=sorted(column_schemas, key=lambda col: col.name),
-    )
-
-
-@dql_router.get("/{collection_id}/schema")
-async def get_dql_schema(
-    ctx: ViewContext = Depends(get_default_view_ctx),
-    _: None = Depends(require_view_permission(Permission.READ)),
-    mono_svc: MonoService = Depends(get_mono_svc),
-) -> DQLSchemaResponse:
-    json_fields = await mono_svc.get_json_metadata_fields_map(ctx.collection_id)
-    registry = build_default_registry(
-        collection_id=ctx.collection_id,
-        json_fields=json_fields,
-    )
-    tables = sorted(
-        (_table_to_schema(table) for table in registry.iter_tables()),
-        key=lambda tbl: tbl.name,
-    )
-    return DQLSchemaResponse(tables=tables)
+    link_hints: list[DQLLinkHint | None]
 
 
 def _serialize_selected_columns(columns: list[SelectedColumn]) -> list[DQLSelectedColumnModel]:
+    """Serialize selected columns to response models."""
     serialized: list[DQLSelectedColumnModel] = []
     for column in columns:
         serialized.append(
@@ -198,7 +133,11 @@ def _serialize_selected_columns(columns: list[SelectedColumn]) -> list[DQLSelect
     return serialized
 
 
-def _build_execute_response(result: DQLQueryResult) -> DQLExecuteResponse:
+def _build_execute_response(
+    result: DQLQueryResult,
+    link_hints: list[DQLLinkHint | None],
+) -> DQLExecuteResponse:
+    """Build the execute response from query result and link hints."""
     return DQLExecuteResponse(
         columns=list(result.columns),
         rows=[[to_jsonable_python(value) for value in row] for row in result.rows],
@@ -208,7 +147,97 @@ def _build_execute_response(result: DQLQueryResult) -> DQLExecuteResponse:
         requested_limit=result.requested_limit,
         applied_limit=result.applied_limit,
         selected_columns=_serialize_selected_columns(result.selected_columns),
+        link_hints=link_hints,
     )
+
+
+def _convert_service_schema_to_response(
+    dql_svc: DQLService,
+    registry: Any,
+) -> list[DQLTableSchema]:
+    """Convert service schema to Pydantic response models."""
+    service_tables = dql_svc.build_schema_response(registry)
+    tables: list[DQLTableSchema] = []
+    for svc_table in service_tables:
+        columns: list[DQLColumnSchema] = []
+        for svc_col in svc_table.columns:
+            foreign_keys = [
+                DQLForeignKeySchema(
+                    column=fk.column,
+                    target_table=fk.target_table,
+                    target_column=fk.target_column,
+                )
+                for fk in svc_col.foreign_keys
+            ]
+            columns.append(
+                DQLColumnSchema(
+                    name=svc_col.name,
+                    data_type=svc_col.data_type,
+                    nullable=svc_col.nullable,
+                    is_primary_key=svc_col.is_primary_key,
+                    foreign_keys=foreign_keys,
+                    alias_for=svc_col.alias_for,
+                )
+            )
+        tables.append(
+            DQLTableSchema(
+                name=svc_table.name,
+                aliases=svc_table.aliases,
+                columns=columns,
+            )
+        )
+    return tables
+
+
+def _convert_service_link_hints_to_response(
+    service_hints: list[Any | None],
+) -> list[DQLLinkHint | None]:
+    """Convert service link hints to Pydantic response models."""
+    response_hints: list[DQLLinkHint | None] = []
+    for hint in service_hints:
+        if hint is None:
+            response_hints.append(None)
+        else:
+            response_hints.append(
+                DQLLinkHint(
+                    link_type=hint.link_type,
+                    value_kind=hint.value_kind,
+                    transcript_id_map=hint.transcript_id_map,
+                )
+            )
+    return response_hints
+
+
+@dql_router.get("/{collection_id}/schema")
+async def get_dql_schema(
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    dql_svc: DQLService = Depends(get_dql_service),
+    rubric_svc: RubricService = Depends(get_rubric_service),
+) -> DQLSchemaResponse:
+    json_fields = await mono_svc.get_json_metadata_fields_map(ctx.collection_id)
+    registry = build_default_registry(
+        collection_id=ctx.collection_id,
+        json_fields=json_fields,
+    )
+    tables = _convert_service_schema_to_response(dql_svc, registry)
+
+    # Fetch rubrics and extract their output schemas
+    rubrics_list = await rubric_svc.get_all_rubrics(ctx.collection_id, latest_only=True)
+    rubric_schemas: list[DQLRubricSchema] = []
+    for rubric in rubrics_list:
+        output_fields = _extract_output_fields_from_schema(rubric.output_schema)
+        rubric_schemas.append(
+            DQLRubricSchema(
+                id=rubric.id,
+                version=rubric.version,
+                name=rubric.rubric_text[:100] if rubric.rubric_text else None,
+                output_fields=output_fields,
+            )
+        )
+
+    return DQLSchemaResponse(tables=tables, rubrics=rubric_schemas)
 
 
 @dql_router.post("/{collection_id}/execute")
@@ -218,16 +247,150 @@ async def execute_dql_query(
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
     mono_svc: MonoService = Depends(get_mono_svc),
+    dql_svc: DQLService = Depends(get_dql_service),
 ) -> DQLExecuteResponse:
     if ctx.user is None:
         raise HTTPException(status_code=400, detail="User context unavailable.")
+
+    json_fields = await mono_svc.get_json_metadata_fields_map(collection_id)
+
     try:
-        result = await mono_svc.execute_dql_query(
+        result = await dql_svc.execute_query(
             user=ctx.user,
             collection_id=collection_id,
             dql=request.dql,
+            json_fields=json_fields,
         )
     except (DQLParseError, DQLValidationError, DQLExecutionError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return _build_execute_response(result)
+    registry = build_default_registry(
+        collection_id=collection_id,
+        json_fields=json_fields,
+    )
+    service_link_hints, transcript_ids = dql_svc.build_link_hints(result, registry=registry)
+    transcript_id_map = await dql_svc.get_agent_run_ids_for_transcripts(
+        collection_id=collection_id,
+        transcript_ids=list(transcript_ids),
+    )
+    service_link_hints = dql_svc.attach_transcript_id_map(service_link_hints, transcript_id_map)
+    link_hints = _convert_service_link_hints_to_response(service_link_hints)
+    return _build_execute_response(result, link_hints)
+
+
+class DQLGenerateMessage(BaseModel):
+    """A message in the DQL generation conversation."""
+
+    role: Literal["user", "assistant", "system"]
+    content: str
+    query: str | None = None
+
+
+class DQLGenerateRequest(BaseModel):
+    """Request body for DQL generation."""
+
+    messages: list[DQLGenerateMessage]
+    current_query: str | None = None
+    model: str | None = None
+
+
+class DQLGenerateResponse(BaseModel):
+    """Response from DQL generation."""
+
+    dql: str
+    assistant_message: str
+    execution: DQLExecuteResponse | None = None
+    error: str | None = None
+    used_tables: list[str] = Field(default_factory=list)
+
+
+def _parse_model_option(model_str: str | None) -> ModelOption | None:
+    """Parse a model string like 'openai/gpt-4o' into a ModelOption."""
+    if not model_str:
+        return None
+    parts = model_str.split("/", 1)
+    if len(parts) != 2:
+        return None
+    provider, model_name = parts
+    return ModelOption(provider=provider, model_name=model_name)
+
+
+@dql_router.post("/{collection_id}/generate")
+async def generate_dql_query(
+    collection_id: str,
+    request: DQLGenerateRequest,
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    dql_svc: DQLService = Depends(get_dql_service),
+    generator_svc: DQLGeneratorService = Depends(get_dql_generator_service),
+    rubric_svc: RubricService = Depends(get_rubric_service),
+) -> DQLGenerateResponse:
+    """Generate a DQL query from natural language using an LLM."""
+    if ctx.user is None:
+        raise HTTPException(status_code=400, detail="User context unavailable.")
+
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="At least one message is required.")
+
+    json_fields = await mono_svc.get_json_metadata_fields_map(collection_id)
+    model_override = _parse_model_option(request.model)
+
+    # Fetch rubrics and convert to schema info for the generator
+    rubrics_list = await rubric_svc.get_all_rubrics(collection_id, latest_only=True)
+    rubric_schemas = [
+        RubricSchemaInfo(
+            id=rubric.id,
+            version=rubric.version,
+            name=rubric.rubric_text[:100] if rubric.rubric_text else None,
+            output_fields=_extract_output_fields_from_schema(rubric.output_schema),
+        )
+        for rubric in rubrics_list
+    ]
+
+    messages = [
+        DQLGeneratorMessage(
+            role=msg.role,
+            content=msg.content,
+            query=msg.query,
+        )
+        for msg in request.messages
+    ]
+
+    try:
+        outcome = await generator_svc.generate(
+            ctx=ctx,
+            messages=messages,
+            current_query=request.current_query,
+            model_override=model_override,
+            json_fields=json_fields,
+            rubric_schemas=rubric_schemas,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Build execution response if query ran successfully
+    execution_response: DQLExecuteResponse | None = None
+    if outcome.execution_result is not None:
+        registry = build_default_registry(
+            collection_id=collection_id,
+            json_fields=json_fields,
+        )
+        service_link_hints, transcript_ids = dql_svc.build_link_hints(
+            outcome.execution_result, registry=registry
+        )
+        transcript_id_map = await dql_svc.get_agent_run_ids_for_transcripts(
+            collection_id=collection_id,
+            transcript_ids=list(transcript_ids),
+        )
+        service_link_hints = dql_svc.attach_transcript_id_map(service_link_hints, transcript_id_map)
+        link_hints = _convert_service_link_hints_to_response(service_link_hints)
+        execution_response = _build_execute_response(outcome.execution_result, link_hints)
+
+    return DQLGenerateResponse(
+        dql=outcome.query,
+        assistant_message=outcome.assistant_message,
+        execution=execution_response,
+        error=outcome.execution_error,
+        used_tables=outcome.used_tables,
+    )

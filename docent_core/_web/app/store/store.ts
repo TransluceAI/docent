@@ -6,6 +6,7 @@ import collectionReducer from './collectionSlice';
 import toastReducer from './toastSlice';
 import transcriptReducer from './transcriptSlice';
 import embedReducer from './embedSlice';
+import dqlChatReducer from './dqlChatSlice';
 import { collabApi } from '@/lib/permissions/collabSlice';
 import { chartApi } from '../api/chartApi';
 import { dataTableApi } from '../api/dataTableApi';
@@ -29,6 +30,7 @@ const store = configureStore({
     transcript: transcriptReducer,
     toast: toastReducer,
     refinement: refinementReducer,
+    dqlChat: dqlChatReducer,
     [collabApi.reducerPath]: collabApi.reducer,
     [chartApi.reducerPath]: chartApi.reducer,
     [dataTableApi.reducerPath]: dataTableApi.reducer,

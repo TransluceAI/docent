@@ -463,6 +463,24 @@ class ProviderPreferences(PublicProviderPreferences):
             ),
         ]
 
+    @cached_property
+    def dql_generator(self) -> list[ModelOption]:
+        """Model options for DQL query generation from natural language."""
+        return [
+            ModelOption(
+                provider="openai",
+                model_name="gpt-4o",
+            ),
+            ModelOption(
+                provider="anthropic",
+                model_name="claude-sonnet-4-5",
+            ),
+            ModelOption(
+                provider="google",
+                model_name="gemini-2.5-flash-preview-05-20",
+            ),
+        ]
+
 
 # Initialize the singleton preferences object
 PROVIDER_PREFERENCES = ProviderPreferences()

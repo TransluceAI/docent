@@ -205,11 +205,13 @@ ALLOWED_EXPRESSION_TYPES: tuple[type[exp.Expression], ...] = (
     exp.PercentileDisc,
     exp.GroupConcat,
     exp.WithinGroup,
+    exp.Filter,
     # String aggregation functions
     exp.Concat,
     exp.ConcatWs,
     exp.JSONArrayAgg,
     exp.JSONObjectAgg,
+    exp.JSONBObjectAgg,
     # Window functions
     exp.Window,
     exp.RowNumber,
@@ -356,6 +358,21 @@ ALLOWED_EXPRESSION_TYPES: tuple[type[exp.Expression], ...] = (
     exp.Floor,
     exp.Ceil,
     exp.Round,
+    # Anonymous functions are validated separately via ALLOWED_ANONYMOUS_FUNCTIONS
+    exp.Anonymous,
+)
+
+# Whitelist of anonymous function names (functions sqlglot doesn't have explicit types for)
+# These are checked case-insensitively
+ALLOWED_ANONYMOUS_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        # Ordered-set aggregate functions
+        "mode",
+        # String aggregation
+        "string_agg",
+        # JSONB construction
+        "jsonb_build_object",
+    }
 )
 
 
@@ -1022,6 +1039,226 @@ def get_selected_columns(
     return extract_selected_columns(expression, sql_dialect=sql_dialect)
 
 
+def _iter_query_sources(query: SqlGlotExpression) -> list[SqlGlotExpression]:
+    sources: list[SqlGlotExpression] = []
+
+    def extend_from_clause(
+        from_clause: SqlGlotExpression | Sequence[SqlGlotExpression] | None,
+    ) -> None:
+        if from_clause is None:
+            return
+        if isinstance(from_clause, exp.From):
+            expressions = list(from_clause.expressions or [])
+            if expressions:
+                sources.extend(expressions)
+            else:
+                # sqlglot stores single-table FROMs in .this (expressions may be empty).
+                from_target = from_clause.this
+                if from_target is not None:
+                    sources.append(from_target)
+            return
+        if isinstance(from_clause, Sequence):
+            sources.extend(list(from_clause))
+            return
+        sources.append(from_clause)
+
+    def extend_joins(join_clause: Sequence[SqlGlotExpression] | None) -> None:
+        for join in join_clause or []:
+            if isinstance(join, exp.Join):
+                join_source = join.this
+                if join_source is not None:
+                    sources.append(join_source)
+
+    from_expr = query.args.get("from")
+    joins = cast(Sequence[SqlGlotExpression] | None, query.args.get("joins"))
+    extend_from_clause(from_expr)
+    extend_joins(joins)
+
+    if not sources and isinstance(query, exp.Query):
+        select_node = query.args.get("this")
+        if isinstance(select_node, exp.Select):
+            extend_from_clause(select_node.args.get("from"))
+            extend_joins(cast(Sequence[SqlGlotExpression] | None, select_node.args.get("joins")))
+    return sources
+
+
+def _get_alias_name(expression: SqlGlotExpression) -> str | None:
+    alias = expression.args.get("alias")
+    if isinstance(alias, exp.TableAlias):
+        alias_expr = alias.this
+        if isinstance(alias_expr, exp.Identifier):
+            return alias_expr.name
+        if isinstance(alias_expr, exp.Literal):
+            return str(alias_expr.this)
+    return None
+
+
+def _build_query_alias_map(
+    query: SqlGlotExpression,
+    cte_names: frozenset[str],
+) -> tuple[dict[str, str], str | None]:
+    alias_map: dict[str, str] = {}
+    source_targets: list[str] = []
+    for source in _iter_query_sources(query):
+        if isinstance(source, exp.Table):
+            name = source.name
+            alias = _get_alias_name(source) or source.alias_or_name or name
+            target = name
+            if name.lower() in cte_names:
+                target = name
+            alias_map[alias.lower()] = target.lower()
+            alias_map.setdefault(name.lower(), target.lower())
+            source_targets.append(target.lower())
+            continue
+        if isinstance(source, exp.Subquery):
+            alias = _get_alias_name(source) or source.alias_or_name
+            if alias:
+                alias_map[alias.lower()] = alias.lower()
+                source_targets.append(alias.lower())
+
+    default_table = source_targets[0] if len(set(source_targets)) == 1 else None
+    return alias_map, default_table
+
+
+def _resolve_column_references(
+    column: SqlGlotColumn,
+    *,
+    alias_map: Mapping[str, str],
+    default_table: str | None,
+    cte_names: frozenset[str],
+    resolve_cte: Callable[[str], Mapping[str, tuple[ColumnReference, ...]]],
+) -> tuple[ColumnReference, ...]:
+    column_table = cast(str | None, column.table)
+    if column_table == "":
+        column_table = None
+    if column_table is None:
+        column_table = default_table
+    if column_table is None:
+        return ()
+
+    resolved_table = alias_map.get(column_table.lower(), column_table.lower())
+    if resolved_table in cte_names:
+        resolved = resolve_cte(resolved_table).get(column.name.lower())
+        return resolved or ()
+
+    return (ColumnReference(table=resolved_table, column=column.name),)
+
+
+def _extract_cte_lineage(
+    expression: SqlGlotExpression,
+    *,
+    cte_names: frozenset[str],
+    resolve_cte: Callable[[str], Mapping[str, tuple[ColumnReference, ...]]],
+    sql_dialect: str,
+) -> dict[str, tuple[ColumnReference, ...]]:
+    alias_map, default_table = _build_query_alias_map(expression, cte_names)
+    lineage: dict[str, tuple[ColumnReference, ...]] = {}
+    select_expressions = list(expression.expressions or [])
+    if not select_expressions and isinstance(expression, exp.Query):
+        select_node = expression.args.get("this")
+        if isinstance(select_node, exp.Select):
+            select_expressions = list(select_node.expressions or [])
+
+    for select_expr in select_expressions:
+        if select_expr is None:
+            continue
+        rendered = _render_sql(select_expr, sql_dialect)
+        node = select_expr.this if isinstance(select_expr, exp.Alias) else select_expr
+        column_refs: dict[tuple[str | None, str], ColumnReference] = {}
+        for column in _iter_columns(node):
+            if isinstance(column.this, exp.Star):
+                continue
+            resolved_refs = _resolve_column_references(
+                column,
+                alias_map=alias_map,
+                default_table=default_table,
+                cte_names=cte_names,
+                resolve_cte=resolve_cte,
+            )
+            for ref in resolved_refs:
+                key = (ref.table, ref.column)
+                if key not in column_refs:
+                    column_refs[key] = ref
+
+        output_name = select_expr.alias_or_name or rendered
+        lineage[output_name.lower()] = tuple(column_refs.values())
+    return lineage
+
+
+def _build_cte_lineage(
+    expression: SqlGlotExpression,
+) -> dict[str, dict[str, tuple[ColumnReference, ...]]]:
+    cte_expressions: dict[str, SqlGlotExpression] = {}
+
+    with_expr = expression.args.get("with")
+    if isinstance(with_expr, exp.With):
+        for cte in list(with_expr.expressions or []):
+            if isinstance(cte, exp.CTE):
+                alias = cte.alias_or_name
+                if not alias:
+                    continue
+                cte_body = cte.this
+                if isinstance(cte_body, exp.Subquery):
+                    cte_body = cte_body.this
+                if isinstance(cte_body, exp.Query):
+                    cte_expressions[alias.lower()] = cte_body
+                elif isinstance(cte_body, exp.Select):
+                    cte_expressions[alias.lower()] = cte_body
+
+    if not cte_expressions:
+        for cte in expression.find_all(exp.CTE):
+            alias = cte.alias_or_name
+            if not alias:
+                continue
+            cte_body = cte.this
+            if isinstance(cte_body, exp.Subquery):
+                cte_body = cte_body.this
+            if isinstance(cte_body, exp.Query):
+                cte_expressions[alias.lower()] = cte_body
+            elif isinstance(cte_body, exp.Select):
+                cte_expressions[alias.lower()] = cte_body
+
+    resolved: dict[str, dict[str, tuple[ColumnReference, ...]]] = {}
+    resolving: set[str] = set()
+    cte_names = frozenset(cte_expressions.keys())
+
+    def resolve_cte(name: str) -> dict[str, tuple[ColumnReference, ...]]:
+        if name in resolved:
+            return resolved[name]
+        if name in resolving:
+            return {}
+        resolving.add(name)
+        cte_expr = cte_expressions.get(name)
+        if cte_expr is None:
+            resolving.remove(name)
+            resolved[name] = {}
+            return {}
+        lineage = _extract_cte_lineage(
+            cte_expr,
+            sql_dialect="postgres",
+            cte_names=cte_names,
+            resolve_cte=resolve_cte,
+        )
+        resolved[name] = lineage
+        resolving.remove(name)
+        return lineage
+
+    for name in cte_expressions:
+        resolve_cte(name)
+
+    if resolved:
+        logger.info(
+            "DQL CTE lineage resolved: %s",
+            {
+                cte: {
+                    col: [(ref.table, ref.column) for ref in refs] for col, refs in mapping.items()
+                }
+                for cte, mapping in resolved.items()
+            },
+        )
+    return resolved
+
+
 def extract_selected_columns(
     expression: SqlGlotExpression,
     *,
@@ -1031,6 +1268,10 @@ def extract_selected_columns(
 
     if not isinstance(expression, exp.Query):
         raise DQLParseError("Expected a SELECT query expression.")
+
+    cte_lineage = _build_cte_lineage(expression)
+    cte_names = frozenset(cte_lineage.keys())
+    alias_map, default_table = _build_query_alias_map(expression, cte_names)
 
     results: list[SelectedColumn] = []
     select_expressions_raw = list(expression.expressions or [])
@@ -1049,9 +1290,17 @@ def extract_selected_columns(
         for column in _iter_columns(node):
             if isinstance(column.this, exp.Star):
                 continue
-            key = (column.table, column.name)
-            if key not in column_refs:
-                column_refs[key] = ColumnReference(table=column.table, column=column.name)
+            resolved_refs = _resolve_column_references(
+                column,
+                alias_map=alias_map,
+                default_table=default_table,
+                cte_names=cte_names,
+                resolve_cte=lambda name: cte_lineage.get(name, {}),
+            )
+            for ref in resolved_refs:
+                key = (ref.table, ref.column)
+                if key not in column_refs:
+                    column_refs[key] = ref
 
         output_name = select_expr.alias_or_name or rendered
         results.append(
@@ -1062,6 +1311,17 @@ def extract_selected_columns(
             )
         )
 
+    logger.info(
+        "DQL selected columns: %s",
+        [
+            {
+                "output": column.output_name,
+                "expression": column.expression_sql,
+                "sources": [(ref.table, ref.column) for ref in column.source_columns],
+            }
+            for column in results
+        ],
+    )
     return results
 
 
@@ -1101,9 +1361,23 @@ def _ensure_allowed_expressions(expression: SqlGlotExpression) -> None:
                 detail = f"\n\nOffending DQL fragment: {rendered}"
             else:
                 detail = ""
+
+            # Provide a helpful hint for COUNT(*) usage
+            hint = ""
+            if isinstance(node, exp.Star):
+                hint = "\n\nHint: If using COUNT(*), try count() or count(1) instead."
+
             raise DQLValidationError(
-                f"Expression type '{type(node).__name__}' is not allowed in Docent Query Language.{detail}"
+                f"Expression type '{type(node).__name__}' is not allowed in Docent Query Language.{detail}{hint}"
             )
+
+        # Additional validation for Anonymous functions - must be in whitelist
+        if isinstance(node, exp.Anonymous):
+            func_name = node.name.lower() if node.name else ""
+            if func_name not in ALLOWED_ANONYMOUS_FUNCTIONS:
+                raise DQLValidationError(
+                    f"Function '{node.name}' is not allowed in Docent Query Language."
+                )
 
 
 def _validate_query_expression(
@@ -1231,7 +1505,10 @@ def _validate_columns(
 
         allowed_table = base_alias_map.get(qualifier)
         if not allowed_table:
-            raise DQLValidationError(f"Unknown table or alias '{column.table}'.")
+            column_ref = column.sql()  # type: ignore[reportUnknownMemberType]
+            raise DQLValidationError(
+                f"Unknown table or alias '{column.table}' in column reference '{column_ref}'."
+            )
 
         _resolve_column_name(allowed_table, column_name, column.sql())  # type: ignore[reportUnknownMemberType]
 

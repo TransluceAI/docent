@@ -71,7 +71,9 @@ export const dataTableApi = createApi({
               }
             )
           );
-        } catch {}
+        } catch {
+          // If mutation fails, RTK Query invalidates cache automatically
+        }
       },
     }),
     updateDataTable: build.mutation<DataTable, DataTableUpdatePayload>({
@@ -100,7 +102,9 @@ export const dataTableApi = createApi({
               }
             )
           );
-        } catch {}
+        } catch {
+          // If mutation fails, RTK Query invalidates cache automatically
+        }
       },
     }),
     deleteDataTable: build.mutation<
@@ -131,7 +135,9 @@ export const dataTableApi = createApi({
               }
             )
           );
-        } catch {}
+        } catch {
+          // If mutation fails, RTK Query invalidates cache automatically
+        }
       },
     }),
     duplicateDataTable: build.mutation<
@@ -154,7 +160,9 @@ export const dataTableApi = createApi({
               }
             )
           );
-        } catch {}
+        } catch {
+          // If mutation fails, RTK Query invalidates cache automatically
+        }
       },
     }),
   }),

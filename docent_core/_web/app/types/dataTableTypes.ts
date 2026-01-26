@@ -1,5 +1,26 @@
+import type { DqlAutogenMessage } from './dqlTypes';
+
+export interface QueryHistoryEntry {
+  id: string;
+  query: string;
+  timestamp: string;
+  source: 'user' | 'agent';
+  /** Number of lines in the query */
+  lines?: number;
+  /** Character count */
+  chars?: number;
+  /** Row count from execution (only if query was executed) */
+  rowCount?: number;
+}
+
+export interface ChatStateData {
+  messages: DqlAutogenMessage[];
+  queryHistory: QueryHistoryEntry[];
+}
+
 export interface DataTableState {
   schemaVisible?: boolean;
+  chatState?: ChatStateData;
 }
 
 export interface DataTable {
