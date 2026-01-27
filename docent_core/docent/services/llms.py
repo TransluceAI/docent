@@ -259,6 +259,10 @@ class ProviderPreferences(PublicProviderPreferences):
         """Models that can be used for chat if the user does not provide their own API key."""
         return [
             ModelOption(
+                provider="anthropic",
+                model_name="claude-sonnet-4-5",
+            ),
+            ModelOption(
                 provider="openai",
                 model_name="gpt-5",
                 reasoning_effort="medium",
@@ -272,10 +276,6 @@ class ProviderPreferences(PublicProviderPreferences):
                 provider="openai",
                 model_name="gpt-5",
                 reasoning_effort="high",
-            ),
-            ModelOption(
-                provider="anthropic",
-                model_name="claude-sonnet-4-5",
             ),
             ModelOption(
                 provider="anthropic",
