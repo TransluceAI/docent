@@ -1,6 +1,12 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from 'react';
 import type { User } from '../types/userTypes';
 import posthog from 'posthog-js';
 
@@ -22,10 +28,52 @@ export const UserProvider = ({
 }: UserProviderProps) => {
   const [user, setUser] = useState<User | null>(initialUser);
 
-  if (user) {
-    console.log('Identified user:', user);
-    posthog.identify(user.id);
-  }
+  useEffect(() => {
+    if (user) {
+      console.log('Identified user:', user);
+      posthog.identify(user.id);
+
+      // Pylon chat widget
+      const pylonAppId = process.env.NEXT_PUBLIC_PYLON_APP_ID;
+      const pylonEmailHash = user.pylon_email_hash;
+      if (pylonAppId && pylonEmailHash) {
+        (window as any).pylon = {
+          chat_settings: {
+            app_id: pylonAppId,
+            email: user.email,
+            name: user.name || user.email.split('@')[0],
+            email_hash: pylonEmailHash,
+          },
+        };
+
+        // Load the Pylon chat widget
+        if (!document.getElementById('pylon-chat-widget')) {
+          const pylonScript = document.createElement('script');
+          pylonScript.src = `https://widget.usepylon.com/widget/${pylonAppId}`;
+          pylonScript.id = 'pylon-chat-widget';
+          pylonScript.async = true;
+          document.body.appendChild(pylonScript);
+        }
+      } else {
+        console.log('Pylon chat widget not configured.');
+      }
+    } else {
+      // Cleanup on logout: remove Pylon widget and reset PostHog
+      posthog.reset();
+
+      if ((window as any).pylon) {
+        delete (window as any).pylon;
+      }
+
+      const pylonScript = document.getElementById('pylon-chat-widget');
+      if (pylonScript) {
+        pylonScript.remove();
+      }
+
+      const pylonElements = document.querySelectorAll('[class^="PylonChat"]');
+      pylonElements.forEach((el) => el.remove());
+    }
+  }, [user]);
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

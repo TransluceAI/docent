@@ -21,6 +21,7 @@ services:
       - ENV_RESOLUTION_STRATEGY=os_environ
       - DOCENT_PG_HOST=postgres
       - DOCENT_REDIS_HOST=redis
+      - PYLON_IDENTITY_SECRET=${PYLON_IDENTITY_SECRET}
     command: bash -c "alembic upgrade head && docent_core server --port ${DOCENT_SERVER_PORT:-8888} --workers 8"
     restart: unless-stopped
 
@@ -45,6 +46,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         - NEXT_PUBLIC_API_HOST=${DOCENT_HOST:-http://localhost}:${DOCENT_SERVER_PORT:-8888}
+        - NEXT_PUBLIC_PYLON_APP_ID=${NEXT_PUBLIC_PYLON_APP_ID}
     container_name: docent_frontend
     ports:
       - "${DOCENT_WEB_PORT:-3000}:3000"

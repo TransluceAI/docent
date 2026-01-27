@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import os
 import tempfile
@@ -33,6 +35,7 @@ from docent.data_models.agent_run import (
     FilterableFieldWithSamples,
 )
 from docent.loaders import load_inspect
+from docent_core._env_util import ENV
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._auth.session import (
     COOKIE_KEY,
@@ -112,6 +115,24 @@ async def require_filter_in_collection(
         raise HTTPException(
             status_code=404, detail=f"Filter {filter_id} not found in collection {collection_id}"
         )
+
+
+def sign_message_with_hmac(email: str) -> str | None:
+    secret: str | None = ENV.get("PYLON_IDENTITY_SECRET")
+    if not secret:
+        logger.warning("PYLON_IDENTITY_SECRET is not set")
+        return None
+
+    try:
+        secret_bytes = bytes.fromhex(secret)
+    except ValueError:
+        logger.error(
+            "PYLON_IDENTITY_SECRET is set but is not a valid hex string; "
+            "expected an even-length hex value. HMAC signing disabled."
+        )
+        return None
+    signature = hmac.new(secret_bytes, email.encode(), hashlib.sha256).hexdigest()
+    return signature
 
 
 ####################
@@ -265,7 +286,10 @@ async def get_current_user(request: Request, mono_svc: MonoService = Depends(get
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    return user
+    # Calculate Pylon email hash
+    pylon_email_hash = sign_message_with_hmac(user.email)
+
+    return {**user.model_dump(), "pylon_email_hash": pylon_email_hash}
 
 
 @user_router.post("/logout")

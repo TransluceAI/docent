@@ -9,6 +9,7 @@ export interface User {
   email: string;
   is_anonymous: boolean;
   name?: string;
+  pylon_email_hash?: string | null;
 }
 
 export type ReplayPreference =

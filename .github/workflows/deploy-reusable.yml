@@ -107,6 +107,7 @@ jobs:
           DOCENT_CORS_ORIGINS=${{ vars.DOCENT_CORS_ORIGINS }}
           INVESTIGATOR_ADMIN_EMAILS=${{ vars.INVESTIGATOR_ADMIN_EMAILS }}
           FREE_USAGE_CAP_CENTS=${{ vars.FREE_USAGE_CAP_CENTS }}
+          PYLON_IDENTITY_SECRET=${{ secrets.PYLON_IDENTITY_SECRET }}
           EOF
 
       - name: Build and push backend to ECR
@@ -184,6 +185,7 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       NEXT_PUBLIC_API_HOST: ${{ vars.NEXT_PUBLIC_API_HOST }}
+      NEXT_PUBLIC_PYLON_APP_ID: ${{ vars.NEXT_PUBLIC_PYLON_APP_ID }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

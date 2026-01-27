@@ -199,3 +199,15 @@
 .toaster [data-sonner-toast][data-type="info"] [data-icon] {
   color: hsl(var(--blue-text));
 }
+
+/* Pylon chat widget - position on bottom-left, window opens top-right */
+.PylonChat-bubbleFrameContainer {
+  left: 20px !important;
+  right: auto !important;
+}
+
+.PylonChat-chatWindowFrameContainer {
+  left: 80px !important;
+  right: auto !important;
+  transform-origin: bottom left !important;
+}

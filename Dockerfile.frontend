@@ -22,6 +22,10 @@ COPY docent_core/_web ./
 ARG NEXT_PUBLIC_API_HOST
 ENV NEXT_PUBLIC_API_HOST=${NEXT_PUBLIC_API_HOST}
 
+# Set build argument for Pylon app ID
+ARG NEXT_PUBLIC_PYLON_APP_ID
+ENV NEXT_PUBLIC_PYLON_APP_ID=${NEXT_PUBLIC_PYLON_APP_ID}
+
 # Build the application
 RUN bun run build
 
