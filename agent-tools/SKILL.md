@@ -6,17 +6,38 @@ alwaysApply: true
 
 # Docent Analysis Guide
 
-Docent is a platform for analyzing AI agent behavior using large language models. It offers a Python SDK to configure and submit analysis jobs.
+You can interact with Docent by writing Python scripts that use the Docent SDK, and by calling Docent MCP tools. If Docent MCP tools are not available, alert the user that the Docent MCP server is not installed correctly.
 
 ## Data models and key concepts
-* An Agent Run represents an AI agent attempting a task or interacting with a user. A transcript is a sequence of messages from the system, the agent (aka assistant), the user, and/or tools that the agent calls. An agent run is not the same thing as a transcript. An Agent Run contains one or more transcripts.
+* A transcript is a sequence of messages from the system, the agent (aka assistant), the user, and/or tools that the agent calls.
+* An agent run represents an AI agent attempting a task or interacting with a user. An agent run may contain one or more transcripts.
+* A collection contains agent runs from a certain experiment or benchmark. When we query, analyze, or compare agent runs, we do so within one collection at a time.
 
+## High-level analysis approach
+The Docent SDK facilitates two main technqiues:
+* LLMRequest, to have LLMs read transcripts and perform qualitative analysis
+* DQL, to query and aggregate data already in the database (e.g. metadata that was logged with agent runs and transcripts, previous analysis results)
 
-## General guidelines
+Sometimes, the user's request will clearly pertain to one of these technqiues. Other times, the user may instead ask high-level questions about the behavior of their AI agents, and you will have to investigate. In the latter case, the following general process is recommended:
+
+1. Use the `get_metadata_fields` MCP tool to understand the structure of agent run metadata for the current collection.
+2. If the metadata fields might shed light on the user's question, you may use DQL to query the metadata. You may do this autonomously without consulting the user.
+3. After querying the metadata, you must decide whether qualitative analysis (reading the transcripts) would provide further insight. If it seems appropriate, create a plan to perform the analysis using LLMRequest. Feel free to ask the user clarifying questions. You must let the user review your plan before you proceed. Then write a script to implement the plan, and run it.
+
+## Analysis guidelines and reminders
 * If the user asks you to "summarize the agent runs", "classify the results", or similar, they do not necessarily mean that you (the coding agent) should do so directly. In most cases, it is better to use the Docent SDK to submit an LLM analysis request. Then you may open the results of that analysis to show the user.
 * Agent runs contain metadata. Metadata varies by collection. Do not make assumptions about the structure of run metadata. Use the `get_metadata_fields` MCP tool to find out.
-* If you are writing code that will submit LLMRequests, you are encouraged to write it out as a script so you can improve and re-use it later. Unless otherwise instructed, you may place analysis scripts in the current working directory. Quick DQL queries can be done in scripts or inline with the Bash tool at your discretion. Run your scripts with `uv run`.
-* If you're not sure what collection the user is talking about, check for a docent.env file in the working directory. Otherwise, ask the user to paste the collection UUID.
+* If you are writing code that will submit LLMRequests, you are encouraged to write it out as a script so you can improve and re-use it later. Unless otherwise instructed, you may place analysis scripts in the current working directory. Quick DQL queries can be done in scripts or inline with the Bash tool at your discretion.
+* Unless informed otherwise, assume uv is used for python package management. Run your scripts with `uv run`.
+* If you're not sure what collection the user is talking about, refer to the docent.env file in the working directory. If it does not exist, or if it does not include DOCENT_COLLECTION_ID, ask the user to paste the collection UUID.
+* When writing code to perform analysis, Don't Repeat Yourself. This is particularly important when it comes to prompts for LLMs. The user will likely want to modify prompts, and they should not have to track down multiple copies of a prompt throughout your code. If you need to create different variants of a prompt, build them from reusable pieces and/or use string interpolation, so there is a single source of truth for each part of the prompt.
+* When writing code to perform analysis, keep variable names generic. For example, if you are comparing the performance of two models, you might refer to them as "model_a" and "model_b" in your code, and then declare the identity of these models in one place only. This makes your code more reusable, so we can perform the same analysis on other data.
+* When writing code to perform analysis, be sparing with print statements. In many cases a simple success/failure message at the end is enough.
+* If you are analyzing a limited sample of many items (e.g. because you can only fit so many in the context window), be mindful of *how* you are sampling them. The most recent N items may be a biased sample. It is safe to assume that UUIDs are random.
+* Metadata alone may provide an incomplete picture. Don't forget to consider qualitative analysis!
+* The user must approve all plans for LLMRequest analysis. If the user tells you how to perform the analysis, that counts as approval. If you use your own judgement in planning the analysis, you must present your plan to the user for approval before implementing it.
+
+## Building LLMRequests with the Prompt API
 
 Start with these imports when using the Docent SDK:
 ```python
@@ -27,16 +48,9 @@ from docent.sdk.llm_context import Prompt, AgentRunRef, ResultRef
 client = Docent()
 ```
 
-* When writing code to perform analysis, Don't Repeat Yourself. This is particularly important when it comes to prompts for LLMs. The user will likely want to modify prompts, and they should not have to track down multiple copies of a prompt throughout your code. If you need to create different variants of a prompt, build them from reusable pieces and/or use string interpolation, so there is a single source of truth for each part of the prompt.
-* When writing code to perform analysis, keep variable names generic. For example, if you are comparing the performance of two models, you might refer to them as "model_a" and "model_b" in your code, and then declare the identity of these models in one place only. This makes your code more reusable, so we can perform the same analysis on other data.
-* When writing code to perform analysis, be sparing with print statements. In many cases a simple success/failure message at the end is enough.
-* Make sure you understand exactly what the user is asking you to do. If their request is ambiguous, ask clarifying questions. Do not make assumptions.
-* The user is opinionated about the details of analysis methodology. If you design any analysis method yourself, communicate to the user exactly what you are doing, and make sure the user signs off before you proceed.
-* If you are analyzing a limited sample of many items (e.g. because you can only fit so many in the context window), be mindful of *how* you are sampling them. The most recent N items may be a biased sample. It is safe to assume that UUIDs are random.
+Note: the Docent SDK will automatically discover and load a docent.env file if it exists. You do not need to explicitly source docent.env.
 
-## Building LLMRequests with the Prompt API
-
-The `Prompt` class takes a list of strings and context item refs. Context items are agent runs, transcripts, and analysis results. You can reference them in a prompt without fetching the full output.
+The `Prompt` class takes a list of strings and context item refs. Context items are agent runs, transcripts, and analysis results. You can reference items in a prompt without fetching their full content.
 
 ```python
 run = AgentRunRef(id="<uuid>", collection_id="<uuid>")
@@ -49,9 +63,15 @@ request = LLMRequest(
 )
 ```
 
+A prompt may include multiple context items of different types, which is useful for comparing behavior across runs and looking for recurring patterns.
+
 When the same ref appears multiple times in a single prompt, the first occurrence renders as full content alongside an alias, and subsequent occurrences render as just the alias.
 
-## Writing a good prompt
+A useful pattern is to use DQL to get the IDs of relevant runs, then iterate over those run IDs to build the prompts for the language model.
+
+Remember that the context window of the LLM is limited. Avoid passing more than a few full agent runs in a single prompt. However, it is fine to pass many LLMRequests to a single result set, since each request is processed separately.
+
+### Writing a good prompt
 
 The quality of LLM output depends on the quality the prompt you write for the LLMRequest. The LLM knows it is analyzing agent run transcripts, and knows how to cite items in its context. You can ask the LLM to cite items in its context and it will just work without further guidance. Otherwise, you are responsible for understanding the purpose of the LLMRequest and writing a clear prompt articulating what you want the LLM to do.
 
@@ -61,7 +81,7 @@ The quality of LLM output depends on the quality the prompt you write for the LL
 * If you are looking for a particular behavior, how exactly is that behavior defined? If you're proposing a specific definition, make sure the user signs off on it.
 * If you are asking the LLM to analyze other analysis results, remind it to cite those analysis results, NOT the original transcripts which the results may refer to.
 
-## Submitting Requests for Backend Processing
+### Submitting Requests for Backend Processing
 
 Use `submit_llm_requests()` to have the backend process your requests:
 
@@ -75,6 +95,8 @@ result = client.submit_llm_requests(
 ```
 
 Use hierarchical names with `/` separators for organization. It's often good to have a component like `v1`, `v2`, etc. so you can iterate on your methodology and compare results.
+
+Important: Do not use openai/gpt-4o or openai/gpt-4o-mini. Those models are obsolete and superseded by openai/gpt-5 and openai/gpt-5-mini respectively.
 
 ### Structured Output
 
@@ -99,7 +121,20 @@ result = client.submit_llm_requests(
 )
 ```
 
-## Retrieving Results
+
+### Presenting Results
+
+Once a batch of LLM requests is submitted, open the result set in the browser. Do not wait for a request to finish to open the results. To open a Docent URL in the browser, use the `navigate_to` tool from the Docent MCP server.
+
+Do not attempt to interact with the Docent web UI using other browsing tools.
+
+By default, let user view the results and draw their own conclusion. If asked to draw a conclusion, you may fetch and read results. Never draw conclusions from LLMRequest analysis without reading the results.
+
+### Retrieving Results programmatically
+
+You can retrieve results programmatically if you need to process them further (e.g. make a chart, or pass them to another LLMRequest).
+
+Note the browser is the preferred way to view results. Only retrieve results programmatically if you need to process them further. Do not retrieve results for presentation to the user, unless the user specifically requests.
 
 ```python
 # List all result sets (optionally filtered by prefix)
@@ -114,12 +149,6 @@ df = client.get_result_set_dataframe(
     "analysis/experiment_1",
 )
 ```
-
-### Opening Results in Browser
-
-Important: the browser is the preferred way to view results. Do not write code to retrieve results for presentation to the user, unless the user specifically requests. Do not wait for a request to finish to open the results. To open a Docent URL in the browser, use the `navigate_tool` from the Docent MCP server.
-
-Do not attempt to interact with the Docent web UI using other browsing tools.
 
 # DQL (Docent Query Language)
 

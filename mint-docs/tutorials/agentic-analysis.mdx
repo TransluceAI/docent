@@ -21,19 +21,25 @@ AI coding agents can use the Docent SDK to analyze agent runs.
 
 You can use Docent in its own Cursor Workspace by quickly downloading our template, or you can integrate Docent into an existing workspace.
 
-<Tabs>
-  <Tab title="Cursor Template">
-    ### Step 1: Download our template folder and open it in Cursor.
+In either case, you'll need to have [uv installed](https://docs.astral.sh/uv/getting-started/installation/).
 
-    [Click here](https://drive.google.com/file/d/1qEW5oacYT44H9IGP6Qgq6eW12ls_qNZ9/view?usp=sharing) to download our template folder. Open it in a new Cursor workspace.
+<Tabs>
+  <Tab title="From Template">
+    ### Step 1: Download and open the template for your preferred IDE
+
+    - [Download Cursor template](https://docent-public-assets.s3.us-east-1.amazonaws.com/cursor-quickstart.zip)
+    - [Download VS Code template](https://docent-public-assets.s3.us-east-1.amazonaws.com/vscode-quickstart.zip)
+
+    Make sure to open the template in its own window in your IDE so that configuration files are recognized.
 
     The template directory contains:
 
     - **`pyproject.toml`**: a minimal Python project configuration listing `docent-python` as a dependency.
     - **`docent.env`**: contains configurable environment variables. You'll need to set `DOCENT_API_KEY` and `DOCENT_COLLECTION_ID`
-    - **`.cursor/rules/docent.md`** and **`.cursor/mcp.json`**: configuration files for Cursor defining an MCP server and outlining rules for how the agent should use Docent.
+    - **`.cursor/rules/docent.md` or `AGENTS.md`**: instructions for how the agent should use Docent.
+    - **`.cursor/mcp.json` or `.vscode/mcp.json`**: configuration for the Docent MCP server, which provides tools to let your agent interact with Docent.
 
-    The `.cursor/` directory is often hidden in your file explorer.
+    The `.cursor/` or `.vscode/` directory is often hidden in your file explorer.
 
     <Frame>
           <img src="/images/agentic-analysis/open-template-in-cursor.png" alt="Open template in Cursor" />
@@ -59,10 +65,10 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
       </Accordion>
     </AccordionGroup>
 
-    ### Step 3: Prompt Cursor.
+    ### Step 3: Prompt the agent
     For best results, describe your target workflow as precisely as possible.
     <Frame>
-        <img src="/images/agentic-analysis/example-cursor-prompt.png" alt="Prompt Cursor" />
+        <img src="/images/agentic-analysis/example-cursor-prompt.png" alt="Prompt the agent" />
     </Frame>
   </Tab>
 
@@ -111,7 +117,7 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
 
     We'll use Cursor as an example, but you can use Docent with any AI coding agent such as Claude Code, Codex CLI, or Gemini CLI. Check your agent's documentation for where to put custom instructions and MCP configuration.
 
-    For Cursor, download the [Docent Instructions](https://drive.google.com/file/d/1ZdlsT4RVsIRIHxOKq8-knYIOfel3tVhL/view?usp=sharing) and add them to `.cursor/rules`.
+    For Cursor, download the [Docent Instructions](https://docent-public-assets.s3.us-east-1.amazonaws.com/docent.mdc) and add them to `.cursor/rules`.
 
     Then open `.cursor/mcp.json` and add Docent:
 
@@ -127,7 +133,7 @@ You can use Docent in its own Cursor Workspace by quickly downloading our templa
     }
     ```
 
-    ### Step 6: Prompt Cursor.
+    ### Step 6: Prompt the agent
     For best results, describe your target workflow as precisely as possible.
     <Frame>
         <img src="/images/agentic-analysis/example-cursor-prompt.png" alt="Prompt Cursor" />
@@ -308,6 +314,7 @@ result = client.submit_llm_requests(
 
 ## Best Practices & Future Work
 
-- For best results, be precise when telling the coding agent what workflow you want to execute
+- When selecting a model for your coding agent, Claude Sonnet 4.5 is a good place to start. Smaller models often get confused about various aspects of the analysis workflow.
+- For best results, be precise when telling the coding agent what workflow you want to execute.
 - The LLM can only cite items that were directly passed as part of the prompt. It cannot, for example, cite items that were cited by a result that was passed as part of the prompt. If the LLM gets confused about this fact, mention it in your prompt. We're working on a cleaner solution.
 - We're currently adding functionality to analyze Docent judge results. Stay tuned!
