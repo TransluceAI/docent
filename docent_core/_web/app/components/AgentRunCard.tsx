@@ -1,7 +1,8 @@
 'use client';
 import { navToAgentRun } from '@/lib/nav';
 import { useRouter } from 'next/navigation';
-import { useAppSelector } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setAgentRunLeftSidebarOpen } from '../store/transcriptSlice';
 import { AgentRunMetadata } from './AgentRunMetadata';
 import { cn } from '@/lib/utils';
 import { BaseAgentRunMetadata } from '../types/collectionTypes';
@@ -19,6 +20,7 @@ export default function AgentRunCard({
   isActive,
 }: AgentRunCardProps) {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   // Collection slice
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const shortUuid = agentRunId.split('-')[0];
@@ -40,6 +42,13 @@ export default function AgentRunCard({
             agent_run_id: agentRunId,
           });
 
+          const openInNewTab = e.button === 1 || e.metaKey || e.ctrlKey;
+
+          // Open sidebar when navigating in-app (not for new tab)
+          if (!openInNewTab) {
+            dispatch(setAgentRunLeftSidebarOpen(true));
+          }
+
           navToAgentRun(
             router,
             window,
@@ -48,7 +57,7 @@ export default function AgentRunCard({
             undefined,
             collectionId,
             undefined,
-            e.button === 1 || e.metaKey || e.ctrlKey
+            openInNewTab
           );
         }}
       >

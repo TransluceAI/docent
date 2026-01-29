@@ -106,8 +106,13 @@ const Breadcrumbs: React.FC = () => {
   const pageCrumbs: Record<string, Crumb> = {
     undefined: {
       title: 'Agent Runs',
-      url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}`,
+      url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}/agent_run`,
       icon: Layers,
+    },
+    agent_run: {
+      title: 'Agent Runs',
+      icon: Layers,
+      url: `${COLLECTIONS_DASHBOARD_PATH}/${collectionId}/agent_run`,
     },
     charts: {
       title: 'Charts',
@@ -176,7 +181,7 @@ const Breadcrumbs: React.FC = () => {
   const segments = pathname
     .split('/')
     .slice(1)
-    .map((segment) => {
+    .flatMap((segment) => {
       // Only add a crumb for "identifying" segments
       // E.g. a segment that is not a UUID
       if (!isUUID(segment)) {
@@ -187,25 +192,44 @@ const Breadcrumbs: React.FC = () => {
         // (rubric, ".../rubric/[rubric_id]") => uuid
         // (rubric, ".../rubric") => undefined
         const uuid = getUUIDForSegment(segment);
-        let crumbToAdd;
+
+        // If there's a UUID for this segment and a page crumb exists,
+        // add both the page crumb (list view) and the detail crumb
+        if (uuid && pageCrumbs[segment]) {
+          const pageUrl = url;
+          url = `${url}/${uuid}`;
+          return [
+            {
+              url: pageCrumbs[segment].url || pageUrl,
+              uuid: undefined,
+              ...pageCrumbs[segment],
+            },
+            {
+              url,
+              uuid,
+              ...crumbs[segment],
+            },
+          ];
+        }
 
         // If there's a UUID for this segment, append it to the URL and get a normal crumb
         if (uuid) {
           url = `${url}/${uuid}`;
-          crumbToAdd = crumbs[segment];
-        }
-        // If there is no UUID for this segment, get a crumb from the page crumbs
-        else {
-          crumbToAdd = pageCrumbs[segment];
+          return {
+            url,
+            uuid, // Include the UUID so we can show a pill
+            ...crumbs[segment],
+          };
         }
 
-        // Add the crumb to the components
+        // If there is no UUID for this segment, get a crumb from the page crumbs
         return {
           url,
-          uuid, // Include the UUID so we can show a pill
-          ...crumbToAdd,
+          uuid: undefined,
+          ...pageCrumbs[segment],
         };
       }
+      return [];
     })
     .filter(
       (
@@ -229,15 +253,7 @@ const Breadcrumbs: React.FC = () => {
     if (index === 0 && collectionId && collectionName) {
       return (
         <div className="flex items-center gap-2" key={0}>
-          <Link
-            className={cn(
-              'flex items-center gap-x-2',
-              disableNavigation && '!pointer-events-none'
-            )}
-            href={`${COLLECTIONS_DASHBOARD_PATH}/${collectionId}`}
-          >
-            Collection: {collectionName}
-          </Link>
+          Collection: {collectionName}
           <UuidPill uuid={collectionId} />
           {segments.length > 1 && <ChevronRight className="size-3.5" />}
         </div>

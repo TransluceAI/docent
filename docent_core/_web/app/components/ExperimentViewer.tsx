@@ -27,6 +27,7 @@ import {
   selectSortField,
   selectSortDirection,
 } from '../store/collectionSlice';
+import { setAgentRunLeftSidebarOpen } from '../store/transcriptSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
@@ -1366,6 +1367,11 @@ export default function ExperimentViewer({
         agent_run_id: runId,
       });
 
+      // Open sidebar when navigating in-app (not for new tab)
+      if (!openInNewTab) {
+        dispatch(setAgentRunLeftSidebarOpen(true));
+      }
+
       navToAgentRun(
         router,
         window,
@@ -1377,7 +1383,7 @@ export default function ExperimentViewer({
         openInNewTab
       );
     },
-    [collectionId, router]
+    [collectionId, dispatch, router]
   );
 
   const emptyStateContent =
@@ -1409,19 +1415,13 @@ export default function ExperimentViewer({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="flex flex-col">
             <div className="text-sm font-semibold">
-              {activeTab === 'filters' && activeRunId
-                ? `${agentRunIds?.length || 0} Runs`
-                : activeTab === 'filters'
-                  ? 'Agent Run Table'
-                  : 'DQL Explorer'}
+              {activeTab === 'filters' ? 'Agent Run Table' : 'DQL Explorer'}
             </div>
-            {!activeRunId && (
-              <div className="text-xs text-muted-foreground">
-                {activeTab === 'filters'
-                  ? `${agentRunIds?.length || 0} agent runs matching the current view`
-                  : 'Query collection data with Docent Query Language'}
-              </div>
-            )}
+            <div className="text-xs text-muted-foreground">
+              {activeTab === 'filters'
+                ? `${agentRunIds?.length || 0} matching runs`
+                : 'Docent Query Language'}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div>
