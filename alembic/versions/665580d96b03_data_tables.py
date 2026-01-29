@@ -42,11 +42,22 @@ def upgrade() -> None:
             ["created_by"], ["users.id"], name=op.f("fk_data_tables__created_by__users")
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_data_tables")),
+        if_not_exists=True,
     )
     op.create_index(
-        op.f("ix_data_tables__collection_id"), "data_tables", ["collection_id"], unique=False
+        op.f("ix_data_tables__collection_id"),
+        "data_tables",
+        ["collection_id"],
+        unique=False,
+        if_not_exists=True,
     )
-    op.create_index(op.f("ix_data_tables__created_by"), "data_tables", ["created_by"], unique=False)
+    op.create_index(
+        op.f("ix_data_tables__created_by"),
+        "data_tables",
+        ["created_by"],
+        unique=False,
+        if_not_exists=True,
+    )
     op.alter_column(
         "telemetry_lineage", "derived_key", existing_type=sa.VARCHAR(length=64), nullable=False
     )

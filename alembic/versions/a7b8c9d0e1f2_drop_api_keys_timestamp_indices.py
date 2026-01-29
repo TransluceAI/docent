@@ -24,11 +24,13 @@ def upgrade() -> None:
             op.f("ix_api_keys__disabled_at"),
             table_name="api_keys",
             postgresql_concurrently=True,
+            if_exists=True,
         )
         op.drop_index(
             op.f("ix_api_keys__last_used_at"),
             table_name="api_keys",
             postgresql_concurrently=True,
+            if_exists=True,
         )
 
 
