@@ -137,6 +137,25 @@ async def publish_view_update(collection_id: str, view_id: str, payload: dict[st
     await redis_client.publish(channel, json.dumps(jsonable_encoder(payload)))  # type: ignore
 
 
+async def clear_arq_job_key(job_id: str) -> bool:
+    """
+    Clear the arq job and result keys for a given job ID.
+
+    This is necessary before re-enqueueing a job with the same ID, as arq
+    deduplicates jobs based on the existence of these keys.
+
+    Args:
+        job_id: The job ID to clear
+
+    Returns:
+        True if any keys were deleted, False if none existed
+    """
+    redis_client = await get_redis_client()
+    # arq uses "arq:job:{job_id}" to track active jobs and "arq:result:{job_id}" for results
+    deleted = await redis_client.delete(f"arq:job:{job_id}", f"arq:result:{job_id}")
+    return deleted > 0
+
+
 async def _enqueue_job(
     queue_name: str, func_name: str, *args: Any, job_id: str | None = None, **kwargs: Any
 ) -> None:

@@ -59,7 +59,11 @@ from docent.data_models.util import clone_agent_run_with_random_ids
 from docent.judges import ResultType
 from docent.sdk.llm_context import LLMContextSpec
 from docent_core._db_service.db import DocentDB
-from docent_core._server._broker.redis_client import enqueue_job, get_redis_client
+from docent_core._server._broker.redis_client import (
+    clear_arq_job_key,
+    enqueue_job,
+    get_redis_client,
+)
 from docent_core._worker.constants import WorkerFunction, get_queue_name_for_job_type
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.dql import (
@@ -2622,6 +2626,60 @@ class MonoService:
         )
 
         return job_id
+
+    async def retry_agent_run_ingest_job(
+        self, job_id: str, collection_id: str, ctx: ViewContext
+    ) -> None:
+        """
+        Retry a canceled agent run ingest job by resetting its status and re-enqueueing it.
+
+        Args:
+            job_id: The ID of the job to retry.
+            collection_id: The collection ID the job should belong to.
+            ctx: The view context for enqueueing.
+
+        Raises:
+            ValueError: If validation fails (job not found, wrong collection, wrong type,
+                wrong status, or missing payload).
+        """
+        job = await self.get_job(job_id)
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+
+        job_collection_id = job.job_json.get("collection_id") if job.job_json else None
+        if job_collection_id != collection_id:
+            raise ValueError(f"Job {job_id} not found in collection {collection_id}")
+
+        if job.type != WorkerFunction.AGENT_RUN_INGEST_JOB.value:
+            raise ValueError(f"Job {job_id} is not an agent run ingest job")
+
+        if job.status != JobStatus.CANCELED:
+            raise ValueError(
+                f"Job {job_id} cannot be retried: status is {job.status.value}, expected CANCELED"
+            )
+
+        # Verify the payload still exists
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLAIngestionPayload).where(SQLAIngestionPayload.job_id == job_id)
+            )
+            payload = result.scalar_one_or_none()
+            if payload is None:
+                raise ValueError(f"Job {job_id} cannot be retried: payload no longer exists")
+
+            # Reset status to PENDING
+            await session.execute(
+                update(SQLAJob).where(SQLAJob.id == job_id).values(status=JobStatus.PENDING)
+            )
+            await session.commit()
+
+        # Clear any existing arq job key to allow re-enqueueing with the same job ID
+        await clear_arq_job_key(job_id)
+
+        # Re-enqueue the job
+        await enqueue_job(ctx, job_id, job_type=WorkerFunction.AGENT_RUN_INGEST_JOB)
+
+        logger.info("Re-enqueued agent run ingest job %s for retry", job_id)
 
     #########
     # Users #

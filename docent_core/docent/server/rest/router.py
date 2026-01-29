@@ -1133,6 +1133,26 @@ async def get_agent_run_ingest_jobs(
     }
 
 
+@user_router.post("/{collection_id}/agent_runs/jobs/{job_id}/retry")
+async def retry_agent_run_ingest_job(
+    collection_id: str,
+    job_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Retry a canceled agent run ingest job."""
+    try:
+        await mono_svc.retry_agent_run_ingest_job(job_id, collection_id, ctx)
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+    return {"success": True, "message": f"Job {job_id} has been re-queued for processing"}
+
+
 @user_router.delete("/{collection_id}/agent_runs")
 async def delete_agent_runs(
     collection_id: str,
