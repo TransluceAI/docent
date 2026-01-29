@@ -836,7 +836,7 @@ function BooleanRenderer({
         {propertyKey}:
       </label>
       <div className="flex items-center gap-1">
-        <span className="text-blue-700">{String(value)}</span>
+        <span className="text-blue-text">{String(value)}</span>
         {agreement && (
           <AgreementDisplay agreed={agreement.agreed} total={agreement.total} />
         )}
@@ -1043,7 +1043,7 @@ function NumberRenderer({
       >
         {propertyKey}:
       </label>
-      <span className="text-blue-700">{String(value)}</span>
+      <span className="text-blue-text">{String(value)}</span>
       {renderLabelUI()}
     </div>
   );
