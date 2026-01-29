@@ -1,6 +1,11 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { BASE_URL } from '@/app/constants';
-import { ChartDimension, ChartSpec, ChartType } from '../types/collectionTypes';
+import {
+  ChartDimension,
+  ChartSpec,
+  ChartType,
+  DataTableColumn,
+} from '../types/collectionTypes';
 import { TaskStats } from '../types/experimentViewerTypes';
 
 export const chartApi = createApi({
@@ -98,6 +103,15 @@ export const chartApi = createApi({
       }),
       providesTags: ['ChartMetadata'],
     }),
+    getDataTableColumns: build.query<
+      DataTableColumn[],
+      { collectionId: string; dataTableId: string }
+    >({
+      query: ({ collectionId, dataTableId }) => ({
+        url: `/${collectionId}/data-table/${dataTableId}/columns`,
+        method: 'GET',
+      }),
+    }),
   }),
 });
 
@@ -108,4 +122,5 @@ export const {
   useGetChartMetadataQuery,
   useGetChartsQuery,
   useGetChartDataQuery,
+  useGetDataTableColumnsQuery,
 } = chartApi;

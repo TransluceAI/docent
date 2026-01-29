@@ -26,6 +26,7 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
   const {
     data: chartDataResponse,
     isLoading,
+    isFetching,
     error,
   } = useGetChartDataQuery(
     {
@@ -72,16 +73,36 @@ export default function Chart({ chart }: { chart: ChartSpec }) {
     );
   }
 
+  // Show loading overlay when refetching (but still show chart with stale data)
+  const showLoadingOverlay = isFetching && !isLoading;
+
+  let chartContent = null;
   if (chart.chart_type === 'bar') {
-    return <BarChart chartData={chartData} handleCellClick={handleCellClick} />;
+    chartContent = (
+      <BarChart chartData={chartData} handleCellClick={handleCellClick} />
+    );
   } else if (chart.chart_type === 'line') {
-    return (
+    chartContent = (
       <LineChart chartData={chartData} handleCellClick={handleCellClick} />
     );
   } else if (chart.chart_type === 'table') {
-    return <TableChart chartData={chartData} />;
+    chartContent = <TableChart chartData={chartData} />;
   }
-  return null;
+
+  if (!chartContent) {
+    return null;
+  }
+
+  return (
+    <div className="relative flex-1 min-h-0">
+      {chartContent}
+      {showLoadingOverlay && (
+        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+          <Loader2 size={24} className="animate-spin text-muted-foreground" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 type NivoBar = Record<string, any>;

@@ -78,6 +78,12 @@ export interface ChartSpec {
   runs_filter?: ComplexFilter | null;
 
   chart_type: ChartType;
+  data_table_id?: string | null;
+}
+
+export interface DataTableColumn {
+  name: string;
+  inferred_type: 'numeric' | 'categorical' | 'unknown';
 }
 
 type BaseDimension = {

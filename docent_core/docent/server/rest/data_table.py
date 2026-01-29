@@ -4,6 +4,8 @@ from typing import Any, cast
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from docent._log_util import get_logger
+from docent.data_models.chat.message import SystemMessage, UserMessage
 from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.auth_models import Permission
@@ -11,6 +13,7 @@ from docent_core.docent.server.dependencies.analytics import use_posthog_user_co
 from docent_core.docent.server.dependencies.permissions import require_collection_permission
 from docent_core.docent.server.dependencies.services import (
     get_data_table_service,
+    get_llm_svc,
     get_mono_svc,
     get_rubric_service,
 )
@@ -22,8 +25,11 @@ from docent_core.docent.services.data_tables import (
     RubricInfo,
     build_default_data_table_dql,
 )
+from docent_core.docent.services.llms import PROVIDER_PREFERENCES, LLMService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.rubric import RubricService
+
+logger = get_logger(__name__)
 
 data_table_router = APIRouter()
 
@@ -49,6 +55,14 @@ class UpdateDataTableRequest(BaseModel):
     name: str | None = None
     dql: str | None = None
     state: dict[str, Any] | None = None
+
+
+class GenerateNameRequest(BaseModel):
+    dql: str
+
+
+class GenerateNameResponse(BaseModel):
+    name: str
 
 
 def _serialize_data_table(data_table: DataTableSpec) -> DataTableResponse:
@@ -160,6 +174,57 @@ async def create_data_table(
         },
     )
     return _serialize_data_table(data_table)
+
+
+NAME_GENERATION_SYSTEM_PROMPT = """You generate short, descriptive names for data tables based on their SQL/DQL queries.
+
+Given a query, generate a concise name (2-5 words) that describes what data the query retrieves.
+Focus on the main entities and any key filters or aggregations.
+
+Examples:
+- "SELECT * FROM agent_runs ORDER BY created_at DESC" → "Recent Runs"
+- "SELECT ar.*, jr.output FROM agent_runs ar JOIN judge_results jr..." → "Runs with Evaluations"
+- "SELECT name, COUNT(*) FROM agent_runs GROUP BY name" → "Runs by Name"
+- "SELECT * FROM agent_runs WHERE metadata_json->>'status' = 'failed'" → "Failed Runs"
+
+Respond with ONLY the name, nothing else. No quotes, no explanation."""
+
+
+@data_table_router.post("/{collection_id}/generate-name")
+async def generate_data_table_name(
+    request: GenerateNameRequest,
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+    llm_svc: LLMService = Depends(get_llm_svc),
+) -> GenerateNameResponse:
+    """Generate a descriptive name for a data table based on its DQL query."""
+    try:
+        outputs = await llm_svc.get_completions(
+            inputs=[
+                [
+                    SystemMessage(content=NAME_GENERATION_SYSTEM_PROMPT),
+                    UserMessage(content=f"Query:\n{request.dql}"),
+                ]
+            ],
+            model_options=PROVIDER_PREFERENCES.default_chat_models,
+            max_new_tokens=50,
+            temperature=0.3,
+            use_cache=True,
+        )
+
+        result = outputs[0]
+        if result.did_error or result.first is None or not result.first.text:
+            logger.warning("Failed to generate data table name: %s", result.errors)
+            return GenerateNameResponse(name="Data View")
+
+        generated_name = result.first.text.strip().strip("\"'")
+        # Truncate if too long
+        if len(generated_name) > 50:
+            generated_name = generated_name[:47] + "..."
+
+        return GenerateNameResponse(name=generated_name)
+    except Exception as e:
+        logger.warning("Error generating data table name: %s", e)
+        return GenerateNameResponse(name="Data View")
 
 
 @data_table_router.post("/{collection_id}/{data_table_id}")

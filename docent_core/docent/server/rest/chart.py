@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -56,6 +56,7 @@ class CreateChartRequest(BaseModel):
     x_key: str | None = None
     y_key: str | None = None
     chart_type: str = "bar"
+    data_table_id: str | None = None
 
 
 @chart_router.post("/{collection_id}/create")
@@ -68,7 +69,7 @@ async def create_chart(
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
 ) -> dict[str, str]:
     async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session)
+        chart_service = ChartsService(session, mono_svc.db)
         chart_id = await chart_service.create_chart(
             ctx=ctx,
             name=request.name,
@@ -76,6 +77,7 @@ async def create_chart(
             x_key=request.x_key,
             y_key=request.y_key,
             chart_type=request.chart_type,
+            data_table_id=request.data_table_id,
         )
 
     analytics.track_event(
@@ -97,6 +99,7 @@ class UpdateChartRequest(BaseModel):
     y_key: str | None = None
     chart_type: str = "bar"
     runs_filter: ComplexFilter | None = None
+    data_table_id: str | None = None
 
 
 @chart_router.post("/{collection_id}/{chart_id}")
@@ -123,7 +126,7 @@ async def update_chart(
         update_fields["runs_filter_dict"] = None
 
     async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session)
+        chart_service = ChartsService(session, mono_svc.db)
         await chart_service.update_chart(ctx=ctx, chart_id=chart_id, updates=update_fields)
 
     analytics.track_event(
@@ -147,7 +150,7 @@ async def delete_chart(
     _chart: None = Depends(require_chart_in_collection),
 ):
     async with mono_svc.db.session() as session:
-        chart_service = ChartsService(session)
+        chart_service = ChartsService(session, mono_svc.db)
         await chart_service.delete_chart(ctx, chart_id)
 
     return {"status": "ok"}
@@ -166,6 +169,33 @@ async def get_charts(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get charts: {str(e)}")
+
+
+class DataTableColumnResponse(BaseModel):
+    name: str
+    inferred_type: Literal["numeric", "categorical", "unknown"]
+
+
+@chart_router.get("/{collection_id}/data-table/{data_table_id}/columns")
+async def get_data_table_columns(
+    collection_id: str,
+    data_table_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> list[DataTableColumnResponse]:
+    """Get columns from a data table's DQL query with inferred types."""
+    try:
+        async with mono_svc.db.session() as session:
+            chart_service = ChartsService(session, mono_svc.db)
+            columns = await chart_service.get_data_table_columns(ctx, data_table_id)
+            return [
+                DataTableColumnResponse(name=c.name, inferred_type=c.inferred_type) for c in columns
+            ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get data table columns: {str(e)}")
 
 
 @chart_router.get("/{collection_id}/{chart_id}/data")

@@ -1,6 +1,7 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import Numeric
 
 from docent._log_util import get_logger
+from docent_core._db_service.db import DocentDB
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.filters import ComplexFilter
 from docent_core.docent.db.schemas.chart import SQLAChart
+from docent_core.docent.db.schemas.data_table import SQLADataTable
 from docent_core.docent.db.schemas.rubric import (
     SQLAJudgeResult,
     SQLARubric,
@@ -19,6 +22,7 @@ from docent_core.docent.db.schemas.rubric import (
 from docent_core.docent.db.schemas.tables import (
     SQLAAgentRun,
 )
+from docent_core.docent.services.dql import DQLService
 
 logger = get_logger(__name__)
 
@@ -36,6 +40,7 @@ class ChartSpec(BaseModel):
     series_label: str | None = None
     runs_filter: ComplexFilter | None
     chart_type: str
+    data_table_id: str | None = None
 
     @classmethod
     def from_sqla_chart(cls, chart: SQLAChart) -> "ChartSpec":
@@ -48,7 +53,16 @@ class ChartSpec(BaseModel):
             y_key=chart.y_key,
             chart_type=chart.chart_type,
             runs_filter=chart.runs_filter,
+            data_table_id=chart.data_table_id,
         )
+
+
+@dataclass
+class DataTableColumn:
+    """Column metadata from a data table's DQL query result."""
+
+    name: str
+    inferred_type: Literal["numeric", "categorical", "unknown"]
 
 
 class ChartDimensionDataType(Enum):
@@ -257,8 +271,9 @@ class AvailableKeysCache:
 
 
 class ChartsService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, db: DocentDB | None = None):
         self.session = session
+        self.db = db
         # Request-scoped cache for available dimensions + measures
         self._available_keys_cache: dict[str, AvailableKeysCache] = {}
 
@@ -269,19 +284,25 @@ class ChartsService:
         y_label = None
         series_label = None
 
-        if chart_spec.x_key:
-            x_dimension = await self._get_dimension_by_key(ctx, chart_spec.x_key)
-            x_label = x_dimension.short_name if x_dimension else chart_spec.x_key
+        # In data table mode, labels are just the column names directly
+        if chart_spec.data_table_id:
+            x_label = chart_spec.x_key
+            y_label = chart_spec.y_key
+            series_label = chart_spec.series_key
+        else:
+            if chart_spec.x_key:
+                x_dimension = await self._get_dimension_by_key(ctx, chart_spec.x_key)
+                x_label = x_dimension.short_name if x_dimension else chart_spec.x_key
 
-        if chart_spec.y_key:
-            y_dimension = await self._get_measure_by_key(ctx, chart_spec.y_key)
-            y_label = y_dimension.short_name if y_dimension else chart_spec.y_key
+            if chart_spec.y_key:
+                y_dimension = await self._get_measure_by_key(ctx, chart_spec.y_key)
+                y_label = y_dimension.short_name if y_dimension else chart_spec.y_key
 
-        if chart_spec.series_key:
-            series_dimension = await self._get_dimension_by_key(ctx, chart_spec.series_key)
-            series_label = (
-                series_dimension.short_name if series_dimension else chart_spec.series_key
-            )
+            if chart_spec.series_key:
+                series_dimension = await self._get_dimension_by_key(ctx, chart_spec.series_key)
+                series_label = (
+                    series_dimension.short_name if series_dimension else chart_spec.series_key
+                )
 
         # Return new ChartSpec with labels populated
         return ChartSpec(
@@ -295,6 +316,7 @@ class ChartsService:
             series_label=series_label,
             runs_filter=chart_spec.runs_filter,
             chart_type=chart_spec.chart_type,
+            data_table_id=chart_spec.data_table_id,
         )
 
     async def get_charts(self, ctx: ViewContext) -> list[ChartSpec]:
@@ -323,6 +345,7 @@ class ChartsService:
         x_key: str | None = None,
         y_key: str | None = None,
         chart_type: str = "bar",
+        data_table_id: str | None = None,
     ) -> str:
         """Create a new chart and return its ID."""
         chart_id = str(uuid4())
@@ -330,11 +353,17 @@ class ChartsService:
         if ctx.user is None:
             raise PermissionError("User must be authenticated to create charts")
 
-        (
-            corrected_x_key,
-            corrected_series_key,
-            corrected_y_key,
-        ) = await self._validate_and_correct_chart_keys(ctx, x_key, series_key, y_key)
+        # Skip validation for data table mode - column names are used directly
+        if data_table_id:
+            corrected_x_key = x_key
+            corrected_series_key = series_key
+            corrected_y_key = y_key
+        else:
+            (
+                corrected_x_key,
+                corrected_series_key,
+                corrected_y_key,
+            ) = await self._validate_and_correct_chart_keys(ctx, x_key, series_key, y_key)
 
         # Generate default name if not provided
         if name is None:
@@ -364,6 +393,7 @@ class ChartsService:
             y_key=corrected_y_key,
             chart_type=chart_type,
             created_by=ctx.user.id,
+            data_table_id=data_table_id,
         )
         self.session.add(chart)
 
@@ -373,12 +403,12 @@ class ChartsService:
         self,
         ctx: ViewContext,
         chart_id: str,
-        updates: dict[str, str | None],
+        updates: dict[str, Any],
     ) -> None:
         """Update an existing chart with the provided parameters.
 
         Only updates fields that are present in the updates dictionary.
-        Validates and auto-corrects chart keys.
+        Validates and auto-corrects chart keys (except in data table mode).
         """
         result = await self.session.execute(select(SQLAChart).where(SQLAChart.id == chart_id))
         chart = result.scalar_one_or_none()
@@ -391,18 +421,28 @@ class ChartsService:
         current_series_key = updates.get("series_key", chart.series_key)
         current_y_key = updates.get("y_key", chart.y_key)
 
-        (
-            corrected_x_key,
-            corrected_series_key,
-            corrected_y_key,
-        ) = await self._validate_and_correct_chart_keys(
-            ctx, current_x_key, current_series_key, current_y_key
-        )
+        # Check if we're in data table mode (either currently or being switched to)
+        current_data_table_id = updates.get("data_table_id", chart.data_table_id)
+        uses_data_table = current_data_table_id is not None
 
-        # Update the corrections in the updates dict
-        updates["x_key"] = corrected_x_key
-        updates["series_key"] = corrected_series_key
-        updates["y_key"] = corrected_y_key
+        # Skip validation for data table mode - column names are used directly
+        if uses_data_table:
+            updates["x_key"] = current_x_key
+            updates["series_key"] = current_series_key
+            updates["y_key"] = current_y_key
+        else:
+            (
+                corrected_x_key,
+                corrected_series_key,
+                corrected_y_key,
+            ) = await self._validate_and_correct_chart_keys(
+                ctx, current_x_key, current_series_key, current_y_key
+            )
+
+            # Update the corrections in the updates dict
+            updates["x_key"] = corrected_x_key
+            updates["series_key"] = corrected_series_key
+            updates["y_key"] = corrected_y_key
 
         # Only update fields that are present in the updates dictionary
         if updates:
@@ -685,6 +725,10 @@ class ChartsService:
 
     async def get_chart_data(self, ctx: ViewContext, chart: ChartSpec) -> dict[str, Any]:
         """Get chart data (binStats) for a specific chart."""
+        # Route to data table mode if chart uses a data table
+        if chart.data_table_id:
+            return await self._get_data_table_chart_data(ctx, chart)
+
         # Import here to avoid circular imports
         from docent_core.docent.db.chart_sql import generate_chart_query
 
@@ -765,3 +809,142 @@ class ChartsService:
                 "binStats": bin_stats,
             },
         }
+
+    async def _get_data_table(self, data_table_id: str) -> SQLADataTable:
+        """Get a data table by ID."""
+        result = await self.session.execute(
+            select(SQLADataTable).where(SQLADataTable.id == data_table_id)
+        )
+        data_table = result.scalar_one_or_none()
+        if not data_table:
+            raise ValueError(f"Data table with ID {data_table_id} not found")
+        return data_table
+
+    def _infer_column_type(self, sample_value: Any) -> Literal["numeric", "categorical", "unknown"]:
+        """Infer the type of a column from a sample value."""
+        if sample_value is None:
+            return "unknown"
+        if isinstance(sample_value, bool):
+            return "categorical"
+        if isinstance(sample_value, (int, float)):
+            return "numeric"
+        if isinstance(sample_value, str):
+            try:
+                float(sample_value)
+                return "numeric"
+            except ValueError:
+                return "categorical"
+        return "unknown"
+
+    async def get_data_table_columns(
+        self, ctx: ViewContext, data_table_id: str
+    ) -> list[DataTableColumn]:
+        """Get columns from a data table's DQL query with inferred types."""
+        if self.db is None:
+            raise ValueError("DQL service requires DocentDB to be provided")
+
+        if ctx.user is None:
+            raise PermissionError("User must be authenticated to get data table columns")
+
+        data_table = await self._get_data_table(data_table_id)
+        dql_service = DQLService(self.db)
+
+        # Execute query as-is - will be capped by MAX_DQL_RESULT_LIMIT
+        # We only need the first row for type inference
+        result = await dql_service.execute_query(
+            user=ctx.user,
+            collection_id=ctx.collection_id,
+            dql=data_table.dql,
+        )
+
+        sample_row = result.rows[0] if result.rows else None
+        columns: list[DataTableColumn] = []
+        for i, col_name in enumerate(result.columns):
+            sample_value = sample_row[i] if sample_row else None
+            inferred_type = self._infer_column_type(sample_value)
+            columns.append(DataTableColumn(name=col_name, inferred_type=inferred_type))
+
+        return columns
+
+    async def _get_data_table_chart_data(
+        self, ctx: ViewContext, chart: ChartSpec
+    ) -> dict[str, Any]:
+        """Get chart data from a data table's DQL query."""
+        if self.db is None:
+            raise ValueError("DQL service requires DocentDB to be provided")
+
+        if ctx.user is None:
+            raise PermissionError("User must be authenticated to get chart data")
+
+        if not chart.data_table_id:
+            raise ValueError("Chart does not have a data table configured")
+
+        data_table = await self._get_data_table(chart.data_table_id)
+        dql_service = DQLService(self.db)
+
+        result = await dql_service.execute_query(
+            user=ctx.user,
+            collection_id=ctx.collection_id,
+            dql=data_table.dql,
+        )
+
+        # In data table mode, x_key/y_key/series_key are simple column names
+        if chart.x_key and chart.x_key in result.columns:
+            x_idx = result.columns.index(chart.x_key)
+        else:
+            x_idx = None
+
+        if chart.y_key and chart.y_key in result.columns:
+            y_idx = result.columns.index(chart.y_key)
+        else:
+            y_idx = None
+
+        if chart.series_key and chart.series_key in result.columns:
+            series_idx = result.columns.index(chart.series_key)
+        else:
+            series_idx = None
+
+        if x_idx is None or y_idx is None:
+            return {
+                "request_type": "comb_stats",
+                "result": {"binStats": {}},
+            }
+
+        # Group and aggregate into binStats format
+        groups: dict[str, list[float]] = defaultdict(list)
+        for row in result.rows:
+            x_val = str(row[x_idx]) if row[x_idx] is not None else "(null)"
+            series_val = (
+                str(row[series_idx])
+                if series_idx is not None and row[series_idx] is not None
+                else None
+            )
+            y_val = row[y_idx]
+
+            # Build bin key matching existing format
+            key_parts = [f"{chart.x_key},{x_val}"]
+            if series_val and chart.series_key:
+                key_parts.insert(0, f"{chart.series_key},{series_val}")
+            bin_key = "|".join(key_parts)
+
+            if y_val is not None:
+                try:
+                    groups[bin_key].append(float(y_val))
+                except (ValueError, TypeError):
+                    pass
+
+        # Compute stats (mean, CI, n)
+        bin_stats: dict[str, Any] = {}
+        for bin_key, values in groups.items():
+            if not values:
+                continue
+            n = len(values)
+            mean = sum(values) / n
+            if n > 1:
+                variance = sum((v - mean) ** 2 for v in values) / (n - 1)
+                ci = 1.96 * (variance**0.5) / (n**0.5)
+            else:
+                ci = 0
+            bin_stats[bin_key] = {"mean": mean, "ci": ci, "n": n}
+
+        return {"request_type": "comb_stats", "result": {"binStats": bin_stats}}

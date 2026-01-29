@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Play,
   Sparkles,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -1405,6 +1406,19 @@ const DQLEditor = ({
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
               )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => {
+                  setIsSchemaVisible(false);
+                  onSchemaVisibleChange?.(false);
+                }}
+                aria-label="Close schema explorer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
             </div>
           </div>
           <ScrollArea className="flex-1 min-h-0">

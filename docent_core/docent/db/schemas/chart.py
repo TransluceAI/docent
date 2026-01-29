@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docent_core._db_service.schemas.base import SQLABase
 from docent_core.docent.db.filters import ComplexFilter, parse_filter_dict
+from docent_core.docent.db.schemas.data_table import TABLE_DATA_TABLE
 from docent_core.docent.db.schemas.tables import (
     TABLE_COLLECTION,
     TABLE_USER,
@@ -39,6 +40,14 @@ class SQLAChart(SQLABase):
     # If set, chart only shows data from these runs
     runs_filter_dict = mapped_column(JSONB, nullable=True)
 
+    # Data table source (optional - when set, x_key/y_key/series_key are column names)
+    data_table_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_DATA_TABLE}.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Chart visualization settings
     chart_type = mapped_column(Text, nullable=False, default="bar")  # 'bar', 'line', 'table'
 
@@ -63,3 +72,7 @@ class SQLAChart(SQLABase):
         result = parse_filter_dict(deepcopy(self.runs_filter_dict))
         assert isinstance(result, ComplexFilter)
         return result
+
+    @property
+    def uses_data_table(self) -> bool:
+        return self.data_table_id is not None

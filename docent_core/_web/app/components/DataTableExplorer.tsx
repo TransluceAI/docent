@@ -8,6 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy,
   MoreVertical,
@@ -15,6 +16,7 @@ import {
   PanelLeftClose,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,18 +29,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
   useCreateDataTableMutation,
   useDeleteDataTableMutation,
   useDuplicateDataTableMutation,
+  useGenerateNameMutation,
   useListDataTablesQuery,
   useUpdateDataTableMutation,
 } from '@/app/api/dataTableApi';
 import type { DataTable, DataTableState } from '@/app/types/dataTableTypes';
 import type { DqlExecuteResponse } from '@/app/types/dqlTypes';
 import DQLEditor from '@/app/components/DQLEditor';
+import UuidPill from '@/components/UuidPill';
 
 const AUTO_SAVE_DEBOUNCE_MS = 700;
 const UNTITLED_NAME = 'Untitled data table';
@@ -53,6 +57,15 @@ const normalizeName = (value: string) => {
   return trimmed.length > 0 ? trimmed : UNTITLED_NAME;
 };
 
+const isDefaultTableName = (name: string) => {
+  const trimmed = name.trim();
+  if (trimmed === UNTITLED_NAME) {
+    return true;
+  }
+  // Match "Data Table N" where N is a number
+  return /^Data Table \d+$/i.test(trimmed);
+};
+
 const serializeState = (state: DataTableState | null | undefined) => {
   try {
     return JSON.stringify(state ?? {});
@@ -65,13 +78,34 @@ export default function DataTableExplorer({
   collectionId,
   canEdit,
 }: DataTableExplorerProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTableId = searchParams.get('table');
+
   const [isListOpen, setIsListOpen] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(urlTableId);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [draftTableId, setDraftTableId] = useState<string | null>(null);
   const [localNames, setLocalNames] = useState<Record<string, string>>({});
   const resultCacheRef = useRef<Record<string, DqlExecuteResponse | null>>({});
+
+  // Panel resize state
+  const [panelWidth, setPanelWidth] = useState(256); // default: w-64 = 256px
+  const isResizingRef = useRef(false);
+  const resizeStartXRef = useRef(0);
+  const resizeStartWidthRef = useRef(0);
+
+  // Load panel width from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('data-table-panel-width');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= 160 && parsed <= 480) {
+        setPanelWidth(parsed);
+      }
+    }
+  }, []);
 
   const { data: dataTables = [], isLoading } = useListDataTablesQuery(
     { collectionId: collectionId ?? '' },
@@ -84,6 +118,7 @@ export default function DataTableExplorer({
   const [deleteDataTable] = useDeleteDataTableMutation();
   const [duplicateDataTable, { isLoading: isDuplicating }] =
     useDuplicateDataTableMutation();
+  const [generateName] = useGenerateNameMutation();
 
   const sortedTables = useMemo(() => {
     return [...dataTables].sort(
@@ -120,6 +155,43 @@ export default function DataTableExplorer({
       setEditingTitleId(null);
     }
   }, [activeId, dataTables, sortedTables]);
+
+  // Track table ID we're navigating to via push (distinguishes our navigation from back/forward)
+  const navigatingToRef = useRef<string | null>(null);
+  // Use ref for activeId so URL sync effect only runs when urlTableId changes
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+
+  // Sync activeId from URL (handles browser back/forward)
+  useEffect(() => {
+    if (!urlTableId) return;
+
+    // Our push completed - clear tracking
+    if (navigatingToRef.current === urlTableId) {
+      navigatingToRef.current = null;
+      return;
+    }
+
+    // Skip sync if we're mid-navigation (URL hasn't caught up yet)
+    if (navigatingToRef.current) return;
+
+    // Sync state from URL (back/forward or initial load)
+    if (
+      urlTableId !== activeIdRef.current &&
+      dataTables.some((t) => t.id === urlTableId)
+    ) {
+      setActiveId(urlTableId);
+    }
+  }, [urlTableId, dataTables]);
+
+  // Keep URL in sync with activeId (for fallback selection, initial load without URL param)
+  useEffect(() => {
+    if (!activeId || urlTableId === activeId || navigatingToRef.current) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('table', activeId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [activeId, router, searchParams, urlTableId]);
 
   const [draftName, setDraftName] = useState('');
   const [draftDql, setDraftDql] = useState('');
@@ -243,13 +315,17 @@ export default function DataTableExplorer({
       const data = await createDataTable({
         collectionId,
       }).unwrap();
+      navigatingToRef.current = data.id;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('table', data.id);
+      router.push(`?${params.toString()}`, { scroll: false });
       setActiveId(data.id);
       setIsListOpen(true);
     } catch (error) {
       console.error('Failed to create data table', error);
       toast.error('Unable to create a data table.');
     }
-  }, [collectionId, createDataTable]);
+  }, [collectionId, createDataTable, router, searchParams]);
 
   const handleDuplicate = useCallback(
     async (table: DataTable) => {
@@ -261,6 +337,10 @@ export default function DataTableExplorer({
           collectionId,
           dataTableId: table.id,
         }).unwrap();
+        navigatingToRef.current = data.id;
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('table', data.id);
+        router.push(`?${params.toString()}`, { scroll: false });
         setActiveId(data.id);
         setIsListOpen(true);
       } catch (error) {
@@ -268,7 +348,7 @@ export default function DataTableExplorer({
         toast.error('Unable to duplicate this data table.');
       }
     },
-    [collectionId, duplicateDataTable]
+    [collectionId, duplicateDataTable, router, searchParams]
   );
 
   const handleDelete = useCallback(
@@ -298,7 +378,7 @@ export default function DataTableExplorer({
     [activeId, collectionId, deleteDataTable]
   );
 
-  const handleNameBlur = useCallback(() => {
+  const handleNameBlur = useCallback(async () => {
     if (!activeTable || !collectionId || !canEdit) {
       setEditingTitleId(null);
       return;
@@ -310,27 +390,35 @@ export default function DataTableExplorer({
       setDraftName(nextName);
       return;
     }
+    // Optimistically update with user's input
     setDraftName(nextName);
     setLocalNames((prev) => ({ ...prev, [activeTable.id]: nextName }));
-    updateDataTable({
-      collectionId,
-      dataTableId: activeTable.id,
-      name: nextName,
-    })
-      .unwrap()
-      .catch((error) => {
-        console.error('Failed to rename data table', error);
-        setLocalNames((prev) => {
-          if (!prev[activeTable.id]) {
-            return prev;
-          }
-          const next = { ...prev };
-          delete next[activeTable.id];
-          return next;
-        });
-        setDraftName(previousName);
-        toast.error('Unable to rename this data table.');
+    try {
+      // Backend may deduplicate the name, use the returned value
+      const updatedTable = await updateDataTable({
+        collectionId,
+        dataTableId: activeTable.id,
+        name: nextName,
+      }).unwrap();
+      // Update with the actual name from backend (may be deduplicated)
+      const finalName = updatedTable.name;
+      if (finalName !== nextName) {
+        setDraftName(finalName);
+        setLocalNames((prev) => ({ ...prev, [activeTable.id]: finalName }));
+      }
+    } catch (error) {
+      console.error('Failed to rename data table', error);
+      setLocalNames((prev) => {
+        if (!prev[activeTable.id]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[activeTable.id];
+        return next;
       });
+      setDraftName(previousName);
+      toast.error('Unable to rename this data table.');
+    }
   }, [
     activeTable,
     canEdit,
@@ -360,6 +448,12 @@ export default function DataTableExplorer({
 
   const handleSelectTable = useCallback(
     (table: DataTable) => {
+      if (table.id !== activeId) {
+        navigatingToRef.current = table.id;
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('table', table.id);
+        router.push(`?${params.toString()}`, { scroll: false });
+      }
       setActiveId(table.id);
       setEditingTitleId(null);
       setDraftName(getDisplayName(table));
@@ -367,7 +461,7 @@ export default function DataTableExplorer({
       setDraftState(table.state ?? {});
       setDraftTableId(table.id);
     },
-    [getDisplayName]
+    [activeId, getDisplayName, router, searchParams]
   );
 
   const handleRename = useCallback(
@@ -378,6 +472,44 @@ export default function DataTableExplorer({
     [handleSelectTable]
   );
 
+  const [isAutoRenaming, setIsAutoRenaming] = useState(false);
+
+  const handleAutoRename = useCallback(
+    async (table: DataTable) => {
+      if (!collectionId || !table.dql.trim()) {
+        toast.error('Cannot auto-rename: table has no query.');
+        return;
+      }
+
+      setIsAutoRenaming(true);
+      try {
+        const { name: generatedName } = await generateName({
+          collectionId,
+          dql: table.dql,
+        }).unwrap();
+
+        const updatedTable = await updateDataTable({
+          collectionId,
+          dataTableId: table.id,
+          name: generatedName,
+        }).unwrap();
+
+        const finalName = updatedTable.name;
+        setLocalNames((prev) => ({ ...prev, [table.id]: finalName }));
+        if (activeTable?.id === table.id) {
+          setDraftName(finalName);
+        }
+        toast.success(`Renamed to "${finalName}"`);
+      } catch (error) {
+        console.error('Failed to auto-rename data table', error);
+        toast.error('Unable to generate a name for this table.');
+      } finally {
+        setIsAutoRenaming(false);
+      }
+    },
+    [activeTable?.id, collectionId, generateName, updateDataTable]
+  );
+
   const handleSchemaVisibleChange = useCallback((next: boolean) => {
     setDraftState((current) => ({
       ...current,
@@ -386,13 +518,61 @@ export default function DataTableExplorer({
   }, []);
 
   const handleResultChange = useCallback(
-    (result: DqlExecuteResponse | null) => {
+    async (result: DqlExecuteResponse | null) => {
       if (!activeTable) {
         return;
       }
       resultCacheRef.current[activeTable.id] = result;
+
+      // Auto-generate name on first successful query if table has a default name
+      if (
+        result &&
+        collectionId &&
+        canEdit &&
+        !activeTable.state?.nameAutoGenerated &&
+        isDefaultTableName(getDisplayName(activeTable))
+      ) {
+        const trimmedDql = draftDql.trim();
+        if (!trimmedDql) {
+          return;
+        }
+
+        try {
+          const { name: generatedName } = await generateName({
+            collectionId,
+            dql: trimmedDql,
+          }).unwrap();
+
+          // Update the table with the generated name and flag
+          // The backend may deduplicate the name, so use the returned value
+          const updatedTable = await updateDataTable({
+            collectionId,
+            dataTableId: activeTable.id,
+            name: generatedName,
+            state: { ...draftState, nameAutoGenerated: true },
+          }).unwrap();
+
+          // Update local state with the actual name from the backend (may be deduplicated)
+          const finalName = updatedTable.name;
+          setLocalNames((prev) => ({ ...prev, [activeTable.id]: finalName }));
+          setDraftName(finalName);
+          setDraftState((prev) => ({ ...prev, nameAutoGenerated: true }));
+        } catch (error) {
+          // Silently fail - name generation is a nice-to-have
+          console.debug('Failed to auto-generate data table name', error);
+        }
+      }
     },
-    [activeTable]
+    [
+      activeTable,
+      canEdit,
+      collectionId,
+      draftDql,
+      draftState,
+      generateName,
+      getDisplayName,
+      updateDataTable,
+    ]
   );
 
   const schemaVisible = draftState.schemaVisible ?? false;
@@ -401,10 +581,55 @@ export default function DataTableExplorer({
     ? resultCacheRef.current[activeTable.id]
     : undefined;
 
+  // Panel resize handlers
+  const handlePanelResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      resizeStartXRef.current = e.clientX;
+      resizeStartWidthRef.current = panelWidth;
+    },
+    [panelWidth]
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientX - resizeStartXRef.current;
+      const newWidth = Math.max(
+        160,
+        Math.min(480, resizeStartWidthRef.current + delta)
+      );
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  // Persist panel width to localStorage (debounced)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      localStorage.setItem('data-table-panel-width', String(panelWidth));
+    }, 200);
+    return () => clearTimeout(timeoutId);
+  }, [panelWidth]);
+
   return (
     <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden border rounded-lg bg-card">
       {isListOpen && (
-        <div className="w-64 border-r bg-muted/30 flex flex-col min-h-0">
+        <div
+          className="border-r bg-muted/30 flex flex-col min-h-0 relative"
+          style={{ width: panelWidth }}
+        >
           <div className="flex items-center justify-between h-10 px-3 border-b">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Data Tables
@@ -458,7 +683,7 @@ export default function DataTableExplorer({
                     }
                   }}
                   className={cn(
-                    'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer',
+                    'group relative rounded-md px-2 py-1.5 text-sm cursor-pointer',
                     isActive
                       ? 'bg-muted text-foreground'
                       : 'hover:bg-muted/60 text-muted-foreground'
@@ -466,51 +691,78 @@ export default function DataTableExplorer({
                 >
                   <span
                     className={cn(
-                      'flex-1 truncate',
+                      'block truncate pr-1',
                       isActive && 'font-medium text-foreground'
                     )}
                   >
                     {getDisplayName(table)}
                   </span>
                   {canEdit && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <MoreVertical className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleRename(table)}>
-                          <Pencil className="mr-2 h-3.5 w-3.5" />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDuplicate(table)}
-                          disabled={isDuplicating}
-                        >
-                          <Copy className="mr-2 h-3.5 w-3.5" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(table)}
-                          className="text-red-text"
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 bg-muted/80 backdrop-blur-sm hover:bg-muted"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleRename(table)}>
+                            <Pencil className="mr-2 h-3.5 w-3.5" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleAutoRename(table)}
+                            disabled={isAutoRenaming}
+                          >
+                            <Sparkles className="mr-2 h-3.5 w-3.5" />
+                            Auto-rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDuplicate(table)}
+                            disabled={isDuplicating}
+                          >
+                            <Copy className="mr-2 h-3.5 w-3.5" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const success = await copyToClipboard(table.id);
+                              if (success) {
+                                toast.success('Data table ID copied');
+                              } else {
+                                toast.error('Failed to copy ID');
+                              }
+                            }}
+                          >
+                            <Copy className="mr-2 h-3.5 w-3.5" />
+                            Copy ID
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(table)}
+                            className="text-red-text"
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
+          {/* Resize handle */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary/20"
+            onMouseDown={handlePanelResizeStart}
+          />
         </div>
       )}
 
@@ -540,7 +792,7 @@ export default function DataTableExplorer({
               ) : canEdit ? (
                 <button
                   type="button"
-                  className="group flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-semibold"
+                  className="group flex min-w-0 items-center gap-2 text-left text-sm font-semibold"
                   onClick={() => {
                     setDraftName(getDisplayName(activeTable));
                     setEditingTitleId(activeTable.id);
@@ -554,6 +806,7 @@ export default function DataTableExplorer({
                   {normalizeName(headerName)}
                 </span>
               )}
+              <UuidPill uuid={activeTable.id} />
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {isUpdating && <span>Saving...</span>}
@@ -585,6 +838,7 @@ export default function DataTableExplorer({
         <div className="flex-1 min-h-0 min-w-0 p-3">
           {activeTable ? (
             <DQLEditor
+              key={activeTable.id}
               dataTableId={activeTable.id}
               collectionId={collectionId ?? undefined}
               initialQuery={draftDql}

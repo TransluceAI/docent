@@ -102,8 +102,11 @@ def get_job_service(
     return JobService(session, session_cm_factory)
 
 
-def get_chart_service(session: AsyncSession = Depends(get_session)) -> ChartsService:
-    return ChartsService(session)
+def get_chart_service(
+    session: AsyncSession = Depends(get_session),
+    db: DocentDB = Depends(get_db),
+) -> ChartsService:
+    return ChartsService(session, db)
 
 
 def get_data_table_service(session: AsyncSession = Depends(get_session)) -> DataTablesService:

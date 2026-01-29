@@ -67,7 +67,7 @@ def _build_rubric_ctes(rubrics: list[RubricInfo]) -> tuple[list[str], dict[str, 
             escaped_field = _escape_literal(field)
             sanitized_field = _sanitize_identifier(field)
             mode_lines.append(
-                f"    mode() WITHIN GROUP (ORDER BY jr.output->>'{escaped_field}') "
+                f"      mode() WITHIN GROUP (ORDER BY jr.output->>'{escaped_field}') "
                 f"AS {sanitized_field}"
             )
 
@@ -234,6 +234,8 @@ class DataTablesService:
         data_table_id = str(uuid4())
         if name is None or not name.strip():
             name = await self._next_default_name(ctx)
+        else:
+            name = await self._make_unique_name(ctx, name.strip())
         if dql is None or not dql.strip():
             dql = build_default_data_table_dql(metadata_fields, rubrics)
 
@@ -264,7 +266,8 @@ class DataTablesService:
         if data_table is None:
             raise ValueError("Data table not found.")
 
-        name = f"{data_table.name} copy"
+        base_copy_name = f"{data_table.name} copy"
+        name = await self._make_unique_name(ctx, base_copy_name)
         data_table_id = str(uuid4())
         duplicate = SQLADataTable(
             id=data_table_id,
@@ -289,6 +292,12 @@ class DataTablesService:
             if data_table is None:
                 raise ValueError("Data table not found.")
             return data_table
+
+        # Ensure name uniqueness if name is being updated
+        if "name" in updates and updates["name"]:
+            updates["name"] = await self._make_unique_name(
+                ctx, updates["name"].strip(), exclude_id=data_table_id
+            )
 
         await self.session.execute(
             update(SQLADataTable)
@@ -328,3 +337,44 @@ class DataTablesService:
                 except ValueError:
                     continue
         return f"Data Table {max_num + 1}"
+
+    async def _make_unique_name(
+        self,
+        ctx: ViewContext,
+        desired_name: str,
+        exclude_id: str | None = None,
+    ) -> str:
+        """Ensure a name is unique within the collection by appending a number if needed.
+
+        Args:
+            ctx: View context with collection_id
+            desired_name: The name to make unique
+            exclude_id: Optional data table ID to exclude from uniqueness check (for updates)
+
+        Returns:
+            A unique name, possibly with " 2", " 3", etc. appended
+        """
+        query = select(SQLADataTable.name).where(SQLADataTable.collection_id == ctx.collection_id)
+        if exclude_id:
+            query = query.where(SQLADataTable.id != exclude_id)
+
+        result = await self.session.execute(query)
+        existing_names = {row[0].lower() for row in result.fetchall()}
+
+        # If the name is already unique, return it as-is
+        if desired_name.lower() not in existing_names:
+            return desired_name
+
+        # Find the next available number suffix
+        # Check if desired_name already ends with a number (e.g., "Name 2")
+        base_name = desired_name
+        match = re.match(r"^(.+?)\s+(\d+)$", desired_name)
+        if match:
+            base_name = match.group(1)
+
+        counter = 2
+        while True:
+            candidate = f"{base_name} {counter}"
+            if candidate.lower() not in existing_names:
+                return candidate
+            counter += 1

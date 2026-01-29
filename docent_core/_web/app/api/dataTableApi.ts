@@ -17,6 +17,15 @@ type DataTableUpdatePayload = {
   state?: DataTableState | null;
 };
 
+type GenerateNamePayload = {
+  collectionId: string;
+  dql: string;
+};
+
+type GenerateNameResponse = {
+  name: string;
+};
+
 export const dataTableApi = createApi({
   reducerPath: 'dataTableApi',
   baseQuery: fetchBaseQuery({
@@ -165,6 +174,13 @@ export const dataTableApi = createApi({
         }
       },
     }),
+    generateName: build.mutation<GenerateNameResponse, GenerateNamePayload>({
+      query: ({ collectionId, dql }) => ({
+        url: `/${collectionId}/generate-name`,
+        method: 'POST',
+        body: { dql },
+      }),
+    }),
   }),
 });
 
@@ -175,4 +191,5 @@ export const {
   useUpdateDataTableMutation,
   useDeleteDataTableMutation,
   useDuplicateDataTableMutation,
+  useGenerateNameMutation,
 } = dataTableApi;
