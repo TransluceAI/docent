@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { PanelLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
@@ -36,17 +36,26 @@ export default function AgentRunPage() {
 
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const disableAITools = searchParams.get('tools') === 'false';
 
   const rightSidebarOpen = useAppSelector(
     (state) => state.transcript.agentRunRightSidebarOpen
   );
   const selectedTab = useAppSelector(
-    (state) =>
-      state.transcript?.agentRunSidebarTab ??
-      (disableAITools ? 'labels' : 'chat')
+    (state) => state.transcript?.agentRunSidebarTab ?? 'chat'
   );
+
+  // Restore sidebar tab from localStorage on mount
+  useEffect(() => {
+    const storageKey = 'docent-agent-run-sidebar-tab';
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === 'chat' || stored === 'labels') {
+        dispatch(setAgentRunSidebarTab(stored));
+      }
+    } catch (error) {
+      console.warn('Failed to restore agent run sidebar tab state', error);
+    }
+  }, [dispatch]);
 
   const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
 
@@ -130,15 +139,24 @@ export default function AgentRunPage() {
       >
         <Tabs
           value={selectedTab}
-          onValueChange={(value) => dispatch(setAgentRunSidebarTab(value))}
+          onValueChange={(value) => {
+            dispatch(setAgentRunSidebarTab(value));
+            try {
+              window.localStorage.setItem(
+                'docent-agent-run-sidebar-tab',
+                value
+              );
+            } catch (error) {
+              console.warn(
+                'Failed to persist agent run sidebar tab state',
+                error
+              );
+            }
+          }}
           className="size-full flex flex-col"
         >
           <TabsList className="grid w-full grid-cols-2 h-8">
-            <TabsTrigger
-              value="chat"
-              className="text-xs"
-              disabled={disableAITools}
-            >
+            <TabsTrigger value="chat" className="text-xs">
               Chat
             </TabsTrigger>
             <TabsTrigger value="labels" className="text-xs">

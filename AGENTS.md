@@ -190,15 +190,33 @@ npm run lint-fix
 
 - This keeps spacing logic centralized in the parent, making it easier to adjust and maintain consistent gaps.
 
-- **Default spacing convention**: Containers should use `p-3` for outer padding, with `space-y-2` between groups of elements inside.
+- **Default spacing convention**: Containers should use `p-3` for outer padding, with `space-y-3` between groups of elements inside.
 
   ```tsx
-  <div className="p-3 space-y-2">
+  <div className="p-3 space-y-3">
     <GroupA />
     <GroupB />
     <GroupC />
   </div>
   ```
+
+- **Keep spacing values consistent within components**: Use the same spacing scale for outer padding and inner gaps. If a component uses `p-3` for padding, prefer `space-y-3` or `gap-3` for internal spacing rather than mixing different values like `p-2` with `gap-4`.
+
+  ```tsx
+  // Good - consistent spacing
+  <div className="p-3 space-y-3">
+    <div>...</div>
+    <div>...</div>
+  </div>
+
+  // Avoid - jarring inconsistency, especially in small components
+  <div className="p-2 space-y-4">
+    <div>...</div>
+    <div>...</div>
+  </div>
+  ```
+
+  This is especially important for smaller components where mismatched spacing creates visual imbalance. Larger containers have more flexibility to vary spacing based on content hierarchy.
 
 #### Color System
 

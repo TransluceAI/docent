@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any, AsyncContextManager, Callable, Optional
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docent._log_util import get_logger
 from docent.data_models import InlineCitation
 from docent.data_models.judge import Label
+from docent.judges.util.meta_schema import validate_judge_result_schema
 from docent_core.docent.db.schemas.label import (
     Comment,
     SQLAComment,
@@ -62,6 +64,15 @@ class LabelService:
         if len(value) > 255:
             raise ValueError("Tag value must be at most 255 characters long")
 
+    async def _touch_label_set(self, label_set_id: str) -> None:
+        """Update the label set's updated_at timestamp."""
+        result = await self.session.execute(
+            select(SQLALabelSet).where(SQLALabelSet.id == label_set_id)
+        )
+        label_set = result.scalar_one_or_none()
+        if label_set:
+            label_set.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
     ################
     # Label CRUD #
     ################
@@ -86,6 +97,9 @@ class LabelService:
         # Create the label
         sqla_label = SQLALabel.from_pydantic(label)
         self.session.add(sqla_label)
+
+        # Update the label set's updated_at timestamp
+        await self._touch_label_set(label.label_set_id)
 
     async def create_labels(self, labels: list[Label]) -> None:
         """Create multiple labels and validate against label set schema.
@@ -121,6 +135,9 @@ class LabelService:
         # Create the label
         sqla_labels = [SQLALabel.from_pydantic(label) for label in labels]
         self.session.add_all(sqla_labels)
+
+        # Update the label set's updated_at timestamp
+        await self._touch_label_set(label_set_id)
 
     async def get_label(self, label_id: str) -> Label | None:
         """Get a single label by ID.
@@ -202,6 +219,10 @@ class LabelService:
 
         # Update the label
         existing_label.label_value = label_value
+
+        # Update the label set's updated_at timestamp
+        await self._touch_label_set(existing_label.label_set_id)
+
         return True
 
     async def delete_label(self, label_id: str) -> None:
@@ -213,7 +234,10 @@ class LabelService:
         result = await self.session.execute(select(SQLALabel).where(SQLALabel.id == label_id))
         label_to_delete = result.scalar_one_or_none()
         if label_to_delete:
+            label_set_id = label_to_delete.label_set_id
             await self.session.delete(label_to_delete)
+            # Update the label set's updated_at timestamp
+            await self._touch_label_set(label_set_id)
 
     async def delete_labels_by_label_set(self, label_set_id: str) -> None:
         """Delete all labels in a label set.
@@ -222,6 +246,8 @@ class LabelService:
             label_set_id: The label set ID
         """
         await self.session.execute(delete(SQLALabel).where(SQLALabel.label_set_id == label_set_id))
+        # Update the label set's updated_at timestamp
+        await self._touch_label_set(label_set_id)
 
     ##################
     # Label Set CRUD #
@@ -244,7 +270,15 @@ class LabelService:
 
         Returns:
             The label set ID
+
+        Raises:
+            jsonschema.ValidationError: If the schema doesn't conform to the meta schema
+            jsonschema.SchemaError: If the schema is not a valid JSON Schema 2020-12
         """
+        # Validate that the label schema conforms to the meta schema
+        logger.info(f"Validating label schema: {label_schema}")
+        validate_judge_result_schema(label_schema)
+
         label_set_id = str(uuid4())
         sqla_label_set = SQLALabelSet(
             id=label_set_id,
@@ -271,16 +305,18 @@ class LabelService:
         return result.scalar_one_or_none()
 
     async def get_all_label_sets(self, collection_id: str) -> list[SQLALabelSet]:
-        """Get all label sets in a collection.
+        """Get all label sets in a collection, ordered by most recently updated.
 
         Args:
             collection_id: The collection ID
 
         Returns:
-            List of label sets in the collection
+            List of label sets in the collection, ordered by updated_at descending
         """
         result = await self.session.execute(
-            select(SQLALabelSet).where(SQLALabelSet.collection_id == collection_id)
+            select(SQLALabelSet)
+            .where(SQLALabelSet.collection_id == collection_id)
+            .order_by(SQLALabelSet.updated_at.desc())
         )
         return list(result.scalars().all())
 
@@ -304,7 +340,12 @@ class LabelService:
 
         Raises:
             ValueError: If label set doesn't exist
+            jsonschema.ValidationError: If the schema doesn't conform to the meta schema
+            jsonschema.SchemaError: If the schema is not a valid JSON Schema 2020-12
         """
+        # Validate that the label schema conforms to the meta schema
+        validate_judge_result_schema(label_schema)
+
         result = await self.session.execute(
             select(SQLALabelSet).where(SQLALabelSet.id == label_set_id)
         )
@@ -316,6 +357,7 @@ class LabelService:
         existing_label_set.name = name
         existing_label_set.label_schema = label_schema
         existing_label_set.description = description
+        existing_label_set.updated_at = datetime.now(UTC).replace(tzinfo=None)
         return True
 
     async def delete_label_set(self, label_set_id: str) -> None:
@@ -365,19 +407,42 @@ class LabelService:
         ]
 
     async def get_labels_by_agent_run(self, agent_run_id: str) -> list[Label]:
-        """Get all labels for a specific agent run.
+        """Get all labels for a specific agent run, ordered by label set's updated_at.
 
         Args:
             agent_run_id: The agent run ID
 
         Returns:
-            List of labels for the agent run
+            List of labels for the agent run, ordered by label set's updated_at descending
         """
         result = await self.session.execute(
-            select(SQLALabel).where(SQLALabel.agent_run_id == agent_run_id)
+            select(SQLALabel)
+            .join(SQLALabelSet, SQLALabel.label_set_id == SQLALabelSet.id)
+            .where(SQLALabel.agent_run_id == agent_run_id)
+            .order_by(SQLALabelSet.updated_at.desc())
         )
         sqla_labels = result.scalars().all()
         return [sqla_label.to_pydantic() for sqla_label in sqla_labels]
+
+    async def get_label_sets_categorized_for_agent_run(
+        self, collection_id: str, agent_run_id: str
+    ) -> tuple[list[SQLALabelSet], list[SQLALabelSet]]:
+        """Get label sets split by whether they have a label for this agent run.
+
+        Returns:
+            (available, filled) - available can accept new labels, filled already have one
+        """
+        all_label_sets = await self.get_all_label_sets(collection_id)
+
+        result = await self.session.execute(
+            select(SQLALabel.label_set_id).where(SQLALabel.agent_run_id == agent_run_id)
+        )
+        filled_ids = set(result.scalars().all())
+
+        available = [ls for ls in all_label_sets if ls.id not in filled_ids]
+        filled = [ls for ls in all_label_sets if ls.id in filled_ids]
+
+        return available, filled
 
     ################
     # Comment CRUD #
