@@ -65,6 +65,9 @@ const truncateQuery = (query: string, maxLength = 200): string => {
 const DEFAULT_DQL_MODEL: ModelOption = {
   provider: 'openai',
   model_name: 'gpt-4o-2024-08-06',
+  reasoning_effort: null,
+  context_window: 128000,
+  uses_byok: false,
 };
 
 const DQL_MODEL_STORAGE_KEY_PREFIX = 'dql-assistant-model-';
@@ -303,8 +306,8 @@ export const DqlAutoGeneratorPanel = ({
         let diffRecord: DiffRecord | null = null;
 
         if (diffContent && diffContent.trim().length > 0) {
-          const diffMessage: ChatMessage = {
-            role: 'assistant',
+          const diffMessage = {
+            role: 'assistant' as const,
             content: '',
             metadata: {
               diffContent,
@@ -314,7 +317,7 @@ export const DqlAutoGeneratorPanel = ({
               error: response.error ?? null,
               used_tables: response.used_tables ?? [],
             },
-          } as ChatMessage;
+          } as unknown as ChatMessage;
           diffRecord = { anchorIndex, message: diffMessage };
         }
 

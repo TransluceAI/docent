@@ -263,7 +263,7 @@ export function ChatMessage({
             ) {
               return (
                 <DiffViewer
-                  metadata={metadata as DiffMetadata}
+                  metadata={metadata as unknown as DiffMetadata}
                   onApplyQuery={onApplyQuery}
                 />
               );

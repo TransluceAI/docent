@@ -308,7 +308,10 @@ class DataTablesService:
             .values(**updates)
         )
         result = await self.session.execute(
-            select(SQLADataTable).where(SQLADataTable.id == data_table_id)
+            select(SQLADataTable).where(
+                SQLADataTable.collection_id == ctx.collection_id,
+                SQLADataTable.id == data_table_id,
+            )
         )
         data_table = result.scalar_one_or_none()
         if data_table is None:

@@ -259,10 +259,14 @@ async def update_data_table(
         if not dql and metadata_fields is not None:
             dql = build_default_data_table_dql(metadata_fields)
         updates["dql"] = dql or DEFAULT_DATA_TABLE_DQL
-    if "state" in request.model_fields_set:
-        updates["state_json"] = request.state
-
     async with mono_svc.advisory_lock(collection_id, action_id="mutation"):
+        # Merge state with existing state to avoid clobbering unrelated fields
+        if "state" in request.model_fields_set:
+            current = await data_table_service.get_data_table(ctx, data_table_id)
+            current_state = current.state if current else None
+            merged_state = {**(current_state or {}), **(request.state or {})}
+            updates["state_json"] = merged_state
+
         data_table = await data_table_service.update_data_table(ctx, data_table_id, updates)
 
     analytics.track_event(

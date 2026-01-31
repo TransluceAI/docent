@@ -342,7 +342,7 @@ async def generate_dql_query(
         RubricSchemaInfo(
             id=rubric.id,
             version=rubric.version,
-            name=rubric.rubric_text[:100] if rubric.rubric_text else None,
+            name=rubric.rubric_text[:400] if rubric.rubric_text else None,
             output_fields=_extract_output_fields_from_schema(rubric.output_schema),
         )
         for rubric in rubrics_list

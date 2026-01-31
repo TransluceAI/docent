@@ -810,10 +810,13 @@ class ChartsService:
             },
         }
 
-    async def _get_data_table(self, data_table_id: str) -> SQLADataTable:
-        """Get a data table by ID."""
+    async def _get_data_table(self, collection_id: str, data_table_id: str) -> SQLADataTable:
+        """Get a data table by ID, scoped to the given collection."""
         result = await self.session.execute(
-            select(SQLADataTable).where(SQLADataTable.id == data_table_id)
+            select(SQLADataTable).where(
+                SQLADataTable.collection_id == collection_id,
+                SQLADataTable.id == data_table_id,
+            )
         )
         data_table = result.scalar_one_or_none()
         if not data_table:
@@ -846,7 +849,7 @@ class ChartsService:
         if ctx.user is None:
             raise PermissionError("User must be authenticated to get data table columns")
 
-        data_table = await self._get_data_table(data_table_id)
+        data_table = await self._get_data_table(ctx.collection_id, data_table_id)
         dql_service = DQLService(self.db)
 
         # Execute query as-is - will be capped by MAX_DQL_RESULT_LIMIT
@@ -879,7 +882,7 @@ class ChartsService:
         if not chart.data_table_id:
             raise ValueError("Chart does not have a data table configured")
 
-        data_table = await self._get_data_table(chart.data_table_id)
+        data_table = await self._get_data_table(ctx.collection_id, chart.data_table_id)
         dql_service = DQLService(self.db)
 
         result = await dql_service.execute_query(

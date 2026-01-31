@@ -143,7 +143,7 @@ def _build_rubric_schema_summary(rubrics: Sequence[RubricSchemaInfo]) -> str:
         return ""
     lines = ["", "RUBRIC OUTPUT SCHEMAS (use output->>'field' to access):"]
     for rubric in rubrics:
-        name = rubric.name[:40] + "..." if rubric.name and len(rubric.name) > 40 else rubric.name
+        name = rubric.name[:400] + "..." if rubric.name and len(rubric.name) > 400 else rubric.name
         fields_str = ", ".join(rubric.output_fields) if rubric.output_fields else "(no fields)"
         lines.append(f"- {rubric.id} (v{rubric.version}): {fields_str}")
         if name:
