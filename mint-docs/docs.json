@@ -46,17 +46,18 @@
           {
             "group": "Get Started",
             "pages": [
-              "introduction",
-              "quickstart",
-              "tracing",
-              "support"
+              "get-started/introduction",
+              "get-started/quickstart",
+              "get-started/tracing",
+              "get-started/support"
             ]
           },
           {
-            "group": "Agent Plugins",
+            "group": "Agent Skills",
             "pages": [
-              "documentation/agent-plugins/untitled-page",
-              "documentation/agent-plugins/ingestion"
+              "agent-skills/overview",
+              "agent-skills/ingestion",
+              "agent-skills/analysis"
             ]
           },
           {

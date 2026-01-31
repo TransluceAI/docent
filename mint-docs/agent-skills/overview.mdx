@@ -1,0 +1,42 @@
+---
+title: "Agent Skills Overview"
+description: "Extend Docent with skills for Claude Code, Cursor, and other agent harnesses"
+---
+
+## Overview
+
+Agent Skills let coding agents like Claude Code and Cursor interact with Docent via the SDK. Instead of manually writing ingestion scripts or SDK queries, you describe what you want in natural language and the skill handles the implementation.
+
+We currently offer two skills:
+
+- [**Ingestion**](/agent-skills/ingestion): Upload existing agent logs to Docent without writing custom scripts. The skill detects your log format, validates the data, and handles the upload.
+- [**Analysis**](/agent-skills/analysis): Run flexible analysis workflows by automatically writing DQL queries, comparing runs between models side-by-side at scale, taxonomizing failures into clusters, and more.
+
+The source code for our plugin is publicly available on [Github](https://github.com/TransluceAI/claude-code-plugins/).
+
+## Quickstart (Claude Code)
+
+<Note>
+  We recommend installing our Claude Code plugin so you can receive automatic updates. To use Cursor, VS Code, and other agent harnesses, navigate to the [Ingestion](ingestion) or [Agentic Analysis](analysis) pages for setup instructions.
+</Note>
+
+  Install [Claude Code](https://code.claude.com/docs/en/overview#get-started-in-30-seconds) and open it in your working directory by running `claude`. Run the following inside of Claude Code.
+
+  Add the Transluce plugin marketplace:
+
+  ```shell
+  /plugin marketplace add transluce/claude-code-plugins
+  ```
+
+  Install the Docent plugin:
+
+  ```shell
+  /plugin install docent@transluce-plugins
+  ```
+
+  Restart Claude Code after installation. Run `/help` to confirm the new commands are available.
+
+## What's next
+
+- **Need to upload your logs?** Start with [Ingestion](/agent-skills/ingestion)
+- **Ready to analyze your data?** See [Analysis](/agent-skills/analysis)

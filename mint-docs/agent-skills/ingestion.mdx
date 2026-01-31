@@ -15,31 +15,31 @@ The Ingestion skill uploads your agent logs into Docent by writing a script to c
 
 <Tabs>
   <Tab title="Claude Code (Recommended)">
-    Open Claude Code in your working directory by running `claude`. Run the following inside of Claude Code.
+    Install [Claude Code](https://code.claude.com/docs/en/overview#get-started-in-30-seconds) and open it in your working directory by running `claude`. Run the following inside of Claude Code.
 
     Add the Transluce plugin marketplace:
 
     ```shell
-        /plugin marketplace add transluce/claude-code-plugins
+    /plugin marketplace add transluce/claude-code-plugins
     ```
 
-    Install the ingestion skill:
+    Install the Docent plugin:
 
     ```shell
-        /plugin install docent@transluce-plugins
+    /plugin install docent@transluce-plugins
     ```
 
     Restart Claude Code after installation. Run `/help` to confirm the new command is available.
   </Tab>
   <Tab title="Other IDEs">
-    Download [SKILL.md](https://github.com/transluce/claude-code-plugins/blob/main/plugins/docent-ingestion/SKILL.md) from the plugin repository.
+    Download [SKILL.md](https://github.com/TransluceAI/claude-code-plugins/blob/main/plugins/docent/skills/ingestion/SKILL.md) from the plugin repository.
 
     Then either:
 
     - **Pass directly to your model**: Include the file contents in your prompt context
-    - **Cursor**: Copy to `.cursor/rules/docent-ingestion.md`
+    - **Cursor**: Copy to `.cursor/rules/docent-ingestion.mdc`
 
-    You'll also need a [Docent API key](https://docent.transluce.org/settings/api-keys) set in your environment.
+    You'll need to export a [Docent API key](https://docent.transluce.org/settings/api-keys) to your environment.
   </Tab>
 </Tabs>
 
@@ -59,7 +59,7 @@ The skill asks clarifying questions if your data format is ambiguous or if it ne
   - **Describe your analysis goals.** Tell the skill what comparisons you want to make. This helps structure how the data is grouped.
 
   ```text wrap
-    The data provided contains both agent and monitor traces. My goal is to compare and improve upon the performance of my monitors. 
+    The data provided contains both agent and monitor traces. My goal is to compare and improve upon the performance of my monitors.
   ```
   - **Describe your data schema.** While the agent can generally discover this itself, you can improve reliability by providing the path to a sample trajectory that's representative of your log schema. Providing context on how keys are organized can also help the agent organize metadata productively.
 
