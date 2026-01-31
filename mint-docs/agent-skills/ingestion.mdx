@@ -1,0 +1,65 @@
+---
+title: "Ingestion"
+description: "Generate scripts to upload agent logs to Docent"
+---
+
+## Overview
+
+The Ingestion skill uploads your agent logs into Docent by writing a script to convert them into Agent Run format. To learn more about how SDK ingestion works under the hood, you can read our [Quickstart guide](../get-started/quickstart#option-3:-sdk-ingestion).
+
+We recommend ingesting one trajectory format at a time. If you have run an eval with multiple harnesses, first sort runs with different harnesses into separate folders and run the ingestion skill on each folder.
+
+## Quickstart
+
+<Note>
+  We strongly recommend installing our Claude Code plugin so that you receive automatic updates.
+</Note>
+
+<Tabs>
+  <Tab title="Claude Code (Recommended)">
+    Install [Claude Code](https://code.claude.com/docs/en/overview#get-started-in-30-seconds) and open it in your working directory by running `claude`. Run the following inside of Claude Code.
+
+    Add the Transluce plugin marketplace:
+
+    ```shell
+    /plugin marketplace add TransluceAI/claude-code-plugins
+    ```
+
+    Install the Docent plugin:
+
+    ```shell
+    /plugin install docent@transluce-plugins
+    ```
+
+    Restart Claude Code after installation. To trigger the command, run `/ingestion` inside Claude Code.
+
+  </Tab>
+  <Tab title="Other IDEs">
+    Download [SKILL.md](https://github.com/TransluceAI/claude-code-plugins/blob/main/plugins/docent/skills/ingestion/SKILL.md) from the plugin repository.
+
+    Then either:
+
+    - **Pass directly to your model**: Include the file contents in your prompt context
+    - **Cursor**: Copy to `.cursor/rules/docent-ingestion.mdc`
+
+    You'll need to export a [Docent API key](https://docent.transluce.org/settings/api-keys) to your environment.
+  </Tab>
+</Tabs>
+
+## How the ingestion skill works
+Our ingestion skill incorporates best practices to upload and organize your data within Docent. The skill investigates your file structure, examines your trajectory format, and maps each field in your schema to a Docent object. It produces:
+
+1. `ingestion-plan.md`: A mapping of your trajectory fields to Docent's data model, including any fields that will be intentionally omitted. You can review this file to verify that the model intends to organize and display your data in a suitable format.
+2. `ingest.py`: A script that reads your logs and uploads them via the SDK. You can modify and rerun this as needed.
+
+The skill asks clarifying questions if your data format is ambiguous or if it needs more context about how you want the data structured. We recommend ingesting one trajectory format at a time.
+
+## Best practices
+
+- **Ingest one trajectory format at a time.** If you're ingesting multiple formats, ask your agent to sort your trajectories by the scaffold that generated them (e.g., `openhands/`, `mini-swe-agent/`, `custom/`) before activating the Docent skill.
+- **Verify your uploaded data in the web interface.** After upload, check that transcripts display correctly and metadata appears where you expect. It's normal to iterate a few times on different organization structures.
+
+## What's next
+
+- **Ready to analyze?** See [Search and Clustering](/tutorials/search-and-clustering) to start exploring your data
+- **Want to tweak the ingestion script yourself?** Read up on Docent's underlying data models.

@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from jsonschema import ValidationError
+from jsonschema import SchemaError, ValidationError
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,6 +142,11 @@ class UpdateCommentRequest(BaseModel):
 class CreateTagRequest(BaseModel):
     agent_run_id: str
     value: str
+
+
+class CategorizedLabelSetsResponse(BaseModel):
+    available: list[LabelSet]
+    filled: list[LabelSet]
 
 
 ################
@@ -341,9 +346,14 @@ async def create_label_set(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ) -> dict[str, str]:
     """Create a label set."""
-    label_set_id = await label_svc.create_label_set(
-        collection_id, request.name, request.label_schema, description=request.description
-    )
+    try:
+        label_set_id = await label_svc.create_label_set(
+            collection_id, request.name, request.label_schema, description=request.description
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid label schema: {e.message}")
+    except SchemaError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON Schema: {e.message}")
     return {"label_set_id": label_set_id}
 
 
@@ -391,9 +401,14 @@ async def update_label_set(
     _label_set: None = Depends(require_label_set_in_collection),
 ) -> dict[str, str]:
     """Update a label set."""
-    await label_svc.update_label_set(
-        label_set_id, request.name, request.label_schema, request.description
-    )
+    try:
+        await label_svc.update_label_set(
+            label_set_id, request.name, request.label_schema, request.description
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid label schema: {e.message}")
+    except SchemaError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON Schema: {e.message}")
     return {"message": "Label set updated successfully"}
 
 
@@ -430,6 +445,24 @@ async def get_labels_for_agent_run(
 ) -> list[Label]:
     """Get all labels for a specific agent run."""
     return await label_svc.get_labels_by_agent_run(agent_run_id)
+
+
+@label_router.get("/{collection_id}/agent_run/{agent_run_id}/label_sets_categorized")
+async def get_label_sets_categorized(
+    collection_id: str,
+    agent_run_id: str,
+    label_svc: LabelService = Depends(get_label_service),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _run: None = Depends(require_agent_run_in_collection),
+) -> CategorizedLabelSetsResponse:
+    """Get label sets split by whether they have a label for this agent run."""
+    available, filled = await label_svc.get_label_sets_categorized_for_agent_run(
+        collection_id, agent_run_id
+    )
+    return CategorizedLabelSetsResponse(
+        available=[ls.to_pydantic() for ls in available],
+        filled=[ls.to_pydantic() for ls in filled],
+    )
 
 
 ################

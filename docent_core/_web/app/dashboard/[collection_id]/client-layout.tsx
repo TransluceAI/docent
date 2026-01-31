@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { useUserContext } from '@/app/contexts/UserContext';
 import { LabelSetsProvider } from '@/providers/use-label-sets';
 import { CollectionSidebar } from '@/components/CollectionSidebar';
+import { CitationNavigationProvider } from '@/providers/CitationNavigationProvider';
 
 function getSectionTitle(
   pathname: string,
@@ -76,17 +77,19 @@ export default function DocentDashboardClientLayout({
     <SidebarProvider defaultOpen={false}>
       <PageTitle title={pageTitle} />
       <LabelSetsProvider collectionId={collectionId}>
-        <CollectionSidebar />
-        <div className="flex flex-col pr-2 pb-2 h-screen w-full bg-sidebar min-h-0 min-w-[900px]">
-          <div className="items-center flex flex-shrink-0 my-2">
-            <Suspense
-              fallback={<div className="h-7">Loading breadcrumbs...</div>}
-            >
-              <CollectionBreadcrumbs />
-            </Suspense>
+        <CitationNavigationProvider>
+          <CollectionSidebar />
+          <div className="flex flex-col pr-2 pb-2 h-screen w-full bg-sidebar min-h-0 min-w-[900px]">
+            <div className="items-center flex flex-shrink-0 my-2">
+              <Suspense
+                fallback={<div className="h-7">Loading breadcrumbs...</div>}
+              >
+                <CollectionBreadcrumbs />
+              </Suspense>
+            </div>
+            {children}
           </div>
-          {children}
-        </div>
+        </CitationNavigationProvider>
       </LabelSetsProvider>
     </SidebarProvider>
   );

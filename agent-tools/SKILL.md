@@ -1,6 +1,6 @@
 ---
-name: docent
-description: Docent is a platform for analyzing AI agent behavior using large language models. Use this skill anytime you use Docent.
+name: analysis
+description: Docent is a platform for analyzing AI agent behavior using large language models. Use this skill anytime you want to use Docent to analyze AI agent behavior.
 alwaysApply: true
 ---
 

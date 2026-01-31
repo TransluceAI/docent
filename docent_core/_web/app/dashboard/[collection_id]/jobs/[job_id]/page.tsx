@@ -221,7 +221,8 @@ export default function JobDetailPage() {
           <div className="text-xs text-red-900">
             <span className="font-medium">Failed</span>
             {' - '}
-            This job encountered an error or was canceled.
+            {job.error_message ||
+              'This job encountered an error or was canceled.'}
           </div>
         </div>
       )}

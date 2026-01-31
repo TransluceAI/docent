@@ -26,6 +26,7 @@ from docent_core._worker.job_worker_map import JOB_DISPATCHER_MAP
 from docent_core._worker.queue_metrics import queue_depth_metrics_loop
 from docent_core.docent.db.contexts import TelemetryContext, ViewContext
 from docent_core.docent.db.schemas.tables import JobStatus
+from docent_core.docent.exceptions import UserFacingError
 from docent_core.docent.services.monoservice import MonoService
 
 logger = get_logger(__name__)
@@ -102,6 +103,7 @@ async def run_job(_: Any, ctx: ViewContext | TelemetryContext | None, job_id: st
     async def _run(tg: TaskGroup):
         nonlocal canceled
         skip_status_update = False
+        error_info: dict[str, Any] | None = None
 
         try:
             #########
@@ -161,8 +163,30 @@ async def run_job(_: Any, ctx: ViewContext | TelemetryContext | None, job_id: st
         except anyio.get_cancelled_exc_class():
             canceled = True
             raise
+        except UserFacingError as e:
+            tb = traceback.format_exc()
+            logger.error(f"Job {job_id} failed: {e}. Traceback: {tb}")
+            error_info = {
+                "error": {
+                    "type": type(e).__name__,
+                    "message": e.internal_message,
+                    "user_message": e.user_message,
+                    "traceback": tb,
+                }
+            }
+            canceled = True
+            raise
         except Exception as e:
-            logger.error(f"Job {job_id} failed: {e}. Traceback: {traceback.format_exc()}")
+            tb = traceback.format_exc()
+            logger.error(f"Job {job_id} failed: {e}. Traceback: {tb}")
+            error_info = {
+                "error": {
+                    "type": type(e).__name__,
+                    "message": str(e),
+                    "user_message": None,
+                    "traceback": tb,
+                }
+            }
             canceled = True
             raise
         finally:
@@ -172,6 +196,7 @@ async def run_job(_: Any, ctx: ViewContext | TelemetryContext | None, job_id: st
             with anyio.CancelScope(shield=True):
                 if skip_status_update:
                     return
+
                 # Update the job status
                 if canceled:
                     logger.highlight(f"Job {job_id} canceled", color="red")
@@ -182,6 +207,12 @@ async def run_job(_: Any, ctx: ViewContext | TelemetryContext | None, job_id: st
 
                 # Cleanup
                 await REDIS.delete(commands_queue)  # type: ignore
+
+                # Store error info if present
+                # Do this last to avoid the situation where this call fails before the job
+                #   status gets updated.
+                if error_info is not None:
+                    await mono_svc.set_job_runtime_info(job_id, error_info)
 
     async def await_commands(tg: TaskGroup):
         nonlocal canceled

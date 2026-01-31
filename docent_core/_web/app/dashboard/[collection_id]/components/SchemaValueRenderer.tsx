@@ -6,6 +6,14 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { LabelSet } from '@/app/api/labelApi';
 import { SchemaDefinition, SchemaProperty } from '@/app/types/schema';
 import { Tag, Pencil, X, ChevronRight, ChevronDown } from 'lucide-react';
@@ -51,6 +59,9 @@ interface SchemaValueRendererProps {
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
   onClick?: () => void;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onChange?: (key: string, value: any) => void;
 }
 
 // =============================================================================
@@ -172,11 +183,16 @@ export function SchemaValueRenderer({
   isRequiredAndUnfilled,
   renderLabelSetMenu,
   onClick,
+  mode = 'view',
+  onChange,
 }: SchemaValueRendererProps) {
+  // Disable onClick in edit mode
+  const effectiveOnClick = mode === 'edit' ? undefined : onClick;
+
   return (
     <div
-      className={cn('space-y-1', onClick && 'cursor-pointer')}
-      onClick={onClick}
+      className={cn('space-y-1', effectiveOnClick && 'cursor-pointer')}
+      onClick={effectiveOnClick}
     >
       {Object.entries(schema.properties).map(([key, property]) => (
         <ValueRenderer
@@ -194,6 +210,8 @@ export function SchemaValueRenderer({
           isRequiredWarning={isRequiredAndUnfilled?.(key) ?? false}
           renderLabelSetMenu={renderLabelSetMenu}
           depth={0}
+          mode={mode}
+          onValueChange={onChange ? (value) => onChange(key, value) : undefined}
         />
       ))}
     </div>
@@ -267,6 +285,9 @@ interface ValueRendererProps {
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
   depth: number;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onValueChange?: (value: any) => void;
 }
 
 function ValueRenderer({
@@ -283,9 +304,12 @@ function ValueRenderer({
   isRequiredWarning,
   renderLabelSetMenu,
   depth,
+  mode = 'view',
+  onValueChange,
 }: ValueRendererProps) {
-  // Handle null/undefined
-  if (value === null || value === undefined) {
+  // Handle null/undefined - only show "null" in view mode
+  // In edit mode, fall through to type-specific renderers which handle undefined values
+  if ((value === null || value === undefined) && mode !== 'edit') {
     return (
       <div className="flex items-center gap-1.5 text-xs">
         <label className="font-semibold">{propertyKey}:</label>
@@ -304,11 +328,17 @@ function ValueRenderer({
     );
   }
 
-  // Array type
+  // Array type - force view mode with reduced opacity in edit mode
+  // TODO(mengk): support editing array values!
   if (schema.type === 'array') {
     if (!Array.isArray(value) || value.length === 0) {
       return (
-        <div className="flex items-center gap-1.5 text-xs">
+        <div
+          className={cn(
+            'flex items-center gap-1.5 text-xs',
+            mode === 'edit' && 'opacity-70'
+          )}
+        >
           <label className="font-semibold">{propertyKey}:</label>
           <span className="italic text-muted-foreground">(empty array)</span>
         </div>
@@ -319,68 +349,18 @@ function ValueRenderer({
       .items;
 
     return (
-      <CollapsibleSection
-        propertyKey={propertyKey}
-        summary={`[${value.length} item${value.length !== 1 ? 's' : ''}]`}
-        defaultExpanded={depth < 2}
-      >
-        {value.slice(0, MAX_ARRAY_ITEMS).map((item, index) => (
-          <ValueRenderer
-            key={index}
-            propertyKey={`[${index}]`}
-            schema={itemSchema}
-            value={item}
-            labelValue={undefined}
-            activeLabelSet={activeLabelSet}
-            onSaveLabel={() => {}}
-            onClearLabel={() => {}}
-            showLabels={false}
-            canEditLabels={canEditLabels}
-            agreement={undefined}
-            isRequiredWarning={false}
-            renderLabelSetMenu={renderLabelSetMenu}
-            depth={depth + 1}
-          />
-        ))}
-        {value.length > MAX_ARRAY_ITEMS && (
-          <div className="text-muted-foreground italic">
-            ... and {value.length - MAX_ARRAY_ITEMS} more items
-          </div>
-        )}
-      </CollapsibleSection>
-    );
-  }
-
-  // Object type
-  if (schema.type === 'object') {
-    const properties =
-      (schema as { type: 'object'; properties: Record<string, SchemaProperty> })
-        .properties || {};
-    const keys = Object.keys(value || {});
-
-    if (keys.length === 0) {
-      return (
-        <div className="flex items-center gap-1.5 text-xs">
-          <label className="font-semibold">{propertyKey}:</label>
-          <span className="italic text-muted-foreground">(empty object)</span>
-        </div>
-      );
-    }
-
-    return (
-      <CollapsibleSection
-        propertyKey={propertyKey}
-        summary={`{${keys.length} field${keys.length !== 1 ? 's' : ''}}`}
-        defaultExpanded={depth < 2}
-      >
-        {keys.map((key) => {
-          const propSchema = properties[key] || { type: 'string' as const };
-          return (
+      <div className={cn(mode === 'edit' && 'opacity-70')}>
+        <CollapsibleSection
+          propertyKey={propertyKey}
+          summary={`[${value.length} item${value.length !== 1 ? 's' : ''}]`}
+          defaultExpanded={depth < 2}
+        >
+          {value.slice(0, MAX_ARRAY_ITEMS).map((item, index) => (
             <ValueRenderer
-              key={key}
-              propertyKey={key}
-              schema={propSchema as SchemaProperty}
-              value={value[key]}
+              key={index}
+              propertyKey={`[${index}]`}
+              schema={itemSchema}
+              value={item}
               labelValue={undefined}
               activeLabelSet={activeLabelSet}
               onSaveLabel={() => {}}
@@ -391,10 +371,71 @@ function ValueRenderer({
               isRequiredWarning={false}
               renderLabelSetMenu={renderLabelSetMenu}
               depth={depth + 1}
+              mode="view"
             />
-          );
-        })}
-      </CollapsibleSection>
+          ))}
+          {value.length > MAX_ARRAY_ITEMS && (
+            <div className="text-muted-foreground italic">
+              ... and {value.length - MAX_ARRAY_ITEMS} more items
+            </div>
+          )}
+        </CollapsibleSection>
+      </div>
+    );
+  }
+
+  // Object type - force view mode with reduced opacity in edit mode
+  if (schema.type === 'object') {
+    const properties =
+      (schema as { type: 'object'; properties: Record<string, SchemaProperty> })
+        .properties || {};
+    const keys = Object.keys(value || {});
+
+    if (keys.length === 0) {
+      return (
+        <div
+          className={cn(
+            'flex items-center gap-1.5 text-xs',
+            mode === 'edit' && 'opacity-70'
+          )}
+        >
+          <label className="font-semibold">{propertyKey}:</label>
+          <span className="italic text-muted-foreground">(empty object)</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className={cn(mode === 'edit' && 'opacity-70')}>
+        <CollapsibleSection
+          propertyKey={propertyKey}
+          summary={`{${keys.length} field${keys.length !== 1 ? 's' : ''}}`}
+          defaultExpanded={depth < 2}
+        >
+          {keys.map((key) => {
+            const propSchema = properties[key] || { type: 'string' as const };
+            return (
+              <ValueRenderer
+                key={key}
+                propertyKey={key}
+                schema={propSchema as SchemaProperty}
+                value={value[key]}
+                labelValue={undefined}
+                activeLabelSet={activeLabelSet}
+                onSaveLabel={() => {}}
+                onClearLabel={() => {}}
+                showLabels={false}
+                canEditLabels={canEditLabels}
+                agreement={undefined}
+                isRequiredWarning={false}
+                renderLabelSetMenu={renderLabelSetMenu}
+                depth={depth + 1}
+                mode="view"
+              />
+            );
+          })}
+        </CollapsibleSection>
+      </div>
     );
   }
 
@@ -414,6 +455,8 @@ function ValueRenderer({
         agreement={agreement}
         isRequiredWarning={isRequiredWarning}
         renderLabelSetMenu={renderLabelSetMenu}
+        mode={mode}
+        onValueChange={onValueChange}
       />
     );
   }
@@ -432,6 +475,8 @@ function ValueRenderer({
         canEditLabels={canEditLabels}
         isRequiredWarning={isRequiredWarning}
         renderLabelSetMenu={renderLabelSetMenu}
+        mode={mode}
+        onValueChange={onValueChange}
       />
     );
   }
@@ -451,6 +496,8 @@ function ValueRenderer({
         agreement={agreement}
         isRequiredWarning={isRequiredWarning}
         renderLabelSetMenu={renderLabelSetMenu}
+        mode={mode}
+        onValueChange={onValueChange}
       />
     );
   }
@@ -472,6 +519,8 @@ function ValueRenderer({
         canEditLabels={canEditLabels}
         isRequiredWarning={isRequiredWarning}
         renderLabelSetMenu={renderLabelSetMenu}
+        mode={mode}
+        onValueChange={onValueChange}
       />
     );
   }
@@ -505,6 +554,9 @@ interface EnumRendererProps {
   renderLabelSetMenu: (
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onValueChange?: (value: string) => void;
 }
 
 function EnumRenderer({
@@ -520,6 +572,8 @@ function EnumRenderer({
   agreement,
   isRequiredWarning,
   renderLabelSetMenu,
+  mode = 'view',
+  onValueChange,
 }: EnumRendererProps) {
   const hasLabel = labelValue !== undefined;
   const activeLabelSetId = activeLabelSet?.id;
@@ -578,6 +632,60 @@ function EnumRenderer({
     );
   };
 
+  // Edit mode: render as toggle buttons for small enums, dropdown for large enums
+  if (mode === 'edit') {
+    const useButtons = options.length <= 5;
+
+    if (useButtons) {
+      // Render toggle buttons for small enums
+      return (
+        <div className="gap-1 text-xs flex items-center flex-wrap">
+          <label
+            className={`font-semibold ${isRequiredWarning ? 'text-red-text' : ''}`}
+          >
+            {propertyKey}:
+          </label>
+          <div className="flex gap-1 flex-wrap">
+            {options.map((opt) => (
+              <Button
+                key={opt}
+                variant={value === opt ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-1.5"
+                onClick={() => onValueChange?.(opt)}
+              >
+                {opt}
+              </Button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Keep existing Select dropdown for large enums (>5 options)
+    return (
+      <div className="gap-1 text-xs flex items-center flex-wrap">
+        <label
+          className={`font-semibold ${isRequiredWarning ? 'text-red-text' : ''}`}
+        >
+          {propertyKey}:
+        </label>
+        <Select value={value} onValueChange={onValueChange}>
+          <SelectTrigger className="h-7 w-auto min-w-[100px] text-xs">
+            <SelectValue placeholder="Select..." />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((opt) => (
+              <SelectItem key={opt} value={opt} className="text-xs">
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
   return (
     <div className="gap-1 text-xs flex items-center flex-wrap">
       <label
@@ -609,6 +717,9 @@ interface BooleanRendererProps {
   renderLabelSetMenu: (
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onValueChange?: (value: boolean) => void;
 }
 
 function BooleanRenderer({
@@ -623,6 +734,8 @@ function BooleanRenderer({
   agreement,
   isRequiredWarning,
   renderLabelSetMenu,
+  mode = 'view',
+  onValueChange,
 }: BooleanRendererProps) {
   const hasLabel = labelValue !== undefined;
   const activeLabelSetId = activeLabelSet?.id;
@@ -684,6 +797,37 @@ function BooleanRenderer({
     );
   };
 
+  // Edit mode: render as toggle buttons
+  if (mode === 'edit') {
+    return (
+      <div className="gap-1 text-xs flex items-center">
+        <label
+          className={`font-semibold ${isRequiredWarning ? 'text-red-text' : ''}`}
+        >
+          {propertyKey}:
+        </label>
+        <div className="flex gap-1">
+          <Button
+            variant={value === true ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs px-1.5"
+            onClick={() => onValueChange?.(true)}
+          >
+            true
+          </Button>
+          <Button
+            variant={value === false ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs px-1.5"
+            onClick={() => onValueChange?.(false)}
+          >
+            false
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="gap-1 text-xs flex items-center">
       <label
@@ -692,7 +836,7 @@ function BooleanRenderer({
         {propertyKey}:
       </label>
       <div className="flex items-center gap-1">
-        <span className="text-blue-700">{String(value)}</span>
+        <span className="text-blue-text">{String(value)}</span>
         {agreement && (
           <AgreementDisplay agreed={agreement.agreed} total={agreement.total} />
         )}
@@ -719,6 +863,9 @@ interface NumberRendererProps {
   renderLabelSetMenu: (
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onValueChange?: (value: number) => void;
 }
 
 function NumberRenderer({
@@ -735,16 +882,28 @@ function NumberRenderer({
   canEditLabels,
   isRequiredWarning,
   renderLabelSetMenu,
+  mode = 'view',
+  onValueChange,
 }: NumberRendererProps) {
   const activeLabelSetId = activeLabelSet?.id;
   const [openPopover, setOpenPopover] = useState(false);
   const [localValue, setLocalValue] = useState(String(labelValue ?? ''));
   const [tempLabelSetId, setTempLabelSetId] = useState<string | null>(null);
   const effectiveLabelSetId = activeLabelSetId || tempLabelSetId;
+  const [editInputValue, setEditInputValue] = useState<string>('');
 
   useEffect(() => {
     setLocalValue(labelValue !== undefined ? String(labelValue) : '');
   }, [labelValue]);
+
+  // Sync edit input value with prop when entering edit mode or when prop changes
+  useEffect(() => {
+    if (mode === 'edit') {
+      setEditInputValue(
+        value !== undefined && value !== null ? String(value) : ''
+      );
+    }
+  }, [value, mode]);
 
   const submit = () => {
     if (!effectiveLabelSetId || !canEditLabels) return;
@@ -827,6 +986,56 @@ function NumberRenderer({
     );
   };
 
+  // Edit mode: render as number input with blur-based validation
+  if (mode === 'edit') {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setEditInputValue(e.target.value);
+    };
+
+    const handleBlur = () => {
+      const trimmed = editInputValue.trim();
+      if (trimmed === '') {
+        // Allow clearing - send undefined to parent
+        onValueChange?.(undefined as any);
+        return;
+      }
+      const parsed = isInteger ? parseInt(trimmed, 10) : parseFloat(trimmed);
+      if (!isNaN(parsed)) {
+        let clamped = parsed;
+        if (minimum !== undefined) clamped = Math.max(minimum, clamped);
+        if (maximum !== undefined) clamped = Math.min(maximum, clamped);
+        onValueChange?.(clamped);
+        // Update local state to show clamped value
+        setEditInputValue(String(clamped));
+      } else {
+        // Reset to previous valid value on invalid input
+        setEditInputValue(
+          value !== undefined && value !== null ? String(value) : ''
+        );
+      }
+    };
+
+    return (
+      <div className="gap-1 text-xs flex items-center flex-wrap">
+        <label
+          className={`font-semibold ${isRequiredWarning ? 'text-red-text' : ''}`}
+        >
+          {propertyKey}:
+        </label>
+        <Input
+          type="number"
+          value={editInputValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className="h-7 w-24 text-xs"
+          max={maximum}
+          min={minimum}
+          step={isInteger ? 1 : 'any'}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="gap-1 text-xs flex items-center flex-wrap">
       <label
@@ -834,7 +1043,7 @@ function NumberRenderer({
       >
         {propertyKey}:
       </label>
-      <span className="text-blue-700">{String(value)}</span>
+      <span className="text-blue-text">{String(value)}</span>
       {renderLabelUI()}
     </div>
   );
@@ -854,6 +1063,9 @@ interface StringRendererProps {
   renderLabelSetMenu: (
     onLabelSetCreated: (id: string) => void
   ) => React.ReactNode;
+  // Edit mode props
+  mode?: 'view' | 'edit';
+  onValueChange?: (value: string) => void;
 }
 
 function StringRenderer({
@@ -867,6 +1079,8 @@ function StringRenderer({
   canEditLabels,
   isRequiredWarning,
   renderLabelSetMenu,
+  mode = 'view',
+  onValueChange,
 }: StringRendererProps) {
   // Detect value type: object with text/citations vs plain string
   const hasCitations = value && typeof value === 'object' && 'text' in value;
@@ -888,8 +1102,9 @@ function StringRenderer({
   }, [labelValue]);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const adjustHeight = () => {
-    const el = textareaRef.current;
+  const editTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const adjustHeight = (ref: React.RefObject<HTMLTextAreaElement | null>) => {
+    const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight + 2}px`;
@@ -897,9 +1112,16 @@ function StringRenderer({
 
   useEffect(() => {
     if (openPopover) {
-      requestAnimationFrame(() => adjustHeight());
+      requestAnimationFrame(() => adjustHeight(textareaRef));
     }
   }, [openPopover]);
+
+  // Adjust edit textarea height when value changes
+  useEffect(() => {
+    if (mode === 'edit') {
+      requestAnimationFrame(() => adjustHeight(editTextareaRef));
+    }
+  }, [mode, displayText]);
 
   const hasLabel = labelValue !== undefined;
 
@@ -952,7 +1174,7 @@ function StringRenderer({
                   placeholder="Enter an updated explanation."
                   onChange={(e) => {
                     setLocalValue(e.target.value);
-                    adjustHeight();
+                    adjustHeight(textareaRef);
                   }}
                   className="min-h-[24px] max-h-[20vh] text-xs resize-vertical"
                   autoFocus
@@ -977,6 +1199,34 @@ function StringRenderer({
       </div>
     );
   };
+
+  // Edit mode: render as Textarea
+  if (mode === 'edit') {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs">
+          <span className="font-semibold shrink-0">
+            {propertyKey}{' '}
+            <span
+              className={cn(
+                'font-normal',
+                isRequiredWarning ? 'text-red-text' : ''
+              )}
+            >
+              {isRequiredWarning ? '(required)' : ''}
+            </span>
+            :
+          </span>
+        </div>
+        <Textarea
+          ref={editTextareaRef}
+          value={displayText ?? ''}
+          onChange={(e) => onValueChange?.(e.target.value)}
+          className="min-h-[60px] text-xs resize-vertical"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1">

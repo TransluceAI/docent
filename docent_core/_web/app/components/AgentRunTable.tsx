@@ -370,7 +370,7 @@ const AgentRunTableCell = memo(function AgentRunTableCell({
         columnIndex === 0
           ? `sticky left-0 z-10 ${
               isActive
-                ? 'bg-indigo-bg/80'
+                ? 'bg-indigo-bg/80 group-hover:bg-indigo-bg'
                 : 'bg-background group-hover:bg-muted transition-colors duration-150'
             }`
           : ''
@@ -1183,9 +1183,9 @@ export const AgentRunTable = memo(function AgentRunTable({
           </div>
         )}
 
-        <div className="ml-auto flex flex-1 flex-wrap items-center gap-2 justify-end min-w-0">
+        <div className="ml-auto flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-1.5 justify-end min-w-0 w-full sm:w-auto">
           {/* Sorting controls */}
-          <div className="flex flex-1 flex-wrap items-center gap-1.5 justify-end min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 justify-end min-w-0">
             <ArrowUpDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <div className="max-w-72">
               <SingleCombobox
@@ -1303,7 +1303,7 @@ export const AgentRunTable = memo(function AgentRunTable({
               isCopyingDql ||
               isApiKeyLoading
             }
-            className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0"
+            className="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0 w-full sm:w-auto"
             contentClassName="w-36"
           />
 
@@ -1316,7 +1316,7 @@ export const AgentRunTable = memo(function AgentRunTable({
             placeholder="Columns"
             searchPlaceholder="Search columns..."
             emptyMessage="No columns found."
-            triggerClassName="w-auto h-7 gap-1 text-xs text-muted-foreground flex-shrink-0 mx-1"
+            triggerClassName="h-7 gap-1 text-xs text-muted-foreground flex-shrink-0 w-full sm:w-auto"
             triggerProps={{
               variant: 'outline',
               size: 'sm',
@@ -1482,7 +1482,7 @@ export const AgentRunTable = memo(function AgentRunTable({
                         className={cn(
                           'text-xs cursor-pointer select-none transition-colors duration-150 group',
                           isActive
-                            ? 'bg-indigo-bg/80 border-l-2 border-indigo-border'
+                            ? 'bg-indigo-bg/80 hover:bg-indigo-bg'
                             : 'hover:bg-muted'
                         )}
                         style={{ height: ROW_HEIGHT_PX }}

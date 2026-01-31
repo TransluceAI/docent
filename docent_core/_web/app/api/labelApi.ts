@@ -71,6 +71,11 @@ export interface UpdateCommentRequest {
   content: string;
 }
 
+export interface CategorizedLabelSetsResponse {
+  available: LabelSet[];
+  filled: LabelSet[];
+}
+
 export const labelApi = createApi({
   reducerPath: 'labelApi',
   baseQuery: fetchBaseQuery({
@@ -81,7 +86,7 @@ export const labelApi = createApi({
   endpoints: (build) => ({
     // Label CRUD
     createLabel: build.mutation<
-      { label_id: string },
+      { message: string },
       { collectionId: string; label: Label }
     >({
       query: ({ collectionId, label }) => ({
@@ -91,6 +96,7 @@ export const labelApi = createApi({
       }),
       invalidatesTags: (result, error, { label }) => [
         'Label',
+        'LabelSet',
         { type: 'Label', id: `AGENT_RUN-${label.agent_run_id}` },
       ],
     }),
@@ -117,6 +123,7 @@ export const labelApi = createApi({
         body: { label_value },
       }),
       invalidatesTags: (result, error, { agentRunId, labelId }) => [
+        'LabelSet',
         { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
         { type: 'Label', id: labelId },
       ],
@@ -130,6 +137,7 @@ export const labelApi = createApi({
         method: 'DELETE',
       }),
       invalidatesTags: (result, error, { agentRunId, labelId }) => [
+        'LabelSet',
         { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
         { type: 'Label', id: labelId },
       ],
@@ -145,6 +153,7 @@ export const labelApi = createApi({
       invalidatesTags: (result, error, { labelSetId }) => [
         { type: 'Label', id: `LABEL_SET-${labelSetId}` },
         'Label',
+        'LabelSet',
       ],
     }),
 
@@ -254,6 +263,19 @@ export const labelApi = createApi({
             ]
           : [{ type: 'Label', id: `AGENT_RUN-${agentRunId}` }],
     }),
+    getCategorizedLabelSets: build.query<
+      CategorizedLabelSetsResponse,
+      { collectionId: string; agentRunId: string }
+    >({
+      query: ({ collectionId, agentRunId }) => ({
+        url: `/${collectionId}/agent_run/${agentRunId}/label_sets_categorized`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, { agentRunId }) => [
+        'LabelSet',
+        { type: 'Label', id: `AGENT_RUN-${agentRunId}` },
+      ],
+    }),
 
     // Comment CRUD
     createComment: build.mutation<
@@ -343,6 +365,7 @@ export const {
 
   // Other
   useGetLabelsForAgentRunQuery,
+  useGetCategorizedLabelSetsQuery,
 
   // Comment CRUD
   useCreateCommentMutation,

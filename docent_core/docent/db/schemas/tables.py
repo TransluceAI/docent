@@ -572,6 +572,7 @@ class SQLAJob(SQLABase):
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus), default=JobStatus.PENDING, nullable=False
     )
+    runtime_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     __table_args__ = (
         Index(
             "idx_jobs_type_status_created_at",

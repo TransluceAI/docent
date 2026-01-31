@@ -93,6 +93,9 @@ class SQLALabelSet(SQLABase):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
 
     @property
     def label_schema_no_reqs(self) -> dict[str, Any]:

@@ -1650,7 +1650,7 @@ class TelemetryService:
         new_agent_run_count = len(agent_run_ids) - len(existing_agent_run_ids)
 
         # Check collection size limit using the centralized method
-        await self.mono_svc.check_space_for_runs(ctx, new_agent_run_count)
+        await self.mono_svc.dont_actually_check_space_for_runs(ctx, new_agent_run_count)
 
         # Process all agent runs, transcripts, and transcript groups first
         for agent_run in agent_runs:

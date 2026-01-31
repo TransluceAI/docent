@@ -13,7 +13,7 @@
 
 ### Quickstart
 
-To get started, check out the [quickstart guide](https://docs.transluce.org/quickstart).
+To get started, check out the [quickstart guide](https://docs.transluce.org/get-started/quickstart).
 
 ### Helpful Links
 
@@ -25,5 +25,5 @@ To get started, check out the [quickstart guide](https://docs.transluce.org/quic
 - (VSCode) Open Docent via [`docent.code-workspace`](.vscode/docent.code-workspace), which sets up formatting and linting.
 - Install pre-commit hooks: `pre-commit install`.
 - Follow the [self-host guide (manual version)](https://docs.transluce.org/self-hosting/self-host-docent) to self-host Docent on your machine.
-- Follow the [quickstart guide](https://docs.transluce.org/quickstart) to ingest some sample transcripts.
+- Follow the [quickstart guide](https://docs.transluce.org/get-started/quickstart) to ingest some sample transcripts.
 - To view your database through a GUI, install the [DB Client](https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-database-client2) VSCode extension.

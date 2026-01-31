@@ -61,7 +61,7 @@ export function CollectionSidebar() {
   const items = [
     {
       title: 'Agent Runs',
-      url: `/dashboard/${collectionId}`,
+      url: `/dashboard/${collectionId}/agent_run`,
       icon: Layers,
     },
     {

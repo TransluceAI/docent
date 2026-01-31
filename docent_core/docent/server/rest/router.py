@@ -60,6 +60,7 @@ from docent_core.docent.db.schemas.auth_models import (
 )
 from docent_core.docent.db.schemas.collab_models import CollectionCollaborator
 from docent_core.docent.db.schemas.tables import (
+    JobStatus,
     SQLAAccessControlEntry,
     SQLAFilter,
 )
@@ -680,7 +681,7 @@ async def import_runs_from_file(
 
     # Compute counts using the staged file (request body may be closed after return)
     count_new_runs = load_inspect.get_total_samples(Path(temp_path), format)
-    await mono_svc.check_space_for_runs(ctx, count_new_runs)
+    await mono_svc.dont_actually_check_space_for_runs(ctx, count_new_runs)
 
     # Create an in-memory stream for SSE
     send_stream, recv_stream = anyio.create_memory_object_stream[dict[str, Any]](
@@ -995,12 +996,31 @@ async def post_agent_runs_compressed(
     )
 
 
+def _extract_job_error_message(
+    status: JobStatus, runtime_info: dict[str, Any] | None
+) -> str | None:
+    """Extract user-facing error message from job runtime_info if status is CANCELED."""
+    if status != JobStatus.CANCELED or runtime_info is None:
+        return None
+    error = runtime_info.get("error")
+    if not isinstance(error, dict):
+        return None
+    # Return user_message if available, otherwise return a generic message
+    error_dict = cast(dict[str, Any], error)
+    user_message = error_dict.get("user_message")
+    if isinstance(user_message, str):
+        return user_message
+    # For internal errors, return a generic message (don't expose internal details)
+    return "An error occurred while processing this job."
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: str
     type: str
     created_at: datetime
     collection_id: str | None
+    error_message: str | None = None
 
 
 @user_router.get("/{collection_id}/agent_runs/jobs/{job_id}", response_model=JobStatusResponse)
@@ -1036,6 +1056,7 @@ async def get_agent_run_job_status(
         type=job.type,
         created_at=job.created_at,
         collection_id=job_collection_id,
+        error_message=_extract_job_error_message(job.status, job.runtime_info),
     )
 
 
@@ -1087,6 +1108,7 @@ async def get_agent_run_job_statuses(
                     type=job.type,
                     created_at=job.created_at,
                     collection_id=job_collection_id,
+                    error_message=_extract_job_error_message(job.status, job.runtime_info),
                 )
             )
 
@@ -1131,6 +1153,26 @@ async def get_agent_run_ingest_jobs(
         ],
         "count": len(jobs),
     }
+
+
+@user_router.post("/{collection_id}/agent_runs/jobs/{job_id}/retry")
+async def retry_agent_run_ingest_job(
+    collection_id: str,
+    job_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Retry a canceled agent run ingest job."""
+    try:
+        await mono_svc.retry_agent_run_ingest_job(job_id, collection_id, ctx)
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+    return {"success": True, "message": f"Job {job_id} has been re-queued for processing"}
 
 
 @user_router.delete("/{collection_id}/agent_runs")

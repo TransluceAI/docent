@@ -30,6 +30,7 @@ import { SingleCombobox } from './Combobox';
 import { StepFilter } from './StepFilter';
 import { formatFilterFieldLabel } from '../utils/formatMetadataField';
 import { useGetRubricsQuery } from '@/app/api/rubricApi';
+import { Plus } from 'lucide-react';
 
 const isStepEqualityPrimitiveFilter = (
   filterItem: CollectionFilter
@@ -386,8 +387,8 @@ export const FilterControls = ({
   return (
     <div className="space-y-1.5">
       {/* Input form */}
-      <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-1.5">
-        <div>
+      <div className="flex flex-wrap items-end gap-1.5">
+        <div className="min-w-[150px] flex-1">
           <div className="text-xs text-muted-foreground font-mono ml-1 mb-1">
             Filter by
           </div>
@@ -412,7 +413,7 @@ export const FilterControls = ({
           />
         </div>
         {metadataType === 'int' || metadataType === 'float' ? (
-          <div>
+          <div className="flex-shrink-0">
             <div className="text-xs text-muted-foreground font-mono mr-1 mb-1">
               Operator
             </div>
@@ -446,7 +447,7 @@ export const FilterControls = ({
             </Select>
           </div>
         ) : (
-          <div>
+          <div className="flex-shrink-0">
             <div className="text-xs text-muted-foreground font-mono mr-1 mb-1">
               Operator
             </div>
@@ -487,7 +488,7 @@ export const FilterControls = ({
             </Select>
           </div>
         )}
-        <div>
+        <div className="min-w-[150px] flex-1">
           <div className="text-xs text-muted-foreground font-mono ml-1 mb-1">
             Value{metadataType ? ` (${metadataType})` : ''}
           </div>
@@ -560,8 +561,7 @@ export const FilterControls = ({
             />
           )}
         </div>
-        <div>
-          <div className="text-xs text-muted-foreground mb-1">&nbsp;</div>
+        <div className="flex-shrink-0">
           <Button
             onClick={() => onUpdateMetadataFilter(metadataValue)}
             disabled={
@@ -571,8 +571,9 @@ export const FilterControls = ({
             }
             className="h-7 text-xs whitespace-nowrap px-2"
             size="sm"
+            aria-label="Add filter"
           >
-            Add filter
+            <Plus className="h-4 w-4" />
           </Button>
         </div>
       </div>

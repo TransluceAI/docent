@@ -68,6 +68,7 @@ export interface AgentRunIngestJob {
   type: string;
   created_at: string;
   collection_id: string;
+  error_message?: string | null;
 }
 
 interface AgentRunIngestJobsResponse {
@@ -105,11 +106,15 @@ export const collectionApi = createApi({
     'Jobs',
   ],
   endpoints: (build) => ({
-    getCollectionName: build.query<{ name: string | null }, string>({
+    getCollectionName: build.query<
+      { name: string | null; agent_run_count: number | null },
+      string
+    >({
       query: (collectionId) => `/${collectionId}/collection_details`,
       providesTags: ['Collection'],
       transformResponse: (response: Collection | null) => ({
         name: response?.name ?? null,
+        agent_run_count: response?.agent_run_count ?? null,
       }),
     }),
     getCollections: build.query<Collection[], void>({

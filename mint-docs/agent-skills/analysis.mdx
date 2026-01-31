@@ -5,6 +5,7 @@ description: Use Claude Code and Cursor to automate investigations in Docent
 
 Agentically conduct analysis on Docent using Claude Code and Cursor. Docent now integrates with agent harnesses to turn natural language commands into SDK scripts you can modify and rerun.
 
+## Use Cases
 Coding agents can flexibly automate multi-step manual workflows and conduct investigations in parallel. Try:
 
 - **Comparing between checkpoints**. Suppose you want to answer questions like "What caused a regression between checkpoint A and checkpoint B?" or "These two checkpoints show a quantitative tradeoff on eval scores. What behaviors might explain that?" Prompting the agent to compare pairs of successful and failed runs helps identify changes between multiple versions of a model. See a [detailed tutorial](#using-docent-to-compare-between-checkpoints) below.
@@ -16,6 +17,9 @@ Coding agents can flexibly automate multi-step manual workflows and conduct inve
 Your coding agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
 
 ## Quickstart
+<Info>
+  You can skip this section if you've installed our [Claude Code plugin](overview). We **strongly recommend** installing our Claude Code plugin so that you receive automatic updates.
+</Info>
 
 AI coding agents can use the Docent SDK to analyze agent runs.
 

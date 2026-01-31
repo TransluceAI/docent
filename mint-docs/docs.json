@@ -45,7 +45,20 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "tracing", "support"]
+            "pages": [
+              "get-started/introduction",
+              "get-started/quickstart",
+              "get-started/tracing",
+              "get-started/support"
+            ]
+          },
+          {
+            "group": "Agent Skills",
+            "pages": [
+              "agent-skills/overview",
+              "agent-skills/ingestion",
+              "agent-skills/analysis"
+            ]
           },
           {
             "group": "Tutorials",

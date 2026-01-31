@@ -25,6 +25,7 @@ import {
   selectSortField,
   selectSortDirection,
 } from '../store/collectionSlice';
+import { setAgentRunLeftSidebarOpen } from '../store/transcriptSlice';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
@@ -476,6 +477,9 @@ export default function ExperimentViewer({
     return filter ? JSON.stringify(filter) : 'none';
   }, []);
 
+  // Sync appliedBaseFilter with server data when it changes (e.g., query completes
+  // or external update). The collection_change effect handles initial sync when
+  // navigating to a new collection.
   useEffect(() => {
     if (serverBaseFilter === undefined) {
       return;
@@ -777,8 +781,6 @@ export default function ExperimentViewer({
     setMetadataData(cached?.metadataData ?? {});
     // Always reset request tracking on navigation so missing metadata can be refetched.
     setPendingMetadataFieldsById({});
-    setAppliedBaseFilter(undefined);
-    setDraftBaseFilter(undefined);
     setAgentRunIds(undefined);
     setIsAgentRunIdsLoading(false);
     setIsAgentRunIdsFetching(false);
@@ -793,7 +795,18 @@ export default function ExperimentViewer({
     setExperimentViewerScrollPosition(cached?.scrollPosition);
     setScrollPosition(cached?.scrollPosition);
     previousCollectionIdRef.current = collectionId;
-  }, [collectionId]);
+
+    // Sync base filter with server data if available, otherwise reset to undefined.
+    // This must happen AFTER updating previousCollectionIdRef so the base_filter_sync
+    // effect doesn't skip on subsequent renders.
+    if (serverBaseFilter !== undefined) {
+      setAppliedBaseFilter(serverBaseFilter);
+      setDraftBaseFilter(serverBaseFilter);
+    } else {
+      setAppliedBaseFilter(undefined);
+      setDraftBaseFilter(undefined);
+    }
+  }, [collectionId, serverBaseFilter]);
 
   // Upload state
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -1337,6 +1350,11 @@ export default function ExperimentViewer({
         agent_run_id: runId,
       });
 
+      // Open sidebar when navigating in-app (not for new tab)
+      if (!openInNewTab) {
+        dispatch(setAgentRunLeftSidebarOpen(true));
+      }
+
       navToAgentRun(
         router,
         window,
@@ -1348,7 +1366,7 @@ export default function ExperimentViewer({
         openInNewTab
       );
     },
-    [collectionId, router]
+    [collectionId, dispatch, router]
   );
 
   const emptyStateContent =
@@ -1360,7 +1378,7 @@ export default function ExperimentViewer({
         <div className="text-muted-foreground">No agent runs found</div>
         <Button asChild variant="outline" size="sm">
           <a
-            href="https://docs.transluce.org/quickstart"
+            href="https://docs.transluce.org/get-started/quickstart"
             target="_blank"
             rel="noopener noreferrer"
           >

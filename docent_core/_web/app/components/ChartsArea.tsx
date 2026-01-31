@@ -34,16 +34,28 @@ import { ChartSpec } from '../types/collectionTypes';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { cn } from '@/lib/utils';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+import { useGetCollectionNameQuery } from '../api/collectionApi';
+
+const MAX_AGENT_RUNS_FOR_CHARTS = 10_000;
 
 export function ChartsArea() {
   const collectionId = useAppSelector((state) => state.collection.collectionId);
   const hasWritePermission = useHasCollectionWritePermission();
+  const { data: collectionData, isLoading: isCollectionLoading } =
+    useGetCollectionNameQuery(collectionId ?? skipToken);
+
+  // Only fetch charts after confirming collection isn't too large
+  const isCollectionSmallEnough =
+    collectionData?.agent_run_count != null &&
+    collectionData.agent_run_count <= MAX_AGENT_RUNS_FOR_CHARTS;
 
   const {
     data: charts = [],
-    isLoading,
+    isLoading: isChartsLoading,
     error,
-  } = useGetChartsQuery(collectionId ? { collectionId } : skipToken);
+  } = useGetChartsQuery(
+    collectionId && isCollectionSmallEnough ? { collectionId } : skipToken
+  );
 
   const [createChart] = useCreateChartMutation();
   const [updateChart] = useUpdateChartMutation();
@@ -191,12 +203,40 @@ export function ChartsArea() {
     );
   }
 
-  // Handle loading and error states
-  if (isLoading) {
+  // Handle loading state
+  if (isCollectionLoading || isChartsLoading) {
     return (
       <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
         <div className="flex items-center justify-center p-4 text-sm">
           <Loader2 size={16} className="animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  // Collection data failed to load
+  if (collectionData?.agent_run_count == null) {
+    return (
+      <div className="flex flex-col resize-y overflow-y-auto min-h-[200px] h-[35%]">
+        <div className="flex items-center justify-center p-4 text-red-text text-sm">
+          Error loading charts
+        </div>
+      </div>
+    );
+  }
+
+  // Block charts for large collections
+  if (collectionData.agent_run_count > MAX_AGENT_RUNS_FOR_CHARTS) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-2">
+        <div className="text-sm font-semibold text-primary">
+          Charts Unavailable
+        </div>
+        <div className="text-muted-foreground text-xs text-center max-w-md">
+          Charts are disabled for collections with more than{' '}
+          {MAX_AGENT_RUNS_FOR_CHARTS.toLocaleString()} agent runs. This
+          collection has {collectionData.agent_run_count.toLocaleString()} agent
+          runs.
         </div>
       </div>
     );

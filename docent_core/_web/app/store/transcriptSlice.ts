@@ -121,6 +121,9 @@ export const transcriptSlice = createSlice({
 
     // Various sidebar states
     // Sidebar visibility states for different routes
+    setAgentRunLeftSidebarOpen: (state, action: PayloadAction<boolean>) => {
+      state.agentRunLeftSidebarOpen = action.payload;
+    },
     toggleAgentRunLeftSidebar: (state) => {
       state.agentRunLeftSidebarOpen = !(state.agentRunLeftSidebarOpen ?? false);
     },
@@ -195,6 +198,7 @@ export const {
   setAgentRunSidebarTab,
 
   // Various sidebar states
+  setAgentRunLeftSidebarOpen,
   toggleAgentRunLeftSidebar,
   toggleJudgeLeftSidebar,
   toggleAgentRunRightSidebar,
