@@ -45,7 +45,19 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "tracing", "support"]
+            "pages": [
+              "introduction",
+              "quickstart",
+              "tracing",
+              "support"
+            ]
+          },
+          {
+            "group": "Agent Plugins",
+            "pages": [
+              "documentation/agent-plugins/untitled-page",
+              "documentation/agent-plugins/ingestion"
+            ]
           },
           {
             "group": "Tutorials",
