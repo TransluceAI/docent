@@ -1,0 +1,75 @@
+---
+title: "Ingestion"
+description: "Generate scripts to upload agent logs to Docent"
+---
+
+## Overview
+
+The Ingestion skill uploads your agent logs into Docent by writing a script to convert them into Agent Run format. To learn more about how SDK ingestion works under the hood, you can read our [Quickstart guide](https://docs.transluce.org/quickstart#option-3:-sdk-ingestion).
+
+## Quickstart
+
+<Info>
+  We strongly recommend installing our Claude Code plugin so that you receive automatic updates.
+</Info>
+
+<Tabs>
+  <Tab title="Claude Code (Recommended)">
+    Open Claude Code in your working directory by running `claude`. Run the following inside of Claude Code.
+
+    Add the Transluce plugin marketplace:
+
+    ```shell
+        /plugin marketplace add transluce/claude-code-plugins
+    ```
+
+    Install the ingestion skill:
+
+    ```shell
+        /plugin install docent@transluce-plugins
+    ```
+
+    Restart Claude Code after installation. Run `/help` to confirm the new command is available.
+  </Tab>
+  <Tab title="Other IDEs">
+    Download [SKILL.md](https://github.com/transluce/claude-code-plugins/blob/main/plugins/docent-ingestion/SKILL.md) from the plugin repository.
+
+    Then either:
+
+    - **Pass directly to your model**: Include the file contents in your prompt context
+    - **Cursor**: Copy to `.cursor/rules/docent-ingestion.md`
+
+    You'll also need a [Docent API key](https://docent.transluce.org/settings/api-keys) set in your environment.
+  </Tab>
+</Tabs>
+
+## How the ingestion skill works
+
+Our ingestion skill incorporates best practices to upload and organize your data within Docent. The skill investigates your file structure, examines your trajectory format, and maps each field in your schema to a Docent object. It produces:
+
+1. `ingestion-plan.md`: A mapping of your trajectory fields to Docent's data model, including any fields that will be intentionally omitted. You can review this file to verify that the model intends to organize and display your data in a suitable format.
+2. `ingest.py`: A script that reads your logs and uploads them via the SDK. You can modify and rerun this as needed.
+
+The skill asks clarifying questions if your data format is ambiguous or if it needs more context about how you want the data structured.
+
+## Best practices
+
+- **Organize your data by trajectory format before passing it to the agent.** Ask your agent to first sort your trajectories by the scaffold that generated them (e.g., `openhands/`, `mini-swe-agent/`, `custom/`).
+- **Include sufficient context on your data and your goals**. The best way to organize your collection is dependent on your analysis goals and not always evident from your data itself. It may be helpful to provide the following:
+  - **Describe your analysis goals.** Tell the skill what comparisons you want to make. This helps structure how the data is grouped.
+
+  ```text wrap
+    The data provided contains both agent and monitor traces. My goal is to compare and improve upon the performance of my monitors. 
+  ```
+  - **Describe your data schema.** While the agent can generally discover this itself, you can improve reliability by providing the path to a sample trajectory that's representative of your log schema. Providing context on how keys are organized can also help the agent organize metadata productively.
+
+  ```text wrap
+    This directory contains separate folders for different tasks. Within each task is a log/ directory containing one run, with a config.yaml file and a traj.json containing transcript data in the "messages" field. Please log each line in config.yaml as metadata and omit the reasoning content in traj.json.
+  ```
+  - **Describe how your data was generated.** Consider providing context on how your logs were generated, such as the purpose of an evaluation you ran or your overall setup.
+- **Verify your uploaded data in the web interface.** After upload, check that transcripts display correctly and metadata appears where you expect. It's normal to iterate a few times on different organization structures.
+
+## What's next
+
+- **Ready to analyze?** See [Search and Clustering](/tutorials/search-and-clustering) to start exploring your data
+- **Want to tweak the ingestion script yourself?** Read up on Docent's underlying data models.
