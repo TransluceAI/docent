@@ -46,10 +46,10 @@
           {
             "group": "Get Started",
             "pages": [
-              "get-started/introduction",
-              "get-started/quickstart",
-              "get-started/tracing",
-              "get-started/support"
+              "introduction",
+              "quickstart",
+              "tracing",
+              "support"
             ]
           },
           {

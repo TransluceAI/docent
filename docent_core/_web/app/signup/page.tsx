@@ -219,7 +219,7 @@ function SignupPageContent() {
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Button asChild variant="outline">
             <a
-              href="https://docs.transluce.org/get-started/quickstart"
+              href="https://docs.transluce.org/quickstart"
               target="_blank"
               rel="noopener noreferrer"
             >

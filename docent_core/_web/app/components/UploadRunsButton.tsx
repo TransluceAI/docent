@@ -45,12 +45,12 @@ export default function UploadRunsButton({
 
   const handleUseSDKClick = () => {
     // Navigate to docs page - adjust the URL as needed for your docs
-    window.open('https://docs.transluce.org/get-started/quickstart', '_blank');
+    window.open('https://docs.transluce.org/quickstart', '_blank');
   };
 
   const handleUseTracingClick = () => {
     // Navigate to tracing documentation
-    window.open('https://docs.transluce.org/get-started/tracing', '_blank');
+    window.open('https://docs.transluce.org/tracing', '_blank');
   };
 
   return (
