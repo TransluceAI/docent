@@ -9,9 +9,9 @@ The Ingestion skill uploads your agent logs into Docent by writing a script to c
 
 ## Quickstart
 
-<Info>
+<Note>
   We strongly recommend installing our Claude Code plugin so that you receive automatic updates.
-</Info>
+</Note>
 
 <Tabs>
   <Tab title="Claude Code (Recommended)">
@@ -20,7 +20,7 @@ The Ingestion skill uploads your agent logs into Docent by writing a script to c
     Add the Transluce plugin marketplace:
 
     ```shell
-    /plugin marketplace add transluce/claude-code-plugins
+    /plugin marketplace add TransluceAI/claude-code-plugins
     ```
 
     Install the Docent plugin:
@@ -29,7 +29,10 @@ The Ingestion skill uploads your agent logs into Docent by writing a script to c
     /plugin install docent@transluce-plugins
     ```
 
-    Restart Claude Code after installation. Run `/help` to confirm the new command is available.
+    Restart Claude Code after installation. Type `/` to verify that `/ingestion` and `/analysis` are available.
+
+    To trigger the command, run `/ingestion` inside Claude Code.
+
   </Tab>
   <Tab title="Other IDEs">
     Download [SKILL.md](https://github.com/TransluceAI/claude-code-plugins/blob/main/plugins/docent/skills/ingestion/SKILL.md) from the plugin repository.
