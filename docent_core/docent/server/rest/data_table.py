@@ -99,7 +99,7 @@ async def list_data_tables(
     return [_serialize_data_table(row) for row in data_tables]
 
 
-@data_table_router.get("/{collection_id}/{data_table_id}")
+@data_table_router.get("/{collection_id}/table/{data_table_id}")
 async def get_data_table(
     data_table_id: str,
     ctx: ViewContext = Depends(get_default_view_ctx),
@@ -227,7 +227,7 @@ async def generate_data_table_name(
         return GenerateNameResponse(name="Data View")
 
 
-@data_table_router.post("/{collection_id}/{data_table_id}")
+@data_table_router.post("/{collection_id}/table/{data_table_id}")
 async def update_data_table(
     collection_id: str,
     data_table_id: str,
@@ -279,7 +279,7 @@ async def update_data_table(
     return _serialize_data_table(data_table)
 
 
-@data_table_router.delete("/{collection_id}/{data_table_id}")
+@data_table_router.delete("/{collection_id}/table/{data_table_id}")
 async def delete_data_table(
     collection_id: str,
     data_table_id: str,
@@ -293,7 +293,7 @@ async def delete_data_table(
     return {"status": "ok"}
 
 
-@data_table_router.post("/{collection_id}/{data_table_id}/duplicate")
+@data_table_router.post("/{collection_id}/table/{data_table_id}/duplicate")
 async def duplicate_data_table(
     collection_id: str,
     data_table_id: str,

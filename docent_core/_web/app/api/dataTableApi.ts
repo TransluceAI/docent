@@ -55,7 +55,7 @@ export const dataTableApi = createApi({
       { collectionId: string; dataTableId: string }
     >({
       query: ({ collectionId, dataTableId }) => ({
-        url: `/${collectionId}/${dataTableId}`,
+        url: `/${collectionId}/table/${dataTableId}`,
         method: 'GET',
       }),
       providesTags: (_result, _error, { dataTableId }) => [
@@ -72,7 +72,7 @@ export const dataTableApi = createApi({
     }),
     updateDataTable: build.mutation<DataTable, DataTableUpdatePayload>({
       query: ({ collectionId, dataTableId, name, dql, state }) => ({
-        url: `/${collectionId}/${dataTableId}`,
+        url: `/${collectionId}/table/${dataTableId}`,
         method: 'POST',
         body: { name, dql, state },
       }),
@@ -86,7 +86,7 @@ export const dataTableApi = createApi({
       { collectionId: string; dataTableId: string }
     >({
       query: ({ collectionId, dataTableId }) => ({
-        url: `/${collectionId}/${dataTableId}`,
+        url: `/${collectionId}/table/${dataTableId}`,
         method: 'DELETE',
       }),
       invalidatesTags: (_result, _error, { dataTableId }) => [
@@ -99,7 +99,7 @@ export const dataTableApi = createApi({
       { collectionId: string; dataTableId: string }
     >({
       query: ({ collectionId, dataTableId }) => ({
-        url: `/${collectionId}/${dataTableId}/duplicate`,
+        url: `/${collectionId}/table/${dataTableId}/duplicate`,
         method: 'POST',
       }),
       invalidatesTags: ['DataTables'],
