@@ -119,8 +119,15 @@ class DQLService:
         collection_id: str,
         dql: str,
         json_fields: Mapping[str, list[JsonFieldInfo]] | None = None,
+        sample_limit: int | None = None,
     ) -> DQLQueryResult:
-        """Execute a DQL query and return results."""
+        """Execute a DQL query and return results.
+
+        Args:
+            sample_limit: When provided, overrides the normal limit calculation to fetch
+                only this many rows. Useful for type inference or schema sampling where
+                only a small sample is needed.
+        """
         from docent_core.docent.services.monoservice import MonoService
 
         mono_service = MonoService(self.db)
@@ -144,12 +151,18 @@ class DQLService:
         query_expression = cast(QueryExpression, expression)
         requested_limit = get_query_limit_value(query_expression)
         server_cap = MAX_DQL_RESULT_LIMIT
-        applied_limit = server_cap if requested_limit is None else min(requested_limit, server_cap)
 
-        if requested_limit is None or requested_limit > server_cap:
+        # When sample_limit is specified, use it directly for efficient sampling
+        # Add 1 to maintain the "fetch extra to detect truncation" pattern
+        if sample_limit is not None:
+            fetch_limit = sample_limit + 1
+            applied_limit = sample_limit
+        elif requested_limit is None or requested_limit > server_cap:
             fetch_limit = server_cap + 1
+            applied_limit = server_cap
         else:
             fetch_limit = requested_limit + 1
+            applied_limit = requested_limit
 
         apply_limit_cap(query_expression, fetch_limit)
         compiled_sql = expression.sql(dialect="postgres", pretty=False)  # type: ignore[reportUnknownMemberType]

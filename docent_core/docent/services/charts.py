@@ -852,12 +852,12 @@ class ChartsService:
         data_table = await self._get_data_table(ctx.collection_id, data_table_id)
         dql_service = DQLService(self.db)
 
-        # Execute query as-is - will be capped by MAX_DQL_RESULT_LIMIT
-        # We only need the first row for type inference
+        # Only fetch 1 row for type inference - avoids executing expensive queries fully
         result = await dql_service.execute_query(
             user=ctx.user,
             collection_id=ctx.collection_id,
             dql=data_table.dql,
+            sample_limit=1,
         )
 
         sample_row = result.rows[0] if result.rows else None
