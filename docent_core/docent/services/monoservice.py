@@ -1324,8 +1324,6 @@ class MonoService:
             collection_id=collection_id,
         )
 
-        # Use provided json_fields or default to empty - avoids expensive JSON column
-        # scans when callers don't need dynamic JSON field access
         json_field_map = json_fields if json_fields is not None else {}
         registry = build_default_registry(
             collection_id=collection_id,
