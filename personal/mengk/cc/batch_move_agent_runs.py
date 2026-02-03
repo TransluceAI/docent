@@ -1,80 +1,43 @@
 # pyright: ignore
-# %%
-# IPython autoreload setup
-try:
-    from IPython import get_ipython
+"""CLI script to batch move agent runs between collections."""
 
-    ipython = get_ipython()
-    if ipython is not None:
-        ipython.run_line_magic("load_ext", "autoreload")
-        ipython.run_line_magic("autoreload", "2")
-except Exception:
-    pass  # Not in IPython environment
+import argparse
+import asyncio
+import os
+import sys
+import time
 
-# %%
-# Configuration - fill these in
 import httpx
 
-BASE_URL = "https://api.docent-bridgewater.transluce.org"  # TODO: fill in your base URL
-API_KEY = "..."  # TODO: fill in your API key
-
-# Collection IDs
-SOURCE_COLLECTION_ID = "a336b411-a9bb-4355-8c62-14ebc6d7aecb"  # TODO: collection to move FROM
-DESTINATION_COLLECTION_ID = "d883900b-d851-4c1f-9092-5cade5722fac"  # TODO: collection to move TO
-
-# BASE_URL = "http://localhost:8901"  # TODO: fill in your base URL
-# API_KEY = "..."  # TODO: fill in your API key
-
-# # Collection IDs
-# SOURCE_COLLECTION_ID = "2bd4b883-abba-46ad-bb8c-1f1448d51b8f"  # TODO: collection to move FROM
-# DESTINATION_COLLECTION_ID = "de8e8970-0678-4da4-b969-afe585f79257"  # TODO: collection to move TO
-
-# Batch size for pagination
-BATCH_SIZE = 1000
-
-# Dry run mode - set to False to actually perform moves
-DRY_RUN = False
-
-# DQL query to find agent runs to move (modify as needed)
-DQL_QUERY_TEMPLATE = """
+DEFAULT_BATCH_SIZE = 1000
+DEFAULT_DQL_QUERY_TEMPLATE = """
 SELECT id, metadata_json ->> 'wandb_name'
 FROM agent_runs
 WHERE collection_id = '{source_collection_id}'
-  AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-8q%'
-  AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-4q%'
-  AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-focused%'
-  AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-maximal%'
 LIMIT {batch_size}
 """
 
-# DQL_QUERY_TEMPLATE = """
-# SELECT id, metadata_json ->> 'wandb_name'
-# FROM agent_runs
-# WHERE collection_id = '{source_collection_id}'
-#   AND (metadata_json ->> 'extra_field_003') = 'false'
-# LIMIT {batch_size}
-# """
 
-
-# %%
-# Helper to make authenticated requests
-def get_headers():
+def get_headers(api_key: str) -> dict[str, str]:
+    """Get headers for authenticated requests."""
     headers = {"Content-Type": "application/json"}
-    if API_KEY:
-        headers["Authorization"] = f"Bearer {API_KEY}"
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     return headers
 
 
-# %%
-# Execute a single DQL query
-async def execute_dql_query(query: str) -> dict:
+async def execute_dql_query(
+    base_url: str,
+    source_collection_id: str,
+    api_key: str,
+    query: str,
+) -> dict:
     """Execute a DQL query and return the response."""
-    # print(query)
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{BASE_URL}/rest/dql/{SOURCE_COLLECTION_ID}/execute",
+            f"{base_url}/rest/dql/{source_collection_id}/execute",
             json={"dql": query},
-            headers=get_headers(),
+            headers=get_headers(api_key),
             timeout=120.0,
         )
         if response.status_code != 200:
@@ -84,17 +47,22 @@ async def execute_dql_query(query: str) -> dict:
         return response.json()
 
 
-# %%
-# Move agent runs in batch
-async def move_agent_runs_batch(client: httpx.AsyncClient, agent_run_ids: list[str]) -> dict:
+async def move_agent_runs_batch(
+    client: httpx.AsyncClient,
+    base_url: str,
+    source_collection_id: str,
+    destination_collection_id: str,
+    api_key: str,
+    agent_run_ids: list[str],
+) -> dict:
     """Move multiple agent runs to the destination collection in a single request."""
     response = await client.post(
-        f"{BASE_URL}/rest/{SOURCE_COLLECTION_ID}/move_agent_runs",
+        f"{base_url}/rest/{source_collection_id}/move_agent_runs",
         json={
             "agent_run_ids": agent_run_ids,
-            "destination_collection_id": DESTINATION_COLLECTION_ID,
+            "destination_collection_id": destination_collection_id,
         },
-        headers=get_headers(),
+        headers=get_headers(api_key),
         timeout=300.0,
     )
     if response.status_code != 200:
@@ -102,26 +70,24 @@ async def move_agent_runs_batch(client: httpx.AsyncClient, agent_run_ids: list[s
     return response.json()
 
 
-# %%
-# Main batch move function
-async def batch_move_agent_runs():
+async def batch_move_agent_runs(
+    base_url: str,
+    source_collection_id: str,
+    destination_collection_id: str,
+    api_key: str,
+    batch_size: int,
+    dry_run: bool,
+    dql_query_template: str,
+) -> None:
     """Orchestrate the batch move of agent runs using streaming fetch+move."""
-    # Validate configuration
-    if not API_KEY:
-        print("ERROR: API_KEY is not set")
-        return
-    if not DESTINATION_COLLECTION_ID:
-        print("ERROR: DESTINATION_COLLECTION_ID is not set")
-        return
-
     print("=" * 60)
     print("Batch Move Agent Runs (Streaming)")
     print("=" * 60)
-    print(f"Mode:                   {'DRY RUN' if DRY_RUN else 'LIVE'}")
-    print(f"Source Collection:      {SOURCE_COLLECTION_ID}")
-    print(f"Destination Collection: {DESTINATION_COLLECTION_ID}")
+    print(f"Mode:                   {'DRY RUN' if dry_run else 'LIVE'}")
+    print(f"Source Collection:      {source_collection_id}")
+    print(f"Destination Collection: {destination_collection_id}")
     print("=" * 60)
-    if DRY_RUN:
+    if dry_run:
         print("\n*** DRY RUN MODE - No moves will be performed ***")
 
     # Stream fetch + move in batches
@@ -135,12 +101,14 @@ async def batch_move_agent_runs():
     async with httpx.AsyncClient() as client:
         while True:
             batch_num += 1
-            query = DQL_QUERY_TEMPLATE.format(
-                source_collection_id=SOURCE_COLLECTION_ID, batch_size=BATCH_SIZE
+            query = dql_query_template.format(
+                source_collection_id=source_collection_id, batch_size=batch_size
             )
 
             print(f"\n[Batch {batch_num}] Fetching next batch...")
-            result = await execute_dql_query(query)
+            result = await execute_dql_query(
+                base_url, source_collection_id, api_key, query
+            )
             rows = result.get("rows", [])
             batch_count = len(rows)
 
@@ -153,8 +121,18 @@ async def batch_move_agent_runs():
             print(f"  Fetched {batch_count} agent runs, moving...")
 
             # Move this batch (or print IDs in dry run mode)
-            if not DRY_RUN:
-                batch_result = await move_agent_runs_batch(client, batch_ids)
+            if not dry_run:
+                start_time = time.perf_counter()
+                batch_result = await move_agent_runs_batch(
+                    client,
+                    base_url,
+                    source_collection_id,
+                    destination_collection_id,
+                    api_key,
+                    batch_ids,
+                )
+                elapsed = time.perf_counter() - start_time
+                print(f"  Move took {elapsed:.2f}s")
                 total_success += batch_result["succeeded_count"]
                 total_failed += batch_result["failed_count"]
                 for agent_run_id, error_msg in batch_result["errors"].items():
@@ -163,18 +141,25 @@ async def batch_move_agent_runs():
 
             total_count += batch_count
             print(f"  Batch complete: {batch_count}")
+            if dry_run:
+                print(f"  Running total: {total_count} would be moved")
+            else:
+                print(
+                    f"  Running total: {total_count} processed, "
+                    f"{total_success} succeeded, {total_failed} failed"
+                )
 
             # Check if we've processed all results
-            if batch_count < BATCH_SIZE:
-                print("  Last batch reached (fewer than BATCH_SIZE results)")
+            if batch_count < batch_size:
+                print("  Last batch reached (fewer than batch_size results)")
                 break
 
     # Summary
     print("\n" + "=" * 60)
-    print("Summary" + (" (DRY RUN)" if DRY_RUN else ""))
+    print("Summary" + (" (DRY RUN)" if dry_run else ""))
     print("=" * 60)
     print(f"Total:     {total_count}")
-    if DRY_RUN:
+    if dry_run:
         print(f"Would move: {total_count}")
     else:
         print(f"Succeeded: {total_success}")
@@ -188,8 +173,85 @@ async def batch_move_agent_runs():
     print("=" * 60)
 
 
-# %%
-# Run the batch move (uncomment to execute)
-await batch_move_agent_runs()
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Batch move agent runs between collections.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Environment variables:
+  DOCENT_API_KEY    API key for authentication (required)
 
-# %%
+Examples:
+  # Dry run (default) to see what would be moved
+  python batch_move_agent_runs.py --base-url https://api.example.com \\
+    --source-collection-id abc123 --destination-collection-id def456
+
+  # Actually perform the move
+  python batch_move_agent_runs.py --base-url https://api.example.com \\
+    --source-collection-id abc123 --destination-collection-id def456 --no-dry-run
+""",
+    )
+
+    parser.add_argument(
+        "--base-url",
+        required=True,
+        help="API base URL (e.g., https://api.docent-bridgewater.transluce.org)",
+    )
+    parser.add_argument(
+        "--source-collection-id",
+        required=True,
+        help="Collection ID to move agent runs FROM",
+    )
+    parser.add_argument(
+        "--destination-collection-id",
+        required=True,
+        help="Collection ID to move agent runs TO",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"Number of agent runs to process per batch (default: {DEFAULT_BATCH_SIZE})",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        dest="dry_run",
+        help="Run in dry-run mode without performing moves (default)",
+    )
+    parser.add_argument(
+        "--no-dry-run",
+        action="store_false",
+        dest="dry_run",
+        help="Actually perform the moves",
+    )
+    parser.add_argument(
+        "--dql-query",
+        default=DEFAULT_DQL_QUERY_TEMPLATE,
+        help="Custom DQL query template (must include {source_collection_id} and {batch_size} placeholders)",
+    )
+
+    args = parser.parse_args()
+
+    # Read API key from environment
+    api_key = os.environ.get("DOCENT_API_KEY")
+    if not api_key:
+        print("ERROR: DOCENT_API_KEY environment variable is not set", file=sys.stderr)
+        sys.exit(1)
+
+    asyncio.run(
+        batch_move_agent_runs(
+            base_url=args.base_url,
+            source_collection_id=args.source_collection_id,
+            destination_collection_id=args.destination_collection_id,
+            api_key=api_key,
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
+            dql_query_template=args.dql_query,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
