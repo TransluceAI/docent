@@ -9,12 +9,34 @@ import time
 
 import httpx
 
-DEFAULT_BATCH_SIZE = 1000
+DEFAULT_OUTER_BATCH_SIZE = 10000
+DEFAULT_INNER_BATCH_SIZE = 1000
+# DEFAULT_DQL_QUERY_TEMPLATE = """
+# SELECT id, metadata_json ->> 'wandb_name'
+# FROM agent_runs
+# WHERE collection_id = '{source_collection_id}'
+#   AND (
+#     (metadata_json ->> 'wandb_name') IS NULL
+#     OR (
+#       (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-8q%'
+#       AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-4q%'
+#       AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-focused%'
+#       AND (metadata_json ->> 'wandb_name') NOT LIKE 'eps-simplified-maximal%'
+#     )
+#   )
+# LIMIT {outer_batch_size}
+# """
 DEFAULT_DQL_QUERY_TEMPLATE = """
 SELECT id, metadata_json ->> 'wandb_name'
 FROM agent_runs
 WHERE collection_id = '{source_collection_id}'
-LIMIT {batch_size}
+  AND (
+    (metadata_json ->> 'wandb_name') LIKE 'eps-simplified-8q%'
+    OR (metadata_json ->> 'wandb_name') LIKE 'eps-simplified-4q%'
+    OR (metadata_json ->> 'wandb_name') LIKE 'eps-simplified-focused%'
+    OR (metadata_json ->> 'wandb_name') LIKE 'eps-simplified-maximal%'
+  )
+LIMIT {outer_batch_size}
 """
 
 
@@ -75,17 +97,24 @@ async def batch_move_agent_runs(
     source_collection_id: str,
     destination_collection_id: str,
     api_key: str,
-    batch_size: int,
+    outer_batch_size: int,
+    inner_batch_size: int,
     dry_run: bool,
     dql_query_template: str,
 ) -> None:
-    """Orchestrate the batch move of agent runs using streaming fetch+move."""
+    """Orchestrate the batch move of agent runs using two-level batching.
+
+    Outer batch: Fetches a large set of runs via DQL
+    Inner batch: Splits outer batch into smaller chunks sent concurrently to the API
+    """
     print("=" * 60)
-    print("Batch Move Agent Runs (Streaming)")
+    print("Batch Move Agent Runs (Two-Level Batching)")
     print("=" * 60)
     print(f"Mode:                   {'DRY RUN' if dry_run else 'LIVE'}")
     print(f"Source Collection:      {source_collection_id}")
     print(f"Destination Collection: {destination_collection_id}")
+    print(f"Outer Batch Size:       {outer_batch_size}")
+    print(f"Inner Batch Size:       {inner_batch_size}")
     print("=" * 60)
     if dry_run:
         print("\n*** DRY RUN MODE - No moves will be performed ***")
@@ -96,51 +125,81 @@ async def batch_move_agent_runs(
     total_success = 0
     total_failed = 0
     all_failed_ids: list[tuple[str, str]] = []  # (id, error_msg)
-    batch_num = 0
+    outer_batch_num = 0
 
     async with httpx.AsyncClient() as client:
         while True:
-            batch_num += 1
+            outer_batch_num += 1
             query = dql_query_template.format(
-                source_collection_id=source_collection_id, batch_size=batch_size
+                source_collection_id=source_collection_id,
+                outer_batch_size=outer_batch_size,
             )
 
-            print(f"\n[Batch {batch_num}] Fetching next batch...")
+            print(f"\n[Outer Batch {outer_batch_num}] Fetching next batch...")
             result = await execute_dql_query(
                 base_url, source_collection_id, api_key, query
             )
             rows = result.get("rows", [])
-            batch_count = len(rows)
+            outer_batch_count = len(rows)
 
-            if batch_count == 0:
+            if outer_batch_count == 0:
                 print("  No more agent runs to move.")
                 break
 
             # Extract agent run IDs (first column)
             batch_ids = [row[0] for row in rows]
-            print(f"  Fetched {batch_count} agent runs, moving...")
 
-            # Move this batch (or print IDs in dry run mode)
+            # Split into inner batches
+            inner_batches = [
+                batch_ids[i : i + inner_batch_size]
+                for i in range(0, len(batch_ids), inner_batch_size)
+            ]
+            print(
+                f"  Fetched {outer_batch_count} agent runs, "
+                f"splitting into {len(inner_batches)} inner batches..."
+            )
+
+            # Move inner batches (or print summary in dry run mode)
             if not dry_run:
                 start_time = time.perf_counter()
-                batch_result = await move_agent_runs_batch(
-                    client,
-                    base_url,
-                    source_collection_id,
-                    destination_collection_id,
-                    api_key,
-                    batch_ids,
+                results = await asyncio.gather(
+                    *[
+                        move_agent_runs_batch(
+                            client,
+                            base_url,
+                            source_collection_id,
+                            destination_collection_id,
+                            api_key,
+                            batch,
+                        )
+                        for batch in inner_batches
+                    ],
+                    return_exceptions=True,
                 )
                 elapsed = time.perf_counter() - start_time
-                print(f"  Move took {elapsed:.2f}s")
-                total_success += batch_result["succeeded_count"]
-                total_failed += batch_result["failed_count"]
-                for agent_run_id, error_msg in batch_result["errors"].items():
-                    all_failed_ids.append((agent_run_id, error_msg))
-                    print(f"  FAILED: {agent_run_id} - {error_msg}")
 
-            total_count += batch_count
-            print(f"  Batch complete: {batch_count}")
+                # Aggregate results from all inner batches
+                batch_success = 0
+                batch_failed = 0
+                for i, batch_result in enumerate(results):
+                    if isinstance(batch_result, Exception):
+                        # Count entire inner batch as failed
+                        batch_failed += len(inner_batches[i])
+                        print(f"  Inner batch {i + 1} FAILED: {batch_result}")
+                    else:
+                        batch_success += batch_result["succeeded_count"]
+                        batch_failed += batch_result["failed_count"]
+                        for agent_run_id, error_msg in batch_result["errors"].items():
+                            all_failed_ids.append((agent_run_id, error_msg))
+
+                total_success += batch_success
+                total_failed += batch_failed
+                print(
+                    f"  Outer batch complete in {elapsed:.2f}s: "
+                    f"{batch_success} succeeded, {batch_failed} failed"
+                )
+
+            total_count += outer_batch_count
             if dry_run:
                 print(f"  Running total: {total_count} would be moved")
             else:
@@ -150,8 +209,8 @@ async def batch_move_agent_runs(
                 )
 
             # Check if we've processed all results
-            if batch_count < batch_size:
-                print("  Last batch reached (fewer than batch_size results)")
+            if outer_batch_count < outer_batch_size:
+                print("  Last batch reached (fewer than outer_batch_size results)")
                 break
 
     # Summary
@@ -208,10 +267,16 @@ Examples:
         help="Collection ID to move agent runs TO",
     )
     parser.add_argument(
-        "--batch-size",
+        "--outer-batch-size",
         type=int,
-        default=DEFAULT_BATCH_SIZE,
-        help=f"Number of agent runs to process per batch (default: {DEFAULT_BATCH_SIZE})",
+        default=DEFAULT_OUTER_BATCH_SIZE,
+        help=f"Number of agent runs to fetch per DQL query (default: {DEFAULT_OUTER_BATCH_SIZE})",
+    )
+    parser.add_argument(
+        "--inner-batch-size",
+        type=int,
+        default=DEFAULT_INNER_BATCH_SIZE,
+        help=f"Number of agent runs per API move request (default: {DEFAULT_INNER_BATCH_SIZE})",
     )
     parser.add_argument(
         "--dry-run",
@@ -229,7 +294,7 @@ Examples:
     parser.add_argument(
         "--dql-query",
         default=DEFAULT_DQL_QUERY_TEMPLATE,
-        help="Custom DQL query template (must include {source_collection_id} and {batch_size} placeholders)",
+        help="Custom DQL query template (must include {source_collection_id} and {outer_batch_size} placeholders)",
     )
 
     args = parser.parse_args()
@@ -246,7 +311,8 @@ Examples:
             source_collection_id=args.source_collection_id,
             destination_collection_id=args.destination_collection_id,
             api_key=api_key,
-            batch_size=args.batch_size,
+            outer_batch_size=args.outer_batch_size,
+            inner_batch_size=args.inner_batch_size,
             dry_run=args.dry_run,
             dql_query_template=args.dql_query,
         )
