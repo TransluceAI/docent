@@ -22,6 +22,13 @@ API_KEY = "..."  # TODO: fill in your API key
 SOURCE_COLLECTION_ID = "a336b411-a9bb-4355-8c62-14ebc6d7aecb"  # TODO: collection to move FROM
 DESTINATION_COLLECTION_ID = "d883900b-d851-4c1f-9092-5cade5722fac"  # TODO: collection to move TO
 
+# BASE_URL = "http://localhost:8901"  # TODO: fill in your base URL
+# API_KEY = "..."  # TODO: fill in your API key
+
+# # Collection IDs
+# SOURCE_COLLECTION_ID = "2bd4b883-abba-46ad-bb8c-1f1448d51b8f"  # TODO: collection to move FROM
+# DESTINATION_COLLECTION_ID = "de8e8970-0678-4da4-b969-afe585f79257"  # TODO: collection to move TO
+
 # Batch size for pagination
 BATCH_SIZE = 1000
 

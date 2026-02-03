@@ -1238,7 +1238,7 @@ async def move_agent_runs(
 
     succeeded_count = 0
     errors: dict[str, str] = {}
-    semaphore = anyio.Semaphore(100)
+    semaphore = anyio.Semaphore(150)
 
     async def move_one(agent_run_id: str) -> None:
         nonlocal succeeded_count

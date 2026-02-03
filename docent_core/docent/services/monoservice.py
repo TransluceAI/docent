@@ -1087,10 +1087,7 @@ class MonoService:
 
             # 2. Check for blocking rows in related tables
             # These tables have agent_run_id and would become inconsistent if we just moved the agent run
-            blocking_found: list[str] = []
-
-            # Check each table for rows referencing this agent run
-            for table_name, table_class in [
+            blocking_tables: list[tuple[str, type]] = [
                 ("telemetry_agent_run_status", SQLATelemetryAgentRunStatus),
                 ("transcript_embeddings", SQLATranscriptEmbedding),
                 ("search_results", SQLASearchResult),
@@ -1102,15 +1099,24 @@ class MonoService:
                 ("judge_results", SQLAJudgeResult),
                 ("judge_reflections", SQLAJudgeReflection),
                 ("chat_sessions", SQLAChatSession),
-            ]:
-                count_result = await session.execute(
-                    select(func.count()).where(
+            ]
+
+            # Build a single query with EXISTS subqueries for each table (1 round trip instead of 11)
+            exists_checks = [
+                exists(
+                    select(literal(1)).where(
                         table_class.agent_run_id == agent_run_id  # type: ignore[attr-defined]
                     )
-                )
-                count = count_result.scalar() or 0
-                if count > 0:
-                    blocking_found.append(f"{table_name}: {count} row(s)")
+                ).label(table_name)
+                for table_name, table_class in blocking_tables
+            ]
+
+            result = await session.execute(select(*exists_checks))
+            row = result.one()
+
+            blocking_found = [
+                table_name for table_name, _ in blocking_tables if getattr(row, table_name)
+            ]
 
             if blocking_found:
                 raise ConflictError(
