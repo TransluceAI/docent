@@ -64,7 +64,7 @@ from docent_core.docent.db.schemas.tables import (
     SQLAAccessControlEntry,
     SQLAFilter,
 )
-from docent_core.docent.exceptions import ForbiddenError, NotFoundError
+from docent_core.docent.exceptions import ForbiddenError, NotFoundError, UserFacingError
 from docent_core.docent.server.dependencies.analytics import use_posthog_user_context
 from docent_core.docent.server.dependencies.database import (
     get_mono_svc,
@@ -1194,25 +1194,31 @@ async def delete_agent_runs(
     return {"deleted_count": deleted_count, "requested_count": len(request.agent_run_ids)}
 
 
-class MoveAgentRunRequest(BaseModel):
-    agent_run_id: str
+class MoveAgentRunsRequest(BaseModel):
+    agent_run_ids: list[str]
     destination_collection_id: str
 
 
-@user_router.post("/{collection_id}/move_agent_run")
-async def move_agent_run(
+class MoveAgentRunsResponse(BaseModel):
+    succeeded_count: int
+    failed_count: int
+    errors: dict[str, str]
+
+
+@user_router.post("/{collection_id}/move_agent_runs")
+async def move_agent_runs(
     collection_id: str,
-    request: MoveAgentRunRequest,
+    request: MoveAgentRunsRequest,
     user: User = Depends(get_user_anonymous_ok),
     mono_svc: MonoService = Depends(get_mono_svc),
     analytics: AnalyticsClient = Depends(use_posthog_user_context),
     _source_perm: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
-    """Move an agent run from this collection to a destination collection.
+    """Move agent runs from this collection to a destination collection.
 
     Requires WRITE permission on both the source and destination collections.
-    Will fail if the agent run has related data (labels, tags, judge results, etc.)
-    that would become inconsistent after the move.
+    Will fail for individual agent runs that have related data (labels, tags,
+    judge results, etc.) that would become inconsistent after the move.
     """
     # Check WRITE permission on destination collection
     dest_has_permission = await mono_svc.has_permission(
@@ -1230,18 +1236,28 @@ async def move_agent_run(
     if not await mono_svc.collection_exists(request.destination_collection_id):
         raise NotFoundError(f"Destination collection {request.destination_collection_id} not found")
 
-    await mono_svc.move_agent_run(
-        agent_run_id=request.agent_run_id,
-        source_collection_id=collection_id,
-        destination_collection_id=request.destination_collection_id,
-    )
+    succeeded_count = 0
+    errors: dict[str, str] = {}
 
-    return {
-        "status": "success",
-        "agent_run_id": request.agent_run_id,
-        "source_collection_id": collection_id,
-        "destination_collection_id": request.destination_collection_id,
-    }
+    for agent_run_id in request.agent_run_ids:
+        try:
+            await mono_svc.move_agent_run(
+                agent_run_id=agent_run_id,
+                source_collection_id=collection_id,
+                destination_collection_id=request.destination_collection_id,
+            )
+            succeeded_count += 1
+        except UserFacingError as e:
+            errors[agent_run_id] = e.user_message
+        except Exception:
+            logger.error(f"Unexpected error moving agent run {agent_run_id}", exc_info=True)
+            errors[agent_run_id] = "An unexpected error occurred"
+
+    return MoveAgentRunsResponse(
+        succeeded_count=succeeded_count,
+        failed_count=len(errors),
+        errors=errors,
+    )
 
 
 ########
