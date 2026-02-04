@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # type: ignore
+from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent._log_util import get_logger
@@ -198,6 +199,24 @@ if deployment_id:
 @asgi_app.get("/")
 async def root():
     return "clarity has been achieved"
+
+
+@asgi_app.get("/health")
+async def health():
+    """Health check endpoint that verifies database connectivity."""
+    from docent_core._db_service.db import DocentDB
+
+    try:
+        db = await DocentDB.init()
+        async with db.session() as session:
+            await session.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected"},
+        )
 
 
 @asgi_app.get("/test_error")
