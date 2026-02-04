@@ -450,7 +450,13 @@ async def get_collections_counts(
     mono_svc: MonoService = Depends(get_mono_svc),
 ):
     """Get counts for multiple collections in a batch."""
-    collection_ids = request.collection_ids
+    # Filter to only collections the user has access to (security check)
+    accessible_collections = await mono_svc.get_collections(user)
+    accessible_ids = {c.id for c in accessible_collections}
+    collection_ids = [cid for cid in request.collection_ids if cid in accessible_ids]
+
+    if not collection_ids:
+        return dict[str, CollectionCounts]()
 
     agent_run_counts = await mono_svc.batch_count_collection_agent_runs(collection_ids)
     rubric_counts = await mono_svc.batch_count_collection_rubrics(collection_ids)

@@ -32,6 +32,9 @@ export function useCollectionCounts(
     const newIds = collectionIds.filter((id) => !fetchedRef.current.has(id));
     if (newIds.length === 0) return;
 
+    // AbortController to cancel in-flight requests on cleanup
+    const abortController = new AbortController();
+
     const fetchBatches = async () => {
       setIsLoading(true);
 
@@ -49,6 +52,7 @@ export function useCollectionCounts(
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({ collection_ids: chunk }),
+            signal: abortController.signal,
           });
 
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -62,15 +66,25 @@ export function useCollectionCounts(
           setCounts((prev) => ({ ...prev, ...result }));
         }
       } catch (error) {
+        // Ignore abort errors - they're expected on cleanup
+        if (error instanceof Error && error.name === 'AbortError') return;
         console.error('Failed to fetch collection counts:', error);
       } finally {
-        setIsLoading(false);
+        // Only set loading to false if not aborted
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchBatches();
+
+    // Cleanup: abort any in-flight requests when deps change or unmount
+    return () => {
+      abortController.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collectionIds.join(','), refetchTrigger]);
+  }, [JSON.stringify(collectionIds), refetchTrigger]);
 
   return { counts, isLoading, refetch };
 }
