@@ -39,6 +39,8 @@ Sometimes, the user's request will clearly pertain to one of these technqiues. O
 
 ## Building LLMRequests with the Prompt API
 
+The Docent SDK can be installed via `docent-python` (e.g., `uv add docent-python`).
+
 Start with these imports when using the Docent SDK:
 ```python
 from docent.sdk.client import Docent
