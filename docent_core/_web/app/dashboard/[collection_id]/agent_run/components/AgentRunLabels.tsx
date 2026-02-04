@@ -45,6 +45,7 @@ import { SchemaDefinition } from '@/app/types/schema';
 import { SchemaValueRenderer } from '@/app/dashboard/[collection_id]/components/SchemaValueRenderer';
 import { cn } from '@/lib/utils';
 import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
+import { toast } from 'sonner';
 import CodeMirror, { EditorView } from '@uiw/react-codemirror';
 import { json as jsonLanguage } from '@codemirror/lang-json';
 import { useTheme } from 'next-themes';
@@ -748,6 +749,9 @@ type LabelCardProps =
       collectionId: string;
       agentRunId: string;
       hasWritePermission: boolean;
+      isEditing: boolean;
+      onEditingChange: (editing: boolean) => void;
+      isFlashing: boolean;
     }
   | {
       mode: 'draft';
@@ -757,13 +761,17 @@ type LabelCardProps =
       onSave: () => void;
       onCancel: () => void;
       isSaving: boolean;
+      isFlashing: boolean;
     };
 
 function LabelCard(props: LabelCardProps) {
-  const { mode, labelSet } = props;
+  const { mode, labelSet, isFlashing } = props;
 
-  // Internal state for editing existing labels
-  const [isEditing, setIsEditing] = useState(false);
+  // Use controlled isEditing for existing labels
+  const isEditing = props.mode === 'existing' ? props.isEditing : false;
+  const setIsEditing =
+    props.mode === 'existing' ? props.onEditingChange : () => {};
+
   const [editValues, setEditValues] = useState<Record<string, any>>(
     props.mode === 'existing' ? props.label.label_value : {}
   );
@@ -819,6 +827,7 @@ function LabelCard(props: LabelCardProps) {
         agentRunId: props.agentRunId,
       }).unwrap();
       setIsConfirmingDelete(false);
+      setIsEditing(false);
     } catch (error) {
       console.error('Failed to delete label:', error);
     }
@@ -835,10 +844,12 @@ function LabelCard(props: LabelCardProps) {
   return (
     <div
       className={cn(
-        'border rounded-lg',
-        showEditUI
-          ? 'border-blue-border bg-blue-bg/30'
-          : 'border-border bg-card'
+        'border rounded-lg transition-all duration-500',
+        isFlashing
+          ? 'bg-red-bg border-red-border'
+          : showEditUI
+            ? 'border-blue-border bg-blue-bg/30'
+            : 'border-border bg-card'
       )}
     >
       {/* Header */}
@@ -954,6 +965,12 @@ export default function AgentRunLabels({
   const [draftLabelSet, setDraftLabelSet] = useState<LabelSet | null>(null);
   const [draftValues, setDraftValues] = useState<Record<string, any>>({});
 
+  // Track which existing label is being edited and flash animation state
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [flashingCardType, setFlashingCardType] = useState<
+    'draft' | string | null
+  >(null);
+
   const { data: categorizedLabelSets, isLoading: isLoadingLabelSets } =
     useGetCategorizedLabelSetsQuery({
       collectionId,
@@ -1003,6 +1020,19 @@ export default function AgentRunLabels({
   }, []);
 
   const handleOpenChange = (newOpen: boolean) => {
+    if (newOpen) {
+      // Check for unsaved changes before opening popover
+      const hasUnsavedDraft = draftLabelSet !== null;
+      const hasUnsavedEdit = editingLabelId !== null;
+
+      if (hasUnsavedDraft || hasUnsavedEdit) {
+        toast.error('Please save or cancel your current label changes first');
+        setFlashingCardType(hasUnsavedDraft ? 'draft' : editingLabelId);
+        setTimeout(() => setFlashingCardType(null), 500);
+        return; // Don't open popover
+      }
+    }
+
     setOpen(newOpen);
     if (!newOpen) {
       // Reset to menu view and form when closing
@@ -1203,6 +1233,7 @@ export default function AgentRunLabels({
             onSave={handleDraftSave}
             onCancel={handleDraftCancel}
             isSaving={isCreatingLabel}
+            isFlashing={flashingCardType === 'draft'}
           />
         )}
 
@@ -1234,6 +1265,28 @@ export default function AgentRunLabels({
               collectionId={collectionId}
               agentRunId={agentRunId}
               hasWritePermission={hasWritePermission}
+              isEditing={editingLabelId === label.id}
+              onEditingChange={(editing) => {
+                if (editing) {
+                  // Check if something else is already being edited
+                  const hasUnsavedDraft = draftLabelSet !== null;
+                  const hasUnsavedEdit =
+                    editingLabelId !== null && editingLabelId !== label.id;
+
+                  if (hasUnsavedDraft || hasUnsavedEdit) {
+                    toast.error(
+                      'Please save or cancel your current label changes first'
+                    );
+                    setFlashingCardType(
+                      hasUnsavedDraft ? 'draft' : editingLabelId
+                    );
+                    setTimeout(() => setFlashingCardType(null), 500);
+                    return; // Don't enter edit mode
+                  }
+                }
+                setEditingLabelId(editing ? label.id! : null);
+              }}
+              isFlashing={flashingCardType === label.id}
             />
           );
         })}
