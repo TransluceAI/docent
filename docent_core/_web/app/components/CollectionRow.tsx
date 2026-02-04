@@ -30,6 +30,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { useUserContext } from '@/app/contexts/UserContext';
 
@@ -323,55 +328,80 @@ export default function CollectionRow({
               </div>
             ) : hasWritePermission ? (
               <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-auto w-auto text-muted-foreground group-hover:text-indigo-text p-0"
-                  onClick={triggerClone}
-                  title={
-                    !user || user.is_anonymous
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-auto w-auto text-muted-foreground hover:text-indigo-text p-0"
+                      onClick={triggerClone}
+                    >
+                      <CopyPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {!user || user.is_anonymous
                       ? 'Sign up to clone collection'
-                      : 'Clone collection'
-                  }
-                >
-                  <CopyPlus className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-auto w-auto text-muted-foreground group-hover:text-blue-text p-0"
-                  onClick={startEditing}
-                  disabled={!hasWritePermission}
-                  title="Edit collection"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-auto w-auto text-muted-foreground group-hover:text-red-text p-0"
-                  disabled={!hasAdminPermission}
-                  onClick={triggerDelete}
-                  title="Delete collection"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                      : 'Clone collection'}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-auto w-auto text-muted-foreground hover:text-blue-text p-0"
+                      onClick={startEditing}
+                      disabled={!hasWritePermission}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Edit collection</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-auto w-auto text-muted-foreground hover:text-red-text p-0"
+                        disabled={!hasAdminPermission}
+                        onClick={hasAdminPermission ? triggerDelete : undefined}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {hasAdminPermission
+                      ? 'Delete collection'
+                      : 'Admin permission required'}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-auto w-auto text-muted-foreground group-hover:text-indigo-text p-0"
-                  onClick={triggerClone}
-                  title={
-                    !user || user.is_anonymous
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-auto w-auto text-muted-foreground hover:text-indigo-text p-0"
+                      onClick={triggerClone}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {!user || user.is_anonymous
                       ? 'Sign up to clone collection'
-                      : 'Clone collection'
-                  }
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+                      : 'Clone collection'}
+                  </TooltipContent>
+                </Tooltip>
                 <div className="text-muted-foreground text-xs">Read only</div>
               </div>
             )}
