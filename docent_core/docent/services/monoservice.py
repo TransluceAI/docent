@@ -1158,6 +1158,7 @@ class MonoService:
         sort_field: str | None = None,
         sort_direction: Literal["asc", "desc"] = "asc",
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[str]:
         """
         Get agent run IDs for a given Collection ID without fetching transcripts.
@@ -1305,7 +1306,9 @@ class MonoService:
                 else:
                     query = query.order_by(sort_expr.asc())
 
-            # Apply limit if specified
+            # Apply offset and limit if specified
+            if offset > 0:
+                query = query.offset(offset)
             if limit is not None:
                 query = query.limit(limit)
 

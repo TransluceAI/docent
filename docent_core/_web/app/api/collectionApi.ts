@@ -88,6 +88,15 @@ interface PostBaseFilterRequest {
   filter: ComplexFilter | null;
 }
 
+interface AgentRunIdsResponse {
+  ids: string[];
+  has_more: boolean;
+}
+
+interface AgentRunCountResponse {
+  count: number;
+}
+
 export const collectionApi = createApi({
   reducerPath: 'collectionApi',
   baseQuery: fetchBaseQuery({
@@ -102,6 +111,7 @@ export const collectionApi = createApi({
     'AgentRunMetadataRange',
     'BaseFilter',
     'AgentRunIds',
+    'AgentRunCount',
     'DqlSchema',
     'Jobs',
   ],
@@ -178,26 +188,40 @@ export const collectionApi = createApi({
       }),
       invalidatesTags: [
         'BaseFilter',
+        'AgentRunCount',
         'AgentRunMetadataFieldValues',
         'AgentRunMetadataRange',
       ],
     }),
     getAgentRunIds: build.query<
-      string[],
+      AgentRunIdsResponse,
       {
         collectionId: string;
         sortField?: string;
         sortDirection?: 'asc' | 'desc';
+        limit?: number;
+        offset?: number;
       }
     >({
-      query: ({ collectionId, sortField, sortDirection }) => {
+      query: ({
+        collectionId,
+        sortField,
+        sortDirection,
+        limit = 2000,
+        offset = 0,
+      }) => {
         const params = new URLSearchParams();
         if (sortField) params.append('sort_field', sortField);
         if (sortDirection) params.append('sort_direction', sortDirection);
-        const queryString = params.toString();
-        return `/${collectionId}/agent_run_ids${queryString ? `?${queryString}` : ''}`;
+        params.append('limit', String(limit));
+        params.append('offset', String(offset));
+        return `/${collectionId}/agent_run_ids?${params}`;
       },
       providesTags: ['AgentRunIds'],
+    }),
+    getAgentRunCount: build.query<AgentRunCountResponse, string>({
+      query: (collectionId) => `/${collectionId}/agent_run_count`,
+      providesTags: ['AgentRunCount'],
     }),
     getAgentRunMetadataFields: build.query<
       AgentRunMetadataFieldsResponse,
@@ -376,6 +400,7 @@ export const collectionApi = createApi({
               dispatch(
                 collectionApi.util.invalidateTags([
                   'AgentRunIds',
+                  'AgentRunCount',
                   'AgentRunMetadata',
                   'AgentRunMetadataRange',
                 ])
@@ -410,6 +435,7 @@ export const {
   useGetFieldValuesQuery,
   useGetAgentRunMetadataQuery,
   useGetAgentRunIdsQuery,
+  useGetAgentRunCountQuery,
   useGetAgentRunIngestJobsQuery,
   useGetAgentRunIngestJobQuery,
   useGetDqlSchemaQuery,

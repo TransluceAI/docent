@@ -50,7 +50,6 @@ import {
 import DownloadMenu from '@/app/components/DownloadMenu';
 import { compareAgentRunColumnNames } from '@/lib/agentRunColumns';
 import { cn } from '@/lib/utils';
-import { useDebounce } from '@/hooks/use-debounce';
 import { useParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MultiCombobox, SingleCombobox } from './Combobox';
@@ -80,11 +79,16 @@ export type AgentRunTableRow = {
 
 const ROW_HEIGHT_PX = 32;
 const OVERSCAN_COUNT = 50;
-const METADATA_REQUEST_DEBOUNCE_MS = 150;
+const METADATA_REQUEST_DEBOUNCE_MS = 200;
+const SCROLL_IDLE_DEBOUNCE_MS = 150;
 const MIN_SKELETON_ROW_COUNT = 12;
 export const MAX_SELECTED_COLUMNS = 20;
+export const MAX_EXPORT_ROWS = 50_000;
 
-// Debounces metadata fetches to limit repeated requests while scrolling.
+// Debounces metadata fetches with immediate cancellation on scroll.
+// When the visible range changes, immediately cancels any in-flight request,
+// then waits for the debounce period before starting a new request.
+// This ensures rapid scrolling doesn't queue up stale requests.
 function useDebouncedMetadataRequest(
   agentRunIds: string[] | undefined,
   metadataData: Record<string, Record<string, unknown>>,
@@ -94,26 +98,72 @@ function useDebouncedMetadataRequest(
   requestMetadataForIds: (
     ids: string[],
     options?: { force?: boolean; fields?: string[] }
-  ) => Promise<Record<string, Record<string, unknown>>>
+  ) => Promise<Record<string, Record<string, unknown>>>,
+  cancelMetadataRequest: (() => void) | undefined,
+  isScrolling: boolean,
+  isFetchingAgentRuns: boolean
 ) {
   const selectedMetadataFields = useMemo(
     () => selectedColumns.filter((column) => column !== 'agent_run_id'),
     [selectedColumns]
   );
 
-  // Create a key that changes when we need to make a new request
-  const requestKey = useMemo(() => {
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRangeKeyRef = useRef<string | null>(null);
+
+  // Compute range key to detect when visible range changes
+  const rangeKey = `${startIndex}-${endIndex}`;
+
+  useEffect(() => {
+    // Clear any pending debounce timer when unmounting
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // When the visible range changes, immediately cancel in-flight requests
+    if (lastRangeKeyRef.current !== rangeKey) {
+      lastRangeKeyRef.current = rangeKey;
+
+      // Cancel any in-flight request immediately on scroll
+      if (cancelMetadataRequest) {
+        cancelMetadataRequest();
+      }
+
+      // Clear any pending debounce timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    }
+
+    // Skip metadata requests while scrolling or while IDs are being fetched.
+    // When IDs are being fetched, the visible range is about to change,
+    // so any metadata request would be for stale IDs.
+    if (isScrolling || isFetchingAgentRuns) {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      return;
+    }
+
     if (
       !agentRunIds ||
       !agentRunIds.length ||
       selectedMetadataFields.length === 0
     ) {
-      return null;
+      return;
     }
 
     const prefetchStart = Math.max(startIndex - OVERSCAN_COUNT, 0);
     const prefetchEnd = Math.min(endIndex + OVERSCAN_COUNT, agentRunIds.length);
     const idsToCheck = agentRunIds.slice(prefetchStart, prefetchEnd);
+
     const needsFields = (runId: string) => {
       const data = metadataData[runId];
       if (!data) {
@@ -125,31 +175,41 @@ function useDebouncedMetadataRequest(
       }
       return selectedMetadataFields.some((column) => !loadedFields.has(column));
     };
-    const missing = idsToCheck.filter((id) => needsFields(id));
 
-    // Return a string key that represents the current request state
-    return missing.length > 0 ? missing.join(',') : null;
-  }, [agentRunIds, endIndex, metadataData, startIndex, selectedMetadataFields]);
+    const missingIds = idsToCheck.filter((id) => needsFields(id));
 
-  // Debounce the request key
-  const debouncedRequestKey = useDebounce(
-    requestKey,
-    METADATA_REQUEST_DEBOUNCE_MS
-  );
+    if (missingIds.length === 0) {
+      return;
+    }
 
-  // Make the request when the debounced key changes
-  useEffect(() => {
-    if (debouncedRequestKey) {
-      const idsToRequest = debouncedRequestKey.split(',');
-      void requestMetadataForIds(idsToRequest, {
+    // Debounce: wait before making the request
+    // Clear any existing timer to prevent stale requests when dependencies change
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      void requestMetadataForIds(missingIds, {
         fields: selectedMetadataFields,
       });
-    }
-  }, [debouncedRequestKey, requestMetadataForIds, selectedMetadataFields]);
+    }, METADATA_REQUEST_DEBOUNCE_MS);
+  }, [
+    agentRunIds,
+    cancelMetadataRequest,
+    endIndex,
+    isFetchingAgentRuns,
+    metadataData,
+    rangeKey,
+    requestMetadataForIds,
+    selectedMetadataFields,
+    startIndex,
+    isScrolling,
+  ]);
 }
 
 export interface AgentRunTableProps {
   agentRunIds?: string[];
+  agentRunIdsOffset?: number;
   metadataData: Record<string, Record<string, unknown>>;
   availableColumns: string[];
   selectedColumns: string[];
@@ -169,6 +229,8 @@ export interface AgentRunTableProps {
     ids: string[],
     options?: { force?: boolean; fields?: string[] }
   ) => Promise<Record<string, Record<string, unknown>>>;
+  cancelMetadataRequest?: () => void;
+  cancelLoadMoreIds?: () => void;
   dropZoneHandlers: {
     onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
     onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void;
@@ -186,6 +248,11 @@ export interface AgentRunTableProps {
     mode: 'append' | 'replace'
   ) => void;
   filterableColumns?: Set<string>;
+  totalCount?: number;
+  onLoadMoreIds?: (anchorIndex?: number) => void;
+  fetchIdsForExport?: (
+    limit: number
+  ) => Promise<{ ids: string[]; truncated: boolean }>;
 }
 
 const formatCellValue = (value: unknown, keyExists: boolean): string => {
@@ -388,6 +455,7 @@ const AgentRunTableCell = memo(function AgentRunTableCell({
 
 export const AgentRunTable = memo(function AgentRunTable({
   agentRunIds,
+  agentRunIdsOffset,
   metadataData,
   availableColumns,
   selectedColumns,
@@ -401,6 +469,8 @@ export const AgentRunTable = memo(function AgentRunTable({
   activeRunId,
   onRowMouseDown,
   requestMetadataForIds,
+  cancelMetadataRequest,
+  cancelLoadMoreIds,
   dropZoneHandlers,
   isDragActive,
   isOverDropZone,
@@ -410,6 +480,9 @@ export const AgentRunTable = memo(function AgentRunTable({
   isFetchingAgentRuns,
   onCreateFilterFromCell,
   filterableColumns,
+  totalCount,
+  onLoadMoreIds,
+  fetchIdsForExport,
 }: AgentRunTableProps) {
   const internalScrollRef = useRef<HTMLDivElement | null>(null);
   // Ref to access metadataData in cell render functions without causing columns useMemo to re-run
@@ -417,6 +490,10 @@ export const AgentRunTable = memo(function AgentRunTable({
   metadataDataRef.current = metadataData;
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const isScrollingRef = useRef(false);
+  const scrollIdleTimeoutRef = useRef<number | null>(null);
+  const lastRequestedAnchorRef = useRef<number | null>(null);
   // https://nextjs.org/docs/messages/react-hydration-error#solution-1-using-useeffect-to-run-on-the-client-only
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => {
@@ -429,6 +506,12 @@ export const AgentRunTable = memo(function AgentRunTable({
         typeof window !== 'undefined'
       ) {
         window.clearTimeout(copyResetTimeoutRef.current);
+      }
+      if (
+        scrollIdleTimeoutRef.current !== null &&
+        typeof window !== 'undefined'
+      ) {
+        window.clearTimeout(scrollIdleTimeoutRef.current);
       }
     };
   }, []);
@@ -514,9 +597,38 @@ export const AgentRunTable = memo(function AgentRunTable({
     };
   }, [scrollElement]);
 
-  const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
-    setScrollTop(event.currentTarget.scrollTop);
-  }, []);
+  const handleScroll = useCallback(
+    (event: ReactUIEvent<HTMLDivElement>) => {
+      setScrollTop(event.currentTarget.scrollTop);
+
+      if (cancelMetadataRequest) {
+        cancelMetadataRequest();
+      }
+      if (cancelLoadMoreIds) {
+        cancelLoadMoreIds();
+      }
+      lastRequestedAnchorRef.current = null;
+
+      if (!isScrollingRef.current) {
+        isScrollingRef.current = true;
+        setIsScrolling(true);
+      }
+      if (
+        scrollIdleTimeoutRef.current !== null &&
+        typeof window !== 'undefined'
+      ) {
+        window.clearTimeout(scrollIdleTimeoutRef.current);
+      }
+      if (typeof window !== 'undefined') {
+        scrollIdleTimeoutRef.current = window.setTimeout(() => {
+          isScrollingRef.current = false;
+          setIsScrolling(false);
+          scrollIdleTimeoutRef.current = null;
+        }, SCROLL_IDLE_DEBOUNCE_MS);
+      }
+    },
+    [cancelLoadMoreIds, cancelMetadataRequest]
+  );
 
   const data = useMemo<AgentRunTableRow[]>(() => {
     if (!agentRunIds) {
@@ -569,8 +681,24 @@ export const AgentRunTable = memo(function AgentRunTable({
         return;
       }
       setIsExporting(true);
-      const missingIds = agentRunIds.filter((id) => !metadataData[id]);
       try {
+        // Fetch all IDs for export if the callback is provided, otherwise use loaded IDs
+        let idsToExport = agentRunIds;
+        if (fetchIdsForExport) {
+          const result = await fetchIdsForExport(MAX_EXPORT_ROWS);
+          idsToExport = result.ids;
+          if (result.truncated) {
+            toast.warning(
+              `Export limited to ${MAX_EXPORT_ROWS.toLocaleString()} rows. Use Python/Notebook export for larger datasets.`
+            );
+          }
+        }
+
+        if (!idsToExport.length) {
+          return;
+        }
+
+        const missingIds = idsToExport.filter((id) => !metadataData[id]);
         const fetchedMetadata = await requestMetadataForIds(missingIds, {
           force: true,
           fields: exportColumns,
@@ -579,7 +707,7 @@ export const AgentRunTable = memo(function AgentRunTable({
           ...metadataData,
           ...fetchedMetadata,
         };
-        const rows = agentRunIds.map((runId) =>
+        const rows = idsToExport.map((runId) =>
           exportColumns.map((columnKey) => {
             // Get the value
             const value = getCellValue(runId, columnKey, combinedMetadata);
@@ -627,7 +755,7 @@ export const AgentRunTable = memo(function AgentRunTable({
         posthog.capture('agent_run_table_download', {
           collectionId: resolvedCollectionId,
           format,
-          rowCount: agentRunIds.length,
+          rowCount: idsToExport.length,
           columnCount: exportColumns.length,
         });
       } catch (error) {
@@ -639,6 +767,7 @@ export const AgentRunTable = memo(function AgentRunTable({
     [
       agentRunIds,
       exportColumns,
+      fetchIdsForExport,
       getCellValue,
       metadataData,
       requestMetadataForIds,
@@ -916,16 +1045,55 @@ export const AgentRunTable = memo(function AgentRunTable({
     },
   });
 
-  const totalRows = data.length;
+  const loadedRows = data.length;
+  const effectiveIdsOffset = agentRunIdsOffset ?? 0;
+  // Use totalCount when available; otherwise keep at least the current window size
+  // to avoid collapsing the scrollbar while scrolling.
+  const totalRows = Math.max(totalCount ?? 0, loadedRows + effectiveIdsOffset);
   const effectiveContainerHeight = containerHeight || 1;
   const visibleRowCount =
     Math.ceil(effectiveContainerHeight / ROW_HEIGHT_PX) + OVERSCAN_COUNT * 2;
-  const rawStartIndex = Math.max(
-    Math.floor(scrollTop / ROW_HEIGHT_PX) - OVERSCAN_COUNT,
-    0
+  const scrollIndex = Math.max(Math.floor(scrollTop / ROW_HEIGHT_PX), 0);
+  const rawStartIndex = Math.max(scrollIndex - OVERSCAN_COUNT, 0);
+  const rawEndIndex = Math.min(rawStartIndex + visibleRowCount, totalRows);
+  const localStartIndex = Math.max(rawStartIndex - effectiveIdsOffset, 0);
+  const localEndIndex = Math.min(
+    Math.max(rawEndIndex - effectiveIdsOffset, 0),
+    loadedRows
   );
-  const endIndex = Math.min(rawStartIndex + visibleRowCount, totalRows);
-  const startIndex = Math.max(0, endIndex - visibleRowCount);
+  const startIndex = localStartIndex;
+  const endIndex = localEndIndex;
+
+  // Request a new window of IDs when the scroll anchor leaves the loaded window.
+  useEffect(() => {
+    if (!onLoadMoreIds || isScrolling || isFetchingAgentRuns || !totalRows) {
+      return;
+    }
+
+    const windowStart = effectiveIdsOffset;
+    const windowEnd = effectiveIdsOffset + loadedRows;
+    const needsWindow = scrollIndex < windowStart || scrollIndex >= windowEnd;
+
+    if (!needsWindow) {
+      lastRequestedAnchorRef.current = null;
+      return;
+    }
+
+    if (lastRequestedAnchorRef.current === scrollIndex) {
+      return;
+    }
+
+    lastRequestedAnchorRef.current = scrollIndex;
+    onLoadMoreIds(scrollIndex);
+  }, [
+    effectiveIdsOffset,
+    scrollIndex,
+    loadedRows,
+    isScrolling,
+    isFetchingAgentRuns,
+    onLoadMoreIds,
+    totalRows,
+  ]);
 
   // Use debounced metadata request hook
   useDebouncedMetadataRequest(
@@ -934,11 +1102,28 @@ export const AgentRunTable = memo(function AgentRunTable({
     selectedColumns,
     startIndex,
     endIndex,
-    requestMetadataForIds
+    requestMetadataForIds,
+    cancelMetadataRequest,
+    isScrolling,
+    isFetchingAgentRuns
   );
 
-  const paddingTop = startIndex * ROW_HEIGHT_PX;
-  const paddingBottom = Math.max((totalRows - endIndex) * ROW_HEIGHT_PX, 0);
+  // When no rows are rendered (startIndex >= endIndex), the padding calculation
+  // must still maintain total height = totalRows * ROW_HEIGHT_PX to prevent
+  // the scrollbar from jumping. Use scroll position as the anchor in this case.
+  const hasRowsToRender = startIndex < endIndex;
+  const firstRenderedIndex = hasRowsToRender
+    ? effectiveIdsOffset + startIndex
+    : Math.min(scrollIndex, totalRows);
+  const lastRenderedIndex = hasRowsToRender
+    ? effectiveIdsOffset + endIndex
+    : firstRenderedIndex;
+
+  const paddingTop = firstRenderedIndex * ROW_HEIGHT_PX;
+  const paddingBottom = Math.max(
+    (totalRows - lastRenderedIndex) * ROW_HEIGHT_PX,
+    0
+  );
 
   const columnCount = columns.length || 1;
   const hasRows = totalRows > 0;
