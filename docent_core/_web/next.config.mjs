@@ -1,3 +1,5 @@
+import { withSentryConfig } from '@sentry/nextjs';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
@@ -28,4 +30,7 @@ const nextConfig = {
   output: 'standalone',
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Suppresses source map uploading logs during build
+  silent: true,
+});
