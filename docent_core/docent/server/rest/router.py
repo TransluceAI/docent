@@ -886,17 +886,48 @@ async def get_agent_run_with_tree(
     }
 
 
+class AgentRunIdsResponse(BaseModel):
+    ids: list[str]
+    has_more: bool
+
+
+class AgentRunCountResponse(BaseModel):
+    count: int
+
+
 @user_router.get("/{collection_id}/agent_run_ids")
 async def get_agent_run_ids(
     sort_field: str | None = None,
     sort_direction: Literal["asc", "desc"] = "asc",
+    limit: int = Query(default=2000, le=50000),
+    offset: int = Query(default=0, ge=0),
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_view_permission(Permission.READ)),
-) -> list[str]:
-    return await mono_svc.get_agent_run_ids(
-        ctx, sort_field=sort_field, sort_direction=sort_direction
+) -> AgentRunIdsResponse:
+    # Fetch one extra to detect has_more
+    ids = await mono_svc.get_agent_run_ids(
+        ctx,
+        sort_field=sort_field,
+        sort_direction=sort_direction,
+        limit=limit + 1,
+        offset=offset,
     )
+    has_more = len(ids) > limit
+    return AgentRunIdsResponse(
+        ids=ids[:limit],
+        has_more=has_more,
+    )
+
+
+@user_router.get("/{collection_id}/agent_run_count")
+async def get_agent_run_count(
+    mono_svc: MonoService = Depends(get_mono_svc),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _: None = Depends(require_view_permission(Permission.READ)),
+) -> AgentRunCountResponse:
+    count = await mono_svc.count_base_agent_runs(ctx)
+    return AgentRunCountResponse(count=count)
 
 
 class AgentRunMetadataRequest(BaseModel):

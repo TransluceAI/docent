@@ -33,6 +33,7 @@ import { useDragAndDrop } from '@/hooks/use-drag-drop';
 import {
   useGetAgentRunMetadataFieldsQuery,
   useGetAgentRunSortableFieldsQuery,
+  useGetAgentRunCountQuery,
   collectionApi,
   useGetBaseFilterQuery,
 } from '../api/collectionApi';
@@ -122,7 +123,8 @@ const mergeStructuredMetadata = (
   return merged;
 };
 
-const METADATA_FETCH_BATCH_SIZE = 200;
+const METADATA_FETCH_BATCH_SIZE = 250;
+const AGENT_RUN_IDS_PAGE_SIZE = 2000;
 
 type CachedExperimentViewerState = {
   metadataData: Record<string, Record<string, unknown>>;
@@ -261,7 +263,7 @@ export default function ExperimentViewer({
   >(() => cachedState?.metadataData ?? {});
   const metadataDataRef = useRef(metadataData);
   metadataDataRef.current = metadataData;
-  const [pendingMetadataFieldsById, setPendingMetadataFieldsById] =
+  const [_pendingMetadataFieldsById, setPendingMetadataFieldsById] =
     useState<MetadataFieldsById>({});
   const metadataRequestIdRef = useRef(0);
   const activeMetadataRequestRef = useRef<{
@@ -442,13 +444,28 @@ export default function ExperimentViewer({
   );
   const agentRunIdsRef = useRef(agentRunIds);
   agentRunIdsRef.current = agentRunIds;
+  const [agentRunIdsOffset, setAgentRunIdsOffset] = useState(0);
+  const agentRunIdsOffsetRef = useRef(agentRunIdsOffset);
+  agentRunIdsOffsetRef.current = agentRunIdsOffset;
+  const [hasMoreIds, setHasMoreIds] = useState(false);
+  const hasMoreIdsRef = useRef(hasMoreIds);
+  hasMoreIdsRef.current = hasMoreIds;
   const [isAgentRunIdsLoading, setIsAgentRunIdsLoading] = useState(false);
   const [isAgentRunIdsFetching, setIsAgentRunIdsFetching] = useState(false);
+  const isLoadingMoreIdsRef = useRef(false);
+  const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const agentRunIdsRequestIdRef = useRef(0);
   const activeAgentRunIdsRequestRef = useRef<{
     id: number;
     key: string;
     abort?: () => void;
+  } | null>(null);
+  // Track in-flight load-more request for cancellation
+  const activeLoadMoreRequestRef = useRef<{
+    id: number;
+    abort: () => void;
   } | null>(null);
 
   const { data: metadataFieldsData } = useGetAgentRunMetadataFieldsQuery(
@@ -465,6 +482,7 @@ export default function ExperimentViewer({
   const { data: serverBaseFilter } = useGetBaseFilterQuery(
     collectionId ? collectionId : skipToken
   );
+
   const [appliedBaseFilter, setAppliedBaseFilter] = useState<
     ComplexFilter | null | undefined
   >(undefined);
@@ -473,6 +491,13 @@ export default function ExperimentViewer({
   >(undefined);
   const appliedBaseFilterRef = useRef(appliedBaseFilter);
   appliedBaseFilterRef.current = appliedBaseFilter;
+
+  // Fetch total count for the current filter state
+  const { data: agentRunCountData, isFetching: isCountFetching } =
+    useGetAgentRunCountQuery(collectionId!, {
+      skip: !collectionId || appliedBaseFilter === undefined,
+    });
+  const totalAgentRunCount = agentRunCountData?.count;
 
   const getBaseFilterKey = useCallback((filter: ComplexFilter | null) => {
     return filter ? JSON.stringify(filter) : 'none';
@@ -593,6 +618,8 @@ export default function ExperimentViewer({
       }
       activeAgentRunIdsRequestRef.current = null;
       setAgentRunIds(undefined);
+      setAgentRunIdsOffset(0);
+      setHasMoreIds(false);
       setIsAgentRunIdsLoading(baseFilterKey === null);
       setIsAgentRunIdsFetching(false);
       logAgentRunDebug('agent_run_ids_skip', {
@@ -614,12 +641,27 @@ export default function ExperimentViewer({
       activeAgentRunIdsRequestRef.current.abort();
     }
 
+    // Reset pagination when the request key changes (sort/filter changed)
+    setAgentRunIdsOffset(0);
+    setHasMoreIds(false);
+    isLoadingMoreIdsRef.current = false;
+    if (loadMoreDebounceRef.current) {
+      clearTimeout(loadMoreDebounceRef.current);
+      loadMoreDebounceRef.current = null;
+    }
+    if (activeLoadMoreRequestRef.current) {
+      activeLoadMoreRequestRef.current.abort();
+      activeLoadMoreRequestRef.current = null;
+    }
+
     const requestId = agentRunIdsRequestIdRef.current + 1;
     agentRunIdsRequestIdRef.current = requestId;
     const triggerResult = fetchAgentRunIds({
       collectionId,
       sortField: sortField || undefined,
       sortDirection,
+      limit: AGENT_RUN_IDS_PAGE_SIZE,
+      offset: 0,
     });
 
     activeAgentRunIdsRequestRef.current = {
@@ -644,9 +686,12 @@ export default function ExperimentViewer({
         }
         logAgentRunDebug('agent_run_ids_request_success', {
           requestId,
-          count: response.length,
+          count: response.ids.length,
+          has_more: response.has_more,
         });
-        setAgentRunIds(response);
+        setAgentRunIds(response.ids);
+        setHasMoreIds(response.has_more);
+        setAgentRunIdsOffset(0);
       })
       .catch((error) => {
         if (activeAgentRunIdsRequestRef.current?.id !== requestId) {
@@ -684,6 +729,180 @@ export default function ExperimentViewer({
     appliedBaseFilter === undefined ||
     isLoadingAgentRuns ||
     isFetchingAgentRuns;
+
+  const cancelLoadMoreIds = useCallback(() => {
+    if (loadMoreDebounceRef.current) {
+      clearTimeout(loadMoreDebounceRef.current);
+      loadMoreDebounceRef.current = null;
+    }
+    const activeRequest = activeLoadMoreRequestRef.current;
+    if (!activeRequest) {
+      return;
+    }
+    logAgentRunDebug('agent_run_ids_load_more_abort', {
+      requestId: activeRequest.id,
+      reason: 'scroll',
+    });
+    activeRequest.abort();
+    activeLoadMoreRequestRef.current = null;
+    isLoadingMoreIdsRef.current = false;
+    if (!activeAgentRunIdsRequestRef.current) {
+      setIsAgentRunIdsFetching(false);
+    }
+  }, [logAgentRunDebug]);
+
+  // Load a window of IDs around the scroll anchor (debounced).
+  // Uses trailing-edge debounce: clears and replaces timer on each call,
+  // so request only fires after user stops scrolling for 150ms.
+  const loadMoreIds = useCallback(
+    (anchorIndex?: number) => {
+      if (!collectionId) {
+        return;
+      }
+
+      // Clear any existing debounce timer (trailing-edge debounce pattern)
+      if (loadMoreDebounceRef.current) {
+        clearTimeout(loadMoreDebounceRef.current);
+        loadMoreDebounceRef.current = null;
+      }
+
+      // Debounce: wait 150ms before making the request
+      loadMoreDebounceRef.current = setTimeout(() => {
+        loadMoreDebounceRef.current = null;
+
+        // Re-check conditions after debounce (they might have changed)
+        if (!collectionId) {
+          return;
+        }
+
+        // If there's an in-flight request, abort it - user has scrolled past
+        if (activeLoadMoreRequestRef.current) {
+          logAgentRunDebug('agent_run_ids_load_more_abort', {
+            requestId: activeLoadMoreRequestRef.current.id,
+          });
+          activeLoadMoreRequestRef.current.abort();
+          activeLoadMoreRequestRef.current = null;
+          isLoadingMoreIdsRef.current = false;
+        }
+
+        const normalizedAnchor = Math.max(
+          anchorIndex ?? agentRunIdsOffsetRef.current,
+          0
+        );
+        const nextOffset = Math.max(
+          Math.floor(normalizedAnchor - AGENT_RUN_IDS_PAGE_SIZE / 2),
+          0
+        );
+        if (
+          nextOffset === agentRunIdsOffsetRef.current &&
+          agentRunIdsRef.current?.length
+        ) {
+          return;
+        }
+        const limit = AGENT_RUN_IDS_PAGE_SIZE;
+        logAgentRunDebug('agent_run_ids_load_more', {
+          offset: nextOffset,
+          hasMore: hasMoreIdsRef.current,
+          limit,
+        });
+
+        // Set ref immediately to prevent duplicate calls
+        isLoadingMoreIdsRef.current = true;
+        setIsAgentRunIdsFetching(true);
+        const requestId = agentRunIdsRequestIdRef.current + 1;
+        agentRunIdsRequestIdRef.current = requestId;
+
+        const triggerResult = fetchAgentRunIds({
+          collectionId,
+          sortField: sortField || undefined,
+          sortDirection,
+          limit,
+          offset: nextOffset,
+        });
+
+        activeLoadMoreRequestRef.current = {
+          id: requestId,
+          abort: () => triggerResult.abort(),
+        };
+
+        triggerResult
+          .unwrap()
+          .then((response) => {
+            if (activeLoadMoreRequestRef.current?.id !== requestId) {
+              return;
+            }
+            logAgentRunDebug('agent_run_ids_load_more_success', {
+              requestId,
+              newCount: response.ids.length,
+              has_more: response.has_more,
+            });
+            setAgentRunIds(response.ids);
+            setHasMoreIds(response.has_more);
+            setAgentRunIdsOffset(nextOffset);
+          })
+          .catch((error) => {
+            if (activeLoadMoreRequestRef.current?.id !== requestId) {
+              return;
+            }
+            if (error?.name === 'AbortError') {
+              logAgentRunDebug('agent_run_ids_load_more_aborted', {
+                requestId,
+              });
+              return;
+            }
+            logAgentRunDebug('agent_run_ids_load_more_error', { requestId });
+            console.error('Failed to load more agent run ids', error);
+          })
+          .finally(() => {
+            if (activeLoadMoreRequestRef.current?.id !== requestId) {
+              return;
+            }
+            activeLoadMoreRequestRef.current = null;
+            isLoadingMoreIdsRef.current = false;
+            // Only clear fetching state if main request is not in-flight
+            if (!activeAgentRunIdsRequestRef.current) {
+              setIsAgentRunIdsFetching(false);
+            }
+          });
+      }, 150);
+    },
+    [collectionId, fetchAgentRunIds, logAgentRunDebug, sortDirection, sortField]
+  );
+
+  const fetchIdsForExport = useCallback(
+    async (limit: number): Promise<{ ids: string[]; truncated: boolean }> => {
+      if (!collectionId) {
+        return { ids: [], truncated: false };
+      }
+
+      logAgentRunDebug('export_fetch_ids_start', { limit });
+
+      try {
+        const result = await fetchAgentRunIds({
+          collectionId,
+          sortField: sortField || undefined,
+          sortDirection,
+          limit,
+          offset: 0,
+        }).unwrap();
+
+        logAgentRunDebug('export_fetch_ids_success', {
+          count: result.ids.length,
+          has_more: result.has_more,
+        });
+
+        return {
+          ids: result.ids,
+          truncated: result.has_more,
+        };
+      } catch (error) {
+        logAgentRunDebug('export_fetch_ids_error', { error });
+        console.error('Failed to fetch IDs for export', error);
+        throw error;
+      }
+    },
+    [collectionId, fetchAgentRunIds, logAgentRunDebug, sortDirection, sortField]
+  );
 
   const availableColumns = useMemo(() => {
     const filterableFieldNames = agentRunMetadataFields.map(
@@ -762,6 +981,8 @@ export default function ExperimentViewer({
       setAppliedBaseFilter(undefined);
       setDraftBaseFilter(undefined);
       setAgentRunIds(undefined);
+      setAgentRunIdsOffset(0);
+      setHasMoreIds(false);
       setIsAgentRunIdsLoading(false);
       setIsAgentRunIdsFetching(false);
       if (activeBaseFilterRequestRef.current?.abort) {
@@ -786,6 +1007,8 @@ export default function ExperimentViewer({
     // Always reset request tracking on navigation so missing metadata can be refetched.
     setPendingMetadataFieldsById({});
     setAgentRunIds(undefined);
+    setAgentRunIdsOffset(0);
+    setHasMoreIds(false);
     setIsAgentRunIdsLoading(false);
     setIsAgentRunIdsFetching(false);
     if (activeBaseFilterRequestRef.current?.abort) {
@@ -846,6 +1069,17 @@ export default function ExperimentViewer({
 
   const updatePendingFields = useCallback(
     (mode: 'add' | 'remove', idsToFields: Map<string, Iterable<string>>) => {
+      if (debugAgentRunsRef.current) {
+        let pendingFieldsCount = 0;
+        idsToFields.forEach((fields) => {
+          pendingFieldsCount += Array.from(fields).length;
+        });
+        logAgentRunDebug('metadata_pending_update', {
+          mode,
+          pendingIds: idsToFields.size,
+          pendingFields: pendingFieldsCount,
+        });
+      }
       setPendingMetadataFieldsById((prev) => {
         const next: MetadataFieldsById = { ...prev };
         idsToFields.forEach((fields, id) => {
@@ -864,17 +1098,6 @@ export default function ExperimentViewer({
             next[id] = current;
           }
         });
-        if (debugAgentRunsRef.current) {
-          let pendingFieldsCount = 0;
-          Object.values(next).forEach((fields) => {
-            pendingFieldsCount += fields.size;
-          });
-          logAgentRunDebug('metadata_pending_update', {
-            mode,
-            pendingIds: Object.keys(next).length,
-            pendingFields: pendingFieldsCount,
-          });
-        }
         return next;
       });
     },
@@ -1418,9 +1641,18 @@ export default function ExperimentViewer({
               {activeTab === 'filters' ? 'Agent Run Table' : 'DQL Explorer'}
             </div>
             <div className="text-xs text-muted-foreground">
-              {activeTab === 'filters'
-                ? `${agentRunIds?.length || 0} matching runs`
-                : 'Docent Query Language'}
+              {activeTab === 'filters' ? (
+                isCountFetching && totalAgentRunCount === undefined ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading...
+                  </span>
+                ) : (
+                  `${totalAgentRunCount ?? agentRunIds?.length ?? 0} matching runs${hasMoreIds && totalAgentRunCount === undefined ? '+' : ''}`
+                )
+              ) : (
+                'Docent Query Language'
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1452,6 +1684,7 @@ export default function ExperimentViewer({
           <div className="flex-1 min-w-0 min-h-0 flex">
             <AgentRunTable
               agentRunIds={agentRunIds}
+              agentRunIdsOffset={agentRunIdsOffset}
               metadataData={metadataData}
               availableColumns={availableColumns}
               selectedColumns={selectedColumns}
@@ -1463,6 +1696,8 @@ export default function ExperimentViewer({
               activeRunId={activeRunId}
               baseFilter={appliedBaseFilter ?? null}
               requestMetadataForIds={requestMetadataForIds}
+              cancelMetadataRequest={cancelActiveMetadataRequest}
+              cancelLoadMoreIds={cancelLoadMoreIds}
               dropZoneHandlers={dropZoneHandlers}
               isDragActive={isDragActive}
               isOverDropZone={isOverDropZone}
@@ -1473,6 +1708,9 @@ export default function ExperimentViewer({
               onCreateFilterFromCell={handleCreateFilterFromCell}
               filterableColumns={filterableColumns}
               emptyState={emptyStateContent}
+              totalCount={totalAgentRunCount}
+              onLoadMoreIds={loadMoreIds}
+              fetchIdsForExport={fetchIdsForExport}
             />
           </div>
         </TabsContent>
