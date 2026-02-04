@@ -1,6 +1,14 @@
 'use client';
 
-import { CheckIcon, Copy, Loader2, Pencil, Trash2, XIcon } from 'lucide-react';
+import {
+  CheckIcon,
+  Copy,
+  CopyPlus,
+  Loader2,
+  Pencil,
+  Trash2,
+  XIcon,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -326,7 +334,7 @@ export default function CollectionRow({
                       : 'Clone collection'
                   }
                 >
-                  <Copy className="h-3.5 w-3.5" />
+                  <CopyPlus className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="ghost"

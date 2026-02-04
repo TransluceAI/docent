@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Loader2 } from 'lucide-react';
+import { CopyPlus, Loader2 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -101,7 +101,7 @@ export function CloneCollectionButton({
       className={cn(className)}
       onClick={handleButtonClick}
     >
-      <Copy className="h-4 w-4" />
+      <CopyPlus className="h-4 w-4" />
       {showLabel && <span>Clone Collection</span>}
     </Button>
   );
