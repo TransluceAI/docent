@@ -3069,6 +3069,9 @@ class MonoService:
             The User object if the session is valid and active, None otherwise
         """
         async with self.db.session() as session:
+            # Set 1.7-second timeout for this transaction to avoid blocking on slow queries
+            await session.execute(text("SET LOCAL statement_timeout = '1700'"))
+
             # Join session and user tables, check if session is active and not expired
             result = await session.execute(
                 select(SQLAUser)
