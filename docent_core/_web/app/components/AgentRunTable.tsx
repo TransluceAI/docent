@@ -77,7 +77,7 @@ export type AgentRunTableRow = {
   agentRunId: string;
 };
 
-const ROW_HEIGHT_PX = 32;
+const ROW_HEIGHT_PX = 36;
 const OVERSCAN_COUNT = 50;
 const METADATA_REQUEST_DEBOUNCE_MS = 200;
 const SCROLL_IDLE_DEBOUNCE_MS = 150;
