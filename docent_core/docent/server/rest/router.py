@@ -283,8 +283,8 @@ async def get_current_user(request: Request, mono_svc: MonoService = Depends(get
     if not session_id:
         raise HTTPException(status_code=401, detail="No session found")
 
-    # Get user by session ID
-    user = await mono_svc.get_user_by_session_id(session_id)
+    # Get user by session ID (skip loading organizations since frontend doesn't need them)
+    user = await mono_svc.get_user_by_session_id(session_id, load_organizations=False)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 

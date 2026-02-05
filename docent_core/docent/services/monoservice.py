@@ -43,7 +43,7 @@ from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import aliased, noload, selectinload
 from sqlalchemy.sql import FromClause, lateral, text
 from sqlalchemy.types import Numeric
 
@@ -3150,12 +3150,16 @@ class MonoService:
         logger.info(f"Created session {session_id} for user {user_id}")
         return session_id
 
-    async def get_user_by_session_id(self, session_id: str) -> User | None:
+    async def get_user_by_session_id(
+        self, session_id: str, *, load_organizations: bool = True
+    ) -> User | None:
         """
         Retrieve a user by their session ID.
 
         Args:
             session_id: The session ID to look up
+            load_organizations: Whether to load the user's organizations. Set to False
+                for endpoints like /rest/me that don't need organization data.
 
         Returns:
             The User object if the session is valid and active, None otherwise
@@ -3165,7 +3169,7 @@ class MonoService:
             await session.execute(text("SET LOCAL statement_timeout = '1700'"))
 
             # Join session and user tables, check if session is active and not expired
-            result = await session.execute(
+            stmt = (
                 select(SQLAUser)
                 .join(SQLASession, SQLAUser.id == SQLASession.user_id)
                 .where(
@@ -3174,6 +3178,10 @@ class MonoService:
                     SQLASession.expires_at > datetime.now(UTC).replace(tzinfo=None),
                 )
             )
+            if not load_organizations:
+                stmt = stmt.options(noload(SQLAUser.organizations))
+
+            result = await session.execute(stmt)
             sqla_user = result.scalar_one_or_none()
             if not sqla_user:
                 return None
