@@ -51,6 +51,13 @@ const getCommentColors = (
   return 'bg-purple-500/20';
 };
 
+const getSearchColors = (isCurrentMatch: boolean) => {
+  if (isCurrentMatch) {
+    return 'bg-orange-400 dark:bg-orange-500 text-black dark:text-black';
+  }
+  return 'bg-yellow-200 dark:bg-yellow-500/50';
+};
+
 export interface SegmentedTextProps {
   text: string;
   intervals: TextSpanWithCitations[];
@@ -86,49 +93,75 @@ export const SegmentedText: React.FC<SegmentedTextProps> = ({
   return (
     <span className={className}>
       {segments.map((seg, i) => {
-        if (!seg.citationIds.length)
+        // Check if segment has any highlighting
+        const hasHighlighting =
+          seg.citationIds.length > 0 ||
+          seg.commentIds.length > 0 ||
+          seg.searchMatchIds.length > 0;
+
+        if (!hasHighlighting)
           return <React.Fragment key={`seg-${i}`}>{seg.text}</React.Fragment>;
 
-        // Check if this segment contains a comment
-        const commentInfo = intervals.find(
-          (iv) =>
-            iv.commentId !== undefined &&
-            seg.citationIds.includes(iv.citationId)
-        );
-        const isComment = !!commentInfo;
+        // Use enriched segment data directly
+        const isSearchMatch = seg.searchMatchIds.length > 0;
+        const isCurrentSearchMatch = seg.hasCurrentSearchMatch;
+        const isComment = seg.commentIds.length > 0;
 
         const isHighlighted = highlightedCitationId
           ? seg.citationIds.includes(highlightedCitationId)
           : false;
 
         const isHovered = hoveredCommentId
-          ? commentInfo?.commentId === hoveredCommentId
+          ? seg.commentIds.includes(hoveredCommentId)
           : false;
 
         const isSelected = selectedCommentId
-          ? commentInfo?.commentId === selectedCommentId
+          ? seg.commentIds.includes(selectedCommentId)
           : false;
 
-        // Use role-based colors if role is provided and highlightedCitationId exists,
-        // otherwise use simple yellow highlighting for metadata
-        // Use comment colors if this is a comment, otherwise regular citation colors
-        const colorClass = isComment
-          ? getCommentColors(isHighlighted, isHovered, isSelected)
-          : getCitationColors(role, isHighlighted);
+        // Priority: currentSearchMatch > searchMatch > comment > citation
+        let colorClass: string;
+        if (isSearchMatch) {
+          colorClass = getSearchColors(isCurrentSearchMatch);
+        } else if (isComment) {
+          colorClass = getCommentColors(isHighlighted, isHovered, isSelected);
+        } else if (highlightedCitationId && !isHighlighted) {
+          // When a citation is selected, don't show muted highlights for other citations
+          return <React.Fragment key={`seg-${i}`}>{seg.text}</React.Fragment>;
+        } else {
+          colorClass = getCitationColors(role, isHighlighted);
+        }
+
+        // Get the first comment ID for click handling
+        const firstCommentId = seg.commentIds[0];
 
         return (
           <span
             key={`seg-${i}`}
             className={cn(
               colorClass,
-              isComment && 'cursor-pointer transition-all duration-150',
-              isComment && 'hover:border-purple-500/50 hover:border-b-2'
+              isComment &&
+                !isSearchMatch &&
+                'cursor-pointer transition-all duration-150',
+              isComment &&
+                !isSearchMatch &&
+                'hover:border-purple-500/50 hover:border-b-2'
             )}
-            data-citation-ids={seg.citationIds.join(',')}
-            data-comment-id={commentInfo?.commentId}
+            data-citation-ids={
+              seg.citationIds.length > 0 ? seg.citationIds.join(',') : undefined
+            }
+            data-comment-id={firstCommentId}
+            data-search-match-ids={
+              seg.searchMatchIds.length > 0
+                ? seg.searchMatchIds.join(' ')
+                : undefined
+            }
+            data-current-search-match={
+              isCurrentSearchMatch ? 'true' : undefined
+            }
             onClick={
-              isComment && commentInfo?.commentId
-                ? () => handleCommentClick(commentInfo.commentId!)
+              isComment && firstCommentId && !isSearchMatch
+                ? () => handleCommentClick(firstCommentId)
                 : undefined
             }
           >

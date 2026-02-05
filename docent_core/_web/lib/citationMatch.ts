@@ -5,8 +5,12 @@ import { citationTargetToId } from './citationId';
 export interface TextSpanWithCitations {
   start: number;
   end: number;
-  citationId: string;
+  // Citation/comment highlighting (optional - not all spans are citations)
+  citationId?: string;
   commentId?: string;
+  // Search highlighting (separate from citations)
+  searchMatchId?: string;
+  isCurrentSearchMatch?: boolean;
 }
 
 // Position without citation ID (used for caching)
@@ -177,7 +181,7 @@ export const computeIntervalsForJsonPattern = (
     intervals.push({
       start: m.index,
       end: m.index + m[0].length,
-      citationId: '', // No need to track multiple citations
+      citationId: 'pattern-citation',
     });
     if (intervals.length >= CAP_MATCHES_PER_CITATION) break;
   }
@@ -248,44 +252,124 @@ export const computeIntervalsForCitationTargets = (
   return intervals;
 };
 
-export type TextSegment = { text: string; citationIds: string[] };
+export type TextSegment = {
+  text: string;
+  citationIds: string[];
+  commentIds: string[];
+  searchMatchIds: string[];
+  hasCurrentSearchMatch: boolean;
+};
 
 export const computeSegmentsFromIntervals = (
   text: string,
   intervals: TextSpanWithCitations[]
 ): TextSegment[] => {
-  if (!intervals || intervals.length === 0) return [{ text, citationIds: [] }];
+  if (!intervals || intervals.length === 0)
+    return [
+      {
+        text,
+        citationIds: [],
+        commentIds: [],
+        searchMatchIds: [],
+        hasCurrentSearchMatch: false,
+      },
+    ];
 
-  const opens: Record<number, string[]> = {};
-  const closes: Record<number, string[]> = {};
-  intervals.forEach(({ start, end, citationId }) => {
-    if (start >= end) return;
-    if (!opens[start]) opens[start] = [];
-    if (!closes[end]) closes[end] = [];
-    opens[start].push(citationId);
-    closes[end].push(citationId);
-  });
+  // Track opens/closes for each type separately
+  const citationOpens: Record<number, string[]> = {};
+  const citationCloses: Record<number, string[]> = {};
+  const commentOpens: Record<number, string[]> = {};
+  const commentCloses: Record<number, string[]> = {};
+  const searchOpens: Record<number, string[]> = {};
+  const searchCloses: Record<number, string[]> = {};
+  const currentSearchOpens: Record<number, boolean> = {};
+  const currentSearchCloses: Record<number, boolean> = {};
+
+  intervals.forEach(
+    ({
+      start,
+      end,
+      citationId,
+      commentId,
+      searchMatchId,
+      isCurrentSearchMatch,
+    }) => {
+      if (start >= end) return;
+
+      // Track citation IDs
+      if (citationId) {
+        if (!citationOpens[start]) citationOpens[start] = [];
+        if (!citationCloses[end]) citationCloses[end] = [];
+        citationOpens[start].push(citationId);
+        citationCloses[end].push(citationId);
+      }
+
+      // Track comment IDs
+      if (commentId) {
+        if (!commentOpens[start]) commentOpens[start] = [];
+        if (!commentCloses[end]) commentCloses[end] = [];
+        commentOpens[start].push(commentId);
+        commentCloses[end].push(commentId);
+      }
+
+      // Track search match IDs
+      if (searchMatchId) {
+        if (!searchOpens[start]) searchOpens[start] = [];
+        if (!searchCloses[end]) searchCloses[end] = [];
+        searchOpens[start].push(searchMatchId);
+        searchCloses[end].push(searchMatchId);
+
+        // Track current search match state
+        if (isCurrentSearchMatch) {
+          currentSearchOpens[start] = true;
+          currentSearchCloses[end] = true;
+        }
+      }
+    }
+  );
 
   const boundaries = new Set<number>([0, text.length]);
-  Object.keys(opens).forEach((k) => boundaries.add(Number(k)));
-  Object.keys(closes).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(citationOpens).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(citationCloses).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(commentOpens).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(commentCloses).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(searchOpens).forEach((k) => boundaries.add(Number(k)));
+  Object.keys(searchCloses).forEach((k) => boundaries.add(Number(k)));
   const sorted = Array.from(boundaries).sort((a, b) => a - b);
 
   const segments: TextSegment[] = [];
-  const active = new Set<string>();
+  const activeCitations = new Set<string>();
+  const activeComments = new Set<string>();
+  const activeSearchMatches = new Set<string>();
+  let hasCurrentSearchMatch = false;
 
   for (let i = 0; i < sorted.length - 1; i++) {
     const idx = sorted[i];
     const next = sorted[i + 1];
 
-    (closes[idx] || []).forEach((id) => active.delete(id));
-    (opens[idx] || []).forEach((id) => active.add(id));
+    // Process closes
+    (citationCloses[idx] || []).forEach((id) => activeCitations.delete(id));
+    (commentCloses[idx] || []).forEach((id) => activeComments.delete(id));
+    (searchCloses[idx] || []).forEach((id) => activeSearchMatches.delete(id));
+    if (currentSearchCloses[idx]) hasCurrentSearchMatch = false;
+
+    // Process opens
+    (citationOpens[idx] || []).forEach((id) => activeCitations.add(id));
+    (commentOpens[idx] || []).forEach((id) => activeComments.add(id));
+    (searchOpens[idx] || []).forEach((id) => activeSearchMatches.add(id));
+    if (currentSearchOpens[idx]) hasCurrentSearchMatch = true;
 
     if (next <= idx) continue;
     const slice = text.slice(idx, next);
     if (!slice) continue;
 
-    segments.push({ text: slice, citationIds: Array.from(active) });
+    segments.push({
+      text: slice,
+      citationIds: Array.from(activeCitations),
+      commentIds: Array.from(activeComments),
+      searchMatchIds: Array.from(activeSearchMatches),
+      hasCurrentSearchMatch,
+    });
   }
 
   return segments;

@@ -50,7 +50,17 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable';
-import { MessageBox, hasJsonContent } from './MessageBox';
+import {
+  MessageBox,
+  hasJsonContent,
+  getMainTextContent,
+  getReasoningContent,
+  formatToolCallData,
+} from './MessageBox';
+import {
+  TranscriptSearchBar,
+  TranscriptSearchBarHandle,
+} from './TranscriptSearchBar';
 import { useGetAgentRunWithTreeQuery } from '@/app/api/collectionApi';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useSearchParams } from 'next/navigation';
@@ -69,6 +79,7 @@ interface ScrollToBlockParams {
   transcriptId: string;
   highlightDuration?: number;
   citationTargetId?: string; // Encoded citation target ID for highlighting
+  searchMatchId?: string; // Search match ID for scrolling to search results
 }
 export interface AgentRunViewerHandle {
   scrollToBlock: (params: ScrollToBlockParams) => void;
@@ -396,6 +407,14 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       Set<number>
     >(new Set());
 
+    // Search state
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [caseSensitive, setCaseSensitive] = useState(false);
+    const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+    const debouncedSearchQuery = useDebounce(searchQuery, 150);
+    const searchBarRef = useRef<TranscriptSearchBarHandle>(null);
+
     // State for sidebar toggle and hover functionality
     const [sidebarVisible, setSidebarVisible] = useState(true);
     const [sidebarHovering, setSidebarHovering] = useState(false);
@@ -524,6 +543,155 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       if (!Array.isArray(ids)) return new Set<string>();
       return new Set(ids);
     }, [agentRunTree, selectedTranscriptId]);
+
+    // Compute search matches across all messages in the transcript
+    const searchMatches = useMemo(() => {
+      type SearchMatch = {
+        blockIdx: number;
+        contentType: 'main' | 'toolCall' | 'reasoning';
+        toolCallIndex?: number;
+        localIndex: number;
+        start: number;
+        end: number;
+      };
+
+      const matchesByBlock = new Map<
+        number,
+        Array<{
+          start: number;
+          end: number;
+          contentType: 'main' | 'toolCall' | 'reasoning';
+          toolCallIndex?: number;
+          localIndex: number;
+        }>
+      >();
+
+      if (
+        !transcript ||
+        !debouncedSearchQuery ||
+        debouncedSearchQuery.length === 0
+      ) {
+        return {
+          matchesByBlock,
+          totalMatches: 0,
+          flatMatches: [] as SearchMatch[],
+        };
+      }
+
+      const query = caseSensitive
+        ? debouncedSearchQuery
+        : debouncedSearchQuery.toLowerCase();
+
+      const allFlatMatches: SearchMatch[] = [];
+
+      transcript.messages.forEach((message, blockIdx) => {
+        const blockMatches: Array<{
+          start: number;
+          end: number;
+          contentType: 'main' | 'toolCall' | 'reasoning';
+          toolCallIndex?: number;
+          localIndex: number;
+        }> = [];
+
+        // Search reasoning content first (renders at top)
+        const reasoningText = getReasoningContent(message.content);
+        if (reasoningText) {
+          const searchReasoningContent = caseSensitive
+            ? reasoningText
+            : reasoningText.toLowerCase();
+          let reasoningLocalIndex = 0;
+          let reasoningStartIndex = 0;
+          let reasoningMatchIndex: number;
+
+          while (
+            (reasoningMatchIndex = searchReasoningContent.indexOf(
+              query,
+              reasoningStartIndex
+            )) !== -1
+          ) {
+            const match = {
+              start: reasoningMatchIndex,
+              end: reasoningMatchIndex + query.length,
+              contentType: 'reasoning' as const,
+              localIndex: reasoningLocalIndex++,
+            };
+            blockMatches.push(match);
+            allFlatMatches.push({ blockIdx, ...match });
+            reasoningStartIndex = reasoningMatchIndex + 1;
+          }
+        }
+
+        // Search main text content second (renders in middle)
+        const content = getMainTextContent(message);
+        const searchContent = caseSensitive ? content : content.toLowerCase();
+        let mainLocalIndex = 0;
+
+        let startIndex = 0;
+        let matchIndex: number;
+
+        while ((matchIndex = searchContent.indexOf(query, startIndex)) !== -1) {
+          const match = {
+            start: matchIndex,
+            end: matchIndex + query.length,
+            contentType: 'main' as const,
+            localIndex: mainLocalIndex++,
+          };
+          blockMatches.push(match);
+          allFlatMatches.push({ blockIdx, ...match });
+          startIndex = matchIndex + 1;
+        }
+
+        // Search tool calls last (renders at bottom)
+        if (message.role === 'assistant' && message.tool_calls) {
+          message.tool_calls.forEach((toolCall, toolCallIndex) => {
+            const toolCallContent = toolCall.view
+              ? toolCall.view.content
+              : `${toolCall.function}(${formatToolCallData(toolCall)})`;
+            const searchToolCallContent = caseSensitive
+              ? toolCallContent
+              : toolCallContent.toLowerCase();
+
+            let toolCallLocalIndex = 0;
+            let tcStartIndex = 0;
+            let tcMatchIndex: number;
+
+            while (
+              (tcMatchIndex = searchToolCallContent.indexOf(
+                query,
+                tcStartIndex
+              )) !== -1
+            ) {
+              const match = {
+                start: tcMatchIndex,
+                end: tcMatchIndex + query.length,
+                contentType: 'toolCall' as const,
+                toolCallIndex,
+                localIndex: toolCallLocalIndex++,
+              };
+              blockMatches.push(match);
+              allFlatMatches.push({ blockIdx, ...match });
+              tcStartIndex = tcMatchIndex + 1;
+            }
+          });
+        }
+
+        if (blockMatches.length > 0) {
+          matchesByBlock.set(blockIdx, blockMatches);
+        }
+      });
+
+      return {
+        matchesByBlock,
+        totalMatches: allFlatMatches.length,
+        flatMatches: allFlatMatches,
+      };
+    }, [transcript, debouncedSearchQuery, caseSensitive]);
+
+    // Clamp currentMatchIndex to valid bounds when totalMatches changes
+    const clampedCurrentMatchIndex = useMemo(() => {
+      if (searchMatches.totalMatches === 0) return 0;
+      return Math.min(currentMatchIndex, searchMatches.totalMatches - 1);
+    }, [currentMatchIndex, searchMatches.totalMatches]);
 
     // Initialize pretty print for messages with JSON content when transcript changes
     useEffect(() => {
@@ -657,6 +825,38 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedTranscriptId, scrollNode]);
 
+    // Keyboard handler for search (Cmd/Ctrl+F)
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // Check for Cmd+F (Mac) or Ctrl+F (Windows/Linux)
+        if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+          e.preventDefault();
+          if (isSearchOpen) {
+            // If already open, refocus the search bar
+            searchBarRef.current?.focus();
+          } else {
+            setIsSearchOpen(true);
+          }
+        }
+        // Escape to close search
+        if (e.key === 'Escape' && isSearchOpen) {
+          setIsSearchOpen(false);
+          setSearchQuery('');
+          setCurrentMatchIndex(0);
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSearchOpen]);
+
+    // Clear search when transcript changes
+    useEffect(() => {
+      setIsSearchOpen(false);
+      setSearchQuery('');
+      setCurrentMatchIndex(0);
+    }, [selectedTranscriptId]);
+
     // Compute the current block index based on scroll position
     useEffect(() => {
       // Skip if no transcript or no scroll node
@@ -711,8 +911,13 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
     useEffect(() => {
       if (!pendingScrollTarget) return;
 
-      const { blockIdx, transcriptId, highlightDuration, citationTargetId } =
-        pendingScrollTarget;
+      const {
+        blockIdx,
+        transcriptId,
+        highlightDuration,
+        citationTargetId,
+        searchMatchId,
+      } = pendingScrollTarget;
 
       // Switch transcript first if needed - this triggers re-render and scrollNode to be set
       if (transcriptId !== selectedTranscriptId) {
@@ -760,8 +965,23 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
         const containerRect = scrollNode.getBoundingClientRect();
         let top: number | null = null;
 
+        // Use searchMatchId for scrolling to search results
+        if (searchMatchId) {
+          const targetSpan = (blockElement as HTMLElement).querySelector(
+            `span[data-search-match-ids~="${searchMatchId}"]`
+          ) as HTMLElement | null;
+          if (targetSpan) {
+            const spanRect = targetSpan.getBoundingClientRect();
+            top =
+              spanRect.top -
+              containerRect.top +
+              scrollNode.scrollTop -
+              Math.max(0, (containerRect.height - spanRect.height) / 2);
+          }
+        }
+
         // Use citationTargetId for highlighting specific text within the block
-        if (citationTargetId) {
+        if (top == null && citationTargetId) {
           const targetSpan = (blockElement as HTMLElement).querySelector(
             `span[data-citation-ids*="${citationTargetId}"]`
           ) as HTMLElement | null;
@@ -949,6 +1169,71 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
       },
       [scrollToBlock, selectedTranscriptId]
     );
+
+    // Search navigation functions
+    const navigateToSearchMatch = useCallback(
+      (index: number) => {
+        if (searchMatches.flatMatches.length === 0 || !selectedTranscriptId)
+          return;
+
+        const match = searchMatches.flatMatches[index];
+        if (!match) return;
+
+        setCurrentMatchIndex(index);
+
+        // Build a unique ID for this search match that matches what SegmentedText renders
+        // Note: This uses the searchMatchId format (without "search-match-" prefix since that's now in the attribute name)
+        let searchMatchId: string;
+        if (match.contentType === 'toolCall') {
+          searchMatchId = `tc${match.toolCallIndex}-${match.localIndex}`;
+        } else {
+          // For 'main' and 'reasoning' content types
+          searchMatchId = `${match.contentType}-${match.localIndex}`;
+        }
+
+        scrollToBlock({
+          blockIdx: match.blockIdx,
+          transcriptId: selectedTranscriptId,
+          highlightDuration: 300,
+          searchMatchId,
+        });
+      },
+      [searchMatches.flatMatches, selectedTranscriptId, scrollToBlock]
+    );
+
+    const navigateNextSearchMatch = useCallback(() => {
+      if (searchMatches.totalMatches === 0) return;
+      const nextIndex =
+        (clampedCurrentMatchIndex + 1) % searchMatches.totalMatches;
+      navigateToSearchMatch(nextIndex);
+    }, [
+      clampedCurrentMatchIndex,
+      searchMatches.totalMatches,
+      navigateToSearchMatch,
+    ]);
+
+    const navigatePrevSearchMatch = useCallback(() => {
+      if (searchMatches.totalMatches === 0) return;
+      const prevIndex =
+        (clampedCurrentMatchIndex - 1 + searchMatches.totalMatches) %
+        searchMatches.totalMatches;
+      navigateToSearchMatch(prevIndex);
+    }, [
+      clampedCurrentMatchIndex,
+      searchMatches.totalMatches,
+      navigateToSearchMatch,
+    ]);
+
+    const handleCloseSearch = useCallback(() => {
+      setIsSearchOpen(false);
+      setSearchQuery('');
+      setCurrentMatchIndex(0);
+    }, []);
+
+    const handleSearchQueryChange = useCallback((query: string) => {
+      setSearchQuery(query);
+      setCurrentMatchIndex(0);
+    }, []);
 
     // Handler for j/k navigation (used by minimap and messages column)
     const handleJKNavigation = useCallback(
@@ -1586,6 +1871,21 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
                   {/* Relative wrapper for scroll container and fixed buttons */}
                   <div className="relative flex-1 min-h-0">
+                    {/* Search bar */}
+                    <TranscriptSearchBar
+                      ref={searchBarRef}
+                      isOpen={isSearchOpen}
+                      onClose={handleCloseSearch}
+                      searchQuery={searchQuery}
+                      onSearchQueryChange={handleSearchQueryChange}
+                      currentMatchIndex={clampedCurrentMatchIndex}
+                      totalMatches={searchMatches.totalMatches}
+                      onNavigateNext={navigateNextSearchMatch}
+                      onNavigatePrev={navigatePrevSearchMatch}
+                      caseSensitive={caseSensitive}
+                      onCaseSensitiveChange={setCaseSensitive}
+                    />
+
                     {/* Shared Scroll Container */}
                     <div
                       ref={scrollContainerRef}
@@ -1651,6 +1951,32 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                 block_idx: index,
                               };
 
+                            // Get search matches for this block (with content type info)
+                            const blockSearchMatches =
+                              searchMatches.matchesByBlock.get(index) ?? [];
+
+                            // Determine which match in this block is the current one (as index into blockSearchMatches)
+                            const currentSearchMatchIndex = (() => {
+                              if (
+                                searchMatches.flatMatches.length === 0 ||
+                                blockSearchMatches.length === 0
+                              )
+                                return null;
+                              const currentMatch =
+                                searchMatches.flatMatches[
+                                  clampedCurrentMatchIndex
+                                ];
+                              if (currentMatch?.blockIdx !== index) return null;
+                              // Find index in blockSearchMatches by comparing properties
+                              return blockSearchMatches.findIndex(
+                                (m) =>
+                                  m.start === currentMatch.start &&
+                                  m.contentType === currentMatch.contentType &&
+                                  m.localIndex === currentMatch.localIndex &&
+                                  m.toolCallIndex === currentMatch.toolCallIndex
+                              );
+                            })();
+
                             return (
                               <MessageBox
                                 key={index}
@@ -1684,6 +2010,10 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                                   citedTextRange: msgCitedRange,
                                 }}
                                 dataContext={transcriptBlockContentItem}
+                                searchMatches={blockSearchMatches}
+                                currentSearchMatchIndex={
+                                  currentSearchMatchIndex
+                                }
                                 onAddMetadataComment={
                                   hasWritePermission
                                     ? (key) =>

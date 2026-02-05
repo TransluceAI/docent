@@ -170,6 +170,14 @@ interface MessageBoxProps {
   onAddMetadataComment?: (key: string) => void;
   onAddBlockComment?: () => void;
   onBlockClick?: () => void;
+  searchMatches?: Array<{
+    start: number;
+    end: number;
+    contentType: 'main' | 'toolCall' | 'reasoning';
+    toolCallIndex?: number;
+    localIndex: number;
+  }>;
+  currentSearchMatchIndex?: number | null;
 }
 
 export function MessageBox({
@@ -187,6 +195,8 @@ export function MessageBox({
   onAddMetadataComment,
   onAddBlockComment,
   onBlockClick,
+  searchMatches = [],
+  currentSearchMatchIndex = null,
 }: MessageBoxProps) {
   const containerRef = useRef<HTMLSpanElement | null>(null);
   const citationNav = useCitationNavigation();
@@ -242,7 +252,8 @@ export function MessageBox({
    */
   const getIntervalsForContentIdx = (
     contentIdx: number,
-    contentText: string
+    contentText: string,
+    contentType: 'main' | 'reasoning' = 'main'
   ): TextSpanWithCitations[] => {
     // Filter citations: include those with matching content_idx OR no content_idx
     const relevantTargets = citedTargets.filter((target) => {
@@ -280,14 +291,27 @@ export function MessageBox({
       }));
     });
 
-    return [...regularIntervals, ...commentIntervals];
+    // Add search match intervals for the specified content type
+    const searchIntervals: TextSpanWithCitations[] = [];
+    searchMatches.forEach((match, idx) => {
+      if (match.contentType !== contentType) return;
+      searchIntervals.push({
+        start: match.start,
+        end: match.end,
+        searchMatchId: `${contentType}-${match.localIndex}`,
+        isCurrentSearchMatch: idx === currentSearchMatchIndex,
+      });
+    });
+
+    return [...regularIntervals, ...commentIntervals, ...searchIntervals];
   };
 
   /**
    * Compute citation intervals for tool calls (pattern-based only, no content_idx).
    */
   const getIntervalsForToolCall = (
-    toolCallText: string
+    toolCallText: string,
+    toolCallIndex: number
   ): TextSpanWithCitations[] => {
     // Only include citations without content_idx (pattern-based)
     const relevantTargets = citedTargets.filter((target) => {
@@ -324,7 +348,23 @@ export function MessageBox({
       }));
     });
 
-    return [...regularIntervals, ...commentIntervals];
+    // Add search match intervals for this specific tool call
+    const searchIntervals: TextSpanWithCitations[] = [];
+    searchMatches.forEach((match, idx) => {
+      if (
+        match.contentType !== 'toolCall' ||
+        match.toolCallIndex !== toolCallIndex
+      )
+        return;
+      searchIntervals.push({
+        start: match.start,
+        end: match.end,
+        searchMatchId: `tc${toolCallIndex}-${match.localIndex}`,
+        isCurrentSearchMatch: idx === currentSearchMatchIndex,
+      });
+    });
+
+    return [...regularIntervals, ...commentIntervals, ...searchIntervals];
   };
 
   const hoveredCommentId = useAppSelector(
@@ -350,7 +390,8 @@ export function MessageBox({
 
     const intervals = getIntervalsForContentIdx(
       contentIndices.mainTextIdx,
-      mainTextContent
+      mainTextContent,
+      'main'
     );
 
     // If content was pretty-printed, transform the citation intervals to match the new positions
@@ -413,7 +454,7 @@ export function MessageBox({
         ? toolCall.view.content
         : `${toolCall.function}(${formatToolCallData(toolCall)})`;
 
-      const intervals = getIntervalsForToolCall(toolCallContent);
+      const intervals = getIntervalsForToolCall(toolCallContent, i);
 
       return (
         <div
@@ -439,7 +480,8 @@ export function MessageBox({
 
     const intervals = getIntervalsForContentIdx(
       contentIndices.reasoningIdx,
-      reasoningContent
+      reasoningContent,
+      'reasoning'
     );
 
     const reasoningContext: TranscriptBlockContentItem = {
