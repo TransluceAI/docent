@@ -125,11 +125,12 @@ export const SegmentedText: React.FC<SegmentedTextProps> = ({
           colorClass = getSearchColors(isCurrentSearchMatch);
         } else if (isComment) {
           colorClass = getCommentColors(isHighlighted, isHovered, isSelected);
-        } else if (highlightedCitationId && !isHighlighted) {
-          // When a citation is selected, don't show muted highlights for other citations
+        } else if (!isHighlighted) {
+          // When nothing is selected OR a different citation is selected, show plain text
           return <React.Fragment key={`seg-${i}`}>{seg.text}</React.Fragment>;
         } else {
-          colorClass = getCitationColors(role, isHighlighted);
+          // Only show highlighting when this specific citation is selected
+          colorClass = getCitationColors(role, true);
         }
 
         // Get the first comment ID for click handling
