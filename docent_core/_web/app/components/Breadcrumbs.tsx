@@ -300,63 +300,71 @@ const Breadcrumbs: React.FC = () => {
   );
 
   return (
-    <div className="text-sm flex items-center justify-between w-full ml-1">
-      <div className="flex items-center gap-x-1">
-        {isSettingsPage && getHomeCrumb()}
-        {segments.map((crumb, index) => getBreadcrumb(crumb, index))}
-      </div>
+    <div className="flex flex-col w-full">
+      {isReadOnly && (
+        <div className="bg-blue-bg border border-blue-border text-blue-text text-sm px-3 py-2 rounded-md mb-2 ml-1">
+          You&apos;re looking at a read-only collection. To search and analyze
+          over the collection, click &quot;Clone Collection.&quot;
+        </div>
+      )}
+      <div className="text-sm flex items-center justify-between w-full ml-1">
+        <div className="flex items-center gap-x-1">
+          {isSettingsPage && getHomeCrumb()}
+          {segments.map((crumb, index) => getBreadcrumb(crumb, index))}
+        </div>
 
-      <div className="flex items-center gap-x-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-x-2 h-7 cursor-default px-2"
-        >
-          <Link
-            href="https://docs.transluce.org"
-            target="_blank"
-            className="flex items-center gap-x-2"
-          >
-            <BookText size={14} />
-            Docs
-          </Link>
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-x-2 h-7 cursor-default px-2"
-        >
-          <Link
-            href="https://transluce.org/docent/slack"
-            target="_blank"
-            className="flex items-center gap-x-2"
-          >
-            <MessageCircle size={14} />
-            Slack
-          </Link>
-        </Button>
-
-        {/* Clone collection */}
-        {collectionId && (
-          <CloneCollectionButton
+        <div className="flex items-center gap-x-2">
+          <Button
             variant="outline"
             size="sm"
-            showLabel={true}
-            collectionName={collectionName}
-            className={cn(
-              'gap-x-2 h-7 px-2',
-              isReadOnly &&
-                'bg-blue-500 hover:bg-blue-600 text-white hover:text-white border-blue-500 hover:border-blue-600'
-            )}
-          />
-        )}
+            className="gap-x-2 h-7 cursor-default px-2"
+          >
+            <Link
+              href="https://docs.transluce.org"
+              target="_blank"
+              className="flex items-center gap-x-2"
+            >
+              <BookText size={14} />
+              Docs
+            </Link>
+          </Button>
 
-        {/* Share view */}
-        {collectionId && <ShareViewPopover collectionId={collectionId} />}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-x-2 h-7 cursor-default px-2"
+          >
+            <Link
+              href="https://transluce.org/docent/slack"
+              target="_blank"
+              className="flex items-center gap-x-2"
+            >
+              <MessageCircle size={14} />
+              Slack
+            </Link>
+          </Button>
 
-        <ModeToggle />
-        <UserProfile />
+          {/* Clone collection */}
+          {collectionId && (
+            <CloneCollectionButton
+              variant="outline"
+              size="sm"
+              showLabel={true}
+              collectionName={collectionName}
+              className={cn(
+                'gap-x-2 h-7 px-2',
+                isReadOnly &&
+                  'bg-blue-500 hover:bg-blue-600 text-white hover:text-white border-blue-500 hover:border-blue-600'
+              )}
+            />
+          )}
+
+          {/* Share view */}
+          {collectionId && <ShareViewPopover collectionId={collectionId} />}
+
+          <ModeToggle />
+          <UserProfile />
+        </div>
       </div>
     </div>
   );
