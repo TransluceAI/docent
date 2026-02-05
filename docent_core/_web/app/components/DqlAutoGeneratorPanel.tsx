@@ -63,10 +63,10 @@ const truncateQuery = (query: string, maxLength = 200): string => {
 };
 
 const DEFAULT_DQL_MODEL: ModelOption = {
-  provider: 'openai',
-  model_name: 'gpt-4o-2024-08-06',
-  reasoning_effort: null,
-  context_window: 128000,
+  provider: 'google',
+  model_name: 'gemini-3-pro-preview',
+  reasoning_effort: 'medium',
+  context_window: 1000000,
   uses_byok: false,
 };
 
