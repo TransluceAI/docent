@@ -84,9 +84,7 @@ const Breadcrumbs: React.FC = () => {
     });
   const permissionLevel =
     permissions?.collection_permissions?.[collectionId ?? ''] ?? 'none';
-  const isReadOnly =
-    !permissionsLoading &&
-    (permissionLevel === 'read' || permissionLevel === 'none');
+  const isReadOnly = !permissionsLoading && permissionLevel === 'read';
 
   const [isReadOnlyBannerDismissed, setIsReadOnlyBannerDismissed] =
     useState(false);

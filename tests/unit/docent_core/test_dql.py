@@ -29,7 +29,7 @@ from docent_core.docent.db.dql import (
 )
 from docent_core.docent.db.schemas.auth_models import User
 from docent_core.docent.db.schemas.tables import SQLAAgentRun
-from docent_core.docent.services.dql import MAX_DQL_RESULT_LIMIT, DQLService
+from docent_core.docent.services.dql import DEFAULT_DQL_MAX_ROWS, DQLService
 
 COLLECTION_ID = "test-collection"
 TEST_USER = User(id="user-1", email="user@example.com", organization_ids=[], is_anonymous=False)
@@ -782,8 +782,8 @@ async def test_execute_dql_query_sets_read_only_rls_context() -> None:
     assert "FROM agent_runs" in query_sql
     assert "collection_id = :__dql_param_" in query_sql
     assert query_params is not None
-    assert MAX_DQL_RESULT_LIMIT + 1 in query_params.values()
+    assert DEFAULT_DQL_MAX_ROWS + 1 in query_params.values()
     assert COLLECTION_ID in query_params.values()
     assert result.columns == ("id",)
     assert result.rows == [("row-1",)]
-    assert result.applied_limit == MAX_DQL_RESULT_LIMIT
+    assert result.applied_limit == DEFAULT_DQL_MAX_ROWS
