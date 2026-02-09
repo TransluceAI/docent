@@ -65,14 +65,14 @@ export function CollectionSidebar() {
       icon: Layers,
     },
     {
-      title: 'Data Tables',
-      url: `/dashboard/${collectionId}/data_tables`,
-      icon: Table,
-    },
-    {
       title: 'Rubrics',
       url: `/dashboard/${collectionId}/rubric`,
       icon: Scale,
+    },
+    {
+      title: 'Data Tables',
+      url: `/dashboard/${collectionId}/data_tables`,
+      icon: Table,
     },
     {
       title: 'Charts',
