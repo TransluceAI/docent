@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '4'",
@@ -1120,7 +1120,7 @@ provides-extras = ["dev", "docs"]
 
 [[package]]
 name = "docent-python"
-version = "0.1.48a0"
+version = "0.1.49a0"
 source = { editable = "docent" }
 dependencies = [
     { name = "anthropic" },
