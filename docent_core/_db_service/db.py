@@ -215,7 +215,7 @@ class DocentDB:
             engine_kwargs = dict(
                 pool_size=pool_size,
                 max_overflow=max_overflow,
-                pool_timeout=30,
+                pool_timeout=6,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
                 pool_pre_ping=True,  # Check connection validity before use
             )
