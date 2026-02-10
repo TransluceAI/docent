@@ -14,7 +14,7 @@ except Exception:
 # Configuration
 import time
 
-BASE_URL = "https://api.docent.transluce.org"
+BASE_URL = "https://api.docent-bridgewater.transluce.org"
 COOKIE_KEY = "docent_session"
 
 # Load test parameters
@@ -27,7 +27,7 @@ COUNTS_BATCH_SIZE = 20  # matches frontend BATCH_SIZE
 # Step 1: Create a session by logging in (or creating an anonymous session)
 import httpx
 
-LOGIN_EMAIL = "mengk@mit.edu"
+LOGIN_EMAIL = "kevin.meng@bwater.com"
 LOGIN_PASSWORD = "1234"
 
 
@@ -128,14 +128,13 @@ class EndpointStats:
             self.success += 1
         else:
             self.failed += 1
-            if error and len(self.errors) < 10:
+            if error:
                 self.errors.append(error)
 
     def record_exception(self, latency_ms: float, error: str) -> None:
         self.latencies_ms.append(latency_ms)
         self.failed += 1
-        if len(self.errors) < 10:
-            self.errors.append(error)
+        self.errors.append(error)
 
     @property
     def total(self) -> int:
@@ -222,16 +221,46 @@ class DashboardLoadResult:
                     f"  {name:<35} {stats.total:>5} {stats.failed:>5} "
                     f"{stats.avg:>7.1f} {stats.p50:>7.1f} {stats.p95:>7.1f} {stats.p99:>7.1f}"
                 )
-        # Show any errors
-        all_errors: list[str] = []
-        for stats in self.endpoint_stats.values():
-            all_errors.extend(stats.errors)
-        if all_errors:
-            lines.append(f"\nFirst 5 errors:")
-            for err in all_errors[:5]:
-                lines.append(f"  - {err}")
+        # Show any errors grouped by endpoint
+        has_errors = False
+        for name in ["GET /rest/me", "GET /rest/collections", "POST /rest/collections/permissions", "POST /rest/collections/counts"]:
+            stats = self.endpoint_stats.get(name)
+            if stats and stats.errors:
+                has_errors = True
+                lines.append(f"\n  Errors for {name} ({stats.failed} failed / {stats.total} total):")
+                # Show status code distribution for failures
+                error_codes = {k: v for k, v in stats.status_codes.items() if k < 200 or k >= 300}
+                if error_codes:
+                    lines.append(f"    Status codes: {dict(sorted(error_codes.items()))}")
+                for err in stats.errors[:5]:
+                    lines.append(f"    - {err}")
+                if len(stats.errors) > 5:
+                    lines.append(f"    ... and {len(stats.errors) - 5} more errors")
+        if not has_errors:
+            lines.append("\n  No errors recorded.")
         lines.append("=" * 80)
         return "\n".join(lines)
+
+
+def _format_http_error(endpoint: str, resp: httpx.Response, latency_ms: float) -> str:
+    """Format a detailed error message from an HTTP response."""
+    parts = [
+        f"[{endpoint}] HTTP {resp.status_code}",
+        f"latency={latency_ms:.0f}ms",
+    ]
+
+    # Include useful response headers
+    for header in ("retry-after", "x-request-id", "x-correlation-id", "content-type", "server"):
+        val = resp.headers.get(header)
+        if val:
+            parts.append(f"{header}={val}")
+
+    # Include response body (up to 500 chars)
+    body = resp.text[:500].strip()
+    if body:
+        parts.append(f"body={body}")
+
+    return " | ".join(parts)
 
 
 async def simulate_dashboard_load(
@@ -247,14 +276,14 @@ async def simulate_dashboard_load(
     try:
         resp = await client.get("/rest/me")
         latency = (time.perf_counter() - t0) * 1000
-        me_stats.record(resp.status_code, latency, resp.text[:100] if resp.status_code != 200 else None)
+        me_stats.record(resp.status_code, latency, _format_http_error("GET /rest/me", resp, latency) if resp.status_code != 200 else None)
         if resp.status_code != 200:
             # Can't proceed without auth
             result.page_load_latencies_ms.append((time.perf_counter() - page_t0) * 1000)
             result.page_loads += 1
             return
     except Exception as e:
-        me_stats.record_exception((time.perf_counter() - t0) * 1000, str(e))
+        me_stats.record_exception((time.perf_counter() - t0) * 1000, f"[GET /rest/me] {type(e).__name__}: {e}")
         result.page_load_latencies_ms.append((time.perf_counter() - page_t0) * 1000)
         result.page_loads += 1
         return
@@ -266,11 +295,11 @@ async def simulate_dashboard_load(
     try:
         resp = await client.get("/rest/collections")
         latency = (time.perf_counter() - t0) * 1000
-        coll_stats.record(resp.status_code, latency, resp.text[:100] if resp.status_code != 200 else None)
+        coll_stats.record(resp.status_code, latency, _format_http_error("GET /rest/collections", resp, latency) if resp.status_code != 200 else None)
         if resp.status_code == 200:
             collection_ids = [c["id"] for c in resp.json()]
     except Exception as e:
-        coll_stats.record_exception((time.perf_counter() - t0) * 1000, str(e))
+        coll_stats.record_exception((time.perf_counter() - t0) * 1000, f"[GET /rest/collections] {type(e).__name__}: {e}")
 
     if not collection_ids:
         result.page_load_latencies_ms.append((time.perf_counter() - page_t0) * 1000)
@@ -287,9 +316,9 @@ async def simulate_dashboard_load(
                 json={"collection_ids": collection_ids},
             )
             latency = (time.perf_counter() - t0) * 1000
-            perm_stats.record(resp.status_code, latency, resp.text[:100] if resp.status_code != 200 else None)
+            perm_stats.record(resp.status_code, latency, _format_http_error("POST /rest/collections/permissions", resp, latency) if resp.status_code != 200 else None)
         except Exception as e:
-            perm_stats.record_exception((time.perf_counter() - t0) * 1000, str(e))
+            perm_stats.record_exception((time.perf_counter() - t0) * 1000, f"[POST /rest/collections/permissions] {type(e).__name__}: {e}")
 
     async def fetch_counts_sequential() -> None:
         counts_stats = result.get_stats("POST /rest/collections/counts")
@@ -302,9 +331,9 @@ async def simulate_dashboard_load(
                     json={"collection_ids": batch},
                 )
                 latency = (time.perf_counter() - t0) * 1000
-                counts_stats.record(resp.status_code, latency, resp.text[:100] if resp.status_code != 200 else None)
+                counts_stats.record(resp.status_code, latency, _format_http_error("POST /rest/collections/counts", resp, latency) if resp.status_code != 200 else None)
             except Exception as e:
-                counts_stats.record_exception((time.perf_counter() - t0) * 1000, str(e))
+                counts_stats.record_exception((time.perf_counter() - t0) * 1000, f"[POST /rest/collections/counts] {type(e).__name__}: {e}")
 
     await asyncio.gather(fetch_permissions(), fetch_counts_sequential())
 
@@ -347,6 +376,29 @@ async def load_test_dashboard(
 print(f"Starting dashboard load test: {NUM_CONCURRENT} concurrent x {NUM_WAVES} waves = {NUM_CONCURRENT * NUM_WAVES} total page loads\n")
 result = await load_test_dashboard(session_id)
 print(result.summary())
+
+#%%
+
+
+# Print all errors from the load test
+print("\n" + "=" * 90)
+print("ERRORS SUMMARY")
+print("=" * 90)
+
+has_errors = False
+for endpoint_name, stats in result.endpoint_stats.items():
+    if stats.errors:
+        has_errors = True
+        print(f"\n{endpoint_name}:")
+        for error_msg in stats.errors:
+            print(f"  {error_msg}")
+
+if not has_errors:
+    print("\nNo errors recorded.")
+
+print("=" * 90)
+
+
 
 #%%
 # Step 4 (optional): Ramp-up test — gradually increase concurrency
