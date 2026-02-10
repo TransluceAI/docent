@@ -18,7 +18,7 @@ from docent_core._env_util import ENV
 
 logger = get_logger(__name__)
 
-DEFAULT_POOL_SIZE = 200
+DEFAULT_POOL_SIZE = 300
 DEFAULT_MAX_OVERFLOW = 50
 
 
