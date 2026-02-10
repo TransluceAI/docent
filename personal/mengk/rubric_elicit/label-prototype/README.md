@@ -45,7 +45,7 @@ python label_elicitation.py <collection_id> <rubric_id> [options]
 For [this rubric in a BW collection](https://docent-bridgewater.transluce.org/dashboard/07287acb-8908-4f4c-95ec-8cdeadcb4423/rubric/a79933ef-a553-46bd-ae15-5e1c3f601549):
 
 ```bash
-DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce.org python3 label_elicitation.py \
+OPENAI_API_KEY=... DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce.org python3 label_elicitation.py \
   07287acb-8908-4f4c-95ec-8cdeadcb4423 \
   a79933ef-a553-46bd-ae15-5e1c3f601549 \
   --feedback-num-samples 50 \
