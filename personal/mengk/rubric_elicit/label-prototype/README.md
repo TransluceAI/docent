@@ -45,7 +45,7 @@ python label_elicitation.py <collection_id> <rubric_id> [options]
 For [this rubric in a BW collection](https://docent-bridgewater.transluce.org/dashboard/07287acb-8908-4f4c-95ec-8cdeadcb4423/rubric/a79933ef-a553-46bd-ae15-5e1c3f601549):
 
 ```bash
-DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce.org python3 label_elicitation.py \
+OPENAI_API_KEY=... DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce.org python3 label_elicitation.py \
   07287acb-8908-4f4c-95ec-8cdeadcb4423 \
   a79933ef-a553-46bd-ae15-5e1c3f601549 \
   --feedback-num-samples 50 \
@@ -54,6 +54,8 @@ DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce.org python3 label_
   --max-label-requests 10 \
   --cross-entropy-epsilon 1e-2
 ```
+
+If you want to try this on a different collection or rubric, create a new rubric using the same initial description, then swap the `<rubric_id>` in the command above to that new rubric ID (and update `<collection_id>` as needed).
 
 ## Arguments
 

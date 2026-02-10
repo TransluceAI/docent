@@ -22,12 +22,6 @@ import random
 import sys
 from typing import Any, cast
 
-from rich.console import Console
-from rich.panel import Panel
-
-from docent import Docent
-from docent._llm_util.llm_svc import BaseLLMService
-from docent.data_models.agent_run import AgentRun
 from elicit import (
     ElicitedQuestion,
     LabelingRequestResult,
@@ -43,17 +37,30 @@ from elicit import (
     sort_runs_by_cross_entropy,
     update_user_model,
 )
+from rich.console import Console
+from rich.panel import Panel
 from user_model import UserData
+
+from docent import Docent
+from docent._llm_util.llm_svc import BaseLLMService
+from docent.data_models.agent_run import AgentRun
 
 console = Console()
 
 
-def _require_docent_client(server_url: str) -> Docent:
+def _require_docent_client() -> Docent:
     api_key = os.environ.get("DOCENT_API_KEY")
     domain = os.environ.get("DOCENT_DOMAIN")
     if not api_key or not domain:
         raise ValueError("DOCENT_API_KEY and DOCENT_DOMAIN must be set in environment variables")
-    return Docent(api_key=api_key, domain=domain, server_url=server_url)
+    return Docent(api_key=api_key, domain=domain)
+
+
+def _require_openai_api_key() -> str:
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY must be set in environment variables")
+    return openai_api_key
 
 
 def _load_existing_labels(
@@ -417,7 +424,6 @@ async def run_label_elicitation(
     collection_id: str,
     rubric_id: str,
     label_set_id: str | None,
-    server_url: str,
     feedback_rounds: int,
     feedback_num_samples: int,
     feedback_max_questions: int,
@@ -444,7 +450,8 @@ async def run_label_elicitation(
         raise ValueError("cross_entropy_epsilon must be > 0")
 
     console.print("[bold]Initializing clients...[/bold]")
-    dc = _require_docent_client(server_url)
+    dc = _require_docent_client()
+    _require_openai_api_key()
     llm_svc = BaseLLMService(max_concurrency=50)
 
     rubric = dc.get_rubric(collection_id, rubric_id)
@@ -560,12 +567,6 @@ def main() -> None:
         help="Optional label set ID used to build user data U",
     )
     parser.add_argument(
-        "--server-url",
-        type=str,
-        default="http://localhost:8902",
-        help="Docent API server URL (default: http://localhost:8902)",
-    )
-    parser.add_argument(
         "--feedback-rounds",
         type=int,
         default=1,
@@ -626,7 +627,6 @@ def main() -> None:
                 collection_id=args.collection_id,
                 rubric_id=args.rubric_id,
                 label_set_id=args.label_set_id,
-                server_url=args.server_url,
                 feedback_rounds=args.feedback_rounds,
                 feedback_num_samples=args.feedback_num_samples,
                 feedback_max_questions=args.feedback_max_questions,
