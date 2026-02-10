@@ -104,6 +104,9 @@ known_first_party = [
 ]
 
 [tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
 include = [
     "docent_core",
     "docent",

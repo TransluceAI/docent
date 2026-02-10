@@ -78,7 +78,7 @@ async def propose_clusters(
 
     # Truncate items to 100k tokens
     all_items = "\n".join([f"- {d}" for d in shuffled_items])
-    all_items = truncate_to_token_limit(all_items, 100_000)
+    all_items, _, _ = truncate_to_token_limit(all_items, 100_000)
 
     # Generate prompt
     prompt: list[dict[str, str]] = [

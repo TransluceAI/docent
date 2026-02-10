@@ -9,15 +9,15 @@ def get_token_count(text: str, model: str = "gpt-4") -> int:
     return len(encoding.encode(text, disallowed_special=()))
 
 
-def truncate_to_token_limit(text: str, max_tokens: int, model: str = "gpt-4") -> str:
+def truncate_to_token_limit(
+    text: str, max_tokens: int, model: str = "gpt-4"
+) -> tuple[str, int, int]:
     """Truncate text to stay within the specified token limit."""
     encoding = tiktoken.encoding_for_model(model)
     tokens = encoding.encode(text, disallowed_special=())
-
-    if len(tokens) <= max_tokens:
-        return text
-
-    return encoding.decode(tokens[:max_tokens])
+    orig_num_tokens = len(tokens)
+    new_tokens = tokens[:max_tokens]
+    return encoding.decode(new_tokens), len(new_tokens), orig_num_tokens
 
 
 class MessageRange:

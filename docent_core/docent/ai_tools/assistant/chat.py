@@ -2,7 +2,6 @@ import json
 from typing import Any
 
 import jsonschema
-import tiktoken
 
 from docent.data_models.agent_run import AgentRun, AgentRunView
 from docent.data_models.chat.message import ToolMessage
@@ -15,20 +14,6 @@ from docent.data_models.chat.tool import (
 from docent.data_models.transcript import TEXT_RANGE_CITE_INSTRUCTION
 from docent.judges import JudgeResult, Rubric
 from docent_core.docent.db.schemas.tables import sanitize_pg_text
-
-GPT_MODEL = "gpt-4"  # Can be adjusted based on the model being used
-
-
-def truncate_to_token_limit(text: str, max_tokens: int, model: str = GPT_MODEL) -> str:
-    """Truncate text to stay within the specified token limit."""
-    encoding = tiktoken.encoding_for_model(model)
-    tokens = encoding.encode(text, disallowed_special=())
-
-    if len(tokens) <= max_tokens:
-        return text
-
-    return encoding.decode(tokens[:max_tokens])
-
 
 AGENT_RUN_CHAT_SYSTEM_PROMPT_TEMPLATE = f"""
 You are a chat assistant that analyzes a TRANSCRIPT of a conversation between a human USER and an AI agent. Answer any questions based on the transcript.

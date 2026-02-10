@@ -19,7 +19,7 @@ from docent.judges.types import Rubric
 from docent.sdk.llm_context import LLMContext, resolve_citations_with_context
 
 if TYPE_CHECKING:
-    from docent_core.docent.ai_tools.rubric.user_model import UserData
+    from user_model import UserData
 
 logger = get_logger(__name__)
 

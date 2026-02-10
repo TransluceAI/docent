@@ -20,10 +20,11 @@ docent_core worker --workers 2 --queue all
 
 ## Python
 
-If you are Codex, make sure you are running Python with the local `.venv/bin/python` interpreter. Furthermore, any Python-related modules you run must also be in that `bin` folder.
-If you are Claude, your commands are run from the correct directory by default, so DO NOT prefix commands with `.venv/bin`.
+### Automated checks
 
-### Type Checking with `pyright`
+After making changes to any Python files, you must time-check with Pyright, and lint/format with Ruff until there are no more errors.
+
+#### Type Checking with `pyright`
 
 Configuration is in `pyproject.toml`. Use `pyright` for Python type checking:
 
@@ -38,7 +39,7 @@ pyright path/to/file.py
 pyright path/to/directory/
 ```
 
-### Linting and Formatting with `ruff`
+#### Linting and Formatting with `ruff`
 
 Configuration is in `pyproject.toml` under `[tool.ruff]`. Use `ruff` for linting and formatting:
 
@@ -165,6 +166,8 @@ def from_pydantic(cls, diff_result: DiffResult, query_id: str) -> "SQLADiffResul
 ## TypeScript (docent_core/_web/)
 
 ### Linting with ESLint
+
+After making changes to any TypeScript files, you must lint/format with ESLint until there are no more errors.
 
 Configuration is in `docent_core/_web/.eslintrc.json`. From the `docent_core/_web/` directory:
 
