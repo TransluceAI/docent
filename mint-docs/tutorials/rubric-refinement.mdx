@@ -1,0 +1,42 @@
+---
+title: "Rubric Refinement"
+description: "Quantifying behaviors that require judgment to detect"
+---
+
+## Overview
+
+The rubric refinement agent helps you turn a high-level behavioral description into a precise rubric that an LLM judge can apply consistently at scale. This helps overcome several challenges when specifying a rubric:
+
+* Behavioral concepts that are easy to recognize ("cheating," "sycophancy”) can be hard to describe precisely
+* LLM judges interpret rubrics literally and inconsistently, often latching onto phrasings in ways you didn't intend
+* Edge cases may be genuinely ambiguous, even from a human's perspective
+* Understanding the target behavior in detail can be difficult before you evaluate specific examples
+
+The refinement agent addresses this through collaborative specification writing: you describe what you want to measure, and it iterates with you until the rubric captures your actual intent.
+
+**Accessing the refinement agent:** When you search using "Direct Search" or "Guided Search," the refinement agent appears automatically.
+
+## When to use refinement
+
+**You want to measure the prevalence of a fuzzy behavior.** You want to measure something like "cheating" or "rambling," but the concept is ambiguous. The refinement agent proposes an initial rubric, asks clarifying questions, and surfaces potential ambiguities for you to review.
+
+**You want to debug an existing rubric.** Your rubric produces wrong results on specific examples. You can recognize the issue, but how to revise the rubric is not obvious. The refinement agent takes your labeled disagreements as feedback and proposes rewrites that address those failure modes.
+
+**You have existing labels.** You have already annotated transcripts with your own taxonomy. The refinement agent extracts patterns from your labels, handles inconsistencies, and proposes rubrics that capture your current intent.
+
+**You want to explore.** You suspect something is wrong with your agent but lack a specific hypothesis. The refinement agent can quickly generate an exploratory rubric informed by a sample of your transcripts, helping surface behaviors worth investigating.
+
+<video controls autoplay loop width="100%">
+  <source src="https://transluce-videos.s3.us-east-1.amazonaws.com/refinement+v4.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
+## How refinement works
+
+When you initiate a Guided Search, the refinement agent samples several transcripts from your collection into context. It then:
+
+1. **Creates an initial rubric operationalization** based on your query and the sampled transcripts
+2. **Asks for high-level feedback** on whether the framing matches your intent
+3. **Asks specific questions** to clarify ambiguities in natural language predicates and decision points that could be interpreted multiple ways
+
+The refinement agent continues to update the rubric and ask clarifying questions until it feels confident about the specification.

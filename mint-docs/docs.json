@@ -65,7 +65,8 @@
             "pages": [
               "tutorials/search-and-clustering",
               "tutorials/logging-agent-runs",
-              "tutorials/labeling-agent-runs"
+              "tutorials/labeling-agent-runs",
+              "tutorials/rubric-refinement"
             ]
           },
           {
