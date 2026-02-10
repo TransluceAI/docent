@@ -4,13 +4,14 @@ Shared utilities for the data registry.
 Provides common functionality for file display, environment handling, and error management.
 """
 
-import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
+
+from docent_core._env_util import ENV
 
 console = Console()
 
@@ -24,7 +25,7 @@ TRUNCATED_COLLECTION_NAME_LENGTH = MAX_COLLECTION_NAME_DISPLAY_LENGTH - len(TRUN
 
 def get_server_host() -> str:
     """Get the Docent server host from environment."""
-    server_host = os.getenv("API_URL", "http://localhost:8889/")
+    server_host = ENV.get("DOCENT_API_URL", "http://localhost:8889/")
     if server_host.endswith("/"):
         server_host = server_host[:-1]
     return server_host

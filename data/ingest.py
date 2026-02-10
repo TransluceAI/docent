@@ -10,6 +10,8 @@ import os
 import httpx
 from rich.console import Console
 
+from docent_core._env_util import ENV
+
 from .cache import ensure_file_available
 from .importers import get_importer, parse_filename
 from .utils import (
@@ -37,7 +39,7 @@ async def ensure_api_key() -> str:
     Returns:
         The API key to use
     """
-    api_key = os.getenv("DOCENT_API_KEY")
+    api_key = ENV.get("DOCENT_API_KEY")
     if api_key:
         return api_key
 

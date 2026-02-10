@@ -6,7 +6,6 @@ and multiple transcript groups for testing the Docent application.
 """
 
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +27,7 @@ from docent.data_models.chat.tool import ToolCall
 from docent.data_models.transcript import Transcript, TranscriptGroup
 from docent.sdk.client import Docent
 
-from .utils import get_server_host, log_error, log_info, log_success
+from .utils import log_error, log_info, log_success
 
 
 def generate_sample_metadata_patterns() -> List[Dict[str, Any]]:
@@ -354,18 +353,11 @@ async def generate_and_ingest_agent_runs(
 ) -> None:
     """Generate and ingest agent runs with multiple transcript groups."""
 
-    # Set up server URL
-    if not server_url:
-        server_url = get_server_host()
-    assert server_url is not None
-
     # Set up API key
     if not api_key:
-        api_key = os.getenv("DOCENT_API_KEY")
-        if not api_key:
-            from .ingest import ensure_api_key
+        from .ingest import ensure_api_key
 
-            api_key = await ensure_api_key()
+        api_key = await ensure_api_key()
     assert api_key is not None
 
     log_info(f"Generating {count} agent runs with multiple transcript groups...")

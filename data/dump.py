@@ -18,7 +18,6 @@ from .utils import (
     console,
     count_csv_rows,
     create_aligned_collection_display,
-    get_server_host,
     log_error,
     log_info,
     log_success,
@@ -44,11 +43,7 @@ async def select_collection_from_menu() -> str | None:
     import docent
 
     try:
-        server_url = get_server_host()
-        client = docent.Docent(
-            server_url=server_url,
-            web_url="http://localhost:3000",
-        )
+        client = docent.Docent()
 
         with simple_progress("Loading collections...") as (_progress, _task):
             collections = client.list_collections()
