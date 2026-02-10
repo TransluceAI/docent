@@ -115,7 +115,7 @@ def navigate_to(collection_id: str, path: str) -> str:
         return "Error: collection_id is required (pass explicitly or set DOCENT_COLLECTION_ID)"
 
     path = path.lstrip("/")
-    url = f"{client._web_url}/dashboard/{collection_id}/{path}"  # type: ignore[reportPrivateUsage]
+    url = f"{client._frontend_url}/dashboard/{collection_id}/{path}"  # type: ignore[reportPrivateUsage]
 
     webbrowser.open(url)
     return f"Opened {url} in browser"

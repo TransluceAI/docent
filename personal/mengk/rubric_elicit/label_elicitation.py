@@ -48,12 +48,9 @@ from docent_core.docent.ai_tools.rubric.user_model import UserData
 console = Console()
 
 
-def _require_docent_client(server_url: str) -> Docent:
-    api_key = ENV.get("DOCENT_API_KEY")
-    domain = ENV.get("DOCENT_DOMAIN")
-    if not api_key or not domain:
-        raise ValueError("DOCENT_API_KEY and DOCENT_DOMAIN must be set in environment variables")
-    return Docent(api_key=api_key, domain=domain, server_url=server_url)
+def _require_docent_client() -> Docent:
+    _ = ENV  # load the env
+    return Docent()  # things are auto-set from the env
 
 
 def _require_openai_api_key() -> str:
@@ -424,7 +421,6 @@ async def run_label_elicitation(
     collection_id: str,
     rubric_id: str,
     label_set_id: str | None,
-    server_url: str,
     feedback_rounds: int,
     feedback_num_samples: int,
     feedback_max_questions: int,
@@ -451,7 +447,7 @@ async def run_label_elicitation(
         raise ValueError("cross_entropy_epsilon must be > 0")
 
     console.print("[bold]Initializing clients...[/bold]")
-    dc = _require_docent_client(server_url)
+    dc = _require_docent_client()
     _require_openai_api_key()
     llm_svc = BaseLLMService(max_concurrency=50)
 
@@ -568,12 +564,6 @@ def main() -> None:
         help="Optional label set ID used to build user data U",
     )
     parser.add_argument(
-        "--server-url",
-        type=str,
-        default="http://localhost:8902",
-        help="Docent API server URL (default: http://localhost:8902)",
-    )
-    parser.add_argument(
         "--feedback-rounds",
         type=int,
         default=1,
@@ -634,7 +624,6 @@ def main() -> None:
                 collection_id=args.collection_id,
                 rubric_id=args.rubric_id,
                 label_set_id=args.label_set_id,
-                server_url=args.server_url,
                 feedback_rounds=args.feedback_rounds,
                 feedback_num_samples=args.feedback_num_samples,
                 feedback_max_questions=args.feedback_max_questions,

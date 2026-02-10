@@ -6,6 +6,7 @@ import webbrowser
 from itertools import islice
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Iterable, Iterator, Literal, TypeVar, cast
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     from docent.judges.impl import BaseJudge
@@ -32,6 +33,7 @@ _AGENT_RUNS_PAYLOAD_SUFFIX = b"]}"
 
 
 _T = TypeVar("_T")
+_LOCAL_DOMAINS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 def batched(iterable: Iterable[_T], n: int) -> Iterator[tuple[_T, ...]]:
@@ -41,6 +43,27 @@ def batched(iterable: Iterable[_T], n: int) -> Iterator[tuple[_T, ...]]:
     it = iter(iterable)
     while batch := tuple(islice(it, n)):
         yield batch
+
+
+def _domain_host(domain: str) -> str:
+    """Extract normalized host from a domain string, handling optional port and IPv6 brackets."""
+    normalized = domain.strip().lower()
+    return urlsplit(f"//{normalized}").hostname or normalized
+
+
+def _normalize_or_none(
+    value: str | None,
+    *,
+    strip_trailing_slash: bool = False,
+) -> str | None:
+    """Return None for missing/empty strings, otherwise return a normalized string."""
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if strip_trailing_slash:
+        normalized = normalized.rstrip("/")
+    return normalized if normalized else None
 
 
 def _serialize_agent_run(agent_run: AgentRun) -> bytes:
@@ -157,15 +180,18 @@ class Docent:
         collection_id: str | None = None,
         config_file: str | Path | None = None,
         log_stream: IO[str] | None = None,
-        # Deprecated
-        server_url: str | None = None,  # Use domain instead
-        web_url: str | None = None,  # Use domain instead
+        api_url: str | None = None,
+        frontend_url: str | None = None,
+        # Deprecated (use api_url and frontend_url instead)
+        server_url: str | None = None,
+        web_url: str | None = None,
     ):
         """Initialize the Docent client.
 
         Args:
             domain: The domain of the Docent instance. Defaults to "docent.transluce.org".
-                The API and web URLs will be constructed from this domain automatically (unless overridden).
+                The API and frontend URLs will be constructed from this domain automatically (unless overridden).
+                Local domains require explicit API and frontend URL overrides.
             api_key: API key for authentication. If not provided, will attempt to read
                 from the DOCENT_API_KEY environment variable or from a config file.
             collection_id: Default collection ID to use for API calls. If not provided,
@@ -176,8 +202,12 @@ class Docent:
                 Supports DOCENT_API_KEY, DOCENT_API_URL, DOCENT_FRONTEND_URL, DOCENT_DOMAIN,
                 and DOCENT_COLLECTION_ID.
             log_stream: Output stream for log messages. Defaults to sys.stdout.
-            server_url: (Deprecated) Direct URL of the Docent API server. Use `domain` instead.
-            web_url: (Deprecated) Direct URL of the Docent web UI. Use `domain` instead.
+            api_url: Direct URL of the Docent API server.
+            frontend_url: Direct URL of the Docent frontend UI.
+            server_url: (Deprecated) Direct URL of the Docent API server. Use `api_url` instead.
+            web_url: (Deprecated) Direct URL of the Docent frontend UI. Use `frontend_url` instead.
+                Providing only one of server_url/web_url currently emits a warning and
+                will become an error in a future version.
 
         Raises:
             ValueError: If no API key is provided and DOCENT_API_KEY is not set.
@@ -195,34 +225,87 @@ class Docent:
         if server_url is not None:
             self._logger.warning(
                 "The 'server_url' parameter is deprecated and will be removed in a future version. "
-                "Please use 'domain' instead."
+                "Please use 'api_url' instead."
             )
         if web_url is not None:
             self._logger.warning(
                 "The 'web_url' parameter is deprecated and will be removed in a future version. "
-                "Please use 'domain' instead."
+                "Please use 'frontend_url' instead."
             )
 
         # Load config file
         config = load_config_file(config_file, logger=self._logger)
 
-        # Set domain; precedence: param > config file > default
-        domain = domain or config.get("DOCENT_DOMAIN") or "docent.transluce.org"
+        # Set domain; precedence: param > env > config file > default
+        domain = (
+            domain
+            or os.getenv("DOCENT_DOMAIN")
+            or config.get("DOCENT_DOMAIN")
+            or "docent.transluce.org"
+        )
         self._domain = domain
 
-        # Set server URL; precedence: server_url param > config file > domain
-        prefix = "https://" if use_https else "http://"
-        server_url = (server_url or config.get("DOCENT_API_URL") or f"{prefix}api.{domain}").rstrip(
-            "/"
-        )
-        if not server_url.endswith("/rest"):
-            server_url = f"{server_url}/rest"
-        self._server_url = server_url
+        # URL overrides precedence: new params > legacy params > env > config file
+        normalized_api_url = _normalize_or_none(api_url, strip_trailing_slash=True)
+        normalized_server_url = _normalize_or_none(server_url, strip_trailing_slash=True)
+        if (
+            normalized_api_url is not None
+            and normalized_server_url is not None
+            and normalized_api_url != normalized_server_url
+        ):
+            raise ValueError("Received conflicting values for api_url and server_url.")
 
-        # Set web URL; precedence: web_url param > config file > domain
-        self._web_url = (
-            web_url or config.get("DOCENT_FRONTEND_URL") or f"{prefix}{domain}"
-        ).rstrip("/")
+        normalized_frontend_url = _normalize_or_none(frontend_url, strip_trailing_slash=True)
+        normalized_web_url = _normalize_or_none(web_url, strip_trailing_slash=True)
+        if (
+            normalized_frontend_url is not None
+            and normalized_web_url is not None
+            and normalized_frontend_url != normalized_web_url
+        ):
+            raise ValueError("Received conflicting values for frontend_url and web_url.")
+
+        resolved_api_url = (
+            normalized_api_url
+            or normalized_server_url
+            or _normalize_or_none(os.getenv("DOCENT_API_URL"), strip_trailing_slash=True)
+            or _normalize_or_none(config.get("DOCENT_API_URL"), strip_trailing_slash=True)
+        )
+        resolved_frontend_url = (
+            normalized_frontend_url
+            or normalized_web_url
+            or _normalize_or_none(os.getenv("DOCENT_FRONTEND_URL"), strip_trailing_slash=True)
+            or _normalize_or_none(config.get("DOCENT_FRONTEND_URL"), strip_trailing_slash=True)
+        )
+
+        has_api_override = resolved_api_url is not None
+        has_frontend_override = resolved_frontend_url is not None
+        if has_api_override != has_frontend_override:
+            self._logger.warning(
+                "Only one of API/frontend URL overrides is set. This is deprecated and will "
+                "become an error in a future version. Set both DOCENT_API_URL and "
+                "DOCENT_FRONTEND_URL (or pass both api_url/frontend_url)."
+            )
+
+        prefix = "https://" if use_https else "http://"
+
+        if not (has_api_override and has_frontend_override):
+            if _domain_host(domain) in _LOCAL_DOMAINS:
+                raise ValueError(
+                    "Local domains require explicit DOCENT_API_URL and DOCENT_FRONTEND_URL "
+                    "(or pass both api_url and frontend_url)."
+                )
+
+        api_url_raw = resolved_api_url if resolved_api_url is not None else f"{prefix}api.{domain}"
+        if not api_url_raw.endswith("/rest"):
+            api_url_raw = f"{api_url_raw}/rest"
+        self._api_url = api_url_raw
+
+        self._frontend_url = (
+            resolved_frontend_url if resolved_frontend_url is not None else f"{prefix}{domain}"
+        )
+        # Backward-compatible aliases for legacy private attribute usage.
+        self._server_url = self._api_url
+        self._web_url = self._frontend_url
 
         # Set default collection ID; precedence: param > config file > None
         self.default_collection_id: str | None = collection_id or config.get("DOCENT_COLLECTION_ID")
@@ -278,8 +361,12 @@ class Docent:
     def _login(self, api_key: str):
         """Login with email/password to establish session."""
         self._session.headers.update({"Authorization": f"Bearer {api_key}"})
+        self._logger.info(
+            f"Authenticating Docent client with frontend_url='{self._frontend_url}' "
+            f"and api_url='{self._api_url}'"
+        )
 
-        url = f"{self._server_url}/api-keys/test"
+        url = f"{self._api_url}/api-keys/test"
         response = self._session.get(url)
         self._handle_response_errors(response)
 
@@ -309,7 +396,7 @@ class Docent:
             ValueError: If the response is missing the Collection ID.
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/create"
+        url = f"{self._api_url}/create"
         payload = {
             "collection_id": collection_id,
             "name": name,
@@ -327,7 +414,7 @@ class Docent:
         self._logger.info(f"Successfully created Collection with id='{collection_id}'")
 
         self._logger.info(
-            f"Collection creation complete. Frontend available at: {self._web_url}/dashboard/{collection_id}"
+            f"Collection creation complete. Frontend available at: {self._frontend_url}/dashboard/{collection_id}"
         )
         return collection_id
 
@@ -349,7 +436,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/collection"
+        url = f"{self._api_url}/{collection_id}/collection"
         payload: dict[str, Any] = {}
         if name is not None:
             payload["name"] = name
@@ -404,7 +491,7 @@ class Docent:
                 "We have transitioned to a new batching strategy based on the size of the payload."
             )
 
-        url = f"{self._server_url}/{collection_id}/agent_runs"
+        url = f"{self._api_url}/{collection_id}/agent_runs"
         total_runs = len(agent_runs)
         job_ids: list[str] = []
 
@@ -529,7 +616,7 @@ class Docent:
         if len(job_ids) > 100:
             raise ValueError("Cannot request more than 100 job IDs at once")
 
-        url = f"{self._server_url}/{collection_id}/agent_runs/jobs/batch_status"
+        url = f"{self._api_url}/{collection_id}/agent_runs/jobs/batch_status"
         response = self._session.post(url, json={"job_ids": job_ids})
         self._handle_response_errors(response)
         return response.json()["jobs"]
@@ -551,7 +638,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/agent_runs/jobs/{job_id}"
+        url = f"{self._api_url}/{collection_id}/agent_runs/jobs/{job_id}"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -565,7 +652,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/collections"
+        url = f"{self._api_url}/collections"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -585,7 +672,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/collection_details"
+        url = f"{self._api_url}/{collection_id}/collection_details"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -602,7 +689,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/rubric/{collection_id}/rubrics"
+        url = f"{self._api_url}/rubric/{collection_id}/rubrics"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -641,7 +728,7 @@ class Docent:
             ... )
             >>> rubric_id = client.create_rubric(collection_id, rubric)
         """
-        url = f"{self._server_url}/rubric/{collection_id}/rubric"
+        url = f"{self._api_url}/rubric/{collection_id}/rubric"
         payload = {"rubric": rubric.model_dump(mode="json")}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -668,7 +755,7 @@ class Docent:
         """
         from docent.judges.types import Rubric
 
-        url = f"{self._server_url}/rubric/{collection_id}/rubric/{rubric_id}"
+        url = f"{self._api_url}/rubric/{collection_id}/rubric/{rubric_id}"
         params = {"version": version} if version is not None else None
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)
@@ -734,7 +821,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/rubric_run_state"
+        url = f"{self._api_url}/rubric/{collection_id}/{rubric_id}/rubric_run_state"
         body = {
             "filter_dict": filter_dict,
             "include_failures": include_failures,
@@ -759,7 +846,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/rubric/{collection_id}/{rubric_id}/clustering_job"
+        url = f"{self._api_url}/rubric/{collection_id}/{rubric_id}/clustering_job"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -821,7 +908,7 @@ class Docent:
         """
         validate_judge_result_schema(label_schema)
 
-        url = f"{self._server_url}/label/{collection_id}/label_set"
+        url = f"{self._api_url}/label/{collection_id}/label_set"
         payload = {
             "name": name,
             "label_schema": label_schema,
@@ -848,7 +935,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails or validation errors occur.
         """
-        url = f"{self._server_url}/label/{collection_id}/label"
+        url = f"{self._api_url}/label/{collection_id}/label"
         payload = {"label": label.model_dump(mode="json")}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -875,7 +962,7 @@ class Docent:
         if not labels:
             raise ValueError("labels must contain at least one entry")
 
-        url = f"{self._server_url}/label/{collection_id}/labels"
+        url = f"{self._api_url}/label/{collection_id}/labels"
         payload = {"labels": [label.model_dump(mode="json") for label in labels]}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -893,7 +980,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label/{collection_id}/label_sets"
+        url = f"{self._api_url}/label/{collection_id}/label_sets"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -915,7 +1002,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label/{collection_id}/label_set/{label_set_id}/labels"
+        url = f"{self._api_url}/label/{collection_id}/label_set/{label_set_id}/labels"
         params = {"filter_valid_labels": filter_valid_labels}
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)
@@ -932,14 +1019,14 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label/{collection_id}/tag"
+        url = f"{self._api_url}/label/{collection_id}/tag"
         payload = {"agent_run_id": agent_run_id, "value": value}
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
 
     def get_tags(self, collection_id: str, value: str | None = None) -> list[dict[str, Any]]:
         """Get all tags in a collection, optionally filtered by value."""
-        url = f"{self._server_url}/label/{collection_id}/tags"
+        url = f"{self._api_url}/label/{collection_id}/tags"
         params = {"value": value} if value is not None else None
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)
@@ -947,14 +1034,14 @@ class Docent:
 
     def get_tags_for_agent_run(self, collection_id: str, agent_run_id: str) -> list[dict[str, Any]]:
         """Get all tags attached to a specific agent run."""
-        url = f"{self._server_url}/label/{collection_id}/agent_run/{agent_run_id}/tags"
+        url = f"{self._api_url}/label/{collection_id}/agent_run/{agent_run_id}/tags"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
 
     def delete_tag(self, collection_id: str, tag_id: str) -> None:
         """Delete a tag by ID."""
-        url = f"{self._server_url}/label/{collection_id}/tag/{tag_id}"
+        url = f"{self._api_url}/label/{collection_id}/tag/{tag_id}"
         response = self._session.delete(url)
         self._handle_response_errors(response)
 
@@ -970,7 +1057,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label/{collection_id}/comments"
+        url = f"{self._api_url}/label/{collection_id}/comments"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -990,7 +1077,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/label/{collection_id}/agent_run/{agent_run_id}/comments"
+        url = f"{self._api_url}/label/{collection_id}/agent_run/{agent_run_id}/comments"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1008,7 +1095,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/agent_run"
+        url = f"{self._api_url}/{collection_id}/agent_run"
         response = self._session.get(url, params={"agent_run_id": agent_run_id})
         self._handle_response_errors(response)
         if response.json() is None:
@@ -1031,7 +1118,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/chat/{collection_id}/{agent_run_id}/sessions"
+        url = f"{self._api_url}/chat/{collection_id}/{agent_run_id}/sessions"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1048,7 +1135,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/make_public"
+        url = f"{self._api_url}/{collection_id}/make_public"
         response = self._session.post(url)
         self._handle_response_errors(response)
 
@@ -1068,7 +1155,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/share_with_email"
+        url = f"{self._api_url}/{collection_id}/share_with_email"
         payload = {"email": email}
         response = self._session.post(url, json=payload)
 
@@ -1079,7 +1166,7 @@ class Docent:
 
     def get_my_organizations(self) -> list[dict[str, Any]]:
         """List organizations the authenticated user belongs to."""
-        url = f"{self._server_url}/organizations"
+        url = f"{self._api_url}/organizations"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1090,14 +1177,14 @@ class Docent:
         Args:
             organization_id: Organization ID.
         """
-        url = f"{self._server_url}/organizations/{organization_id}/users"
+        url = f"{self._api_url}/organizations/{organization_id}/users"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
 
     def get_collection_collaborators(self, collection_id: str) -> list[dict[str, Any]]:
         """List collaborators (users, organizations, public) for a collection."""
-        url = f"{self._server_url}/collections/{collection_id}/collaborators"
+        url = f"{self._api_url}/collections/{collection_id}/collaborators"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1116,7 +1203,7 @@ class Docent:
         if permission not in {"read", "write", "admin"}:
             raise ValueError("permission must be one of ['admin', 'read', 'write']")
 
-        url = f"{self._server_url}/collections/{collection_id}/collaborators/upsert"
+        url = f"{self._api_url}/collections/{collection_id}/collaborators/upsert"
         payload = {
             "subject_id": organization_id,
             "subject_type": "organization",
@@ -1131,7 +1218,7 @@ class Docent:
         self, collection_id: str, organization_id: str
     ) -> None:
         """Remove an organization's access to a collection."""
-        url = f"{self._server_url}/collections/{collection_id}/collaborators/delete"
+        url = f"{self._api_url}/collections/{collection_id}/collaborators/delete"
         payload = {
             "subject_id": organization_id,
             "subject_type": "organization",
@@ -1143,7 +1230,7 @@ class Docent:
 
     def collection_exists(self, collection_id: str) -> bool:
         """Check if a collection exists without raising if it does not."""
-        url = f"{self._server_url}/{collection_id}/exists"
+        url = f"{self._api_url}/{collection_id}/exists"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return bool(response.json())
@@ -1166,7 +1253,7 @@ class Docent:
         if permission not in valid_permissions:
             raise ValueError(f"permission must be one of {sorted(valid_permissions)}")
 
-        url = f"{self._server_url}/{collection_id}/has_permission"
+        url = f"{self._api_url}/{collection_id}/has_permission"
         response = self._session.get(url, params={"permission": permission})
         self._handle_response_errors(response)
 
@@ -1185,7 +1272,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/dql/{collection_id}/schema"
+        url = f"{self._api_url}/dql/{collection_id}/schema"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1207,7 +1294,7 @@ class Docent:
         if not dql.strip():
             raise ValueError("dql must be a non-empty string")
 
-        url = f"{self._server_url}/dql/{collection_id}/execute"
+        url = f"{self._api_url}/dql/{collection_id}/execute"
         response = self._session.post(url, json={"dql": dql})
         self._handle_response_errors(response)
         return response.json()
@@ -1313,7 +1400,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/agent_run_ids"
+        url = f"{self._api_url}/{collection_id}/agent_run_ids"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1376,7 +1463,7 @@ class Docent:
                             break
 
                         # Add batch to collection
-                        url = f"{self._server_url}/{collection_id}/agent_runs"
+                        url = f"{self._api_url}/{collection_id}/agent_runs"
                         payload = {"agent_runs": [ar.model_dump(mode="json") for ar in batch_list]}
 
                         response = self._session.post(url, json=payload)
@@ -1435,7 +1522,7 @@ class Docent:
 
         serialized_context = context.to_dict()
 
-        url = f"{self._server_url}/chat/start"
+        url = f"{self._api_url}/chat/start"
         payload = {
             "context_serialized": serialized_context,
             "model_string": model_string,
@@ -1450,7 +1537,7 @@ class Docent:
         if not session_id:
             raise ValueError("Failed to create chat session: 'session_id' missing in response")
 
-        chat_url = f"{self._web_url}/chat/{session_id}"
+        chat_url = f"{self._frontend_url}/chat/{session_id}"
         self._logger.info(f"Chat session created. Opening browser to: {chat_url}")
 
         webbrowser.open(chat_url)
@@ -1476,7 +1563,7 @@ class Docent:
             # Opens browser to agent run page
             ```
         """
-        agent_run_url = f"{self._web_url}/dashboard/{collection_id}/agent_run/{agent_run_id}"
+        agent_run_url = f"{self._frontend_url}/dashboard/{collection_id}/agent_run/{agent_run_id}"
         self._logger.info(f"Opening agent run in browser: {agent_run_url}")
 
         webbrowser.open(agent_run_url)
@@ -1520,7 +1607,7 @@ class Docent:
         if judge_result_id is not None and agent_run_id is None:
             raise ValueError("judge_result_id requires agent_run_id to be specified")
 
-        url = f"{self._web_url}/dashboard/{collection_id}/rubric/{rubric_id}"
+        url = f"{self._frontend_url}/dashboard/{collection_id}/rubric/{rubric_id}"
         if agent_run_id is not None:
             url += f"/agent_run/{agent_run_id}"
         if judge_result_id is not None:
@@ -1599,7 +1686,7 @@ class Docent:
         # Use name or generate placeholder
         id_or_name = result_set_name or "unnamed"
 
-        url = f"{self._server_url}/results/{collection_id}/submit/{id_or_name}"
+        url = f"{self._api_url}/results/{collection_id}/submit/{id_or_name}"
         analysis_model: dict[str, Any] | None = None
         if model_string is not None:
             if "/" not in model_string:
@@ -1623,7 +1710,7 @@ class Docent:
         self._handle_response_errors(response)
 
         result = response.json()
-        full_url = f"{self._web_url}{result['url']}"
+        full_url = f"{self._frontend_url}{result['url']}"
 
         self._logger.info(f"Submitted {len(requests)} LLM requests to result set")
         print(f"Result set ID: {result['result_set_id']}")
@@ -1667,7 +1754,7 @@ class Docent:
 
         id_or_name = result_set_name or "unnamed"
 
-        url = f"{self._server_url}/results/{collection_id}/submit/{id_or_name}"
+        url = f"{self._api_url}/results/{collection_id}/submit/{id_or_name}"
         payload = {
             "results": [r.model_dump() for r in results],
             "exists_ok": exists_ok,
@@ -1677,7 +1764,7 @@ class Docent:
         self._handle_response_errors(response)
 
         result = response.json()
-        full_url = f"{self._web_url}{result['url']}"
+        full_url = f"{self._frontend_url}{result['url']}"
 
         self._logger.info(f"Submitted {len(results)} results to result set")
         print(f"Result set ID: {result['result_set_id']}")
@@ -1706,7 +1793,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the result set is not found or API fails.
         """
-        url = f"{self._server_url}/results/{collection_id}/result-sets/{name_or_id}"
+        url = f"{self._api_url}/results/{collection_id}/result-sets/{name_or_id}"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1736,7 +1823,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the result set is not found or API fails.
         """
-        url = f"{self._server_url}/results/{collection_id}/results/{name_or_id}"
+        url = f"{self._api_url}/results/{collection_id}/results/{name_or_id}"
         params = {"with_auto_joins": with_auto_joins, "include_incomplete": include_incomplete}
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)
@@ -1788,7 +1875,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/{collection_id}/agent_run_metadata_fields"
+        url = f"{self._api_url}/{collection_id}/agent_run_metadata_fields"
         params = {
             "include_sample_values": str(include_sample_values).lower(),
             "sample_limit": sample_limit,
@@ -1814,7 +1901,7 @@ class Docent:
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
         """
-        url = f"{self._server_url}/results/{collection_id}/result-sets"
+        url = f"{self._api_url}/results/{collection_id}/result-sets"
         params = {"prefix": prefix} if prefix else None
         response = self._session.get(url, params=params)
         self._handle_response_errors(response)
@@ -1834,7 +1921,7 @@ class Docent:
         Returns:
             str: The URL that was opened.
         """
-        url = f"{self._web_url}/dashboard/{collection_id}/results/{name_or_id}"
+        url = f"{self._frontend_url}/dashboard/{collection_id}/results/{name_or_id}"
         self._logger.info(f"Opening result set in browser: {url}")
         webbrowser.open(url)
         return url
