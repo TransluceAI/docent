@@ -1937,6 +1937,45 @@ class MonoService:
         await self.schedule_metadata_view_refresh()
         return len(observations)
 
+    async def backfill_metadata(
+        self, collection_id: str | None = None
+    ) -> dict[str, str | int | None]:
+        """Resync metadata for one collection and return the next collection ID to process.
+
+        If collection_id is None, starts from the lexicographically first collection.
+        Returns the resynced collection_id, observation count, and the next collection_id
+        (None if this was the last one).
+        """
+        async with self.db.session() as session:
+            if collection_id is None:
+                # Get the first collection lexicographically
+                result = await session.execute(
+                    select(SQLACollection.id).order_by(SQLACollection.id.asc()).limit(1)
+                )
+                collection_id = result.scalar_one_or_none()
+                if collection_id is None:
+                    return {
+                        "collection_id": None,
+                        "observations_created": 0,
+                        "next_collection_id": None,
+                    }
+
+            # Get the next collection after this one
+            result = await session.execute(
+                select(SQLACollection.id)
+                .where(SQLACollection.id > collection_id)
+                .order_by(SQLACollection.id.asc())
+                .limit(1)
+            )
+            next_collection_id: str | None = result.scalar_one_or_none()
+
+        observations_created = await self.resync_metadata(collection_id)
+        return {
+            "collection_id": collection_id,
+            "observations_created": observations_created,
+            "next_collection_id": next_collection_id,
+        }
+
     async def get_metadata_field_range(
         self, ctx: ViewContext, field_name: str
     ) -> dict[str, float | None]:

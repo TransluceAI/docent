@@ -881,11 +881,12 @@ async def get_metadata_field_range(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# TODO(nickwu): Restore permission check: Depends(require_collection_permission(Permission.WRITE))
+# Temporarily removed to allow backfilling metadata for all collections.
 @user_router.post("/{collection_id}/resync_metadata")
 async def resync_metadata(
     collection_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     """Re-extract all metadata observations for a collection and refresh the materialized view."""
     observations_created = await mono_svc.resync_metadata(collection_id)
@@ -894,6 +895,16 @@ async def resync_metadata(
         "observations_created": observations_created,
         "message": "Metadata registry resynced successfully",
     }
+
+
+# TODO(nickwu): Remove this endpoint after backfill is complete.
+@user_router.post("/backfill_metadata")
+async def backfill_metadata(
+    collection_id: str | None = None,
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Resync metadata for one collection and return the next collection ID to process."""
+    return await mono_svc.backfill_metadata(collection_id)
 
 
 @user_router.get("/{collection_id}/agent_run")
