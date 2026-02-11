@@ -1937,17 +1937,19 @@ class MonoService:
         return len(observations)
 
     async def backfill_metadata(
-        self, collection_id: str | None = None
+        self,
+        collection_id: str | None = None,
+        agent_run_cursor: str | None = None,
+        batch_size: int = 500,
     ) -> dict[str, str | int | None]:
-        """Resync metadata for one collection and return the next collection ID to process.
+        """Backfill metadata observations for one batch of agent runs.
 
-        If collection_id is None, starts from the lexicographically first collection.
-        Returns the resynced collection_id, observation count, and the next collection_id
-        (None if this was the last one).
+        Processes up to `batch_size` agent runs within a collection, using
+        INSERT ON CONFLICT DO NOTHING to avoid duplicates. Returns cursors
+        so the caller can paginate through all runs and collections.
         """
         async with self.db.session() as session:
             if collection_id is None:
-                # Get the first collection lexicographically
                 result = await session.execute(
                     select(SQLACollection.id).order_by(SQLACollection.id.asc()).limit(1)
                 )
@@ -1956,22 +1958,75 @@ class MonoService:
                     return {
                         "collection_id": None,
                         "observations_created": 0,
+                        "next_agent_run_cursor": None,
                         "next_collection_id": None,
                     }
 
-            # Get the next collection after this one
-            result = await session.execute(
-                select(SQLACollection.id)
-                .where(SQLACollection.id > collection_id)
-                .order_by(SQLACollection.id.asc())
-                .limit(1)
+            # Fetch a batch of agent runs, ordered by ID for stable cursor pagination
+            query = (
+                select(SQLAAgentRun)
+                .where(SQLAAgentRun.collection_id == collection_id)
+                .order_by(SQLAAgentRun.id.asc())
+                .limit(batch_size)
             )
-            next_collection_id: str | None = result.scalar_one_or_none()
+            if agent_run_cursor is not None:
+                query = query.where(SQLAAgentRun.id > agent_run_cursor)
 
-        observations_created = await self.resync_metadata(collection_id)
+            result = await session.execute(query)
+            sq_agent_runs = list(result.scalars().all())
+
+            # Extract and upsert observations
+            observations = extract_metadata_observations_bulk(sq_agent_runs, collection_id)
+            if observations:
+                stmt = (
+                    pg_insert(SQLAMetadataObservation)
+                    .values(
+                        [
+                            {
+                                "agent_run_id": o.agent_run_id,
+                                "json_path": o.json_path,
+                                "value_hash": o.value_hash,
+                                "value_type": o.value_type,
+                                "collection_id": o.collection_id,
+                                "value_text": o.value_text,
+                                "value_numeric": o.value_numeric,
+                                "observed_at": o.observed_at,
+                            }
+                            for o in observations
+                        ]
+                    )
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(stmt)
+
+        # Determine next cursor
+        next_agent_run_cursor: str | None = None
+        next_collection_id: str | None = None
+
+        if len(sq_agent_runs) == batch_size:
+            # More runs in this collection
+            next_agent_run_cursor = sq_agent_runs[-1].id
+            next_collection_id = collection_id
+        else:
+            # Done with this collection, find the next one
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(SQLACollection.id)
+                    .where(SQLACollection.id > collection_id)
+                    .order_by(SQLACollection.id.asc())
+                    .limit(1)
+                )
+                next_collection_id = result.scalar_one_or_none()
+
+        logger.info(
+            f"Backfilled metadata for collection {collection_id}: "
+            f"{len(sq_agent_runs)} agent runs, {len(observations)} observations"
+        )
+
         return {
             "collection_id": collection_id,
-            "observations_created": observations_created,
+            "observations_created": len(observations),
+            "next_agent_run_cursor": next_agent_run_cursor,
             "next_collection_id": next_collection_id,
         }
 
