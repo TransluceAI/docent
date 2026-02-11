@@ -1470,6 +1470,29 @@ class Docent:
         self._handle_response_errors(response)
         return response.json()
 
+    def delete_agent_runs(self, collection_id: str, agent_run_ids: list[str]) -> int:
+        """Delete agent runs from a collection.
+
+        Args:
+            collection_id: ID of the Collection.
+            agent_run_ids: List of agent run IDs to delete.
+
+        Returns:
+            int: Number of agent runs deleted.
+
+        Raises:
+            ValueError: If agent_run_ids is empty.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        if not agent_run_ids:
+            raise ValueError("agent_run_ids must contain at least one entry")
+
+        url = f"{self._api_url}/{collection_id}/agent_runs"
+        response = self._session.delete(url, json={"agent_run_ids": agent_run_ids})
+        self._handle_response_errors(response)
+        deleted_count: int = response.json()["deleted_count"]
+        return deleted_count
+
     def recursively_ingest_inspect_logs(self, collection_id: str, fpath: str):
         """Recursively search directory for .eval files and ingest them as agent runs.
 
