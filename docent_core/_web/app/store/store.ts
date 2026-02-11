@@ -22,6 +22,7 @@ import { statusApi } from '@/components/MaintenanceBanner';
 import { resultSetApi } from '../api/resultSetApi';
 import { filterApi } from '../api/filterApi';
 import refinementReducer from './refinementSlice';
+import savedFilterReducer from './savedFilterSlice';
 
 const store = configureStore({
   reducer: {
@@ -31,6 +32,7 @@ const store = configureStore({
     transcript: transcriptReducer,
     toast: toastReducer,
     refinement: refinementReducer,
+    savedFilter: savedFilterReducer,
     dqlChat: dqlChatReducer,
     [collabApi.reducerPath]: collabApi.reducer,
     [chartApi.reducerPath]: chartApi.reducer,

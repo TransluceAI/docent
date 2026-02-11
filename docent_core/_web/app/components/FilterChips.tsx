@@ -97,14 +97,14 @@ export const FilterChips = ({
   }
 
   return (
-    <div className={cn('flex flex-wrap gap-1.5', className)}>
+    <div className={cn('flex flex-wrap gap-1.5 min-w-0', className)}>
       {currentFilters.map((subFilter: CollectionFilter) => {
         const isDisabled = subFilter.disabled === true;
         return (
           <div
             key={subFilter.id}
             className={cn(
-              'inline-flex items-center gap-x-1 text-[11px] border pl-1.5 pr-1 py-0.5 rounded-md transition-colors min-w-0',
+              'inline-flex items-center gap-x-1 text-[11px] border pl-1.5 pr-1 py-0.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden',
               isDisabled
                 ? 'bg-muted text-muted-foreground border-dashed border-muted-foreground/50'
                 : 'bg-indigo-bg text-primary border-indigo-border hover:bg-indigo-bg/80 hover:border-indigo-border/80'
@@ -120,14 +120,14 @@ export const FilterChips = ({
                 return (
                   <>
                     <span
-                      className="font-mono inline-block max-w-[160px] truncate"
+                      className="font-mono min-w-[3rem] max-w-[160px] truncate"
                       title={displayKey}
                     >
                       {displayKey}
                     </span>
                     <span
                       className={cn(
-                        'font-mono inline-block max-w-[110px] truncate',
+                        'font-mono inline-block flex-shrink-0',
                         isDisabled
                           ? 'text-muted-foreground/70'
                           : 'text-indigo-400'
@@ -137,7 +137,7 @@ export const FilterChips = ({
                       {filterCast.op || '=='}
                     </span>
                     <span
-                      className="font-mono inline-block max-w-[260px] truncate"
+                      className="font-mono min-w-[3rem] max-w-[260px] truncate"
                       title={displayValue}
                     >
                       {displayValue}
@@ -151,7 +151,7 @@ export const FilterChips = ({
             {allowToggle && !readOnly && (
               <button
                 onClick={() => handleToggle(subFilter.id)}
-                className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
+                className="flex-shrink-0 p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
                 title={isDisabled ? 'Enable filter' : 'Disable filter'}
               >
                 {isDisabled ? <Eye size={10} /> : <EyeOff size={10} />}
@@ -160,7 +160,7 @@ export const FilterChips = ({
             {subFilter.type === 'primitive' && onRequestEdit && !readOnly && (
               <button
                 onClick={() => handleEdit(subFilter as PrimitiveFilter)}
-                className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
+                className="flex-shrink-0 p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
                 title="Edit filter"
               >
                 <Pencil size={10} />
@@ -169,7 +169,7 @@ export const FilterChips = ({
             {!readOnly && (
               <button
                 onClick={() => handleRemove(subFilter.id)}
-                className="p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
+                className="flex-shrink-0 p-0.5 text-current hover:text-current/80 hover:bg-foreground/10 rounded-sm transition-colors"
                 title="Remove filter"
               >
                 <CircleX size={10} />

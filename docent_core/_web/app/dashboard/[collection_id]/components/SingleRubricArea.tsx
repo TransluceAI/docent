@@ -397,13 +397,6 @@ export default function SingleRubricArea({
                   showStepFilter={false}
                   initialFilter={editingFilter}
                 />
-                {hasWritePermission && (
-                  <FilterActionsBar
-                    collectionId={collectionId!}
-                    currentFilter={runsFilter}
-                    onApplyFilter={handleRunsFilterChange}
-                  />
-                )}
               </PopoverContent>
             </Popover>
           </div>
@@ -412,6 +405,13 @@ export default function SingleRubricArea({
               filters={runsFilter}
               onFiltersChange={handleRunsFilterChange}
               onRequestEdit={handleRequestEditFilter}
+            />
+          )}
+          {hasWritePermission && (
+            <FilterActionsBar
+              collectionId={collectionId!}
+              currentFilter={runsFilter}
+              onApplyFilter={handleRunsFilterChange}
             />
           )}
           {failureCount > 0 && (

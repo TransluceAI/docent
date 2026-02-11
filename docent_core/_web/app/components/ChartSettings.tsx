@@ -658,15 +658,15 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                   showStepFilter={false}
                   initialFilter={editingFilter}
                 />
-                {hasWritePermission && (
-                  <FilterActionsBar
-                    collectionId={collectionId!}
-                    currentFilter={runs_filter}
-                    onApplyFilter={handleRunsFilterChange}
-                  />
-                )}
               </PopoverContent>
             </Popover>
+            {hasWritePermission && (
+              <FilterActionsBar
+                collectionId={collectionId!}
+                currentFilter={runs_filter}
+                onApplyFilter={handleRunsFilterChange}
+              />
+            )}
           </div>
         )}
       </div>

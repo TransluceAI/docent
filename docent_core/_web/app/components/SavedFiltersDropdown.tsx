@@ -11,13 +11,9 @@ import {
   useListFiltersQuery,
   useDeleteFilterMutation,
 } from '@/app/api/filterApi';
-import {
-  ComplexFilter,
-  CollectionFilter,
-  PrimitiveFilter,
-} from '@/app/types/collectionTypes';
+import { CollectionFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import { FilterListItem } from '@/app/types/filterTypes';
-import { Bookmark, ChevronDown, Trash2, Loader2 } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, Trash2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
 import { formatFilterFieldLabel } from '../utils/formatMetadataField';
@@ -89,19 +85,27 @@ function FilterPreview({ filter }: { filter: FilterListItem }) {
 
 interface SavedFiltersDropdownProps {
   collectionId: string;
-  onApplyFilter: (filter: ComplexFilter) => void;
+  activeFilterId: string | null;
+  isDirty?: boolean;
+  onSelectFilter: (filter: FilterListItem) => void;
+  onDeselect?: () => void;
+  onFilterDeleted?: (filterId: string) => void;
 }
 
 export function SavedFiltersDropdown({
   collectionId,
-  onApplyFilter,
+  activeFilterId,
+  isDirty,
+  onSelectFilter,
+  onDeselect,
+  onFilterDeleted,
 }: SavedFiltersDropdownProps) {
   const { data: filters, isLoading } = useListFiltersQuery(collectionId);
   const [deleteFilter, { isLoading: isDeleting }] = useDeleteFilterMutation();
 
-  const handleApplyFilter = (filter: FilterListItem) => {
-    onApplyFilter(filter.filter);
-  };
+  const activeFilterName = activeFilterId
+    ? filters?.find((f) => f.id === activeFilterId)?.name
+    : null;
 
   const handleDeleteFilter = async (
     e: React.MouseEvent,
@@ -112,6 +116,7 @@ export function SavedFiltersDropdown({
     try {
       await deleteFilter({ collectionId, filterId }).unwrap();
       toast.success(`Filter "${filterName || 'Untitled'}" deleted`);
+      onFilterDeleted?.(filterId);
     } catch (err) {
       const parsed = getRtkQueryErrorMessage(err, 'Failed to delete filter');
       toast.error(parsed.message);
@@ -126,12 +131,47 @@ export function SavedFiltersDropdown({
         <Button
           variant="outline"
           size="sm"
-          className="h-7 text-xs gap-1"
+          className="h-7 text-xs gap-1 min-w-0 max-w-full"
           disabled={isLoading}
         >
-          <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Saved</span>
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          <Bookmark
+            className={`h-3.5 w-3.5 flex-shrink-0 ${activeFilterId ? 'text-blue-text' : 'text-muted-foreground'}`}
+          />
+          <span
+            className={`max-w-[10rem] truncate ${activeFilterId ? 'text-blue-text' : 'text-muted-foreground'}`}
+          >
+            {activeFilterName || 'Saved'}
+          </span>
+          {isDirty && (
+            <span className="text-orange-text font-normal flex-shrink-0">
+              (edited)
+            </span>
+          )}
+          {activeFilterId ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDeselect?.();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onDeselect?.();
+                }
+              }}
+              className="flex-shrink-0 rounded-sm hover:bg-foreground/10 transition-colors cursor-pointer"
+              title="Deselect saved filter without saving edits"
+            >
+              <X className="h-3 w-3 text-muted-foreground" />
+            </span>
+          ) : (
+            <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -153,15 +193,22 @@ export function SavedFiltersDropdown({
             <DropdownMenuItem
               key={filter.id}
               className="flex items-center justify-between group cursor-pointer"
-              onClick={() => handleApplyFilter(filter)}
+              onClick={() => onSelectFilter(filter)}
               disabled={isDeleting}
               title={buildFilterTooltip(filter)}
             >
-              <div className="flex-1 min-w-0 pr-2">
-                <div className="text-sm truncate">
-                  {filter.name || 'Untitled Filter'}
+              <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                {activeFilterId === filter.id ? (
+                  <Check className="h-3.5 w-3.5 text-blue-text flex-shrink-0" />
+                ) : (
+                  <div className="w-3.5 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate">
+                    {filter.name || 'Untitled Filter'}
+                  </div>
+                  <FilterPreview filter={filter} />
                 </div>
-                <FilterPreview filter={filter} />
               </div>
               <button
                 onClick={(e) => handleDeleteFilter(e, filter.id, filter.name)}
