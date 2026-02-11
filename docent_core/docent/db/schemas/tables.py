@@ -17,6 +17,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
 )
@@ -64,6 +65,8 @@ TABLE_TELEMETRY_AGENT_RUN_STATUS = "telemetry_agent_run_status"
 TABLE_MODEL_USAGE = "model_usage"
 TABLE_TELEMETRY_LINEAGE = "telemetry_lineage"
 TABLE_INGESTION_PAYLOAD = "ingestion_payloads"
+TABLE_METADATA_OBSERVATION = "metadata_observations"
+VIEW_METADATA_VALUE_STATS = "metadata_value_stats"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -1037,3 +1040,64 @@ class SQLAModelUsage(SQLABase):
             postgresql_where=sqlalchemy.text("api_key_id IS NOT NULL"),
         ),
     )
+
+
+class SQLAMetadataObservation(SQLABase):
+    __tablename__ = TABLE_METADATA_OBSERVATION
+
+    agent_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(f"{TABLE_AGENT_RUN}.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    json_path: Mapped[str] = mapped_column(Text, primary_key=True)
+    value_hash: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value_type: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    collection_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
+    )
+    value_text: Mapped[str] = mapped_column(Text, nullable=False)
+    value_numeric: Mapped[float | None] = mapped_column(Numeric(asdecimal=False), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_metadata_obs__collection_path",
+            "collection_id",
+            "json_path",
+        ),
+        Index(
+            "ix_metadata_obs__collection_path_hash",
+            "collection_id",
+            "json_path",
+            "value_hash",
+        ),
+        Index(
+            "ix_metadata_obs__collection_path_type_numeric",
+            "collection_id",
+            "json_path",
+            "value_type",
+            postgresql_where=sqlalchemy.text("value_numeric IS NOT NULL"),
+        ),
+    )
+
+
+class SQLAMetadataValueStats(SQLABase):
+    """Read-only model mapped to the metadata_value_stats materialized view."""
+
+    __tablename__ = VIEW_METADATA_VALUE_STATS
+    __table_args__ = {"info": {"is_view": True}}
+
+    collection_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    json_path: Mapped[str] = mapped_column(Text, primary_key=True)
+    value_hash: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value_type: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    value_text: Mapped[str] = mapped_column(Text, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    value_numeric: Mapped[float | None] = mapped_column(Numeric(asdecimal=False), nullable=True)

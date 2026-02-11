@@ -899,6 +899,21 @@ async def get_metadata_field_range(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@user_router.post("/{collection_id}/resync_metadata")
+async def resync_metadata(
+    collection_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+):
+    """Re-extract all metadata observations for a collection and refresh the materialized view."""
+    observations_created = await mono_svc.resync_metadata(collection_id)
+    return {
+        "collection_id": collection_id,
+        "observations_created": observations_created,
+        "message": "Metadata registry resynced successfully",
+    }
+
+
 @user_router.get("/{collection_id}/agent_run")
 async def get_agent_run(
     agent_run_id: str,
