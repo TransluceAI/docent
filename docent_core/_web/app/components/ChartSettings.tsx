@@ -39,6 +39,7 @@ import {
 import { useListDataTablesQuery } from '../api/dataTableApi';
 import { FilterControls } from './FilterControls';
 import { FilterChips } from './FilterChips';
+import { FilterActionsBar } from './FilterActionsBar';
 import { useFilterFields } from '@/hooks/use-filter-fields';
 import {
   DropdownMenu,
@@ -613,7 +614,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
 
         {/* Filters - only shown in standard mode */}
         {!usesDataTable && (
-          <div className="flex items-center gap-x-1">
+          <div className="flex flex-wrap items-center gap-x-1">
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               Filters:
             </span>
@@ -647,7 +648,7 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
               <PopoverContent
                 align="start"
                 sideOffset={4}
-                className="w-[520px] overflow-x-auto"
+                className="w-[520px] overflow-x-auto space-y-1.5"
               >
                 <FilterControls
                   filters={runs_filter}
@@ -657,6 +658,13 @@ export default function ChartSettings({ chart, onChange }: ChartSettingsProps) {
                   showStepFilter={false}
                   initialFilter={editingFilter}
                 />
+                {hasWritePermission && (
+                  <FilterActionsBar
+                    collectionId={collectionId!}
+                    currentFilter={runs_filter}
+                    onApplyFilter={handleRunsFilterChange}
+                  />
+                )}
               </PopoverContent>
             </Popover>
           </div>

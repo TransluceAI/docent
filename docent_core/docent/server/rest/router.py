@@ -1513,6 +1513,12 @@ class CreateFilterRequest(BaseModel):
     description: str | None = None
 
 
+class UpdateFilterRequest(BaseModel):
+    filter: CollectionFilter | None = None
+    name: str | None = None
+    description: str | None = None
+
+
 class StoredFilterResponse(BaseModel):
     id: str
     collection_id: str
@@ -1527,6 +1533,7 @@ class FilterListItemResponse(BaseModel):
     id: str
     name: str | None
     description: str | None
+    filter: CollectionFilter
     created_at: datetime
     created_by: str
 
@@ -1596,6 +1603,7 @@ async def list_filters(
             id=filter_row.id,
             name=filter_row.name,
             description=filter_row.description,
+            filter=parse_filter_dict(cast(dict[str, Any], deepcopy(filter_row.filter_dict or {}))),
             created_at=filter_row.created_at,
             created_by=filter_row.created_by,
         )
@@ -1652,6 +1660,32 @@ async def delete_filter(
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Filter {filter_id} not found")
     return {"status": "deleted", "filter_id": filter_id}
+
+
+@user_router.put(
+    "/{collection_id}/filters/{filter_id}",
+    response_model=StoredFilterResponse,
+)
+async def update_filter(
+    collection_id: str,
+    filter_id: str,
+    request: UpdateFilterRequest,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _user: User = Depends(get_authenticated_user),
+    _perm: None = Depends(require_collection_permission(Permission.WRITE)),
+    _filter: None = Depends(require_filter_in_collection),
+):
+    """Update an existing saved filter."""
+    updated_filter = await mono_svc.update_filter_entry(
+        collection_id=collection_id,
+        filter_id=filter_id,
+        filter_payload=request.filter,
+        name=request.name,
+        description=request.description,
+    )
+    if updated_filter is None:
+        raise HTTPException(status_code=404, detail=f"Filter {filter_id} not found")
+    return _serialize_stored_filter(updated_filter)
 
 
 # class GetRegexSnippetsRequest(BaseModel):

@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils';
 import UuidPill from '@/components/UuidPill';
 import { FilterControls } from '@/app/components/FilterControls';
 import { FilterChips } from '@/app/components/FilterChips';
+import { FilterActionsBar } from '@/app/components/FilterActionsBar';
 import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import ViewModeDropdown from './ViewModeDropdown';
 import { ViewMode } from '../utils/viewModeResults';
@@ -386,7 +387,7 @@ export default function SingleRubricArea({
               <PopoverContent
                 align="start"
                 sideOffset={4}
-                className="w-[520px] overflow-x-auto"
+                className="w-[520px] overflow-x-auto space-y-1.5"
               >
                 <FilterControls
                   filters={runsFilter}
@@ -396,6 +397,13 @@ export default function SingleRubricArea({
                   showStepFilter={false}
                   initialFilter={editingFilter}
                 />
+                {hasWritePermission && (
+                  <FilterActionsBar
+                    collectionId={collectionId!}
+                    currentFilter={runsFilter}
+                    onApplyFilter={handleRunsFilterChange}
+                  />
+                )}
               </PopoverContent>
             </Popover>
           </div>

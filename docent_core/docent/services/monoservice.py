@@ -2373,6 +2373,44 @@ class MonoService:
             )
             return bool(result.rowcount)
 
+    async def update_filter_entry(
+        self,
+        *,
+        collection_id: str,
+        filter_id: str,
+        filter_payload: CollectionFilter | None = None,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> SQLAFilter | None:
+        """Update an existing filter entry."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SQLAFilter).where(
+                    SQLAFilter.collection_id == collection_id,
+                    SQLAFilter.id == filter_id,
+                )
+            )
+            sqla_filter = result.scalar_one_or_none()
+            if sqla_filter is None:
+                return None
+
+            # Update fields if provided
+            if filter_payload is not None:
+                filter_dict = filter_payload.model_dump()
+                # Validate payload before storing
+                parse_filter_dict(deepcopy(filter_dict))
+                sqla_filter.filter_dict = filter_dict
+
+            if name is not None:
+                sqla_filter.name = name
+
+            if description is not None:
+                sqla_filter.description = description
+
+            await session.flush()
+            await session.refresh(sqla_filter)
+            return sqla_filter
+
     ########
     # Jobs #
     ########

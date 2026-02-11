@@ -4,8 +4,10 @@ import React, { useState } from 'react';
 import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import { FilterControls } from './FilterControls';
 import { FilterChips } from './FilterChips';
+import { FilterActionsBar } from './FilterActionsBar';
 import { useParams } from 'next/navigation';
 import { useFilterFields } from '@/hooks/use-filter-fields';
+import { useHasCollectionWritePermission } from '@/lib/permissions/hooks';
 
 interface TranscriptFilterControlsProps {
   metadataData?: Record<string, Record<string, unknown>>;
@@ -20,6 +22,7 @@ export const TranscriptFilterControls = ({
 }: TranscriptFilterControlsProps) => {
   const params = useParams();
   const collectionId = params.collection_id as string;
+  const hasWritePermission = useHasCollectionWritePermission();
   const { fields: agentRunMetadataFields } = useFilterFields({
     collectionId,
     context: { mode: 'agent_runs' },
@@ -44,12 +47,20 @@ export const TranscriptFilterControls = ({
         metadataData={metadataData}
         initialFilter={editingFilter}
       />
-      <FilterChips
-        filters={baseFilter ?? null}
-        onFiltersChange={handleFiltersChange}
-        onRequestEdit={setEditingFilter}
-        className="mb-1.5"
-      />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FilterChips
+          filters={baseFilter ?? null}
+          onFiltersChange={handleFiltersChange}
+          onRequestEdit={setEditingFilter}
+        />
+        {hasWritePermission && (
+          <FilterActionsBar
+            collectionId={collectionId}
+            currentFilter={baseFilter}
+            onApplyFilter={handleFiltersChange}
+          />
+        )}
+      </div>
     </div>
   );
 };

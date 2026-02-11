@@ -14,6 +14,7 @@ import { useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { FilterControls } from '@/app/components/FilterControls';
 import { FilterChips } from '@/app/components/FilterChips';
+import { FilterActionsBar } from '@/app/components/FilterActionsBar';
 import { ComplexFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import { useFilterFields } from '@/hooks/use-filter-fields';
 import {
@@ -162,11 +163,18 @@ export default function RunRubricDialog({
                 showStepFilter={false}
                 initialFilter={editingFilter}
               />
-              <FilterChips
-                filters={filter}
-                onFiltersChange={handleFiltersChange}
-                onRequestEdit={setEditingFilter}
-              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <FilterChips
+                  filters={filter}
+                  onFiltersChange={handleFiltersChange}
+                  onRequestEdit={setEditingFilter}
+                />
+                <FilterActionsBar
+                  collectionId={collectionId}
+                  currentFilter={filter}
+                  onApplyFilter={handleFiltersChange}
+                />
+              </div>
             </div>
           </div>
 
