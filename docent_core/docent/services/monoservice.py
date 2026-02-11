@@ -1975,9 +1975,12 @@ class MonoService:
             result = await session.execute(query)
             sq_agent_runs = list(result.scalars().all())
 
-            # Extract and upsert observations
+            # Extract and upsert observations in chunks to stay under asyncpg's
+            # 32767 bind-parameter limit (8 columns per row → ~3500 rows per chunk).
             observations = extract_metadata_observations_bulk(sq_agent_runs, collection_id)
-            if observations:
+            chunk_size = 3500
+            for i in range(0, len(observations), chunk_size):
+                chunk = observations[i : i + chunk_size]
                 stmt = (
                     pg_insert(SQLAMetadataObservation)
                     .values(
@@ -1992,7 +1995,7 @@ class MonoService:
                                 "value_numeric": o.value_numeric,
                                 "observed_at": o.observed_at,
                             }
-                            for o in observations
+                            for o in chunk
                         ]
                     )
                     .on_conflict_do_nothing()
