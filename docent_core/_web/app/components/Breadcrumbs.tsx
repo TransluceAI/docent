@@ -274,8 +274,10 @@ const Breadcrumbs: React.FC = () => {
       const hasMetadata =
         collectionMetadata && Object.keys(collectionMetadata).length > 0;
       return (
-        <div className="flex items-center gap-2" key={0}>
-          Collection: {collectionName}
+        <div className="flex items-center gap-2 min-w-0" key={0}>
+          <span className="truncate min-w-[60px] max-w-[450px]">
+            Collection: {collectionName}
+          </span>
           <UuidPill uuid={collectionId} />
           {hasMetadata && (
             <MetadataPopover.Root>
@@ -365,7 +367,7 @@ const Breadcrumbs: React.FC = () => {
         </div>
       )}
       <div className="text-sm flex items-center justify-between w-full ml-1">
-        <div className="flex items-center gap-x-1">
+        <div className="flex items-center gap-x-1 min-w-0">
           {isSettingsPage && getHomeCrumb()}
           {segments.map((crumb, index) => getBreadcrumb(crumb, index))}
         </div>
