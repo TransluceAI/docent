@@ -1,6 +1,6 @@
 'use client';
 
-import { Bookmark, X, Loader2, Undo2, Save } from 'lucide-react';
+import { Bookmark, X, Loader2, Undo2, Save, Link2Off } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FilterListItem } from '@/app/types/filterTypes';
 import { ComplexFilter } from '@/app/types/collectionTypes';
@@ -10,11 +10,12 @@ interface ActiveFilterBannerProps {
   activeFilter: FilterListItem;
   isDirty: boolean;
   isUpdating: boolean;
-  onDeselect: () => void;
+  onClose: () => void;
+  onUnlink: () => void;
   onDiscard: () => void;
   onUpdate: () => void;
   collectionId: string;
-  currentFilter: ComplexFilter;
+  currentFilter: ComplexFilter | null;
   hasActiveConditions: boolean;
   onSaveSuccess: (filter: FilterListItem) => void;
   children?: React.ReactNode;
@@ -24,7 +25,8 @@ export function ActiveFilterBanner({
   activeFilter,
   isDirty,
   isUpdating,
-  onDeselect,
+  onClose,
+  onUnlink,
   onDiscard,
   onUpdate,
   collectionId,
@@ -50,11 +52,25 @@ export function ActiveFilterBanner({
             Edited
           </span>
         )}
-        <span
-          className={`font-medium truncate min-w-[8ch] ${isDirty ? 'text-purple-text' : 'text-blue-text'}`}
-        >
-          {activeFilter.name || 'Untitled'}
-        </span>
+        <div className="flex items-center gap-0.5 min-w-0">
+          <span
+            className={`font-medium truncate ${isDirty ? 'text-purple-text' : 'text-blue-text'}`}
+          >
+            {activeFilter.name || 'Untitled'}
+          </span>
+          <button
+            type="button"
+            onClick={onUnlink}
+            className={`flex-shrink-0 rounded-sm p-0.5 transition-colors ${
+              isDirty ? 'hover:bg-purple-text/10' : 'hover:bg-blue-text/10'
+            }`}
+            title="Detach saved filter (keep current conditions)"
+          >
+            <Link2Off
+              className={`h-3 w-3 ${isDirty ? 'text-purple-text/60' : 'text-blue-text/60'}`}
+            />
+          </button>
+        </div>
         <div className="flex items-center gap-1 ml-auto flex-shrink-0">
           {isDirty && (
             <>
@@ -68,39 +84,56 @@ export function ActiveFilterBanner({
                 <Undo2 className="h-3 w-3" />
                 <span className="filter-btn-label">Revert</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 text-[11px] gap-1 border-purple-border bg-transparent hover:bg-purple-text/10"
-                onClick={onUpdate}
-                disabled={isUpdating}
-                title="Save changes to active filter"
+              <span
+                title={
+                  hasActiveConditions
+                    ? 'Save changes to active filter'
+                    : 'Add conditions to save'
+                }
               >
-                {isUpdating ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-                <span className="filter-btn-label">Save</span>
-              </Button>
-              <SaveFilterPopover
-                collectionId={collectionId}
-                currentFilter={currentFilter}
-                disabled={!hasActiveConditions}
-                mode="save-as"
-                onSaveSuccess={onSaveSuccess}
-                buttonClassName="h-6 text-[11px] gap-1 border-purple-border bg-transparent hover:bg-purple-text/10"
-                labelClassName="filter-btn-label text-muted-foreground"
-              />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[11px] gap-1 border-purple-border bg-transparent hover:bg-purple-text/10"
+                  onClick={onUpdate}
+                  disabled={isUpdating || !hasActiveConditions}
+                >
+                  {isUpdating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Save className="h-3 w-3" />
+                  )}
+                  <span className="filter-btn-label">Save</span>
+                </Button>
+              </span>
+              {currentFilter && (
+                <span
+                  title={
+                    hasActiveConditions
+                      ? 'Save as a new filter'
+                      : 'Add conditions to save'
+                  }
+                >
+                  <SaveFilterPopover
+                    collectionId={collectionId}
+                    currentFilter={currentFilter}
+                    disabled={!hasActiveConditions}
+                    mode="save-as"
+                    onSaveSuccess={onSaveSuccess}
+                    buttonClassName="h-6 text-[11px] gap-1 border-purple-border bg-transparent hover:bg-purple-text/10"
+                    labelClassName="filter-btn-label text-muted-foreground"
+                  />
+                </span>
+              )}
             </>
           )}
           <button
             type="button"
-            onClick={onDeselect}
+            onClick={onClose}
             className={`rounded-sm p-0.5 transition-colors ${
               isDirty ? 'hover:bg-purple-text/10' : 'hover:bg-blue-text/10'
             }`}
-            title="Unlink active filter (current conditions stay applied)"
+            title="Remove active filter and clear all conditions"
           >
             <X
               className={`h-3.5 w-3.5 ${isDirty ? 'text-purple-text' : 'text-blue-text'}`}

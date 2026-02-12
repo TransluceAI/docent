@@ -76,8 +76,8 @@ function FilterPreview({ filter }: { filter: FilterListItem }) {
         </div>
       )}
       <div className="text-[10px] text-muted-foreground">
-        {count} {count === 1 ? 'condition' : 'conditions'} &middot;{' '}
-        {formatRelativeDate(filter.created_at)}
+        {count} {count === 1 ? 'condition' : 'conditions'} &middot; updated{' '}
+        {formatRelativeDate(filter.updated_at)}
       </div>
     </div>
   );

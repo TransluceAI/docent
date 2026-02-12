@@ -402,6 +402,7 @@ export default function SingleRubricArea({
             surfaceId={`rubric-results:${rubricId}`}
             currentFilter={runsFilter}
             onApplyFilter={handleRunsFilterChange}
+            onClearFilter={() => handleRunsFilterChange(null)}
           />
         )}
         {runsFilter && (

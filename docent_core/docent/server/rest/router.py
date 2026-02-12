@@ -1547,6 +1547,7 @@ class StoredFilterResponse(BaseModel):
     description: str | None
     filter: CollectionFilter
     created_at: datetime
+    updated_at: datetime
     created_by: str
 
 
@@ -1556,6 +1557,7 @@ class FilterListItemResponse(BaseModel):
     description: str | None
     filter: CollectionFilter
     created_at: datetime
+    updated_at: datetime
     created_by: str
 
 
@@ -1569,6 +1571,7 @@ def _serialize_stored_filter(filter_row: SQLAFilter) -> StoredFilterResponse:
         description=filter_row.description,
         filter=filter_model,
         created_at=filter_row.created_at,
+        updated_at=filter_row.updated_at,
         created_by=filter_row.created_by,
     )
 
@@ -1626,6 +1629,7 @@ async def list_filters(
             description=filter_row.description,
             filter=parse_filter_dict(cast(dict[str, Any], deepcopy(filter_row.filter_dict or {}))),
             created_at=filter_row.created_at,
+            updated_at=filter_row.updated_at,
             created_by=filter_row.created_by,
         )
         for filter_row in filters

@@ -71,6 +71,7 @@ export function SaveFilterPopover({
         description: result.description,
         filter: result.filter,
         created_at: result.created_at,
+        updated_at: result.updated_at,
         created_by: result.created_by,
       };
       onSaveSuccess?.(filterListItem);

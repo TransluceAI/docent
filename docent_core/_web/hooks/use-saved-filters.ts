@@ -50,7 +50,7 @@ export function useSavedFilters({
   const pendingApplyRef = useRef(false);
 
   // Distinguishes "empty because we just navigated here" (restore the saved
-  // filter) from "empty because the user cleared all conditions" (deselect).
+  // filter) from "empty because the user cleared all conditions".
   const everHadConditionsRef = useRef(false);
 
   const hasActiveConditions =
@@ -78,9 +78,6 @@ export function useSavedFilters({
       // Mounted with a previously-active saved filter — restore its conditions
       pendingApplyRef.current = true;
       onApplyFilter(activeFilter.filter);
-    } else if (everHadConditionsRef.current) {
-      // Conditions were manually cleared — deselect the saved filter
-      dispatch(clearActiveFilterId(surfaceId));
     }
   }, [
     hasActiveConditions,
@@ -93,8 +90,9 @@ export function useSavedFilters({
 
   const isDirty =
     activeFilter != null &&
-    currentFilter != null &&
-    !filtersEqual(currentFilter, activeFilter.filter);
+    (currentFilter == null
+      ? activeFilter.filter.filters.length > 0
+      : !filtersEqual(currentFilter, activeFilter.filter));
 
   const handleSelectFilter = useCallback(
     (filter: FilterListItem) => {

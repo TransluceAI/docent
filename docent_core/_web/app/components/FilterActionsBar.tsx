@@ -11,6 +11,7 @@ interface FilterActionsBarProps {
   surfaceId: string;
   currentFilter: ComplexFilter | null | undefined;
   onApplyFilter: (filter: ComplexFilter) => void;
+  onClearFilter?: () => void;
   children?: React.ReactNode;
 }
 
@@ -19,6 +20,7 @@ export function FilterActionsBar({
   surfaceId,
   currentFilter,
   onApplyFilter,
+  onClearFilter,
   children,
 }: FilterActionsBarProps) {
   const {
@@ -49,16 +51,20 @@ export function FilterActionsBar({
         onSelectFilter={handleSelectFilter}
         onFilterDeleted={handleFilterDeleted}
       />
-      {activeFilter && currentFilter ? (
+      {activeFilter ? (
         <ActiveFilterBanner
           activeFilter={activeFilter}
           isDirty={isDirty}
           isUpdating={isUpdating}
-          onDeselect={handleDeselect}
+          onClose={() => {
+            handleDeselect();
+            onClearFilter?.();
+          }}
+          onUnlink={handleDeselect}
           onDiscard={handleDiscard}
           onUpdate={handleUpdate}
           collectionId={collectionId}
-          currentFilter={currentFilter}
+          currentFilter={currentFilter ?? null}
           hasActiveConditions={hasActiveConditions}
           onSaveSuccess={handleSaveSuccess}
         >

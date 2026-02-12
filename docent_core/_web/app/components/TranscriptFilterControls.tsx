@@ -93,16 +93,20 @@ export const TranscriptFilterControls = ({
         initialFilter={editingFilter}
         leadingSlot={savedFiltersDropdown}
       />
-      {activeFilter && baseFilter ? (
+      {activeFilter ? (
         <ActiveFilterBanner
           activeFilter={activeFilter}
           isDirty={isDirty}
           isUpdating={isUpdating}
-          onDeselect={handleDeselect}
+          onClose={() => {
+            handleDeselect();
+            handleFiltersChange(null);
+          }}
+          onUnlink={handleDeselect}
           onDiscard={handleDiscard}
           onUpdate={handleUpdate}
           collectionId={collectionId}
-          currentFilter={baseFilter}
+          currentFilter={baseFilter ?? null}
           hasActiveConditions={hasActiveConditions}
           onSaveSuccess={handleSaveSuccess}
         >

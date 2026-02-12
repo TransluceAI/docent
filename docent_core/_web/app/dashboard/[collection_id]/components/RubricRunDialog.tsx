@@ -169,6 +169,7 @@ export default function RunRubricDialog({
                   surfaceId={`rubric-run:${rubricId}`}
                   currentFilter={filter}
                   onApplyFilter={handleFiltersChange}
+                  onClearFilter={() => handleFiltersChange(null)}
                 >
                   <FilterChips
                     filters={filter}

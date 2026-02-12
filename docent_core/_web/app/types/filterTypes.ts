@@ -7,6 +7,7 @@ export interface StoredFilter {
   description: string | null;
   filter: ComplexFilter;
   created_at: string;
+  updated_at: string;
   created_by: string;
 }
 

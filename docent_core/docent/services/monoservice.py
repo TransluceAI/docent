@@ -2637,7 +2637,7 @@ class MonoService:
             result = await session.execute(
                 select(SQLAFilter)
                 .where(SQLAFilter.collection_id == collection_id)
-                .order_by(SQLAFilter.created_at.desc())
+                .order_by(SQLAFilter.updated_at.desc())
             )
             return list(result.scalars().all())
 
