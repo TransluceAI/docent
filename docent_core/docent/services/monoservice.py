@@ -2083,8 +2083,9 @@ class MonoService:
         INSERT ON CONFLICT DO NOTHING to avoid duplicates. Returns cursors
         so the caller can paginate through all runs and collections.
         """
-        async with self.db.session() as session:
-            if collection_id is None:
+        # Resolve collection_id first if not provided
+        if collection_id is None:
+            async with self.db.session() as session:
                 result = await session.execute(
                     select(SQLACollection.id).order_by(SQLACollection.id.asc()).limit(1)
                 )
@@ -2097,15 +2098,18 @@ class MonoService:
                         "next_collection_id": None,
                     }
 
-            # When starting a collection from scratch, clear existing observations first
-            if agent_run_cursor is None:
+        # When starting a collection from scratch, clear existing observations
+        # in a separate transaction so it commits independently and doesn't
+        # cause the subsequent backfill transaction to time out.
+        if agent_run_cursor is None:
+            async with self.db.session() as session:
                 await session.execute(
                     delete(SQLAMetadataObservation).where(
                         SQLAMetadataObservation.collection_id == collection_id
                     )
                 )
-                await session.flush()
 
+        async with self.db.session() as session:
             # Fetch a batch of agent runs, ordered by ID for stable cursor pagination
             query = (
                 select(SQLAAgentRun)
