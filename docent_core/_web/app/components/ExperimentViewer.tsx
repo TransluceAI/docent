@@ -1629,7 +1629,12 @@ export default function ExperimentViewer({
                   Loading...
                 </span>
               ) : (
-                `${totalAgentRunCount ?? agentRunIds?.length ?? 0} agent runs matching the current view${hasMoreIds && totalAgentRunCount === undefined ? '+' : ''}`
+                <span className="inline-flex items-center gap-1">
+                  {`${totalAgentRunCount ?? agentRunIds?.length ?? 0} agent runs matching the current view${hasMoreIds && totalAgentRunCount === undefined ? '+' : ''}`}
+                  {(isCountFetching || isFetchingAgentRuns) && (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  )}
+                </span>
               )}
             </div>
           )}
