@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.sql import text
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import AgentRun
@@ -367,6 +368,10 @@ class SQLACollection(SQLABase):
 
     created_at = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
 
     # True if this collection was created via cloning

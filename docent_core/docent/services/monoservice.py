@@ -608,13 +608,17 @@ class MonoService:
         collection_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
-        # Create FG
         collection_id = collection_id or str(uuid4())
         async with self.db.session() as session:
             session.add(
                 SQLACollection(
-                    id=collection_id, name=name, description=description, created_by=user.id
+                    id=collection_id,
+                    name=name,
+                    description=description,
+                    created_by=user.id,
+                    metadata_json=metadata or {},
                 )
             )
             session.add(
@@ -651,7 +655,7 @@ class MonoService:
         Fields set to `None` will be nulled in the database.
         Fields not provided (i.e., left as NOT_GIVEN) will be unchanged.
         """
-        values_to_update = {}
+        values_to_update: dict[str, Any] = {}
         if name is not NOT_GIVEN:
             values_to_update["name"] = name
         if description is not NOT_GIVEN:
@@ -716,12 +720,12 @@ class MonoService:
             description=final_description,
         )
 
-        # Mark it as a clone
+        # Mark as clone and copy metadata from source
         async with self.db.session() as session:
             await session.execute(
                 update(SQLACollection)
                 .where(SQLACollection.id == new_collection_id)
-                .values(is_clone=True)
+                .values(is_clone=True, metadata_json=source_collection.metadata_json or {})
             )
 
         # Set up contexts for source and target collections
@@ -1190,67 +1194,56 @@ class MonoService:
 
         return deleted_count
 
-    async def update_agent_run_metadata(
+    # ──────────────────────────────────────────
+    # Shared JSONB metadata helpers
+    # ──────────────────────────────────────────
+
+    async def _merge_jsonb_metadata(
         self,
-        collection_id: str,
-        agent_run_id: str,
-        metadata: dict[str, Any],
+        model_class: type[SQLAAgentRun] | type[SQLACollection] | type[SQLATranscriptGroup],
+        where_clauses: list[ColumnElement[bool]],
+        new_metadata: dict[str, Any],
+        entity_label: str,
     ) -> dict[str, Any]:
-        """Merge the provided metadata into an agent run's existing metadata.
+        """Deep-merge *new_metadata* into a row's ``metadata_json`` column.
 
-        Uses the same deep-merge strategy as tracing: nested dicts are merged
-        recursively so existing keys are preserved, while non-dict values are
-        overwritten.
-
-        Returns the full merged metadata dict.
+        Acquires a row-level lock, merges recursively via
+        :func:`deep_merge_dicts`, writes back, and commits.
         """
         async with self.db.session() as session:
             row = (
                 await session.execute(
-                    select(SQLAAgentRun.metadata_json)
-                    .where(
-                        SQLAAgentRun.id == agent_run_id,
-                        SQLAAgentRun.collection_id == collection_id,
-                    )
-                    .with_for_update()
+                    select(model_class.metadata_json).where(*where_clauses).with_for_update()
                 )
             ).one_or_none()
 
             if row is None:
-                raise NotFoundError(
-                    f"Agent run {agent_run_id} not found in collection {collection_id}"
-                )
+                raise NotFoundError(f"{entity_label} not found")
 
             existing: dict[str, Any] = row[0] or {}
-            deep_merge_dicts(existing, metadata)
-            merged = existing
+            deep_merge_dicts(existing, new_metadata)
 
             await session.execute(
-                update(SQLAAgentRun)
-                .where(
-                    SQLAAgentRun.id == agent_run_id,
-                    SQLAAgentRun.collection_id == collection_id,
-                )
-                .values(metadata_json=merged)
+                update(model_class).where(*where_clauses).values(metadata_json=existing)
             )
             await session.commit()
 
-        logger.info(f"Updated metadata for agent run {agent_run_id} in collection {collection_id}")
-        return merged
+        logger.info(f"Updated metadata for {entity_label}")
+        return existing
 
-    async def delete_agent_run_metadata_keys(
+    async def _delete_jsonb_metadata_keys(
         self,
-        collection_id: str,
-        agent_run_id: str,
+        model_class: type[SQLAAgentRun] | type[SQLACollection] | type[SQLATranscriptGroup],
+        where_clauses: list[ColumnElement[bool]],
         keys: list[str],
+        entity_label: str,
     ) -> tuple[dict[str, Any], list[str]]:
-        """Remove keys from an agent run's metadata.
+        """Remove dot-delimited *keys* from a row's ``metadata_json`` column.
 
-        Supports dot-delimited paths for nested deletion (e.g.
-        ``"experimental_config.baseline_forecast"`` removes just that nested
-        key).  Plain keys delete at the top level.
+        Acquires a row-level lock, traverses each dot-path to delete the
+        leaf key, writes back, and commits.
 
-        Returns a tuple of (metadata after deletion, keys that were not found).
+        Returns ``(metadata_after, keys_not_found)``.
         """
         if not keys:
             raise BadRequestError("keys must not be empty")
@@ -1258,19 +1251,12 @@ class MonoService:
         async with self.db.session() as session:
             row = (
                 await session.execute(
-                    select(SQLAAgentRun.metadata_json)
-                    .where(
-                        SQLAAgentRun.id == agent_run_id,
-                        SQLAAgentRun.collection_id == collection_id,
-                    )
-                    .with_for_update()
+                    select(model_class.metadata_json).where(*where_clauses).with_for_update()
                 )
             ).one_or_none()
 
             if row is None:
-                raise NotFoundError(
-                    f"Agent run {agent_run_id} not found in collection {collection_id}"
-                )
+                raise NotFoundError(f"{entity_label} not found")
 
             existing: dict[str, Any] = row[0] or {}
             not_found: list[str] = []
@@ -1284,7 +1270,7 @@ class MonoService:
                     if not isinstance(nested, dict):
                         found = False
                         break
-                    target = nested
+                    target = cast(dict[str, Any], nested)
                 else:
                     if parts[-1] not in target:
                         found = False
@@ -1295,20 +1281,167 @@ class MonoService:
                     not_found.append(key)
 
             await session.execute(
-                update(SQLAAgentRun)
-                .where(
-                    SQLAAgentRun.id == agent_run_id,
-                    SQLAAgentRun.collection_id == collection_id,
-                )
-                .values(metadata_json=existing)
+                update(model_class).where(*where_clauses).values(metadata_json=existing)
             )
             await session.commit()
 
-        logger.info(
-            f"Deleted metadata keys {keys} from agent run {agent_run_id} "
-            f"in collection {collection_id} (not found: {not_found})"
-        )
+        logger.info(f"Deleted metadata keys {keys} from {entity_label} (not found: {not_found})")
         return existing, not_found
+
+    async def _get_jsonb_metadata(
+        self,
+        model_class: type[SQLAAgentRun] | type[SQLACollection] | type[SQLATranscriptGroup],
+        where_clauses: list[ColumnElement[bool]],
+        entity_label: str,
+    ) -> dict[str, Any]:
+        """Return a row's ``metadata_json`` as a plain dict."""
+        async with self.db.session() as session:
+            row = (
+                await session.execute(select(model_class.metadata_json).where(*where_clauses))
+            ).one_or_none()
+
+            if row is None:
+                raise NotFoundError(f"{entity_label} not found")
+
+            return cast(dict[str, Any], row[0] or {})
+
+    # ──────────────────────────────────────────
+    # Agent run metadata
+    # ──────────────────────────────────────────
+
+    async def update_agent_run_metadata(
+        self,
+        collection_id: str,
+        agent_run_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge the provided metadata into an agent run's existing metadata."""
+        return await self._merge_jsonb_metadata(
+            SQLAAgentRun,
+            [SQLAAgentRun.id == agent_run_id, SQLAAgentRun.collection_id == collection_id],
+            metadata,
+            f"agent run {agent_run_id} in collection {collection_id}",
+        )
+
+    async def delete_agent_run_metadata_keys(
+        self,
+        collection_id: str,
+        agent_run_id: str,
+        keys: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Remove dot-path keys from an agent run's metadata."""
+        return await self._delete_jsonb_metadata_keys(
+            SQLAAgentRun,
+            [SQLAAgentRun.id == agent_run_id, SQLAAgentRun.collection_id == collection_id],
+            keys,
+            f"agent run {agent_run_id} in collection {collection_id}",
+        )
+
+    async def get_agent_run_metadata(
+        self,
+        collection_id: str,
+        agent_run_id: str,
+    ) -> dict[str, Any]:
+        """Return a single agent run's metadata dict."""
+        return await self._get_jsonb_metadata(
+            SQLAAgentRun,
+            [SQLAAgentRun.id == agent_run_id, SQLAAgentRun.collection_id == collection_id],
+            f"agent run {agent_run_id} in collection {collection_id}",
+        )
+
+    # ──────────────────────────────────────────
+    # Collection metadata
+    # ──────────────────────────────────────────
+
+    async def update_collection_metadata(
+        self,
+        collection_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge the provided metadata into a collection's existing metadata."""
+        return await self._merge_jsonb_metadata(
+            SQLACollection,
+            [SQLACollection.id == collection_id],
+            metadata,
+            f"collection {collection_id}",
+        )
+
+    async def delete_collection_metadata_keys(
+        self,
+        collection_id: str,
+        keys: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Remove dot-path keys from a collection's metadata."""
+        return await self._delete_jsonb_metadata_keys(
+            SQLACollection,
+            [SQLACollection.id == collection_id],
+            keys,
+            f"collection {collection_id}",
+        )
+
+    async def get_collection_metadata(
+        self,
+        collection_id: str,
+    ) -> dict[str, Any]:
+        """Return a collection's metadata dict."""
+        return await self._get_jsonb_metadata(
+            SQLACollection,
+            [SQLACollection.id == collection_id],
+            f"collection {collection_id}",
+        )
+
+    # ──────────────────────────────────────────
+    # Transcript group metadata
+    # ──────────────────────────────────────────
+
+    async def get_transcript_group_metadata(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+    ) -> dict[str, Any]:
+        """Return a transcript group's metadata dict."""
+        return await self._get_jsonb_metadata(
+            SQLATranscriptGroup,
+            [
+                SQLATranscriptGroup.id == transcript_group_id,
+                SQLATranscriptGroup.collection_id == collection_id,
+            ],
+            f"transcript group {transcript_group_id} in collection {collection_id}",
+        )
+
+    async def update_transcript_group_metadata(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge the provided metadata into a transcript group's existing metadata."""
+        return await self._merge_jsonb_metadata(
+            SQLATranscriptGroup,
+            [
+                SQLATranscriptGroup.id == transcript_group_id,
+                SQLATranscriptGroup.collection_id == collection_id,
+            ],
+            metadata,
+            f"transcript group {transcript_group_id} in collection {collection_id}",
+        )
+
+    async def delete_transcript_group_metadata_keys(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+        keys: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Remove dot-path keys from a transcript group's metadata."""
+        return await self._delete_jsonb_metadata_keys(
+            SQLATranscriptGroup,
+            [
+                SQLATranscriptGroup.id == transcript_group_id,
+                SQLATranscriptGroup.collection_id == collection_id,
+            ],
+            keys,
+            f"transcript group {transcript_group_id} in collection {collection_id}",
+        )
 
     async def move_agent_run(
         self,

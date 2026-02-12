@@ -378,6 +378,7 @@ class Docent:
         collection_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Creates a new Collection.
 
@@ -388,6 +389,7 @@ class Docent:
             collection_id: Optional ID for the new Collection. If not provided, one will be generated.
             name: Optional name for the Collection.
             description: Optional description for the Collection.
+            metadata: Optional metadata dict to attach to the Collection.
 
         Returns:
             str: The ID of the created Collection.
@@ -397,11 +399,13 @@ class Docent:
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._api_url}/create"
-        payload = {
+        payload: dict[str, Any] = {
             "collection_id": collection_id,
             "name": name,
             "description": description,
         }
+        if metadata is not None:
+            payload["metadata"] = metadata
 
         response = self._session.post(url, json=payload)
         self._handle_response_errors(response)
@@ -430,8 +434,8 @@ class Docent:
 
         Args:
             collection_id: ID of the Collection to update.
-            name: New name for the Collection. If None, the name will be cleared.
-            description: New description for the Collection. If None, the description will be cleared.
+            name: New name for the Collection. If None, the name will be left unchanged.
+            description: New description for the Collection. If None, the description will be left unchanged.
 
         Raises:
             requests.exceptions.HTTPError: If the API request fails.
@@ -673,6 +677,71 @@ class Docent:
             requests.exceptions.HTTPError: If the API request fails.
         """
         url = f"{self._api_url}/{collection_id}/collection_details"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def update_collection_metadata(
+        self,
+        collection_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Deep-merge metadata into a collection's existing metadata.
+
+        Args:
+            collection_id: ID of the Collection.
+            metadata: Metadata dict to merge into the existing collection metadata.
+
+        Returns:
+            The full merged metadata dict.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._api_url}/{collection_id}/collection/metadata"
+        response = self._session.put(url, json={"metadata": metadata})
+        self._handle_response_errors(response)
+        return response.json()
+
+    def delete_collection_metadata_keys(
+        self,
+        collection_id: str,
+        keys: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Remove keys from collection metadata. Supports dot-paths for nested keys.
+
+        Args:
+            collection_id: ID of the Collection.
+            keys: List of keys to remove. Use dot notation for nested keys (e.g. "config.model").
+
+        Returns:
+            Tuple of (metadata after deletion, list of keys that were not found).
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._api_url}/{collection_id}/collection/metadata/delete"
+        response = self._session.post(url, json={"keys": keys})
+        self._handle_response_errors(response)
+        data = response.json()
+        return data["metadata"], data["not_found"]
+
+    def get_collection_metadata(
+        self,
+        collection_id: str,
+    ) -> dict[str, Any]:
+        """Get a collection's metadata.
+
+        Args:
+            collection_id: ID of the Collection.
+
+        Returns:
+            The collection's metadata dict.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._api_url}/{collection_id}/collection/metadata"
         response = self._session.get(url)
         self._handle_response_errors(response)
         return response.json()
@@ -1169,6 +1238,105 @@ class Docent:
         metadata: dict[str, Any] = data["metadata"]
         not_found: list[str] = data["not_found"]
         return metadata, not_found
+
+    def get_agent_run_metadata(
+        self,
+        collection_id: str,
+        agent_run_id: str,
+    ) -> dict[str, Any]:
+        """Get an agent run's metadata.
+
+        Args:
+            collection_id: ID of the Collection containing the agent run.
+            agent_run_id: ID of the agent run.
+
+        Returns:
+            The agent run's metadata dict.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/agent_run/{agent_run_id}/metadata"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
+    # ──────────────────────────────────────────
+    # Transcript group metadata
+    # ──────────────────────────────────────────
+
+    def get_transcript_group_metadata(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+    ) -> dict[str, Any]:
+        """Get a transcript group's metadata.
+
+        Args:
+            collection_id: ID of the Collection containing the transcript group.
+            transcript_group_id: ID of the transcript group.
+
+        Returns:
+            The transcript group's metadata dict.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/transcript_group/{transcript_group_id}/metadata"
+        response = self._session.get(url)
+        self._handle_response_errors(response)
+        return response.json()
+
+    def update_transcript_group_metadata(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Deep-merge metadata into a transcript group's existing metadata.
+
+        Args:
+            collection_id: ID of the Collection containing the transcript group.
+            transcript_group_id: ID of the transcript group.
+            metadata: Metadata dict to merge into the existing metadata.
+
+        Returns:
+            The full merged metadata dict.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/transcript_group/{transcript_group_id}/metadata"
+        response = self._session.put(url, json={"metadata": metadata})
+        self._handle_response_errors(response)
+        return response.json()
+
+    def delete_transcript_group_metadata_keys(
+        self,
+        collection_id: str,
+        transcript_group_id: str,
+        keys: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Remove keys from a transcript group's metadata.
+
+        Supports dot-delimited paths for nested deletion.
+
+        Args:
+            collection_id: ID of the Collection containing the transcript group.
+            transcript_group_id: ID of the transcript group.
+            keys: Keys to remove. Use dot notation for nested keys.
+
+        Returns:
+            Tuple of (metadata after deletion, list of keys that were not found).
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        url = f"{self._server_url}/{collection_id}/transcript_group/{transcript_group_id}/metadata/delete"
+        response = self._session.post(url, json={"keys": keys})
+        self._handle_response_errors(response)
+        data = response.json()
+        return data["metadata"], data["not_found"]
 
     def get_chat_sessions(self, collection_id: str, agent_run_id: str) -> list[dict[str, Any]]:
         """Get all chat sessions for an agent run, excluding judge result sessions.

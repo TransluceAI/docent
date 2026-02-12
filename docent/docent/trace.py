@@ -1295,6 +1295,23 @@ class DocentTracer:
             event=event,
         )
 
+    def send_collection_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Send metadata for the current collection."""
+        if self.is_disabled():
+            return
+
+        metadata_payload = self._ensure_json_serializable_metadata(metadata, "Collection")
+        if metadata_payload is None:
+            logger.error("Skipping collection metadata send due to invalid metadata payload.")
+            return
+
+        payload: Dict[str, Any] = {
+            "collection_id": self.collection_id,
+            "metadata": metadata_payload,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._post_json("/v1/collection-metadata", payload)
+
     def send_transcript_metadata(
         self,
         transcript_id: str,
@@ -2085,6 +2102,32 @@ def agent_run_metadata(metadata: Dict[str, Any]) -> None:
         tracer.send_agent_run_metadata(agent_run_id, metadata)
     except Exception as e:
         logger.error(f"Failed to send agent run metadata: {e}")
+
+
+def collection_metadata(metadata: Dict[str, Any]) -> None:
+    """Attach metadata to the current collection.
+
+    Only requires initialize_tracing() to have been called; no active
+    agent run or transcript context is needed.
+
+    Args:
+        metadata: Dictionary of metadata to attach to the collection (can be nested).
+
+    Example:
+        collection_metadata({"env": "prod", "version": "2.1"})
+    """
+    if is_disabled("collection_metadata()"):
+        return
+
+    tracer = get_tracer("collection_metadata()")
+    if tracer is None:
+        logger.error("Docent tracer unavailable; collection metadata will not be sent.")
+        return
+
+    try:
+        tracer.send_collection_metadata(metadata)
+    except Exception as e:
+        logger.error(f"Failed to send collection metadata: {e}")
 
 
 def transcript_metadata(

@@ -365,6 +365,7 @@ class CollectionRow(BaseModel):
     description: str | None = None
     created_by: str | None = None
     created_at: datetime
+    metadata: dict[str, Any] | None = None
     agent_run_count: int | None = None
     rubric_count: int | None = None
     label_set_count: int | None = None
@@ -401,6 +402,7 @@ async def get_collections(
                 description=obj.description,
                 created_by=obj.created_by,
                 created_at=obj.created_at,
+                metadata=obj.metadata_json or {},
             )
             for obj in sqla_collections
         ]
@@ -418,6 +420,9 @@ async def get_collections(
     result: list[dict[str, Any]] = []
     for obj in sqla_collections:
         collection_data: dict[str, Any] = obj.dict()
+
+        # Map DB column name to API field name
+        collection_data["metadata"] = collection_data.pop("metadata_json", {}) or {}
 
         # Add counts from batch query results
         collection_data["agent_run_count"] = agent_run_counts[obj.id]
@@ -474,6 +479,9 @@ async def get_collection_details(
         c.key: getattr(collection, c.key) for c in sqla_inspect(collection).mapper.column_attrs
     }
 
+    # Map DB column name to API field name
+    collection_data["metadata"] = collection_data.pop("metadata_json", {}) or {}
+
     # Batch query all counts (batch functions work efficiently even with a single ID)
     agent_run_counts = await mono_svc.batch_count_collection_agent_runs([collection.id])
     rubric_counts = await mono_svc.batch_count_collection_rubrics([collection.id])
@@ -500,6 +508,7 @@ class CreateCollectionRequest(BaseModel):
     collection_id: str | None = None
     name: str | None = None
     description: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @user_router.post("/create")
@@ -514,6 +523,7 @@ async def create_collection(
         collection_id=request.collection_id,
         name=request.name,
         description=request.description,
+        metadata=request.metadata,
     )
 
     # Track with PostHog
@@ -589,7 +599,9 @@ async def update_collection(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     await mono_svc.update_collection(
-        collection_id, name=request.name, description=request.description
+        collection_id,
+        **({"name": request.name} if request.name is not None else {}),
+        **({"description": request.description} if request.description is not None else {}),
     )
 
 
@@ -600,6 +612,51 @@ async def delete_collection(
     _: None = Depends(require_collection_permission(Permission.ADMIN)),
 ):
     await mono_svc.delete_collection(collection_id)
+
+
+#######################
+# Collection metadata #
+#######################
+
+
+class UpdateMetadataRequest(BaseModel):
+    metadata: dict[str, Any]
+
+
+class DeleteMetadataKeysRequest(BaseModel):
+    keys: list[str]
+
+
+@user_router.get("/{collection_id}/collection/metadata")
+async def get_collection_metadata(
+    collection_id: str = Depends(require_collection_exists),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> dict[str, Any]:
+    return await mono_svc.get_collection_metadata(collection_id)
+
+
+@user_router.put("/{collection_id}/collection/metadata")
+async def update_collection_metadata(
+    request: UpdateMetadataRequest,
+    collection_id: str = Depends(require_collection_exists),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+) -> dict[str, Any]:
+    return await mono_svc.update_collection_metadata(collection_id, request.metadata)
+
+
+@user_router.post("/{collection_id}/collection/metadata/delete")
+async def delete_collection_metadata_keys(
+    request: DeleteMetadataKeysRequest,
+    collection_id: str = Depends(require_collection_exists),
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+) -> dict[str, Any]:
+    metadata, not_found = await mono_svc.delete_collection_metadata_keys(
+        collection_id, request.keys
+    )
+    return {"metadata": metadata, "not_found": not_found}
 
 
 ##############
@@ -1118,15 +1175,21 @@ async def get_agent_run_metadata(
     return {k: to_jsonable_python(v) for k, v in data.items()}
 
 
-class UpdateAgentRunMetadataRequest(BaseModel):
-    metadata: dict[str, Any]
+@user_router.get("/{collection_id}/agent_run/{agent_run_id}/metadata")
+async def get_single_agent_run_metadata(
+    collection_id: str,
+    agent_run_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> dict[str, Any]:
+    return await mono_svc.get_agent_run_metadata(collection_id, agent_run_id)
 
 
 @user_router.put("/{collection_id}/agent_run/{agent_run_id}/metadata")
 async def update_agent_run_metadata(
     collection_id: str,
     agent_run_id: str,
-    request: UpdateAgentRunMetadataRequest,
+    request: UpdateMetadataRequest,
     mono_svc: MonoService = Depends(get_mono_svc),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
@@ -1135,15 +1198,11 @@ async def update_agent_run_metadata(
     return {k: to_jsonable_python(v) for k, v in merged.items()}
 
 
-class DeleteAgentRunMetadataKeysRequest(BaseModel):
-    keys: list[str]
-
-
 @user_router.post("/{collection_id}/agent_run/{agent_run_id}/metadata/delete")
 async def delete_agent_run_metadata_keys(
     collection_id: str,
     agent_run_id: str,
-    request: DeleteAgentRunMetadataKeysRequest,
+    request: DeleteMetadataKeysRequest,
     mono_svc: MonoService = Depends(get_mono_svc),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
@@ -2285,3 +2344,45 @@ async def compute_embeddings(
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     pass
+
+
+############################
+# Transcript group metadata #
+############################
+
+
+@user_router.get("/{collection_id}/transcript_group/{transcript_group_id}/metadata")
+async def get_transcript_group_metadata(
+    collection_id: str,
+    transcript_group_id: str,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.READ)),
+) -> dict[str, Any]:
+    return await mono_svc.get_transcript_group_metadata(collection_id, transcript_group_id)
+
+
+@user_router.put("/{collection_id}/transcript_group/{transcript_group_id}/metadata")
+async def update_transcript_group_metadata(
+    collection_id: str,
+    transcript_group_id: str,
+    request: UpdateMetadataRequest,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+) -> dict[str, Any]:
+    return await mono_svc.update_transcript_group_metadata(
+        collection_id, transcript_group_id, request.metadata
+    )
+
+
+@user_router.post("/{collection_id}/transcript_group/{transcript_group_id}/metadata/delete")
+async def delete_transcript_group_metadata_keys(
+    collection_id: str,
+    transcript_group_id: str,
+    request: DeleteMetadataKeysRequest,
+    mono_svc: MonoService = Depends(get_mono_svc),
+    _: None = Depends(require_collection_permission(Permission.WRITE)),
+) -> dict[str, Any]:
+    metadata, not_found = await mono_svc.delete_transcript_group_metadata_keys(
+        collection_id, transcript_group_id, request.keys
+    )
+    return {"metadata": metadata, "not_found": not_found}

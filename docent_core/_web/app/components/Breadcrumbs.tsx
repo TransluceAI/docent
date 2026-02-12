@@ -24,7 +24,10 @@ import { Button } from '@/components/ui/button';
 
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
-import { useGetCollectionNameQuery } from '@/app/api/collectionApi';
+import {
+  useGetCollectionNameQuery,
+  useGetCollectionMetadataQuery,
+} from '@/app/api/collectionApi';
 import { useGetResultSetQuery } from '@/app/api/resultSetApi';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { cn } from '@/lib/utils';
@@ -32,6 +35,8 @@ import UuidPill from '@/components/UuidPill';
 import { SettingsSidebarItems } from '@/app/settings/components/SettingsSidebar';
 import { CloneCollectionButton } from '@/components/CloneCollectionButton';
 import { useGetCollectionPermissionsQuery } from '@/lib/permissions/collabSlice';
+import { MetadataPopover } from '@/components/metadata/MetadataPopover';
+import { MetadataBlock } from '@/components/metadata/MetadataBlock';
 
 interface Crumb {
   title: string;
@@ -76,6 +81,10 @@ const Breadcrumbs: React.FC = () => {
     collectionId && resultSetIdOrName
       ? { collectionId, resultSetIdOrName }
       : skipToken
+  );
+
+  const { data: collectionMetadata } = useGetCollectionMetadataQuery(
+    collectionId ?? skipToken
   );
 
   const { data: permissions, isLoading: permissionsLoading } =
@@ -262,10 +271,26 @@ const Breadcrumbs: React.FC = () => {
     const { url, title, icon: Icon, uuid } = crumb;
 
     if (index === 0 && collectionId && collectionName) {
+      const hasMetadata =
+        collectionMetadata && Object.keys(collectionMetadata).length > 0;
       return (
         <div className="flex items-center gap-2" key={0}>
           Collection: {collectionName}
           <UuidPill uuid={collectionId} />
+          {hasMetadata && (
+            <MetadataPopover.Root>
+              <MetadataPopover.DefaultTrigger />
+              <MetadataPopover.Content
+                side="bottom"
+                align="start"
+                title="Collection Metadata"
+              >
+                <MetadataPopover.Body metadata={collectionMetadata}>
+                  {(md) => <MetadataBlock metadata={md} />}
+                </MetadataPopover.Body>
+              </MetadataPopover.Content>
+            </MetadataPopover.Root>
+          )}
           {segments.length > 1 && <ChevronRight className="size-3.5" />}
         </div>
       );

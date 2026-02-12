@@ -667,6 +667,69 @@ async def add_transcript_group_metadata_endpoint(
         _handle_unexpected_error(request_id, exc, "Adding transcript group metadata")
 
 
+@telemetry_router.post("/v1/collection-metadata")
+async def add_collection_metadata_endpoint(
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+    telemetry_svc: TelemetryService = Depends(get_telemetry_service),
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Deep-merge metadata directly into a collection.
+
+    Unlike agent run metadata, collection metadata is applied immediately
+    (no accumulation needed since collections aren't batch-processed).
+    """
+    request_id = _get_request_id(request)
+
+    try:
+        body = await _parse_json_body(request, request_id)
+        _ensure_no_null_bytes(body, context="Collection metadata payload", request_id=request_id)
+
+        collection_id = body.get("collection_id")
+        metadata = body.get("metadata")
+        timestamp = body.get("timestamp")
+
+        missing_fields: list[str] = []
+        if not isinstance(collection_id, str) or not collection_id:
+            missing_fields.append("collection_id")
+        if not isinstance(metadata, dict):
+            missing_fields.append("metadata")
+        if not isinstance(timestamp, str) or not timestamp:
+            missing_fields.append("timestamp")
+
+        if missing_fields:
+            raise _telemetry_http_exception(
+                request_id=request_id,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Missing required fields: {', '.join(missing_fields)}.",
+                hint="Provide collection_id, metadata, and timestamp.",
+                error_code="TELEMETRY_MISSING_FIELDS",
+            )
+
+        collection_id = cast(str, collection_id)
+        metadata = cast(Dict[str, Any], metadata)
+
+        await telemetry_svc.ensure_collection_exists(collection_id, user)
+        await telemetry_svc.ensure_write_permission_for_collection(collection_id, user)
+
+        await telemetry_svc.store_telemetry_log(
+            user.id,
+            type="collection-metadata",
+            version="v1",
+            json_data=body,
+            collection_id=collection_id,
+        )
+
+        await mono_svc.update_collection_metadata(collection_id, metadata)
+
+        return _success_response({"status": "success"}, request_id)
+
+    except HTTPException as exc:
+        raise _http_exception_with_request_id(exc, request_id)
+    except Exception as exc:
+        _handle_unexpected_error(request_id, exc, "Adding collection metadata")
+
+
 @telemetry_router.post("/{collection_id}/ensure-telemetry-processing")
 async def ensure_telemetry_processing(
     collection_id: str = Depends(require_collection_exists),

@@ -120,7 +120,7 @@ export const FilterChips = ({
                 return (
                   <>
                     <span
-                      className="font-mono min-w-[3rem] max-w-[160px] truncate"
+                      className="font-mono max-w-[160px] truncate"
                       title={displayKey}
                     >
                       {displayKey}
@@ -137,7 +137,7 @@ export const FilterChips = ({
                       {filterCast.op || '=='}
                     </span>
                     <span
-                      className="font-mono min-w-[3rem] max-w-[260px] truncate"
+                      className="font-mono max-w-[260px] truncate"
                       title={displayValue}
                     >
                       {displayValue}
