@@ -213,13 +213,22 @@ export default function CollectionRow({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="text-primary text-xs">
-            {collection.name || (
-              <span className="italic text-muted-foreground">
-                Unnamed Collection
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-primary text-xs truncate block">
+                {collection.name || (
+                  <span className="italic text-muted-foreground">
+                    Unnamed Collection
+                  </span>
+                )}
               </span>
+            </TooltipTrigger>
+            {collection.name && (
+              <TooltipContent side="bottom" className="max-w-sm break-words">
+                {collection.name}
+              </TooltipContent>
             )}
-          </span>
+          </Tooltip>
         )}
       </TableCell>
 
@@ -234,13 +243,22 @@ export default function CollectionRow({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="text-xs text-muted-foreground">
-            {collection.description || (
-              <span className="italic text-muted-foreground">
-                No description provided
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground truncate block">
+                {collection.description || (
+                  <span className="italic text-muted-foreground">
+                    No description provided
+                  </span>
+                )}
               </span>
+            </TooltipTrigger>
+            {collection.description && (
+              <TooltipContent side="bottom" className="max-w-sm break-words">
+                {collection.description}
+              </TooltipContent>
             )}
-          </span>
+          </Tooltip>
         )}
       </TableCell>
 

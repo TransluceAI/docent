@@ -43,6 +43,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, noload, selectinload
 from sqlalchemy.sql import FromClause, lateral, text
+from sqlalchemy.types import Numeric
 
 from docent._log_util import get_logger
 from docent.data_models.agent_run import (
@@ -101,7 +102,6 @@ from docent_core.docent.db.schemas.tables import (
     SQLAIngestionPayload,
     SQLAJob,
     SQLAMetadataObservation,
-    SQLAMetadataValueStats,
     SQLAModelApiKey,
     SQLAOrganization,
     SQLASearchCluster,
@@ -1934,8 +1934,104 @@ class MonoService:
             f"{len(sq_agent_runs)} agent runs, {len(observations)} observations"
         )
 
-        await self.schedule_metadata_view_refresh()
         return len(observations)
+
+    async def backfill_metadata(
+        self,
+        collection_id: str | None = None,
+        agent_run_cursor: str | None = None,
+        batch_size: int = 500,
+    ) -> dict[str, str | int | None]:
+        """Backfill metadata observations for one batch of agent runs.
+
+        Processes up to `batch_size` agent runs within a collection, using
+        INSERT ON CONFLICT DO NOTHING to avoid duplicates. Returns cursors
+        so the caller can paginate through all runs and collections.
+        """
+        async with self.db.session() as session:
+            if collection_id is None:
+                result = await session.execute(
+                    select(SQLACollection.id).order_by(SQLACollection.id.asc()).limit(1)
+                )
+                collection_id = result.scalar_one_or_none()
+                if collection_id is None:
+                    return {
+                        "collection_id": None,
+                        "observations_created": 0,
+                        "next_agent_run_cursor": None,
+                        "next_collection_id": None,
+                    }
+
+            # Fetch a batch of agent runs, ordered by ID for stable cursor pagination
+            query = (
+                select(SQLAAgentRun)
+                .where(SQLAAgentRun.collection_id == collection_id)
+                .order_by(SQLAAgentRun.id.asc())
+                .limit(batch_size)
+            )
+            if agent_run_cursor is not None:
+                query = query.where(SQLAAgentRun.id > agent_run_cursor)
+
+            result = await session.execute(query)
+            sq_agent_runs = list(result.scalars().all())
+
+            # Extract and upsert observations in chunks to stay under asyncpg's
+            # 32767 bind-parameter limit (8 columns per row → ~3500 rows per chunk).
+            observations = extract_metadata_observations_bulk(sq_agent_runs, collection_id)
+            chunk_size = 3500
+            for i in range(0, len(observations), chunk_size):
+                chunk = observations[i : i + chunk_size]
+                stmt = (
+                    pg_insert(SQLAMetadataObservation)
+                    .values(
+                        [
+                            {
+                                "agent_run_id": o.agent_run_id,
+                                "json_path": o.json_path,
+                                "value_hash": o.value_hash,
+                                "value_type": o.value_type,
+                                "collection_id": o.collection_id,
+                                "value_text": o.value_text,
+                                "value_numeric": o.value_numeric,
+                                "observed_at": o.observed_at,
+                            }
+                            for o in chunk
+                        ]
+                    )
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(stmt)
+
+        # Determine next cursor
+        next_agent_run_cursor: str | None = None
+        next_collection_id: str | None = None
+
+        if len(sq_agent_runs) == batch_size:
+            # More runs in this collection
+            next_agent_run_cursor = sq_agent_runs[-1].id
+            next_collection_id = collection_id
+        else:
+            # Done with this collection, find the next one
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(SQLACollection.id)
+                    .where(SQLACollection.id > collection_id)
+                    .order_by(SQLACollection.id.asc())
+                    .limit(1)
+                )
+                next_collection_id = result.scalar_one_or_none()
+
+        logger.info(
+            f"Backfilled metadata for collection {collection_id}: "
+            f"{len(sq_agent_runs)} agent runs, {len(observations)} observations"
+        )
+
+        return {
+            "collection_id": collection_id,
+            "observations_created": len(observations),
+            "next_agent_run_cursor": next_agent_run_cursor,
+            "next_collection_id": next_collection_id,
+        }
 
     async def get_metadata_field_range(
         self, ctx: ViewContext, field_name: str
@@ -1951,16 +2047,31 @@ class MonoService:
             if not part.replace("_", "").replace("-", "").isalnum():
                 raise ValueError("Invalid metadata field path")
 
-        json_path = field_name  # already "metadata.x.y.z"
-
         async with self.db.session() as session:
-            query = select(
-                func.min(SQLAMetadataValueStats.value_numeric).label("min_value"),
-                func.max(SQLAMetadataValueStats.value_numeric).label("max_value"),
-            ).where(
-                SQLAMetadataValueStats.collection_id == ctx.collection_id,
-                SQLAMetadataValueStats.json_path == json_path,
-                SQLAMetadataValueStats.value_type == "number",
+            json_expr = cast(ColumnElement[Any], SQLAAgentRun.metadata_json)
+            for part in json_path_parts:
+                json_expr = cast(ColumnElement[Any], json_expr.op("->")(part))
+
+            text_expr = cast(ColumnElement[Any], SQLAAgentRun.metadata_json)
+            for idx, part in enumerate(json_path_parts):
+                if idx == len(json_path_parts) - 1:
+                    text_expr = cast(ColumnElement[Any], text_expr.op("->>")(part))
+                else:
+                    text_expr = cast(ColumnElement[Any], text_expr.op("->")(part))
+
+            numeric_clause = func.jsonb_typeof(json_expr) == "number"
+            numeric_expr: ColumnElement[Any] = cast(ColumnElement[Any], text_expr.cast(Numeric))
+
+            query = (
+                select(
+                    func.min(numeric_expr).label("min_value"),
+                    func.max(numeric_expr).label("max_value"),
+                )
+                .select_from(SQLAAgentRun)
+                .where(
+                    SQLAAgentRun.collection_id == ctx.collection_id,
+                    numeric_clause,
+                )
             )
 
             result = await session.execute(query)
@@ -2055,50 +2166,26 @@ class MonoService:
                     if not part.replace("_", "").replace("-", "").isalnum():
                         return []
 
-                # When a filter is active, fall back to querying agent_runs directly
-                # because the pre-aggregated view cannot apply per-run filters.
-                if filter_obj is not None:
-                    field_expr = SQLAAgentRun.metadata_json
-                    for part in json_path_parts[:-1]:
-                        field_expr = field_expr.op("->")(part)
-                    field_expr = field_expr.op("->>")(json_path_parts[-1])
+                field_expr = SQLAAgentRun.metadata_json
+                for part in json_path_parts[:-1]:
+                    field_expr = field_expr.op("->")(part)
+                field_expr = field_expr.op("->>")(json_path_parts[-1])
 
-                    query = select(func.distinct(field_expr)).where(
-                        SQLAAgentRun.collection_id == ctx.collection_id,
-                        field_expr.isnot(None),
-                    )
-                    query = apply_agent_run_filter(query)
-
-                    if search:
-                        query = query.where(field_expr.ilike(func.concat("%", search, "%")))
-
-                    query = query.limit(limit)
-
-                    result = await session.execute(query)
-                    values = [row[0] for row in result.fetchall() if row[0] is not None]
-                    return sorted(values)
-
-                # Fast path: use pre-aggregated metadata registry
-                json_path = field_name  # already "metadata.x.y.z"
-
-                query = (
-                    select(SQLAMetadataValueStats.value_text)
-                    .where(
-                        SQLAMetadataValueStats.collection_id == ctx.collection_id,
-                        SQLAMetadataValueStats.json_path == json_path,
-                    )
-                    .order_by(SQLAMetadataValueStats.count.desc())
-                    .limit(limit)
+                query = select(func.distinct(field_expr)).where(
+                    SQLAAgentRun.collection_id == ctx.collection_id,
+                    field_expr.isnot(None),
                 )
+                query = apply_agent_run_filter(query)
 
                 if search:
-                    query = query.where(
-                        SQLAMetadataValueStats.value_text.ilike(func.concat("%", search, "%"))
-                    )
+                    query = query.where(field_expr.ilike(func.concat("%", search, "%")))
+
+                # Limit number of results to prevent excessive output
+                query = query.limit(limit)
 
                 result = await session.execute(query)
                 values = [row[0] for row in result.fetchall() if row[0] is not None]
-                return values
+                return sorted(values)
 
             # Tags
             elif field_parts[0] == "tag" and len(field_parts) == 1:
@@ -2258,34 +2345,28 @@ class MonoService:
                     if not part.replace("_", "").replace("-", "").isalnum():
                         return ([], 0)
 
-                json_path = field_name  # already "metadata.x.y.z"
+                field_expr = SQLAAgentRun.metadata_json
+                for part in json_path_parts[:-1]:
+                    field_expr = field_expr.op("->")(part)
+                value_expr = field_expr.op("->>")(json_path_parts[-1])
 
-                # NOTE: This intentionally queries the materialized view even when
-                # ctx.base_filter is set. The view doesn't join agent_runs so
-                # base_filter is not honored — counts/samples reflect the whole
-                # collection, not the filtered view. This is a deliberate trade-off
-                # for performance; a live query against metadata_observations with
-                # the filter applied is too expensive.
-                total_stmt = (
-                    select(func.count())
-                    .select_from(SQLAMetadataValueStats)
-                    .where(
-                        SQLAMetadataValueStats.collection_id == ctx.collection_id,
-                        SQLAMetadataValueStats.json_path == json_path,
-                    )
-                )
+                total_stmt = select(func.count(distinct(value_expr))).where(value_expr.isnot(None))
+                total_stmt = ctx.apply_base_filter(total_stmt)
+
                 samples_stmt = (
                     select(
-                        SQLAMetadataValueStats.value_text.label("value"),
-                        SQLAMetadataValueStats.count.label("count"),
+                        value_expr.label("value"),
+                        func.count(distinct(SQLAAgentRun.id)).label("count"),
                     )
-                    .where(
-                        SQLAMetadataValueStats.collection_id == ctx.collection_id,
-                        SQLAMetadataValueStats.json_path == json_path,
+                    .where(value_expr.isnot(None))
+                    .group_by(value_expr)
+                    .order_by(
+                        func.count(distinct(SQLAAgentRun.id)).desc(),
+                        value_expr.asc(),
                     )
-                    .order_by(SQLAMetadataValueStats.count.desc())
                     .limit(sample_limit)
                 )
+                samples_stmt = ctx.apply_base_filter(samples_stmt)
 
                 total_result = await session.execute(total_stmt)
                 total_unique_values = int(total_result.scalar_one() or 0)
@@ -4112,30 +4193,19 @@ class MonoService:
 
         all_fields: dict[str, FilterableFieldWithSamples] = {}
 
-        # Use the metadata registry to discover agent_run metadata fields
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(
-                    SQLAMetadataValueStats.json_path,
-                    func.string_agg(
-                        distinct(SQLAMetadataValueStats.value_type),
-                        literal(","),
-                    ).label("value_types"),
-                )
-                .where(SQLAMetadataValueStats.collection_id == ctx.collection_id)
-                .group_by(SQLAMetadataValueStats.json_path)
+        agent_run_infos = await self.get_json_metadata_fields_for_column(
+            ctx.collection_id,
+            table=SQLAAgentRun.__table__,
+            json_column=cast(ColumnElement[Any], SQLAAgentRun.metadata_json),
+            column_name="metadata_json",
+        )
+        for info in agent_run_infos:
+            if info.value_type is None or not info.path:
+                continue
+            field_name = "metadata." + ".".join(info.path)
+            all_fields[field_name] = FilterableFieldWithSamples(
+                name=field_name, type=info.value_type
             )
-            for row in result:
-                json_path: str = row.json_path
-                value_types: str = row.value_types or ""
-                # Only include leaf paths (those that have non-dict/non-list types)
-                inferred_type = _infer_filter_type_from_types(value_types)
-                if inferred_type is None:
-                    continue
-                # json_path is already "metadata.x.y.z"
-                all_fields[json_path] = FilterableFieldWithSamples(
-                    name=json_path, type=inferred_type
-                )
 
         async with self.db.session() as session:
             if rubric_id is not None:

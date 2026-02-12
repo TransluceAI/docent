@@ -42,7 +42,12 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
                 mono_svc_factory = request.app.dependency_overrides.get(get_mono_svc, get_mono_svc)
                 mono_svc = await mono_svc_factory()
 
-                user = await mono_svc.get_user_by_session_id(session_id)
+                # Skip loading organizations for /rest/me — it only returns
+                # user info and doesn't need org IDs for permission checks.
+                load_orgs = request.url.path != "/rest/me"
+                user = await mono_svc.get_user_by_session_id(
+                    session_id, load_organizations=load_orgs
+                )
 
                 if user:
                     # Attach user information to request state

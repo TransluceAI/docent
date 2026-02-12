@@ -89,7 +89,7 @@ export function CollectionsTable({
 
   return (
     <>
-      <Table>
+      <Table className="table-fixed w-full">
         <TableHeader className="bg-secondary sticky top-0">
           <TableRow>
             <TableHead className="w-[10%] py-1 font-medium text-xs text-muted-foreground">

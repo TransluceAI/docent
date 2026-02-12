@@ -268,31 +268,13 @@ async def create_anonymous_session(
 
 
 @user_router.get("/me")
-async def get_current_user(request: Request, mono_svc: MonoService = Depends(get_mono_svc)):
+async def get_current_user(user: User = Depends(get_user_anonymous_ok)):
+    """Get current user endpoint.
+
+    Uses the user resolved by get_user_anonymous_ok, which checks
+    request.state.user (session cookie) or falls back to API key auth.
+    No additional DB query is needed beyond what the middleware/dependency already did.
     """
-    Get current user endpoint. Retrieves user information from session cookie.
-
-    Args:
-        request: FastAPI Request object to access cookies
-        db: Database service dependency
-
-    Returns:
-        UserResponse with user_id, email, and organization_ids
-
-    Raises:
-        HTTPException: 401 if session is invalid or expired
-    """
-    # Get session ID from cookie
-    session_id = request.cookies.get(COOKIE_KEY)
-    if not session_id:
-        raise HTTPException(status_code=401, detail="No session found")
-
-    # Get user by session ID (skip loading organizations since frontend doesn't need them)
-    user = await mono_svc.get_user_by_session_id(session_id, load_organizations=False)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    # Calculate Pylon email hash
     pylon_email_hash = sign_message_with_hmac(user.email)
 
     return {**user.model_dump(), "pylon_email_hash": pylon_email_hash}
@@ -899,19 +881,43 @@ async def get_metadata_field_range(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# TODO(nickwu): Restore permission check: Depends(require_collection_permission(Permission.WRITE))
+# Temporarily removed to allow backfilling metadata for all collections.
 @user_router.post("/{collection_id}/resync_metadata")
 async def resync_metadata(
     collection_id: str,
     mono_svc: MonoService = Depends(get_mono_svc),
-    _: None = Depends(require_collection_permission(Permission.WRITE)),
 ):
     """Re-extract all metadata observations for a collection and refresh the materialized view."""
     observations_created = await mono_svc.resync_metadata(collection_id)
+    await mono_svc.schedule_metadata_view_refresh()
     return {
         "collection_id": collection_id,
         "observations_created": observations_created,
         "message": "Metadata registry resynced successfully",
     }
+
+
+# TODO(nickwu): Remove this endpoint after backfill is complete.
+@user_router.post("/backfill_metadata")
+async def backfill_metadata(
+    collection_id: str | None = None,
+    agent_run_cursor: str | None = None,
+    batch_size: int = 500,
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Backfill metadata observations in batches. Returns cursors for pagination."""
+    return await mono_svc.backfill_metadata(collection_id, agent_run_cursor, batch_size=batch_size)
+
+
+# TODO(nickwu): Remove this endpoint after backfill is complete.
+@user_router.post("/refresh_metadata_view")
+async def refresh_metadata_view(
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Refresh the metadata_value_stats materialized view."""
+    await mono_svc.schedule_metadata_view_refresh()
+    return {"message": "Metadata view refresh completed"}
 
 
 @user_router.get("/{collection_id}/agent_run")
