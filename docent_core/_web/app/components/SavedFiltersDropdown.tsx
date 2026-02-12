@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,16 @@ import {
 } from '@/app/api/filterApi';
 import { CollectionFilter, PrimitiveFilter } from '@/app/types/collectionTypes';
 import { FilterListItem } from '@/app/types/filterTypes';
-import { Bookmark, Check, ChevronDown, Trash2, Loader2 } from 'lucide-react';
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  Copy,
+  Trash2,
+  Loader2,
+} from 'lucide-react';
+import { useState } from 'react';
+import { CopyFiltersDialog } from './CopyFiltersDialog';
 import { toast } from 'sonner';
 import { getRtkQueryErrorMessage } from '@/lib/rtkQueryError';
 import { formatFilterFieldLabel } from '../utils/formatMetadataField';
@@ -98,6 +108,7 @@ export function SavedFiltersDropdown({
 }: SavedFiltersDropdownProps) {
   const { data: filters, isLoading } = useListFiltersQuery(collectionId);
   const [deleteFilter, { isLoading: isDeleting }] = useDeleteFilterMutation();
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
 
   const handleDeleteFilter = async (
     e: React.MouseEvent,
@@ -118,68 +129,87 @@ export function SavedFiltersDropdown({
   const hasFilters = filters && filters.length > 0;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className={`h-7 text-xs gap-1 ${activeFilterId ? 'border-blue-border' : ''}`}
-          disabled={isLoading}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`h-7 text-xs gap-1 ${activeFilterId ? 'border-blue-border' : ''}`}
+            disabled={isLoading}
+          >
+            <Bookmark
+              className={`h-3.5 w-3.5 flex-shrink-0 ${activeFilterId ? 'text-blue-text' : 'text-muted-foreground'}`}
+            />
+            <span className="text-muted-foreground">Saved</span>
+            <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="w-96 max-h-[28rem] overflow-y-auto"
         >
-          <Bookmark
-            className={`h-3.5 w-3.5 flex-shrink-0 ${activeFilterId ? 'text-blue-text' : 'text-muted-foreground'}`}
-          />
-          <span className="text-muted-foreground">Saved</span>
-          <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="w-96 max-h-[28rem] overflow-y-auto"
-      >
-        {isLoading ? (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
-        ) : !hasFilters ? (
-          <div className="py-3 px-2 text-xs text-muted-foreground text-center">
-            No saved filters yet.
-            <br />
-            Use &quot;Save&quot; to create one.
-          </div>
-        ) : (
-          filters.map((filter) => (
-            <DropdownMenuItem
-              key={filter.id}
-              className="flex items-center justify-between group cursor-pointer"
-              onClick={() => onSelectFilter(filter)}
-              disabled={isDeleting}
-              title={buildFilterTooltip(filter)}
-            >
-              <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                {activeFilterId === filter.id ? (
-                  <Check className="h-3.5 w-3.5 text-blue-text flex-shrink-0" />
-                ) : (
-                  <div className="w-3.5 flex-shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate">
-                    {filter.name || 'Untitled Filter'}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : !hasFilters ? (
+            <div className="py-3 px-2 text-xs text-muted-foreground text-center">
+              No saved filters yet.
+              <br />
+              Use &quot;Save&quot; to create one.
+            </div>
+          ) : (
+            <>
+              {filters.map((filter) => (
+                <DropdownMenuItem
+                  key={filter.id}
+                  className="flex items-center justify-between group cursor-pointer"
+                  onClick={() => onSelectFilter(filter)}
+                  disabled={isDeleting}
+                  title={buildFilterTooltip(filter)}
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                    {activeFilterId === filter.id ? (
+                      <Check className="h-3.5 w-3.5 text-blue-text flex-shrink-0" />
+                    ) : (
+                      <div className="w-3.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm truncate">
+                        {filter.name || 'Untitled Filter'}
+                      </div>
+                      <FilterPreview filter={filter} />
+                    </div>
                   </div>
-                  <FilterPreview filter={filter} />
-                </div>
-              </div>
-              <button
-                onClick={(e) => handleDeleteFilter(e, filter.id, filter.name)}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-bg rounded transition-opacity flex-shrink-0"
-                title="Delete filter"
+                  <button
+                    onClick={(e) =>
+                      handleDeleteFilter(e, filter.id, filter.name)
+                    }
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-bg rounded transition-opacity flex-shrink-0"
+                    title="Delete filter"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-text" />
+                  </button>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setCopyDialogOpen(true)}
+                className="cursor-pointer"
               >
-                <Trash2 className="h-3.5 w-3.5 text-red-text" />
-              </button>
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+                <Copy className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                <span className="text-sm">Copy Filters...</span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <CopyFiltersDialog
+        open={copyDialogOpen}
+        onOpenChange={setCopyDialogOpen}
+        collectionId={collectionId}
+      />
+    </>
   );
 }

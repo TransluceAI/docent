@@ -407,6 +407,10 @@ export const FilterControls = ({
             commandListClassName="custom-scrollbar"
             optionClassName="font-mono text-xs"
             renderOptionLabel={renderFilterOptionLabel}
+            renderValue={(selected) =>
+              selected?.label ??
+              (metadataKey ? formatFilterFieldLabel(metadataKey) : undefined)
+            }
             popoverClassName="max-w-[640px]"
             popoverStyle={{
               width: 'auto',
