@@ -2075,6 +2075,7 @@ class MonoService:
         self,
         collection_id: str | None = None,
         agent_run_cursor: str | None = None,
+        agent_run_id_lt: str | None = None,
         batch_size: int = 500,
     ) -> dict[str, str | int | None]:
         """Backfill metadata observations for one batch of agent runs.
@@ -2099,15 +2100,34 @@ class MonoService:
                     }
 
         # When starting a collection from scratch, clear existing observations
-        # in a separate transaction so it commits independently and doesn't
-        # cause the subsequent backfill transaction to time out.
+        # in batched transactions to avoid long-running deletes on large collections.
         if agent_run_cursor is None:
-            async with self.db.session() as session:
-                await session.execute(
-                    delete(SQLAMetadataObservation).where(
-                        SQLAMetadataObservation.collection_id == collection_id
+            delete_batch_size = 5000
+            while True:
+                async with self.db.session() as session:
+                    # Find a batch of agent_run_ids to delete observations for
+                    id_filter = SQLAMetadataObservation.collection_id == collection_id
+                    if agent_run_id_lt is not None:
+                        id_filter = and_(
+                            id_filter,
+                            SQLAMetadataObservation.agent_run_id < agent_run_id_lt,
+                        )
+                    batch_ids = (
+                        select(SQLAMetadataObservation.agent_run_id)
+                        .where(id_filter)
+                        .distinct()
+                        .limit(delete_batch_size)
                     )
-                )
+                    result = await session.execute(
+                        delete(SQLAMetadataObservation).where(
+                            SQLAMetadataObservation.agent_run_id.in_(batch_ids)
+                        )
+                    )
+                    if result.rowcount == 0:
+                        break
+                    logger.info(
+                        f"Deleted {result.rowcount} metadata observations for collection {collection_id}"
+                    )
 
         async with self.db.session() as session:
             # Fetch a batch of agent runs, ordered by ID for stable cursor pagination
@@ -2119,6 +2139,8 @@ class MonoService:
             )
             if agent_run_cursor is not None:
                 query = query.where(SQLAAgentRun.id > agent_run_cursor)
+            if agent_run_id_lt is not None:
+                query = query.where(SQLAAgentRun.id < agent_run_id_lt)
 
             result = await session.execute(query)
             sq_agent_runs = list(result.scalars().all())
