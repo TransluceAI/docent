@@ -3288,6 +3288,8 @@ class TelemetryService:
                 role = str(data["role"])
                 if role == "developer":
                     role = "system"
+                elif role == "model":
+                    role = "assistant"
             elif assume_role:
                 role = assume_role
             elif "user" in data:
@@ -3298,6 +3300,8 @@ class TelemetryService:
                 role = "system"
             elif "developer" in data:
                 role = "system"
+            elif "model" in data:
+                role = "assistant"
             else:
                 logger.error(
                     f"No valid role found in {context} for span {raw_span_id}. Available keys: {list(data.keys())}"
