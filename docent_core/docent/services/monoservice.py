@@ -2071,6 +2071,16 @@ class MonoService:
 
         return len(observations)
 
+    async def next_backfill_collection(self, after: str | None = None) -> dict[str, str | None]:
+        """Return the next collection ID to backfill, optionally after a given ID."""
+        async with self.db.session() as session:
+            query = select(SQLACollection.id).order_by(SQLACollection.id.asc()).limit(1)
+            if after is not None:
+                query = query.where(SQLACollection.id > after)
+            result = await session.execute(query)
+            collection_id = result.scalar_one_or_none()
+        return {"collection_id": collection_id}
+
     async def backfill_metadata(
         self,
         collection_id: str | None = None,

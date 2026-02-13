@@ -956,6 +956,16 @@ async def resync_metadata(
 
 
 # TODO(nickwu): Remove this endpoint after backfill is complete.
+@user_router.get("/backfill_metadata/next_collection")
+async def next_backfill_collection(
+    after: str | None = None,
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Return the next collection ID to backfill, optionally after a given ID."""
+    return await mono_svc.next_backfill_collection(after)
+
+
+# TODO(nickwu): Remove this endpoint after backfill is complete.
 @user_router.post("/backfill_metadata")
 async def backfill_metadata(
     collection_id: str | None = None,
