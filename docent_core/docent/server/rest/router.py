@@ -463,6 +463,16 @@ async def get_collections_counts(
     }
 
 
+# TODO(nickwu): Remove this endpoint after backfill is complete.
+@user_router.get("/backfill_metadata/next_collection")
+async def next_backfill_collection(
+    after: str | None = None,
+    mono_svc: MonoService = Depends(get_mono_svc),
+):
+    """Return the next collection ID to backfill, optionally after a given ID."""
+    return await mono_svc.next_backfill_collection(after)
+
+
 @user_router.get("/{collection_id}/collection_details", response_model=CollectionRow | None)
 async def get_collection_details(
     collection_id: str = Depends(require_collection_exists),
@@ -953,16 +963,6 @@ async def resync_metadata(
         "observations_created": observations_created,
         "message": "Metadata registry resynced successfully",
     }
-
-
-# TODO(nickwu): Remove this endpoint after backfill is complete.
-@user_router.get("/backfill_metadata/next_collection")
-async def next_backfill_collection(
-    after: str | None = None,
-    mono_svc: MonoService = Depends(get_mono_svc),
-):
-    """Return the next collection ID to backfill, optionally after a given ID."""
-    return await mono_svc.next_backfill_collection(after)
 
 
 # TODO(nickwu): Remove this endpoint after backfill is complete.
