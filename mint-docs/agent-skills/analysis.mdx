@@ -1,5 +1,5 @@
 ---
-title: Agentic Analysis (Preview)
+title: Agentic Analysis
 description: Use Claude Code and Cursor to automate investigations in Docent
 ---
 
@@ -17,17 +17,29 @@ Coding agents can flexibly automate multi-step manual workflows and conduct inve
 Your coding agent saves scripts to your local directory. You can modify and rerun scripts for fine-grained control of the workflow.
 
 ## Quickstart
-<Info>
-  You can skip this section if you've installed our [Claude Code plugin](overview). We **strongly recommend** installing our Claude Code plugin so that you receive automatic updates.
-</Info>
-
-AI coding agents can use the Docent SDK to analyze agent runs.
-
-You can use Docent in its own Cursor Workspace by quickly downloading our template, or you can integrate Docent into an existing workspace.
+We recommend using our Claude Code plugin so you can quickly install updates to the plugin. However, we also support using Docent in its own Cursor Workspace by quickly downloading our template and integrating Docent into an existing workspace.
 
 In either case, you'll need to have [uv installed](https://docs.astral.sh/uv/getting-started/installation/).
 
 <Tabs>
+  <Tab title="Claude Code Plugin (Recommended)">
+
+  Install [Claude Code](https://code.claude.com/docs/en/overview#get-started-in-30-seconds) and open it in your working directory by running `claude`. Run the following inside of Claude Code.
+
+  Add the Transluce plugin marketplace:
+
+  ```shell
+  /plugin marketplace add TransluceAI/claude-code-plugins
+  ```
+
+  Install the Docent plugin:
+
+  ```shell
+  /plugin install docent@transluce-plugins
+  ```
+
+  Restart Claude Code after installation. Type `/` to verify that `/ingestion` and `/analysis` are available.
+  </Tab>
   <Tab title="From Template">
     ### Step 1: Download and open the template for your preferred IDE
 
@@ -146,6 +158,9 @@ In either case, you'll need to have [uv installed](https://docs.astral.sh/uv/get
 </Tabs>
 
 ## Using Docent to Compare Between Checkpoints
+<Info>
+See a demo of this plugin on [our blog](https://transluce.org/docent/blog/terminal-bench). We used the analysis skill to diagnose why GPT-5.1 Codex underperforms GPT-5 Codex on Terminal-Bench.
+</Info>
 
 Suppose we have two agents and we want to qualitatively understand why one is failing more often on a set of tasks. There are a few ways to approach this question. One is to summarize the cause of each individual failure, then look for high-level differences between the two agents.
 
