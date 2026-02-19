@@ -2,7 +2,7 @@
 """
 Label Elicitation (Entropy-Only)
 
-Runnable companion to label_elicitation.py that only:
+Standalone entropy-prioritized label elicitation runner that only:
 1. Loads rubric/user model context.
 2. Samples agent runs.
 3. Estimates user output distributions p_u(y | x, z, r).
@@ -23,10 +23,12 @@ import json
 import math
 import random
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic import BaseModel
 from rich.console import Console
 from rich.panel import Panel
 from tqdm import tqdm
@@ -34,31 +36,51 @@ from tqdm import tqdm
 from docent import Docent
 from docent._llm_util.llm_svc import BaseLLMService
 from docent.data_models.agent_run import AgentRun
+from docent.data_models.citation import InlineCitation
+from docent.judges.types import Rubric
 from docent_core._env_util import ENV
 from docent_core.docent.ai_tools.rubric.elicit import (
-    LabelingRequest,
     LabelingRequestResult,
     OutputDistribution,
     RunDistributionEstimate,
+    SchemaSelectableField,
     build_user_model_inference_prompt_with_agent_runs,
     estimate_user_distributions_for_agent_runs,
+    format_user_distribution_for_display,
     generate_labeling_requests,
     get_enum_boolean_fields_from_schema,
     infer_user_model_from_user_data,
     normalize_output_distribution,
+    render_text_with_citation_footnotes,
 )
-from docent_core.docent.ai_tools.rubric.user_model import UserData
+from docent_core.docent.ai_tools.rubric.user_model import LabelingRequest, UserData
 
 console = Console()
 
 
-_USER_DATA_TOP_LEVEL_KEYS = {
-    "initial_rubric",
-    "qa_pairs",
-    "labels",
-    "created_at",
-    "last_updated",
-}
+class EntropyLabelMetadata(BaseModel):
+    user_distribution: OutputDistribution
+    entropy_nats: float
+
+
+class CollectedEntropyLabel(BaseModel):
+    agent_run_id: str
+    label_value: dict[str, Any]
+    explanation: str | None = None
+    metadata: EntropyLabelMetadata
+    labeling_request: LabelingRequest | None = None
+
+
+def _coerce_string_keyed_dict(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    parsed: dict[str, Any] = {}
+    for key, item in cast(dict[object, object], value).items():
+        if not isinstance(key, str):
+            return None
+        parsed[key] = item
+    return parsed
 
 
 def _require_docent_client() -> Docent:
@@ -82,18 +104,10 @@ def _load_user_data(initial_rubric: str, user_data_json_path: str | None) -> Use
     if not path.exists():
         raise ValueError(f"--user-data-json file does not exist: {path}")
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
+    payload_raw = json.loads(path.read_text(encoding="utf-8"))
+    payload_dict = _coerce_string_keyed_dict(payload_raw)
+    if payload_dict is None:
         raise ValueError("--user-data-json must contain a JSON object matching UserData")
-    payload_dict = cast(dict[str, Any], payload)
-
-    extra_keys = sorted(set(payload_dict.keys()) - _USER_DATA_TOP_LEVEL_KEYS)
-    if extra_keys:
-        raise ValueError(
-            "--user-data-json has unexpected top-level key(s): "
-            + ", ".join(extra_keys)
-            + ". Expected a UserData JSON object."
-        )
 
     user_data = UserData.model_validate(payload_dict)
     if user_data.initial_rubric != initial_rubric:
@@ -173,7 +187,7 @@ def _sample_agent_runs(
     return agent_runs
 
 
-def _render_current_rubric(rubric: Any) -> None:
+def _render_current_rubric(rubric: Rubric) -> None:
     schema_text = json.dumps(rubric.output_schema, indent=2, sort_keys=True)
     console.print("\n[bold cyan]CURRENT RUBRIC[/bold cyan]")
     console.print(
@@ -214,16 +228,10 @@ def _stable_json_dict(value: dict[str, Any]) -> str:
 
 
 def _get_schema_property_keys(output_schema: dict[str, Any]) -> list[str]:
-    properties_raw = output_schema.get("properties")
-    if not isinstance(properties_raw, dict):
+    properties = _coerce_string_keyed_dict(output_schema.get("properties"))
+    if properties is None:
         return []
-    properties = cast(dict[object, object], properties_raw)
-
-    schema_keys: list[str] = []
-    for key_obj in properties.keys():
-        if isinstance(key_obj, str):
-            schema_keys.append(key_obj)
-    return schema_keys
+    return list(properties.keys())
 
 
 def _get_entropy_agreement_keys(output_schema: dict[str, Any]) -> list[str]:
@@ -317,7 +325,7 @@ def _render_entropy_rankings(
 
     key_set = set(agreement_keys)
     for idx, (estimate, entropy) in enumerate(ranked[:top_n], 1):
-        user_distribution = cast(OutputDistribution, estimate.user_distribution)
+        user_distribution = _require_user_distribution(estimate)
         distribution_reasoning = (user_distribution.reasoning or "").strip() or None
         body_lines = [
             f"[bold]Run ID:[/bold] {estimate.agent_run_id}",
@@ -327,7 +335,15 @@ def _render_entropy_rankings(
             _format_projected_distribution(user_distribution, key_set),
         ]
         if distribution_reasoning:
-            body_lines.extend(["", "[bold]p_u reasoning[/bold]", distribution_reasoning])
+            reasoning_text, reasoning_footnotes = render_text_with_citation_footnotes(
+                text=distribution_reasoning,
+                citations=user_distribution.reasoning_citations,
+            )
+            body_lines.extend(["", "[bold]p_u reasoning[/bold]", reasoning_text])
+            if reasoning_footnotes:
+                body_lines.append("[dim]Citations:[/dim]")
+                for footnote in reasoning_footnotes:
+                    body_lines.append(f"  [dim]{footnote}[/dim]")
         console.print(
             Panel(
                 "\n".join(body_lines),
@@ -337,25 +353,19 @@ def _render_entropy_rankings(
         )
 
 
-def _citation_preview(citations: list[Any], max_items: int = 3) -> str:
-    if not citations:
-        return "none"
-
-    previews: list[str] = []
-    for citation in citations[:max_items]:
-        target = citation.target.item
-        item_type = getattr(target, "item_type", "unknown")
-        block_idx = getattr(target, "block_idx", None)
-        transcript_id = getattr(target, "transcript_id", None)
-        if transcript_id is not None and block_idx is not None:
-            previews.append(f"{item_type}:{transcript_id}:B{block_idx}")
-        elif transcript_id is not None:
-            previews.append(f"{item_type}:{transcript_id}")
-        else:
-            previews.append(item_type)
-
-    suffix = "" if len(citations) <= max_items else f" (+{len(citations) - max_items} more)"
-    return ", ".join(previews) + suffix
+def _append_section_with_citations(
+    body_lines: list[str],
+    title: str,
+    text: str,
+    citations: Sequence[InlineCitation],
+    line_prefix: str = "",
+) -> None:
+    rendered_text, footnotes = render_text_with_citation_footnotes(text=text, citations=citations)
+    body_lines.append(f"{line_prefix}[bold]{title}:[/bold] {rendered_text}")
+    if footnotes:
+        body_lines.append(f"{line_prefix}[dim]Citations:[/dim]")
+        for footnote in footnotes:
+            body_lines.append(f"{line_prefix}  [dim]{footnote}[/dim]")
 
 
 def _render_generated_labeling_requests(
@@ -393,18 +403,32 @@ def _render_generated_labeling_requests(
             f"[bold]Run ID:[/bold] {request.agent_run_id}",
             f"[bold]Entropy H[p_u]:[/bold] {entropy_text} nats",
             "",
-            f"[bold]Review Context:[/bold] {request.review_context}",
-            f"[dim]Citations: {_citation_preview(request.review_context_citations)}[/dim]",
-            "",
-            f"[bold]Priority Rationale:[/bold] {request.priority_rationale}",
-            f"[dim]Citations: {_citation_preview(request.priority_rationale_citations)}[/dim]",
-            "",
-            "[bold]Review Focus:[/bold]",
         ]
+        _append_section_with_citations(
+            body_lines=body_lines,
+            title="Review Context",
+            text=request.review_context,
+            citations=request.review_context_citations,
+        )
+        body_lines.append("")
+        _append_section_with_citations(
+            body_lines=body_lines,
+            title="Priority Rationale",
+            text=request.priority_rationale,
+            citations=request.priority_rationale_citations,
+        )
+        body_lines.extend(["", "[bold]Review Focus:[/bold]"])
         if request.review_focus:
             for focus in request.review_focus:
-                body_lines.append(f"- {focus.text}")
-                body_lines.append(f"  [dim]Citations: {_citation_preview(focus.citations)}[/dim]")
+                focus_text, focus_footnotes = render_text_with_citation_footnotes(
+                    text=focus.text,
+                    citations=focus.citations,
+                )
+                body_lines.append(f"- {focus_text}")
+                if focus_footnotes:
+                    body_lines.append("  [dim]Citations:[/dim]")
+                    for footnote in focus_footnotes:
+                        body_lines.append(f"    [dim]{footnote}[/dim]")
         else:
             body_lines.append("- (No focus items returned)")
 
@@ -418,7 +442,15 @@ def _render_generated_labeling_requests(
                 ]
             )
             if distribution_reasoning:
-                body_lines.extend(["", "[bold]p_u reasoning[/bold]", distribution_reasoning])
+                reasoning_text, reasoning_footnotes = render_text_with_citation_footnotes(
+                    text=distribution_reasoning,
+                    citations=user_distribution.reasoning_citations,
+                )
+                body_lines.extend(["", "[bold]p_u reasoning[/bold]", reasoning_text])
+                if reasoning_footnotes:
+                    body_lines.append("[dim]Citations:[/dim]")
+                    for footnote in reasoning_footnotes:
+                        body_lines.append(f"  [dim]{footnote}[/dim]")
 
         console.print(
             Panel(
@@ -429,22 +461,27 @@ def _render_generated_labeling_requests(
         )
 
 
-def _format_option_value(value: Any) -> str:
+def _format_option_value(value: object) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value, sort_keys=True)
 
 
+def _require_user_distribution(estimate: RunDistributionEstimate) -> OutputDistribution:
+    user_distribution = estimate.user_distribution
+    if user_distribution is None:
+        raise ValueError(f"Missing user distribution for run {estimate.agent_run_id}")
+    return user_distribution
+
+
 def _build_label_metadata(
     estimate: RunDistributionEstimate,
     entropy: float,
-) -> dict[str, Any]:
-    user_distribution = cast(OutputDistribution, estimate.user_distribution)
-    metadata: dict[str, Any] = {
-        "user_distribution": user_distribution.model_dump(mode="json"),
-        "entropy_nats": entropy,
-    }
-    return metadata
+) -> EntropyLabelMetadata:
+    return EntropyLabelMetadata(
+        user_distribution=_require_user_distribution(estimate),
+        entropy_nats=entropy,
+    )
 
 
 def _build_label_explanation(explicit_explanation: str) -> str | None:
@@ -459,15 +496,14 @@ def _collect_labels_for_run(
     estimate: RunDistributionEstimate,
     entropy: float,
     all_schema_keys: list[str],
-    selectable_fields: dict[str, dict[str, Any]],
+    selectable_fields: dict[str, SchemaSelectableField],
     agreement_keys: set[str],
     labeling_request: LabelingRequest | None,
-) -> tuple[tuple[dict[str, Any], str | None, dict[str, Any], LabelingRequest | None] | None, bool]:
+) -> tuple[CollectedEntropyLabel | None, bool]:
     import beaupy
     from rich.prompt import Prompt
 
-    user_distribution = cast(OutputDistribution, estimate.user_distribution)
-    distribution_reasoning = (user_distribution.reasoning or "").strip() or None
+    user_distribution = _require_user_distribution(estimate)
 
     body_lines = [
         f"[bold]Run ID:[/bold] {estimate.agent_run_id}",
@@ -479,33 +515,57 @@ def _collect_labels_for_run(
                 "",
                 f"[bold]Labeling Request:[/bold] {labeling_request.title}",
                 "",
-                f"[bold]Review Context:[/bold] {labeling_request.review_context}",
-                f"[dim]Citations: {_citation_preview(labeling_request.review_context_citations)}[/dim]",
-                "",
-                f"[bold]Priority Rationale:[/bold] {labeling_request.priority_rationale}",
-                f"[dim]Citations: {_citation_preview(labeling_request.priority_rationale_citations)}[/dim]",
-                "",
-                "[bold]Review Focus:[/bold]",
             ]
         )
+        _append_section_with_citations(
+            body_lines=body_lines,
+            title="Review Context",
+            text=labeling_request.review_context,
+            citations=labeling_request.review_context_citations,
+        )
+        body_lines.append("")
+        _append_section_with_citations(
+            body_lines=body_lines,
+            title="Priority Rationale",
+            text=labeling_request.priority_rationale,
+            citations=labeling_request.priority_rationale_citations,
+        )
+        body_lines.extend(["", "[bold]Review Focus:[/bold]"])
         if labeling_request.review_focus:
             for focus in labeling_request.review_focus:
-                body_lines.append(f"- {focus.text}")
-                body_lines.append(f"  [dim]Citations: {_citation_preview(focus.citations)}[/dim]")
+                focus_text, focus_footnotes = render_text_with_citation_footnotes(
+                    text=focus.text,
+                    citations=focus.citations,
+                )
+                body_lines.append(f"- {focus_text}")
+                if focus_footnotes:
+                    body_lines.append("  [dim]Citations:[/dim]")
+                    for footnote in focus_footnotes:
+                        body_lines.append(f"    [dim]{footnote}[/dim]")
         else:
             body_lines.append("- (No focus items returned)")
     else:
         body_lines.extend(
             [
                 "",
-                "[yellow]No labeling request available for this run; showing p_u fallback.[/yellow]",
-                "",
-                "[bold]p_u projected to agreement keys[/bold]",
-                _format_projected_distribution(user_distribution, agreement_keys),
+                "[yellow]No labeling request available for this run.[/yellow]",
             ]
         )
-        if distribution_reasoning:
-            body_lines.extend(["", "[bold]p_u reasoning[/bold]", distribution_reasoning])
+
+    body_lines.extend(
+        [
+            "",
+            "[bold]p_u distribution + reasoning[/bold]",
+            format_user_distribution_for_display(
+                user_distribution,
+                max_outcomes=5,
+                max_reasoning_chars=1_200,
+            ),
+            "",
+            "[bold]p_u projected to agreement keys[/bold]",
+            _format_projected_distribution(user_distribution, agreement_keys),
+        ]
+    )
     console.print()
     console.print(
         Panel(
@@ -539,10 +599,9 @@ def _collect_labels_for_run(
             if field_info is None:
                 continue
 
-            raw_options_raw = field_info.get("options")
-            if not isinstance(raw_options_raw, list) or not raw_options_raw:
+            raw_options = field_info.options
+            if not raw_options:
                 continue
-            raw_options = cast(list[Any], raw_options_raw)
 
             console.print(f"\n[bold]Select value for key:[/bold] {key}")
             option_display = [_format_option_value(option) for option in raw_options]
@@ -587,7 +646,16 @@ def _collect_labels_for_run(
             estimate=estimate,
             entropy=entropy,
         )
-        return (label_value, label_explanation, metadata, labeling_request), False
+        return (
+            CollectedEntropyLabel(
+                agent_run_id=estimate.agent_run_id,
+                label_value=label_value,
+                explanation=label_explanation,
+                metadata=metadata,
+                labeling_request=labeling_request,
+            ),
+            False,
+        )
 
 
 def _collect_entropy_labels(
@@ -595,11 +663,7 @@ def _collect_entropy_labels(
     output_schema: dict[str, Any],
     agreement_keys: list[str],
     labeling_requests_by_run_id: dict[str, LabelingRequest],
-) -> tuple[
-    list[tuple[str, dict[str, Any], str | None, dict[str, Any], LabelingRequest | None]],
-    bool,
-    int,
-]:
+) -> tuple[list[CollectedEntropyLabel], bool, int]:
     import beaupy
 
     if not ranked:
@@ -628,9 +692,7 @@ def _collect_entropy_labels(
         console.print("[yellow]Labeling phase skipped.[/yellow]")
         return [], True, 0
 
-    collected_labels: list[
-        tuple[str, dict[str, Any], str | None, dict[str, Any], LabelingRequest | None]
-    ] = []
+    collected_labels: list[CollectedEntropyLabel] = []
     displayed_runs = 0
     agreement_key_set = set(agreement_keys)
     for rank_idx, (estimate, entropy) in enumerate(ranked, 1):
@@ -645,16 +707,7 @@ def _collect_entropy_labels(
             labeling_request=labeling_requests_by_run_id.get(estimate.agent_run_id),
         )
         if collected_label is not None:
-            label_value, label_explanation, metadata, labeling_request = collected_label
-            collected_labels.append(
-                (
-                    estimate.agent_run_id,
-                    label_value,
-                    label_explanation,
-                    metadata,
-                    labeling_request,
-                )
-            )
+            collected_labels.append(collected_label)
         if should_skip_future_runs:
             console.print("[yellow]Skipping all remaining runs.[/yellow]")
             break
@@ -686,7 +739,6 @@ async def run_entropy_elicitation(
     where_clause: str | None,
     label_num_samples: int,
     seed: int,
-    include_labeled_runs: bool,
     top_n: int,
     output_json_path: str | None,
 ) -> None:
@@ -722,10 +774,7 @@ async def run_entropy_elicitation(
     )
     _render_user_model(user_model_text)
 
-    if include_labeled_runs:
-        excluded_ids: set[str] = set()
-    else:
-        excluded_ids = {label.agent_run_id for label in user_data.labels}
+    excluded_ids = {label.agent_run_id for label in user_data.labels}
 
     console.print(
         f"\n[bold]Entropy stage:[/bold] sampling up to {label_num_samples} run(s); "
@@ -787,6 +836,7 @@ async def run_entropy_elicitation(
     request_results = await generate_labeling_requests(
         agent_runs=top_runs,
         estimates=top_estimates,
+        rubric=rubric,
         user_model_text=user_model_text,
         llm_svc=llm_svc,
         max_requests=len(top_estimates),
@@ -810,18 +860,20 @@ async def run_entropy_elicitation(
         agreement_keys=agreement_keys,
         labeling_requests_by_run_id=labeling_requests_by_run_id,
     )
-    for run_id, label_value, explanation, metadata, labeling_request in collected_labels:
+    for collected_label in collected_labels:
         user_data.add_label(
-            run_id,
-            label_value,
-            explanation=explanation,
-            labeling_request=labeling_request,
-            metadata=metadata,
+            collected_label.agent_run_id,
+            collected_label.label_value,
+            explanation=collected_label.explanation,
+            labeling_request=collected_label.labeling_request,
+            metadata=collected_label.metadata.model_dump(mode="json"),
         )
     output_path = write_user_data_json(user_data, output_json_path)
 
     labeled_run_count = len(collected_labels)
-    answered_key_count = sum(len(label_value) for _, label_value, _, _, _ in collected_labels)
+    answered_key_count = sum(
+        len(collected_label.label_value) for collected_label in collected_labels
+    )
     console.print(f"\nWrote user data JSON to: [bold]{output_path}[/bold]")
     if stage_skipped:
         console.print("Labeling phase was skipped; persisted the current user data state.")
@@ -872,11 +924,6 @@ def main() -> None:
         help="Random seed for subsampling (default: 0)",
     )
     parser.add_argument(
-        "--include-labeled-runs",
-        action="store_true",
-        help="Include already-labeled runs in the subsample",
-    )
-    parser.add_argument(
         "--top-n",
         type=int,
         default=20,
@@ -902,7 +949,6 @@ def main() -> None:
                 where_clause=args.where_clause,
                 label_num_samples=args.label_num_samples,
                 seed=args.seed,
-                include_labeled_runs=args.include_labeled_runs,
                 top_n=args.top_n,
                 output_json_path=args.output_json,
             )
