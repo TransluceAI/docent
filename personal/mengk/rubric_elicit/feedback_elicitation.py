@@ -48,7 +48,7 @@ from docent_core.docent.ai_tools.rubric.elicit import (
     analyze_rubric_decomposition,
     deduplicate_and_select_questions,
     extract_questions_from_agent_runs,
-    sort_questions_by_novelty,
+    sort_questions_by_relevance_novelty_pareto,
     update_user_model,
 )
 from docent_core.docent.ai_tools.rubric.user_model import UserData, UserModel
@@ -168,6 +168,10 @@ def display_extracted_questions(questions: list[ElicitedQuestion]) -> None:
 
         for i, q in enumerate(run_questions, 1):
             print(f"  Question {i}/{len(run_questions)}")
+            if q.relevance_rating:
+                print(f"    Relevance: {q.relevance_rating}")
+                if q.relevance_rationale:
+                    print(f"    Relevance Rationale: {q.relevance_rationale}")
             if q.novelty_rating:
                 print(f"    Novelty: {q.novelty_rating}")
                 if q.novelty_rationale:
@@ -244,6 +248,8 @@ def display_selected_questions(
 
         if q.novelty_rating:
             print(f"Novelty Rating: {q.novelty_rating}")
+        if q.relevance_rating:
+            print(f"Relevance Rating: {q.relevance_rating}")
 
         if q.example_options:
             print("\nSuggested options:")
@@ -280,7 +286,7 @@ def collect_interactive_answers(
     Args:
         questions: List of ElicitedQuestion objects to present to user
         dedup_metadata: Optional metadata from deduplication containing
-            novelty_ratings and rationales
+            selection rationales
 
     Returns:
         List of UserAnswerWithContext for non-skipped questions
@@ -302,8 +308,9 @@ def collect_interactive_answers(
     console.print("\n[bold yellow]DEBUG: All Question Titles[/bold yellow]")
     for idx, q in enumerate(questions):
         title = q.quote_title or "[No title]"
-        novelty = f" ({q.novelty_rating})" if q.novelty_rating else ""
-        console.print(f"  {idx + 1}. {title}{novelty}")
+        relevance = q.relevance_rating or "N/A"
+        novelty = q.novelty_rating or "N/A"
+        console.print(f"  {idx + 1}. {title} (relevance={relevance}, novelty={novelty})")
     console.print()
 
     results: list[UserAnswerWithContext] = []
@@ -341,13 +348,16 @@ def collect_interactive_answers(
 
         # Show metadata if available
         novelty = question.novelty_rating
+        relevance = question.relevance_rating
         rationale = ""
         if dedup_metadata:
             selected_ids = dedup_metadata.get("selected_ids", [])
             q_id = selected_ids[idx] if idx < len(selected_ids) else None
             if q_id:
                 rationale = dedup_metadata.get("rationales", {}).get(q_id, "")
-        if novelty or rationale:
+        if relevance or novelty or rationale:
+            if relevance:
+                console.print(f"[dim]Relevance: {relevance}[/dim]")
             if novelty:
                 console.print(f"[dim]Novelty: {novelty}[/dim]")
             if rationale:
@@ -586,30 +596,30 @@ async def run_feedback_elicitation(
     for iteration in range(1, max_iterations + 1):
         print_iteration_header(iteration, user_model.version, max_iterations)
 
-        # Use current user_model.model_text as the rubric for this iteration
-        current_rubric_text = user_model.model_text
+        current_model_text = user_model.model_text
 
         # Step 1: Extract questions from each agent run
         print("Extracting questions from agent runs...")
         extracted_questions = await extract_questions_from_agent_runs(
             agent_runs=agent_runs,
-            rubric_description=current_rubric_text,
+            rubric_description=user_data.initial_rubric,
+            user_model_text=current_model_text,
             llm_svc=llm_svc,
             max_questions_per_run=max_questions_per_run,
         )
 
         display_extracted_questions(extracted_questions)
 
-        # Sort questions by novelty before deduplication
-        # This ensures highest-novelty questions are prioritized if context limit is hit
-        sorted_questions = sort_questions_by_novelty(extracted_questions)
+        # Sort questions by Pareto frontier over relevance+novelty before deduplication.
+        sorted_questions = sort_questions_by_relevance_novelty_pareto(extracted_questions)
 
         # Step 2: Deduplicate and select questions
         print("\nDeduplicating and selecting questions...")
         selected_questions, dedup_metadata = await deduplicate_and_select_questions(
             questions=sorted_questions,
             llm_svc=llm_svc,
-            rubric_description=current_rubric_text,
+            rubric_description=user_data.initial_rubric,
+            user_model_text=current_model_text,
             max_questions=max_questions,
         )
 

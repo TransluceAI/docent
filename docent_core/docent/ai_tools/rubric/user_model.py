@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from docent.data_models.citation import InlineCitation
+
 
 class QAPair(BaseModel):
     """A single QA pair: (agent_run_id, question, answer)"""
@@ -26,11 +28,35 @@ class QAPair(BaseModel):
     is_custom_response: bool = False
 
 
+class LabelingRequestFocusItem(BaseModel):
+    """Specific thing the human labeler should inspect."""
+
+    text: str
+    citations: list[InlineCitation] = Field(default_factory=list[InlineCitation])
+
+
+class LabelingRequest(BaseModel):
+    """Structured labeling request shown to the user."""
+
+    agent_run_id: str
+    title: str
+    priority_rationale: str
+    priority_rationale_citations: list[InlineCitation] = Field(default_factory=list[InlineCitation])
+    review_context: str
+    review_context_citations: list[InlineCitation] = Field(default_factory=list[InlineCitation])
+    review_focus: list[LabelingRequestFocusItem] = Field(
+        default_factory=list[LabelingRequestFocusItem]
+    )
+
+
 class LabeledRun(BaseModel):
     """A human label: (agent_run_id, label_value)"""
 
     agent_run_id: str
     label_value: dict[str, Any]  # Matches Label.label_value pattern
+    explanation: str | None = None
+    labeling_request: LabelingRequest | None = None
+    metadata: dict[str, Any] | None = None
     timestamp: datetime = Field(default_factory=datetime.now)
 
 
@@ -62,11 +88,21 @@ class UserData(BaseModel):
         self.qa_pairs.append(qa_pair)
         self.last_updated = datetime.now()
 
-    def add_label(self, agent_run_id: str, label_value: dict[str, Any]) -> None:
+    def add_label(
+        self,
+        agent_run_id: str,
+        label_value: dict[str, Any],
+        explanation: str | None = None,
+        labeling_request: LabelingRequest | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Add a label to the user data."""
         labeled_run = LabeledRun(
             agent_run_id=agent_run_id,
             label_value=label_value,
+            explanation=explanation,
+            labeling_request=labeling_request,
+            metadata=metadata,
         )
         self.labels.append(labeled_run)
         self.last_updated = datetime.now()

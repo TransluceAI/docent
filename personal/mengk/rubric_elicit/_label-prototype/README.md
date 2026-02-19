@@ -54,11 +54,16 @@ OPENAI_API_KEY=... DOCENT_API_KEY=... DOCENT_DOMAIN=docent-bridgewater.transluce
   --feedback-num-samples 50 \
   --feedback-max-questions 10 \
   --label-num-samples 50 \
-  --max-label-requests 10 \
-  --cross-entropy-epsilon 1e-2
+  --max-label-requests 10
 ```
 
 If you want to try this on a different collection or rubric, create a new rubric using the same initial description, then swap the `<rubric_id>` in the command above to that new rubric ID (and update `<collection_id>` as needed).
+
+To restrict both feedback and label stages to a subset of runs, pass a DQL filter:
+
+```bash
+--where-clause "metadata_json ->> 'wandb_run_id' = 'blpe0xj4'"
+```
 
 ## Arguments
 
@@ -72,8 +77,8 @@ If you want to try this on a different collection or rubric, create a new rubric
 - `--label-set-id` (str, default: `None`)
   - Optional label set ID used to seed user data with existing labels.
 
-- `--server-url` (str, default: `http://localhost:8902`)
-  - Docent API server URL.
+- `--where-clause` (str, default: `None`)
+  - Optional DQL `WHERE` clause applied to run sampling in both stages.
 
 - `--feedback-rounds` (int, default: `1`, minimum: `1`)
   - Number of interactive feedback rounds.

@@ -1,0 +1,21 @@
+goal: focus
+- labels: yes this matches a high-level behavior rubric (thumbs up or thumbs down in the context of a behavior)
+
+
+candidate proposal:
+- use entropy of a judge with the user model
+- mix with more random policies to prevent "mode collapse"
+- get labels
+
+output artifacts:
+- a set of labels for that behvaior
+- labels -> rubric / judge that can generate more synthetic labels (potentially just use the user model)
+
+
+
+- comments explaining things
+- thumbs up or thumbs down
+- pairwise preferences
+
+
+-

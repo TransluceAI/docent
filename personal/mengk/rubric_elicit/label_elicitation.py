@@ -33,13 +33,14 @@ from docent_core.docent.ai_tools.rubric.elicit import (
     LabelingRequestResult,
     OutputDistribution,
     RunDistributionEstimate,
+    build_user_model_inference_prompt_with_agent_runs,
     deduplicate_and_select_questions,
     estimate_label_distributions_for_agent_runs,
     extract_questions_from_agent_runs,
     generate_labeling_requests,
     infer_user_model_from_user_data,
     normalize_output_distribution,
-    sort_questions_by_novelty,
+    sort_questions_by_relevance_novelty_pareto,
     sort_runs_by_cross_entropy,
     update_user_model,
 )
@@ -87,8 +88,14 @@ def _sample_agent_runs(
     num_samples: int,
     excluded_agent_run_ids: set[str],
     seed: int,
+    where_clause: str | None,
 ) -> list[AgentRun]:
-    all_agent_run_ids = dc.list_agent_run_ids(collection_id)
+    all_agent_run_ids = dc.select_agent_run_ids(
+        collection_id,
+        where_clause=where_clause,
+        limit=1_000,
+    )
+    print(f"Loaded {len(all_agent_run_ids)} agent runs from DQL")
     eligible_ids = [rid for rid in all_agent_run_ids if rid not in excluded_agent_run_ids]
     if not eligible_ids:
         return []
@@ -119,14 +126,68 @@ def _build_user_data(
         label_value = label.get("label_value")
         if not isinstance(run_id, str) or not isinstance(label_value, dict):
             continue
-        user_data.add_label(run_id, cast(dict[str, Any], label_value))
+        explanation_raw = label.get("explanation")
+        explanation = explanation_raw if isinstance(explanation_raw, str) else None
+        metadata_raw = label.get("metadata")
+        metadata = cast(dict[str, Any], metadata_raw) if isinstance(metadata_raw, dict) else None
+        user_data.add_label(
+            run_id,
+            cast(dict[str, Any], label_value),
+            explanation=explanation,
+            metadata=metadata,
+        )
     return user_data
+
+
+def _get_user_data_agent_run_ids(user_data: UserData) -> list[str]:
+    run_ids = {qa_pair.agent_run_id for qa_pair in user_data.qa_pairs}
+    run_ids.update(label.agent_run_id for label in user_data.labels)
+    return sorted(run_ids)
+
+
+def _load_user_data_agent_runs(
+    dc: Docent,
+    collection_id: str,
+    user_data: UserData,
+) -> dict[str, AgentRun]:
+    run_ids = _get_user_data_agent_run_ids(user_data)
+    if not run_ids:
+        return {}
+
+    console.print(f"Loading {len(run_ids)} user-data agent run(s) for prompt summaries")
+    agent_runs_by_id: dict[str, AgentRun] = {}
+    for idx, run_id in enumerate(run_ids, 1):
+        run = dc.get_agent_run(collection_id, run_id)
+        if run is None:
+            console.print(f"[red]Error:[/red] missing user-data agent run {run_id}")
+            continue
+        agent_runs_by_id[run_id] = run
+        if idx % 10 == 0 or idx == len(run_ids):
+            console.print(f"Fetched {idx}/{len(run_ids)} user-data runs")
+
+    missing = len(run_ids) - len(agent_runs_by_id)
+    if missing > 0:
+        console.print(
+            f"[yellow]Skipped {missing} user-data item(s) because their agent run was missing.[/yellow]"
+        )
+    return agent_runs_by_id
+
+
+def _render_user_data_prompt_summary(user_data_summary: str) -> None:
+    console.print("\n[bold cyan]USER DATA FOR INFERENCE[/bold cyan]")
+    console.print(
+        Panel(
+            user_data_summary,
+            title="[bold]Constructed User Data (U)[/bold]",
+            expand=False,
+        )
+    )
 
 
 def _format_distribution(
     distribution: OutputDistribution,
     max_outcomes: int = 3,
-    include_explanations: bool = False,
+    include_reasoning: bool = False,
 ) -> str:
     normalized = normalize_output_distribution(distribution)
     if not normalized.outcomes:
@@ -136,9 +197,9 @@ def _format_distribution(
     for outcome in normalized.outcomes[:max_outcomes]:
         output_json = json.dumps(outcome.output, sort_keys=True)
         lines.append(f"{outcome.probability:.3f} -> {output_json}")
-        if include_explanations:
-            explanation = (outcome.explanation or "").strip() or "(no explanation)"
-            lines.append(f"  why: {explanation}")
+    if include_reasoning:
+        reasoning = (normalized.reasoning or "").strip() or "(no reasoning)"
+        lines.append(f"  why: {reasoning}")
     return "\n".join(lines)
 
 
@@ -213,7 +274,7 @@ def _render_labeling_requests(
                     _format_distribution(estimate.judge_distribution),
                     "",
                     "[bold]p_u (anticipated user)[/bold]",
-                    _format_distribution(estimate.user_distribution, include_explanations=True),
+                    _format_distribution(estimate.user_distribution, include_reasoning=True),
                 ]
             )
 
@@ -269,10 +330,12 @@ def _render_feedback_questions(
         title = question.quote_title or "Untitled ambiguity"
         context = question.question_context or "No context provided."
         prompt = question.framed_question or "No question text."
+        relevance = question.relevance_rating or "N/A"
         novelty = question.novelty_rating or "N/A"
         body = (
             f"[bold]Context[/bold]\n{context}\n\n"
             f"[bold]Question[/bold]\n{prompt}\n\n"
+            f"[dim]Relevance: {relevance}[/dim]\n"
             f"[dim]Novelty: {novelty}[/dim]"
         )
         console.print(Panel(body, title=f"[bold]{idx}. {title}[/bold]", expand=False))
@@ -365,16 +428,18 @@ async def _run_feedback_elicitation_rounds(
     for round_idx in range(1, feedback_rounds + 1):
         extracted_questions = await extract_questions_from_agent_runs(
             agent_runs=agent_runs,
-            rubric_description=current_model_text,
+            rubric_description=user_data.initial_rubric,
+            user_model_text=current_model_text,
             llm_svc=llm_svc,
             max_questions_per_run=feedback_max_questions_per_run,
         )
 
-        sorted_questions = sort_questions_by_novelty(extracted_questions)
+        sorted_questions = sort_questions_by_relevance_novelty_pareto(extracted_questions)
         selected_questions, dedup_metadata = await deduplicate_and_select_questions(
             questions=sorted_questions,
             llm_svc=llm_svc,
-            rubric_description=current_model_text,
+            rubric_description=user_data.initial_rubric,
+            user_model_text=current_model_text,
             max_questions=feedback_max_questions,
         )
 
@@ -421,6 +486,7 @@ async def run_label_elicitation(
     collection_id: str,
     rubric_id: str,
     label_set_id: str | None,
+    where_clause: str | None,
     feedback_rounds: int,
     feedback_num_samples: int,
     feedback_max_questions: int,
@@ -462,7 +528,18 @@ async def run_label_elicitation(
         console.print("No label set provided; user model will be inferred from rubric only")
 
     user_data = _build_user_data(rubric.rubric_text, labels)
-    user_model_text = await infer_user_model_from_user_data(user_data, llm_svc)
+    user_data_agent_runs = _load_user_data_agent_runs(dc, collection_id, user_data)
+    user_data_summary, _ = await build_user_model_inference_prompt_with_agent_runs(
+        user_data=user_data,
+        agent_runs_by_id=user_data_agent_runs,
+        llm_svc=llm_svc,
+    )
+    _render_user_data_prompt_summary(user_data_summary)
+    user_model_text = await infer_user_model_from_user_data(
+        user_data,
+        llm_svc,
+        user_data_summary=user_data_summary,
+    )
 
     console.print(
         "\n[bold]Feedback stage:[/bold] "
@@ -474,6 +551,7 @@ async def run_label_elicitation(
         num_samples=feedback_num_samples,
         excluded_agent_run_ids=set(),
         seed=seed,
+        where_clause=where_clause,
     )
     if not feedback_agent_runs:
         raise ValueError("No agent runs available for feedback elicitation sampling.")
@@ -508,6 +586,7 @@ async def run_label_elicitation(
         num_samples=label_num_samples,
         excluded_agent_run_ids=excluded_ids,
         seed=seed,
+        where_clause=where_clause,
     )
     if not agent_runs:
         raise ValueError("No agent runs available after filtering/sampling.")
@@ -519,7 +598,6 @@ async def run_label_elicitation(
         agent_runs=agent_runs,
         rubric=rubric,
         user_model_text=user_model_text,
-        user_data=user_data,
         llm_svc=llm_svc,
         judge_point_estimate=True,
         cross_entropy_epsilon=cross_entropy_epsilon,
@@ -562,6 +640,12 @@ def main() -> None:
         type=str,
         default=None,
         help="Optional label set ID used to build user data U",
+    )
+    parser.add_argument(
+        "--where-clause",
+        type=str,
+        default=None,
+        help="Optional DQL WHERE clause used to filter agent runs for both stages",
     )
     parser.add_argument(
         "--feedback-rounds",
@@ -624,6 +708,7 @@ def main() -> None:
                 collection_id=args.collection_id,
                 rubric_id=args.rubric_id,
                 label_set_id=args.label_set_id,
+                where_clause=args.where_clause,
                 feedback_rounds=args.feedback_rounds,
                 feedback_num_samples=args.feedback_num_samples,
                 feedback_max_questions=args.feedback_max_questions,
