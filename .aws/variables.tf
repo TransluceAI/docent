@@ -79,34 +79,88 @@ variable "db_name" {
   default     = "docent_db"
 }
 
+variable "use_ecs_api" {
+  description = "Use ECS Fargate + ALB for the API server instead of App Runner"
+  type        = bool
+  default     = false
+}
+
 variable "app_runner_cpu" {
   description = "CPU units for App Runner (256, 512, 1024, 2048, 4096)"
   type        = number
+  default     = 1024
 }
 
 variable "app_runner_memory" {
   description = "Memory for App Runner (512, 1024, 2048, 3072, 4096, 6144, 8192, 10240, 12288)"
   type        = number
+  default     = 2048
 }
 
 variable "app_runner_max_concurrency" {
   description = "Maximum concurrency for App Runner"
   type        = number
+  default     = 100
 }
 
 variable "app_runner_min_size" {
   description = "Minimum number of App Runner instances"
   type        = number
+  default     = 1
 }
 
 variable "app_runner_max_size" {
   description = "Maximum number of App Runner instances"
   type        = number
+  default     = 10
 }
 
 variable "app_runner_num_workers" {
   description = "Number of workers per instance for App Runner"
   type        = number
+  default     = 2
+}
+
+variable "ecs_api_cpu" {
+  description = "CPU units for ECS API Fargate task (256, 512, 1024, 2048, 4096)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecs_api_memory" {
+  description = "Memory for ECS API Fargate task"
+  type        = number
+  default     = 2048
+}
+
+variable "ecs_api_min_size" {
+  description = "Minimum number of ECS API tasks"
+  type        = number
+  default     = 1
+}
+
+variable "ecs_api_max_size" {
+  description = "Maximum number of ECS API tasks"
+  type        = number
+  default     = 10
+}
+
+variable "ecs_api_desired_count" {
+  description = "Desired number of ECS API tasks"
+  type        = number
+  default     = 1
+}
+
+variable "ecs_api_num_workers" {
+  description = "Number of uvicorn workers per ECS API task"
+  type        = number
+  default     = 2
+}
+
+variable "api_acm_certificate_arn" {
+  description = "ACM certificate ARN for HTTPS on the API ALB (required when use_ecs_api = true)"
+  type        = string
+  default     = ""
 }
 
 variable "ecs_cpu" {

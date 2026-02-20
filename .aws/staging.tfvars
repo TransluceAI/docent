@@ -1,18 +1,21 @@
 deployment = "staging"
 
 private_subnet_count = 2
-public_subnet_count = 1
+public_subnet_count = 2
 nat_gateway_count = 1
 
 rds_instance_class = "db.t3.medium"
 elasticache_node_type = "cache.t3.micro"
 
-app_runner_cpu = 2048
-app_runner_memory = 4096
-app_runner_max_concurrency = 100
-app_runner_min_size = 1
-app_runner_max_size = 10
-app_runner_num_workers = 2
+# API on ECS Fargate + ALB (replaces App Runner)
+use_ecs_api = true
+ecs_api_cpu = 2048
+ecs_api_memory = 4096
+ecs_api_min_size = 1
+ecs_api_max_size = 10
+ecs_api_desired_count = 1
+ecs_api_num_workers = 2
+api_acm_certificate_arn = "arn:aws:acm:us-east-1:010526267928:certificate/701a1c69-1de2-4b6b-a87b-4c38ae0dab44"
 
 ecs_cpu = 2048
 ecs_memory = 6144

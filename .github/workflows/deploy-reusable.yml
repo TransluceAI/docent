@@ -25,6 +25,11 @@ on:
         required: false
         type: boolean
         default: false
+      use_ecs_api:
+        description: "Use ECS Fargate for the API server instead of App Runner"
+        required: false
+        type: boolean
+        default: false
 
 env:
   PROJECT_NAME: docent
@@ -152,7 +157,11 @@ jobs:
       - name: Force ECS deployments
         run: |
           set -euo pipefail
-          for suffix in worker telemetry-processing-worker telemetry-ingest-worker datadog-agent; do
+          SUFFIXES="worker telemetry-processing-worker telemetry-ingest-worker datadog-agent"
+          if [ "${{ inputs.use_ecs_api }}" = "true" ]; then
+            SUFFIXES="$SUFFIXES api"
+          fi
+          for suffix in $SUFFIXES; do
             service_name="${{ env.PROJECT_NAME }}-${{ inputs.deployment_id }}-$suffix"
             echo "Forcing new deployment for $service_name"
             aws ecs update-service \
@@ -162,6 +171,7 @@ jobs:
           done
 
       - name: Deploy App Runner API
+        if: ${{ !inputs.use_ecs_api }}
         env:
           AWS_PAGER: ""
         run: |

@@ -48,12 +48,17 @@ output "redis_port" {
 
 output "app_runner_service_url" {
   description = "App Runner service URL"
-  value       = "https://${aws_apprunner_service.api.service_url}"
+  value       = var.use_ecs_api ? null : "https://${aws_apprunner_service.api[0].service_url}"
 }
 
 output "app_runner_service_arn" {
   description = "App Runner service ARN"
-  value       = aws_apprunner_service.api.arn
+  value       = var.use_ecs_api ? null : aws_apprunner_service.api[0].arn
+}
+
+output "api_alb_dns_name" {
+  description = "DNS name of the API ALB (when using ECS API)"
+  value       = var.use_ecs_api ? aws_lb.api[0].dns_name : null
 }
 
 output "backend_ecr_repository_url" {

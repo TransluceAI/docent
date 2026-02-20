@@ -1,7 +1,9 @@
 resource "aws_apprunner_vpc_connector" "main" {
+  count = var.use_ecs_api ? 0 : 1
+
   vpc_connector_name = "${var.project_name}-${var.deployment}-vpc-connector"
   subnets            = aws_subnet.private[*].id
-  security_groups    = [aws_security_group.app_runner.id]
+  security_groups    = [aws_security_group.app_runner[0].id]
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-vpc-connector"
@@ -10,6 +12,8 @@ resource "aws_apprunner_vpc_connector" "main" {
 }
 
 resource "aws_iam_role" "app_runner_instance" {
+  count = var.use_ecs_api ? 0 : 1
+
   name = "${var.project_name}-${var.deployment}-app-runner-instance-role"
 
   assume_role_policy = jsonencode({
@@ -33,8 +37,10 @@ resource "aws_iam_role" "app_runner_instance" {
 
 # Allow App Runner instance role to read secrets from SSM Parameter Store
 resource "aws_iam_role_policy" "app_runner_instance_secrets" {
+  count = var.use_ecs_api ? 0 : 1
+
   name = "${var.project_name}-${var.deployment}-app-runner-instance-secrets"
-  role = aws_iam_role.app_runner_instance.id
+  role = aws_iam_role.app_runner_instance[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -68,6 +74,8 @@ resource "aws_iam_role_policy" "app_runner_instance_secrets" {
 }
 
 resource "aws_iam_role" "app_runner_access" {
+  count = var.use_ecs_api ? 0 : 1
+
   name = "${var.project_name}-${var.deployment}-app-runner-access-role"
 
   assume_role_policy = jsonencode({
@@ -90,16 +98,20 @@ resource "aws_iam_role" "app_runner_access" {
 }
 
 resource "aws_iam_role_policy_attachment" "app_runner_access_ecr" {
-  role       = aws_iam_role.app_runner_access.name
+  count = var.use_ecs_api ? 0 : 1
+
+  role       = aws_iam_role.app_runner_access[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
 }
 
 resource "aws_apprunner_service" "api" {
+  count = var.use_ecs_api ? 0 : 1
+
   service_name = "${var.project_name}-${var.deployment}-api"
 
   source_configuration {
     authentication_configuration {
-      access_role_arn = aws_iam_role.app_runner_access.arn
+      access_role_arn = aws_iam_role.app_runner_access[0].arn
     }
     image_repository {
       image_identifier      = "${aws_ecr_repository.backend.repository_url}:latest"
@@ -134,13 +146,13 @@ resource "aws_apprunner_service" "api" {
   instance_configuration {
     cpu               = var.app_runner_cpu
     memory            = var.app_runner_memory
-    instance_role_arn = aws_iam_role.app_runner_instance.arn
+    instance_role_arn = aws_iam_role.app_runner_instance[0].arn
   }
 
   network_configuration {
     egress_configuration {
       egress_type       = "VPC"
-      vpc_connector_arn = aws_apprunner_vpc_connector.main.arn
+      vpc_connector_arn = aws_apprunner_vpc_connector.main[0].arn
     }
   }
 
@@ -153,7 +165,7 @@ resource "aws_apprunner_service" "api" {
     unhealthy_threshold = 5
   }
 
-  auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.api.arn
+  auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.api[0].arn
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-api"
@@ -162,6 +174,8 @@ resource "aws_apprunner_service" "api" {
 }
 
 resource "aws_apprunner_auto_scaling_configuration_version" "api" {
+  count = var.use_ecs_api ? 0 : 1
+
   auto_scaling_configuration_name = "${var.project_name}-${var.deployment}-api-autoscaling"
 
   max_concurrency = var.app_runner_max_concurrency

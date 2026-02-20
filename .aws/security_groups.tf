@@ -6,7 +6,10 @@ resource "aws_security_group" "rds" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.app_runner.id, aws_security_group.ecs_tasks.id, aws_security_group.bastion.id]
+    security_groups = concat(
+      var.use_ecs_api ? [] : [aws_security_group.app_runner[0].id],
+      [aws_security_group.ecs_tasks.id, aws_security_group.bastion.id],
+    )
   }
 
   egress {
@@ -34,7 +37,10 @@ resource "aws_security_group" "elasticache" {
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
-    security_groups = [aws_security_group.app_runner.id, aws_security_group.ecs_tasks.id]
+    security_groups = concat(
+      var.use_ecs_api ? [] : [aws_security_group.app_runner[0].id],
+      [aws_security_group.ecs_tasks.id],
+    )
   }
 
   egress {
@@ -55,6 +61,8 @@ resource "aws_security_group" "elasticache" {
 }
 
 resource "aws_security_group" "app_runner" {
+  count = var.use_ecs_api ? 0 : 1
+
   name_prefix = "${var.project_name}-${var.deployment}-app-runner-"
   vpc_id      = aws_vpc.main.id
 
@@ -88,6 +96,58 @@ resource "aws_security_group" "ecs_tasks" {
 
   tags = {
     Name        = "${var.project_name}-${var.deployment}-ecs-tasks-sg"
+    Deployment = var.deployment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Allow ALB to reach ECS API tasks on port 8000
+resource "aws_security_group_rule" "ecs_tasks_from_alb" {
+  count = var.use_ecs_api ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 8000
+  to_port                  = 8000
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb[0].id
+  security_group_id        = aws_security_group.ecs_tasks.id
+}
+
+# ALB security group (only when using ECS API)
+resource "aws_security_group" "alb" {
+  count = var.use_ecs_api ? 1 : 0
+
+  name_prefix = "${var.project_name}-${var.deployment}-alb-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP"
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-${var.deployment}-alb-sg"
     Deployment = var.deployment
   }
 
