@@ -12,12 +12,15 @@ rds_multi_az = true
 elasticache_node_type = "cache.m6g.large"
 # db_password = ...  # you need to set this in the environment variables
 
-app_runner_cpu = 4096
-app_runner_memory = 8192
-app_runner_max_concurrency = 15
-app_runner_min_size = 4
-app_runner_max_size = 20
-app_runner_num_workers = 2
+# API on ECS Fargate + ALB (replaces App Runner)
+use_ecs_api = true
+ecs_api_cpu = 4096
+ecs_api_memory = 8192
+ecs_api_min_size = 4
+ecs_api_max_size = 20
+ecs_api_desired_count = 4
+ecs_api_num_workers = 2
+api_acm_certificate_arn = "arn:aws:acm:us-east-1:010526267928:certificate/8de8fcad-1bff-4d03-8989-1fd0c489864c"
 
 ecs_cpu = 4096
 ecs_memory = 8192

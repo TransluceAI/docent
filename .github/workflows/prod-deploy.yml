@@ -19,4 +19,5 @@ jobs:
       deploy_frontend_vercel: true
       vercel_environment: production
       force_full_deploy: ${{ inputs.force_full_deploy || false }}
+      use_ecs_api: true
     secrets: inherit
