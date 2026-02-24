@@ -8,6 +8,7 @@ import {
 import { ComplexFilter, CollectionFilter } from '@/app/types/collectionTypes';
 import { collectionApi } from './collectionApi';
 import { TranscriptMetadataField } from '../types/experimentViewerTypes';
+import { SchemaDefinition } from '@/app/types/schema';
 
 // Types based on the backend models
 export interface CreateRubricRequest {
@@ -67,6 +68,14 @@ export interface RubricRunStateResponse {
   job_status: JobStatus | null;
   total_results_needed: number | null;
   current_results_count: number | null;
+}
+
+export interface AgentRunJudgeOutputs {
+  rubric_id: string;
+  rubric_version: number;
+  rubric_text: string;
+  output_schema: SchemaDefinition;
+  results: JudgeResultWithCitations[];
 }
 
 export interface StartClusteringJobRequest {
@@ -219,6 +228,25 @@ export const rubricApi = createApi({
       providesTags: (result) =>
         result
           ? [{ type: 'JudgeResult', id: result.rubric_id }]
+          : ['JudgeResult'],
+    }),
+    getAgentRunJudgeOutputs: build.query<
+      AgentRunJudgeOutputs[],
+      { collectionId: string; agentRunId: string }
+    >({
+      query: ({ collectionId, agentRunId }) => ({
+        url: `/${collectionId}/agent_run/${agentRunId}/judge_outputs`,
+        method: 'GET',
+      }),
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map((group) => ({
+                type: 'JudgeResult' as const,
+                id: group.rubric_id,
+              })),
+              'JudgeResult',
+            ]
           : ['JudgeResult'],
     }),
     recomputeAgentRunReflection: build.mutation<
@@ -429,7 +457,11 @@ export const rubricApi = createApi({
           include_failures: includeFailures ?? false,
         },
       }),
-      providesTags: (result, error, { rubricId, version, labelSetId }) => [
+      providesTags: (
+        result,
+        error,
+        { rubricId, version: _version, labelSetId }
+      ) => [
         { type: 'RubricJob', id: rubricId },
         { type: 'JudgeResult', id: rubricId, label_set_id: labelSetId },
         { type: 'JudgeReflection', id: rubricId, label_set_id: labelSetId },
@@ -537,6 +569,7 @@ export const {
   useGetRubricQuery,
   useGetLatestRubricVersionQuery,
   useGetResultByIdQuery,
+  useGetAgentRunJudgeOutputsQuery,
   useRecomputeAgentRunReflectionMutation,
   useGetRubricMetricsQuery,
   useGetJudgeResultFilterFieldsQuery,

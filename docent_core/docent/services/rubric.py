@@ -686,6 +686,64 @@ class RubricService:
             return None
         return sqla_direct.to_pydantic()
 
+    async def get_judge_outputs_for_agent_run(
+        self, collection_id: str, agent_run_id: str
+    ) -> list[tuple[SQLARubric, list[JudgeResult]]]:
+        """Get judge outputs for one agent run, keeping only the latest version per rubric."""
+        latest_versions_subq = (
+            select(
+                SQLAJudgeResult.rubric_id.label("rubric_id"),
+                func.max(SQLAJudgeResult.rubric_version).label("latest_version"),
+            )
+            .join(
+                SQLARubric,
+                and_(
+                    SQLAJudgeResult.rubric_id == SQLARubric.id,
+                    SQLAJudgeResult.rubric_version == SQLARubric.version,
+                ),
+            )
+            .where(
+                SQLAJudgeResult.agent_run_id == agent_run_id,
+                SQLARubric.collection_id == collection_id,
+            )
+            .group_by(SQLAJudgeResult.rubric_id)
+            .subquery()
+        )
+
+        result = await self.session.execute(
+            select(SQLAJudgeResult, SQLARubric)
+            .join(
+                SQLARubric,
+                and_(
+                    SQLAJudgeResult.rubric_id == SQLARubric.id,
+                    SQLAJudgeResult.rubric_version == SQLARubric.version,
+                ),
+            )
+            .join(
+                latest_versions_subq,
+                and_(
+                    SQLAJudgeResult.rubric_id == latest_versions_subq.c.rubric_id,
+                    SQLAJudgeResult.rubric_version == latest_versions_subq.c.latest_version,
+                ),
+            )
+            .where(
+                SQLAJudgeResult.agent_run_id == agent_run_id,
+                SQLARubric.collection_id == collection_id,
+            )
+            .order_by(SQLARubric.created_at.desc(), SQLAJudgeResult.id.asc())
+        )
+        rows = result.all()
+
+        grouped_results: dict[tuple[str, int], list[JudgeResult]] = {}
+        rubrics_by_key: dict[tuple[str, int], SQLARubric] = {}
+
+        for sqla_result, sqla_rubric in rows:
+            key = (sqla_rubric.id, sqla_rubric.version)
+            rubrics_by_key[key] = sqla_rubric
+            grouped_results.setdefault(key, []).append(sqla_result.to_pydantic())
+
+        return [(rubrics_by_key[key], grouped_results[key]) for key in grouped_results]
+
     @staticmethod
     def _output_has_unresolved_citations(output: Any, schema: dict[str, Any]) -> bool:
         """Check if output has any unresolved citation strings.

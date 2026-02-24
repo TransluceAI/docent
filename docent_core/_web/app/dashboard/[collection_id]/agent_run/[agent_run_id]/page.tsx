@@ -28,6 +28,7 @@ import AgentRunViewer, {
 } from '../components/AgentRunViewer';
 import TranscriptChat from '@/components/TranscriptChat';
 import AgentRunLabels from '../components/AgentRunLabels';
+import AgentRunJudgeOutputs from '../components/AgentRunJudgeOutputs';
 
 export default function AgentRunPage() {
   const params = useParams();
@@ -49,7 +50,11 @@ export default function AgentRunPage() {
     const storageKey = 'docent-agent-run-sidebar-tab';
     try {
       const stored = window.localStorage.getItem(storageKey);
-      if (stored === 'chat' || stored === 'labels') {
+      if (
+        stored === 'chat' ||
+        stored === 'labels' ||
+        stored === 'judge_outputs'
+      ) {
         dispatch(setAgentRunSidebarTab(stored));
       }
     } catch (error) {
@@ -130,7 +135,7 @@ export default function AgentRunPage() {
 
       <ResizableHandle className={cn(!rightSidebarOpen && 'hidden')} />
 
-      {/* Right: Tabs (Chat/Labels) (collapsible) */}
+      {/* Right: Tabs (Chat/Labels/Judge outputs) (collapsible) */}
       <ResizablePanel
         defaultSize={40}
         minSize={20}
@@ -155,12 +160,15 @@ export default function AgentRunPage() {
           }}
           className="size-full flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-2 h-8">
+          <TabsList className="grid w-full grid-cols-3 h-8">
             <TabsTrigger value="chat" className="text-xs">
               Chat
             </TabsTrigger>
             <TabsTrigger value="labels" className="text-xs">
               Labels
+            </TabsTrigger>
+            <TabsTrigger value="judge_outputs" className="text-xs">
+              Judge outputs
             </TabsTrigger>
           </TabsList>
 
@@ -178,6 +186,15 @@ export default function AgentRunPage() {
           <TabsContent value="labels" className="flex-1 mt-0 min-h-0">
             <div className="h-full pt-2 flex flex-col min-h-0">
               <AgentRunLabels
+                agentRunId={agentRunId}
+                collectionId={collectionId}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="judge_outputs" className="flex-1 mt-0 min-h-0">
+            <div className="h-full pt-2 flex flex-col min-h-0">
+              <AgentRunJudgeOutputs
                 agentRunId={agentRunId}
                 collectionId={collectionId}
               />

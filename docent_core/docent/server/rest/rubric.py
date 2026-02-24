@@ -127,6 +127,14 @@ class RubricMetricsResponse(BaseModel):
     judge_result_count: int
 
 
+class AgentRunJudgeOutputs(BaseModel):
+    rubric_id: str
+    rubric_version: int
+    rubric_text: str
+    output_schema: dict[str, Any]
+    results: list[JudgeResultWithCitations]
+
+
 @rubric_router.put("/{collection_id}/rubric/{rubric_id}")
 async def add_rubric_version(
     collection_id: str,
@@ -199,6 +207,36 @@ async def get_result_by_id(
         [result], sqla_rubric.output_schema, ctx, persist=True
     )
     return results[0]
+
+
+@rubric_router.get("/{collection_id}/agent_run/{agent_run_id}/judge_outputs")
+async def get_agent_run_judge_outputs(
+    collection_id: str,
+    agent_run_id: str,
+    rubric_svc: RubricService = Depends(get_rubric_service),
+    ctx: ViewContext = Depends(get_default_view_ctx),
+    _perm: None = Depends(require_collection_permission(Permission.READ)),
+    _run: None = Depends(require_agent_run_in_collection),
+) -> list[AgentRunJudgeOutputs]:
+    grouped_outputs = await rubric_svc.get_judge_outputs_for_agent_run(
+        collection_id=collection_id, agent_run_id=agent_run_id
+    )
+
+    response: list[AgentRunJudgeOutputs] = []
+    for sq_rubric, outputs in grouped_outputs:
+        resolved_outputs = await rubric_svc.resolve_result_citations(
+            outputs, sq_rubric.output_schema, ctx, persist=True
+        )
+        response.append(
+            AgentRunJudgeOutputs(
+                rubric_id=sq_rubric.id,
+                rubric_version=sq_rubric.version,
+                rubric_text=sq_rubric.rubric_text,
+                output_schema=sq_rubric.output_schema,
+                results=resolved_outputs,
+            )
+        )
+    return response
 
 
 @rubric_router.get("/{collection_id}/rubric/{rubric_id}/metrics")
