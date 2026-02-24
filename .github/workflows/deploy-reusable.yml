@@ -80,7 +80,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' || inputs.force_full_deploy }}
     environment: ${{ inputs.github_environment }}
-    timeout-minutes: 10
+    timeout-minutes: 360
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -147,7 +147,20 @@ jobs:
             --query 'tasks[0].taskArn' --output text)
 
           echo "Waiting for migration task ($TASK_ARN) to complete..."
-          aws ecs wait tasks-stopped --cluster ${{ env.PROJECT_NAME }}-${{ inputs.deployment_id }}-cluster --tasks "$TASK_ARN"
+          TASK_STOPPED=false
+          for i in $(seq 1 720); do
+            STATUS=$(aws ecs describe-tasks --cluster ${{ env.PROJECT_NAME }}-${{ inputs.deployment_id }}-cluster --tasks "$TASK_ARN" --query 'tasks[0].lastStatus' --output text)
+            if [ "$STATUS" = "STOPPED" ]; then
+              TASK_STOPPED=true
+              break
+            fi
+            echo "  [$i/720] Task status: $STATUS (waiting 30s...)"
+            sleep 30
+          done
+          if [ "$TASK_STOPPED" != "true" ]; then
+            echo "Migration task timed out after 6 hours (still status: $STATUS)"
+            exit 1
+          fi
           EXIT_CODE=$(aws ecs describe-tasks --cluster ${{ env.PROJECT_NAME }}-${{ inputs.deployment_id }}-cluster --tasks "$TASK_ARN" --query 'tasks[0].containers[0].exitCode' --output text)
           if [ "$EXIT_CODE" != "0" ]; then
             echo "Migration task failed with exit code $EXIT_CODE"
