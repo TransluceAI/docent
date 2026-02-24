@@ -21,6 +21,11 @@ import { useParams, usePathname, useSearchParams } from 'next/navigation';
 
 import { COLLECTIONS_DASHBOARD_PATH } from '@/app/constants';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 import { UserProfile } from './auth/UserProfile';
 import ShareViewPopover from '@/lib/permissions/ShareViewPopover';
@@ -275,9 +280,16 @@ const Breadcrumbs: React.FC = () => {
         collectionMetadata && Object.keys(collectionMetadata).length > 0;
       return (
         <div className="flex items-center gap-2 min-w-0" key={0}>
-          <span className="truncate min-w-[60px] max-w-[450px]">
-            Collection: {collectionName}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="truncate min-w-[60px] max-w-[450px]">
+                Collection: {collectionName}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-sm break-words">
+              {collectionName}
+            </TooltipContent>
+          </Tooltip>
           <UuidPill uuid={collectionId} />
           {hasMetadata && (
             <MetadataPopover.Root>
