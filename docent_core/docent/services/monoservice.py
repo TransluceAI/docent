@@ -252,51 +252,6 @@ class MonoService:
         db = await DocentDB.init()
         return cls(db)
 
-    _metadata_refresh_pending = False
-
-    async def schedule_metadata_view_refresh(self) -> None:
-        """Refresh the metadata_value_stats materialized view concurrently.
-
-        Uses a PostgreSQL advisory lock to prevent concurrent refreshes from piling up.
-        If a refresh is already running, marks a pending flag so the holder does one
-        trailing refresh before releasing the lock (avoids permanently stale views).
-        Errors are logged but not raised (best-effort background operation).
-        """
-        ADVISORY_LOCK_ID = 8675309  # arbitrary fixed lock ID
-        # Signal intent before any await so the lock holder sees it
-        # even if this coroutine yields before setting the flag.
-        MonoService._metadata_refresh_pending = True
-        try:
-            async with self.db.engine.connect() as raw_conn:
-                conn = await raw_conn.execution_options(isolation_level="AUTOCOMMIT")
-                # Try to acquire a session-level advisory lock (non-blocking)
-                lock_result = await conn.execute(
-                    text(f"SELECT pg_try_advisory_lock({ADVISORY_LOCK_ID})")
-                )
-                acquired = lock_result.scalar()
-                if not acquired:
-                    logger.info(
-                        "Metadata view refresh already in progress — flagged for re-refresh"
-                    )
-                    return
-                try:
-                    # Loop until no new writes arrive during a refresh.
-                    # Clear the flag before each refresh so writes that land
-                    # during the await re-set it for the next iteration.
-                    while True:
-                        MonoService._metadata_refresh_pending = False
-                        await conn.execute(
-                            text("REFRESH MATERIALIZED VIEW CONCURRENTLY metadata_value_stats")
-                        )
-                        logger.info("Successfully refreshed metadata_value_stats materialized view")
-                        if not MonoService._metadata_refresh_pending:
-                            break
-                        logger.info("Writes arrived during refresh — performing trailing refresh")
-                finally:
-                    await conn.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
-        except Exception:
-            logger.exception("Failed to refresh metadata_value_stats materialized view")
-
     async def _collect_json_field_records(
         self,
         session: AsyncSession,
@@ -1042,8 +997,6 @@ class MonoService:
             f"and {len(transcript_group_data)} transcript groups"
         )
 
-        await self.schedule_metadata_view_refresh()
-
     async def delete_agent_runs(self, collection_id: str, agent_run_ids: list[str]) -> int:
         """
         Delete specific agent runs from a collection.
@@ -1095,8 +1048,6 @@ class MonoService:
             f"and {accumulation_count} accumulation records from collection {collection_id} "
             f"(transcripts, transcript groups, and metadata observations deleted via CASCADE)"
         )
-
-        await self.schedule_metadata_view_refresh()
 
         return deleted_count
 
@@ -1451,8 +1402,6 @@ class MonoService:
             )
 
             await session.commit()
-
-        await self.schedule_metadata_view_refresh()
 
         logger.info(
             f"Moved agent run {agent_run_id} from collection {source_collection_id} "
