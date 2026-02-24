@@ -1,10 +1,11 @@
 'use client';
 
-import { Layers, Loader2 } from 'lucide-react';
+import { Layers, Loader2, Search } from 'lucide-react';
 import { useState } from 'react';
 
 import { Collection } from '@/app/types/collectionTypes';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,8 @@ export function CollectionsTable({
   collections,
   isLoading,
 }: CollectionsTableProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Delete dialog state – kept here so multiple rows can reuse shared dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingCollection, setDeletingCollection] =
@@ -71,6 +74,11 @@ export function CollectionsTable({
     );
   }
 
+  const filteredCollections = collections.filter(
+    (c) =>
+      !searchTerm || c.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (collections.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 px-3 text-center">
@@ -89,6 +97,15 @@ export function CollectionsTable({
 
   return (
     <>
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search collections..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-9 h-8"
+        />
+      </div>
       <Table className="table-fixed w-full">
         <TableHeader className="bg-secondary sticky top-0">
           <TableRow>
@@ -119,7 +136,7 @@ export function CollectionsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {collections.map((collection) => {
+          {filteredCollections.map((collection) => {
             const level =
               (batchPerms?.collection_permissions?.[collection.id] as
                 | keyof typeof PERMISSION_LEVELS
