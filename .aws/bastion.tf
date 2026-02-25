@@ -60,7 +60,9 @@ resource "aws_iam_role_policy" "bastion_ssm" {
           "ssm:GetParameter"
         ]
         Resource = [
-          aws_ssm_parameter.tailscale_auth_key.arn
+          aws_ssm_parameter.tailscale_auth_key.arn,
+          aws_ssm_parameter.tailscale_oauth_client_id.arn,
+          aws_ssm_parameter.tailscale_oauth_client_secret.arn,
         ]
       },
       {
@@ -105,9 +107,11 @@ resource "aws_launch_template" "bastion" {
   }
 
   user_data = base64encode(templatefile("${path.module}/tailscale-user-data.tftpl", {
-    ssm_parameter_name = aws_ssm_parameter.tailscale_auth_key.name
-    aws_region         = var.aws_region
-    deployment         = var.deployment
+    ssm_parameter_name                     = aws_ssm_parameter.tailscale_auth_key.name
+    ssm_oauth_client_id_parameter_name     = aws_ssm_parameter.tailscale_oauth_client_id.name
+    ssm_oauth_client_secret_parameter_name = aws_ssm_parameter.tailscale_oauth_client_secret.name
+    aws_region                             = var.aws_region
+    deployment                             = var.deployment
   }))
 
   tag_specifications {

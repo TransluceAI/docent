@@ -26,6 +26,30 @@ resource "aws_ssm_parameter" "db_password" {
   }
 }
 
+resource "aws_ssm_parameter" "tailscale_oauth_client_id" {
+  name        = "/${var.project_name}/${var.deployment}/tailscale-oauth-client-id"
+  description = "Tailscale OAuth client ID for stale device cleanup"
+  type        = "SecureString"
+  value       = local.tailscale_oauth_client_id
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-tailscale-oauth-client-id"
+    Deployment = var.deployment
+  }
+}
+
+resource "aws_ssm_parameter" "tailscale_oauth_client_secret" {
+  name        = "/${var.project_name}/${var.deployment}/tailscale-oauth-client-secret"
+  description = "Tailscale OAuth client secret for stale device cleanup"
+  type        = "SecureString"
+  value       = local.tailscale_oauth_client_secret
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-tailscale-oauth-client-secret"
+    Deployment = var.deployment
+  }
+}
+
 resource "aws_ssm_parameter" "datadog_api_key" {
   name        = "/${var.project_name}/${var.deployment}/datadog-api-key"
   description = "Datadog API key"
