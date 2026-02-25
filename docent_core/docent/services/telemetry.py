@@ -46,7 +46,6 @@ from docent.data_models.chat import (
     parse_chat_message,
 )
 from docent.data_models.chat.tool import ToolCall
-from docent_core._server._analytics.posthog import AnalyticsClient
 from docent_core._server._broker.redis_client import get_redis_client
 from docent_core._worker.constants import WorkerFunction, get_job_timeout_seconds
 from docent_core.docent.db.contexts import ViewContext
@@ -458,21 +457,6 @@ class TelemetryService:
             len(agent_run_versions),
             lock_contention_count,
         )
-
-        # Track with analytics if available
-        try:
-            analytics = AnalyticsClient()
-            with analytics.user_context(user):
-                analytics.track_event(
-                    "telemetry_processing_completed",
-                    properties={
-                        "collection_id": collection_id,
-                        "agent_runs_attempted": len(agent_run_versions),
-                        "agent_runs_processed": processed_count,
-                    },
-                )
-        except Exception as e:
-            logger.warning(f"Failed to track analytics event: {str(e)}")
 
         return successfully_processed_agent_run_ids
 

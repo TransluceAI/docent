@@ -1219,7 +1219,6 @@ async def post_agent_runs_compressed(
     request: Request,
     mono_svc: MonoService = Depends(get_mono_svc),
     ctx: ViewContext = Depends(get_default_view_ctx),
-    analytics: AnalyticsClient = Depends(use_posthog_user_context),
     _: None = Depends(require_collection_permission(Permission.WRITE)),
 ) -> EnqueuedJobResponse:
     """
@@ -1255,15 +1254,6 @@ async def post_agent_runs_compressed(
         raw_body=raw_body,
         content_encoding=normalized_encoding,
         ctx=ctx,
-    )
-
-    # Track with PostHog
-    analytics.track_event(
-        "agent_runs_ingestion_enqueued",
-        properties={
-            "collection_id": collection_id,
-            "job_id": job_id,
-        },
     )
 
     status_url = f"/rest/{collection_id}/agent_runs/jobs/{job_id}"
