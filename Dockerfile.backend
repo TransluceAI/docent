@@ -24,6 +24,9 @@ RUN uv pip install --system "pip>=25.3"
 # Then install the requirements.txt
 RUN uv pip install --system -r requirements.txt
 
+# Strip bundled frontend artifacts from inspect_ai that aren't needed at runtime
+RUN rm -rf /usr/local/lib/python*/site-packages/inspect_ai/_view/www
+
 #################################
 # Install the core application #
 #################################
