@@ -5,7 +5,20 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Sequence, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Discriminator, Field, field_validator
-from sqlalchemy import Boolean, ColumnElement, Float, String, and_, case, cast, func, or_, select
+from sqlalchemy import (
+    Boolean,
+    ColumnElement,
+    Float,
+    String,
+    and_,
+    case,
+    cast,
+    func,
+    or_,
+    select,
+    type_coerce,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.orm import aliased
 
@@ -236,13 +249,90 @@ def apply_comparison(
         raise ValueError(f"Unsupported operation: {op}")
 
 
+def _build_containment_dict(json_keys: list[str], value: Any) -> dict[str, Any]:
+    """Build a nested dict for JSONB containment query."""
+    result: Any = value
+    for key in reversed(json_keys):
+        result = {key: result}
+    return result
+
+
+def _containment_clause(json_column: Any, json_keys: list[str], value: Any) -> ColumnElement[bool]:
+    """Build a single @> containment clause."""
+    containment_dict = _build_containment_dict(json_keys, value)
+    return json_column.op("@>")(type_coerce(containment_dict, JSONB))
+
+
+def _build_gin_prefilter(
+    json_column: Any,
+    json_keys: list[str],
+    value: Any,
+) -> ColumnElement[bool]:
+    """Build a GIN pre-filter that covers all JSONB types the legacy text
+    comparison could match.
+
+    The legacy path uses ->> (text extraction) with type coercion, so a filter
+    value of "42" matches JSONB string "42", number 42, and number 42.0.
+    Since @> is type-strict, we OR together containment checks for each
+    possible JSONB representation.
+    """
+    candidates: list[ColumnElement[bool]] = [_containment_clause(json_column, json_keys, value)]
+
+    if isinstance(value, str):
+        lower = value.strip().lower()
+
+        # Numeric: "42" should match both JSONB "42" and JSONB 42
+        try:
+            as_float = float(value)
+            as_int = int(as_float)
+            if as_float == as_int:
+                # Integer-like: add int form (JSONB stores 42 and 42.0 identically)
+                candidates.append(_containment_clause(json_column, json_keys, as_int))
+            else:
+                candidates.append(_containment_clause(json_column, json_keys, as_float))
+        except (ValueError, OverflowError):
+            pass
+
+        # Boolean: "true"/"false" should match JSONB true/false
+        if lower in ("true", "t", "1", "yes", "on"):
+            candidates.append(_containment_clause(json_column, json_keys, True))
+        elif lower in ("false", "f", "0", "no", "off"):
+            candidates.append(_containment_clause(json_column, json_keys, False))
+
+    elif isinstance(value, bool):
+        # Bool filter value: match JSONB bool and string representations
+        candidates.append(_containment_clause(json_column, json_keys, str(value).lower()))
+
+    elif isinstance(value, (int, float)):
+        # Numeric filter value: match JSONB string form too
+        candidates.append(_containment_clause(json_column, json_keys, str(value)))
+        # int vs float: 42 should match 42.0 and vice versa
+        if isinstance(value, int):
+            candidates.append(_containment_clause(json_column, json_keys, float(value)))
+        elif value == float(int(value)):
+            candidates.append(_containment_clause(json_column, json_keys, int(value)))
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return or_(*candidates)
+
+
 def build_json_filter_clause(
     json_column: Any,
     json_keys: list[str],
     value: Any,
     op: Literal[">", ">=", "<", "<=", "==", "!=", "~*", "!~*", "is"],
+    *,
+    use_gin_prefilter: bool = False,
 ) -> ColumnElement[bool]:
-    """Build a WHERE clause for filtering on a JSONB column."""
+    """Build a WHERE clause for filtering on a JSONB column.
+
+    When use_gin_prefilter is True and the filter is an equality check,
+    adds a JSONB containment (@>) pre-filter to leverage the GIN index,
+    combined with the legacy type-coerced comparison to preserve existing
+    matching behavior. The pre-filter ORs across all JSONB types that the
+    legacy text coercion could match, so it never produces false negatives.
+    """
     sqla_value = json_column
     for key in json_keys:
         sqla_value = sqla_value[key]
@@ -262,7 +352,13 @@ def build_json_filter_clause(
     else:
         raise ValueError(f"Unsupported value type: {type(value)}")
 
-    return apply_comparison(sqla_value, value, op)
+    legacy_clause = apply_comparison(sqla_value, value, op)
+
+    if use_gin_prefilter and op == "==":
+        gin_clause = _build_gin_prefilter(json_column, json_keys, value)
+        return and_(gin_clause, legacy_clause)
+
+    return legacy_clause
 
 
 class BaseCollectionFilter(BaseModel):
@@ -365,7 +461,18 @@ class PrimitiveFilter(BaseCollectionFilter):
             else:
                 raise ValueError(f"Unsupported value type: {type(self.value)}")
 
-        return apply_comparison(sqla_value, self.value, self.op)
+        legacy_clause = apply_comparison(sqla_value, self.value, self.op)
+
+        # Add GIN-indexed containment pre-filter for metadata equality
+        if mode == "metadata" and self.op == "==" and json_keys:
+            gin_clause = _build_gin_prefilter(
+                table.metadata_json,
+                json_keys,
+                self.value,  # type: ignore
+            )
+            return and_(gin_clause, legacy_clause)
+
+        return legacy_clause
 
 
 class ComplexFilter(BaseCollectionFilter):
@@ -584,6 +691,7 @@ def build_judge_result_filter_clause(
                 json_keys,
                 filter_obj.value,
                 filter_obj.op,
+                use_gin_prefilter=True,
             )
         elif mode == "tag":
             if len(filter_obj.key_path) != 1:
