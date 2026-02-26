@@ -296,6 +296,48 @@ variable "datadog_agent_desired_count" {
   default     = 1
 }
 
+variable "use_private_api" {
+  description = "Deploy API privately via NLB + PrivateLink (runs in parallel with App Runner during migration)"
+  type        = bool
+  default     = false
+}
+
+variable "privatelink_allowed_principals" {
+  description = "AWS principal ARNs allowed to create VPC endpoints to the API service"
+  type        = list(string)
+  default     = []
+}
+
+variable "privatelink_acceptance_required" {
+  description = "Whether VPC endpoint connections require manual acceptance"
+  type        = bool
+  default     = true
+}
+
+variable "api_gateway_allowed_cidrs" {
+  description = "CIDR blocks allowed to access the API Gateway (Vercel egress IPs, team IPs)"
+  type        = list(string)
+  default     = []
+}
+
+variable "private_api_cpu" {
+  description = "CPU units for private API ECS Fargate task"
+  type        = number
+  default     = 1024
+}
+
+variable "private_api_memory" {
+  description = "Memory for private API ECS Fargate task"
+  type        = number
+  default     = 2048
+}
+
+variable "private_api_num_workers" {
+  description = "Number of uvicorn workers per private API task"
+  type        = number
+  default     = 2
+}
+
 variable "vpc_cidr_block" {
   description = "CIDR block for the VPC."
   type        = string

@@ -85,3 +85,18 @@ output "bastion_public_dns" {
   value       = aws_instance.bastion.public_dns
   description = "Public DNS name of the bastion host"
 }
+
+output "private_api_nlb_dns" {
+  description = "Internal NLB DNS name for the private API"
+  value       = var.use_private_api ? aws_lb.private_api[0].dns_name : null
+}
+
+output "vpc_endpoint_service_name" {
+  description = "PrivateLink service name for external accounts to create VPC endpoints"
+  value       = var.use_private_api ? aws_vpc_endpoint_service.private_api[0].service_name : null
+}
+
+output "api_gateway_url" {
+  description = "API Gateway invoke URL for Vercel SSR"
+  value       = var.use_private_api ? aws_apigatewayv2_api.private_api[0].api_endpoint : null
+}

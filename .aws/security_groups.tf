@@ -3,11 +3,12 @@ resource "aws_security_group" "rds" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
+    from_port = 5432
+    to_port   = 5432
+    protocol  = "tcp"
     security_groups = concat(
       var.use_ecs_api ? [] : [aws_security_group.app_runner[0].id],
+      var.use_private_api ? [aws_security_group.private_api[0].id] : [],
       [aws_security_group.ecs_tasks.id, aws_security_group.bastion.id],
     )
   }
@@ -20,7 +21,7 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-rds-sg"
+    Name       = "${var.project_name}-${var.deployment}-rds-sg"
     Deployment = var.deployment
   }
 
@@ -34,11 +35,12 @@ resource "aws_security_group" "elasticache" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
+    from_port = 6379
+    to_port   = 6379
+    protocol  = "tcp"
     security_groups = concat(
       var.use_ecs_api ? [] : [aws_security_group.app_runner[0].id],
+      var.use_private_api ? [aws_security_group.private_api[0].id] : [],
       [aws_security_group.ecs_tasks.id],
     )
   }
@@ -51,7 +53,7 @@ resource "aws_security_group" "elasticache" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-elasticache-sg"
+    Name       = "${var.project_name}-${var.deployment}-elasticache-sg"
     Deployment = var.deployment
   }
 
@@ -74,7 +76,7 @@ resource "aws_security_group" "app_runner" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-app-runner-sg"
+    Name       = "${var.project_name}-${var.deployment}-app-runner-sg"
     Deployment = var.deployment
   }
 
@@ -95,7 +97,7 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-ecs-tasks-sg"
+    Name       = "${var.project_name}-${var.deployment}-ecs-tasks-sg"
     Deployment = var.deployment
   }
 
@@ -147,7 +149,7 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-alb-sg"
+    Name       = "${var.project_name}-${var.deployment}-alb-sg"
     Deployment = var.deployment
   }
 
@@ -176,9 +178,9 @@ resource "aws_security_group" "datadog_agent" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.deployment}-datadog-agent-sg"
+    Name       = "${var.project_name}-${var.deployment}-datadog-agent-sg"
     Deployment = var.deployment
-    Role        = "datadog-agent"
+    Role       = "datadog-agent"
   }
 
   lifecycle {
