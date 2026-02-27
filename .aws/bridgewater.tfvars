@@ -56,6 +56,7 @@ private_api_num_workers = 2
 privatelink_allowed_principals = [
   "arn:aws:iam::442167551954:root",
 ]
+privatelink_acceptance_required = false
 api_gateway_allowed_cidrs = [
   "13.216.33.94/32",  # Vercel static egress (us-east-1)
   "54.86.150.171/32", # Vercel static egress (us-east-1)

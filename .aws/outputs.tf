@@ -98,5 +98,5 @@ output "vpc_endpoint_service_name" {
 
 output "api_gateway_url" {
   description = "API Gateway invoke URL for Vercel SSR"
-  value       = var.use_private_api ? aws_apigatewayv2_api.private_api[0].api_endpoint : null
+  value       = var.use_private_api ? aws_api_gateway_stage.private_api[0].invoke_url : null
 }

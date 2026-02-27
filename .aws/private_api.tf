@@ -239,7 +239,13 @@ resource "aws_ecs_service" "private_api" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener.private_api]
+  load_balancer {
+    target_group_arn = aws_lb_target_group.private_api_gw[0].arn
+    container_name   = "api"
+    container_port   = 8000
+  }
+
+  depends_on = [aws_lb_listener.private_api, aws_lb_listener.private_api_gw]
 
   tags = {
     Name       = "${var.project_name}-${var.deployment}-private-api-service"
@@ -298,13 +304,100 @@ resource "aws_vpc_endpoint_service" "private_api" {
   }
 }
 
-# --- API Gateway HTTP API (public proxy for Vercel SSR) ---
+# --- API Gateway NLB ---
+# Separate NLB for the API Gateway VPC Link. REST API VPC Links create a
+# managed VPC Endpoint Service on the target NLB, which conflicts with our
+# explicit PrivateLink endpoint service on the primary NLB.
 
-resource "aws_apigatewayv2_api" "private_api" {
+resource "aws_lb" "private_api_gw" {
   count = var.use_private_api ? 1 : 0
 
-  name          = "${var.project_name}-${var.deployment}-private-api-gw"
-  protocol_type = "HTTP"
+  name               = "${var.project_name}-${var.deployment}-priv-apigw"
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = aws_subnet.private[*].id
+
+  enable_cross_zone_load_balancing = true
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-private-api-gw-nlb"
+    Deployment = var.deployment
+  }
+}
+
+resource "aws_lb_target_group" "private_api_gw" {
+  count = var.use_private_api ? 1 : 0
+
+  name        = "${var.project_name}-${var.deployment}-priv-apigw"
+  port        = 8000
+  protocol    = "TCP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    protocol            = "HTTP"
+    path                = "/health"
+    port                = "traffic-port"
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    interval            = 30
+  }
+
+  tags = {
+    Name       = "${var.project_name}-${var.deployment}-private-api-gw-tg"
+    Deployment = var.deployment
+  }
+}
+
+resource "aws_lb_listener" "private_api_gw" {
+  count = var.use_private_api ? 1 : 0
+
+  load_balancer_arn = aws_lb.private_api_gw[0].arn
+  port              = 8000
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.private_api_gw[0].arn
+  }
+}
+
+# --- API Gateway REST API (IP-restricted proxy for Vercel SSR) ---
+
+resource "aws_api_gateway_rest_api" "private_api" {
+  count = var.use_private_api ? 1 : 0
+
+  name = "${var.project_name}-${var.deployment}-private-api-gw"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+
+  # Resource policy restricts access to allowed CIDRs only.
+  # When no CIDRs are configured, omit the policy to leave the API open
+  # (useful for initial testing before locking down).
+  policy = length(var.api_gateway_allowed_cidrs) > 0 ? jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "execute-api:Invoke"
+        Resource  = "execute-api:/*"
+      },
+      {
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "execute-api:Invoke"
+        Resource  = "execute-api:/*"
+        Condition = {
+          NotIpAddress = {
+            "aws:SourceIp" = var.api_gateway_allowed_cidrs
+          }
+        }
+      }
+    ]
+  }) : null
 
   tags = {
     Name       = "${var.project_name}-${var.deployment}-private-api-gw"
@@ -312,43 +405,11 @@ resource "aws_apigatewayv2_api" "private_api" {
   }
 }
 
-resource "aws_security_group" "api_gateway_vpc_link" {
+resource "aws_api_gateway_vpc_link" "private_api" {
   count = var.use_private_api ? 1 : 0
 
-  name_prefix = "${var.project_name}-${var.deployment}-apigw-vpclink-"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port   = 8000
-    to_port     = 8000
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr_block]
-    description = "API Gateway VPC Link traffic"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name       = "${var.project_name}-${var.deployment}-apigw-vpclink-sg"
-    Deployment = var.deployment
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_apigatewayv2_vpc_link" "private_api" {
-  count = var.use_private_api ? 1 : 0
-
-  name               = "${var.project_name}-${var.deployment}-private-api"
-  subnet_ids         = aws_subnet.private[*].id
-  security_group_ids = [aws_security_group.api_gateway_vpc_link[0].id]
+  name        = "${var.project_name}-${var.deployment}-private-api"
+  target_arns = [aws_lb.private_api_gw[0].arn]
 
   tags = {
     Name       = "${var.project_name}-${var.deployment}-private-api-vpclink"
@@ -356,101 +417,98 @@ resource "aws_apigatewayv2_vpc_link" "private_api" {
   }
 }
 
-resource "aws_apigatewayv2_integration" "private_api" {
+# Catch-all proxy resource: {proxy+} matches any path.
+resource "aws_api_gateway_resource" "private_api_proxy" {
   count = var.use_private_api ? 1 : 0
 
-  api_id             = aws_apigatewayv2_api.private_api[0].id
-  integration_type   = "HTTP_PROXY"
-  integration_method = "ANY"
-  integration_uri    = aws_lb_listener.private_api[0].arn
-  connection_type    = "VPC_LINK"
-  connection_id      = aws_apigatewayv2_vpc_link.private_api[0].id
+  rest_api_id = aws_api_gateway_rest_api.private_api[0].id
+  parent_id   = aws_api_gateway_rest_api.private_api[0].root_resource_id
+  path_part   = "{proxy+}"
 }
 
-resource "aws_apigatewayv2_route" "private_api" {
+resource "aws_api_gateway_method" "private_api_proxy" {
   count = var.use_private_api ? 1 : 0
 
-  api_id    = aws_apigatewayv2_api.private_api[0].id
-  route_key = "$default"
-  target    = "integrations/${aws_apigatewayv2_integration.private_api[0].id}"
+  rest_api_id   = aws_api_gateway_rest_api.private_api[0].id
+  resource_id   = aws_api_gateway_resource.private_api_proxy[0].id
+  http_method   = "ANY"
+  authorization = "NONE"
+
+  request_parameters = {
+    "method.request.path.proxy" = true
+  }
 }
 
-resource "aws_apigatewayv2_stage" "private_api" {
+resource "aws_api_gateway_integration" "private_api_proxy" {
   count = var.use_private_api ? 1 : 0
 
-  api_id      = aws_apigatewayv2_api.private_api[0].id
-  name        = "$default"
-  auto_deploy = true
+  rest_api_id             = aws_api_gateway_rest_api.private_api[0].id
+  resource_id             = aws_api_gateway_resource.private_api_proxy[0].id
+  http_method             = aws_api_gateway_method.private_api_proxy[0].http_method
+  type                    = "HTTP_PROXY"
+  integration_http_method = "ANY"
+  uri                     = "http://${aws_lb.private_api_gw[0].dns_name}:8000/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.private_api[0].id
+
+  request_parameters = {
+    "integration.request.path.proxy" = "method.request.path.proxy"
+  }
+}
+
+# Root path (/) also needs a method + integration for /health etc.
+resource "aws_api_gateway_method" "private_api_root" {
+  count = var.use_private_api ? 1 : 0
+
+  rest_api_id   = aws_api_gateway_rest_api.private_api[0].id
+  resource_id   = aws_api_gateway_rest_api.private_api[0].root_resource_id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "private_api_root" {
+  count = var.use_private_api ? 1 : 0
+
+  rest_api_id             = aws_api_gateway_rest_api.private_api[0].id
+  resource_id             = aws_api_gateway_rest_api.private_api[0].root_resource_id
+  http_method             = aws_api_gateway_method.private_api_root[0].http_method
+  type                    = "HTTP_PROXY"
+  integration_http_method = "ANY"
+  uri                     = "http://${aws_lb.private_api_gw[0].dns_name}:8000/"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.private_api[0].id
+}
+
+resource "aws_api_gateway_deployment" "private_api" {
+  count = var.use_private_api ? 1 : 0
+
+  rest_api_id = aws_api_gateway_rest_api.private_api[0].id
+
+  # Redeploy when any route configuration changes.
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.private_api_proxy[0].id,
+      aws_api_gateway_method.private_api_proxy[0].id,
+      aws_api_gateway_integration.private_api_proxy[0].id,
+      aws_api_gateway_method.private_api_root[0].id,
+      aws_api_gateway_integration.private_api_root[0].id,
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_api_gateway_stage" "private_api" {
+  count = var.use_private_api ? 1 : 0
+
+  rest_api_id   = aws_api_gateway_rest_api.private_api[0].id
+  deployment_id = aws_api_gateway_deployment.private_api[0].id
+  stage_name    = "api"
 
   tags = {
     Name       = "${var.project_name}-${var.deployment}-private-api-gw-stage"
     Deployment = var.deployment
   }
-}
-
-# IP-based access restriction via WAFv2 (API Gateway HTTP APIs don't support
-# resource policies, so we use a regional WAF web ACL instead).
-
-resource "aws_wafv2_ip_set" "api_gateway_allowed" {
-  count = var.use_private_api && length(var.api_gateway_allowed_cidrs) > 0 ? 1 : 0
-
-  name               = "${var.project_name}-${var.deployment}-apigw-allowed-ips"
-  scope              = "REGIONAL"
-  ip_address_version = "IPV4"
-  addresses          = var.api_gateway_allowed_cidrs
-
-  tags = {
-    Name       = "${var.project_name}-${var.deployment}-apigw-allowed-ips"
-    Deployment = var.deployment
-  }
-}
-
-resource "aws_wafv2_web_acl" "api_gateway" {
-  count = var.use_private_api && length(var.api_gateway_allowed_cidrs) > 0 ? 1 : 0
-
-  name  = "${var.project_name}-${var.deployment}-apigw-waf"
-  scope = "REGIONAL"
-
-  default_action {
-    block {}
-  }
-
-  rule {
-    name     = "allow-listed-ips"
-    priority = 1
-
-    action {
-      allow {}
-    }
-
-    statement {
-      ip_set_reference_statement {
-        arn = aws_wafv2_ip_set.api_gateway_allowed[0].arn
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project_name}-${var.deployment}-apigw-allowed-ips"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "${var.project_name}-${var.deployment}-apigw-waf"
-    sampled_requests_enabled   = true
-  }
-
-  tags = {
-    Name       = "${var.project_name}-${var.deployment}-apigw-waf"
-    Deployment = var.deployment
-  }
-}
-
-resource "aws_wafv2_web_acl_association" "api_gateway" {
-  count = var.use_private_api && length(var.api_gateway_allowed_cidrs) > 0 ? 1 : 0
-
-  resource_arn = aws_apigatewayv2_stage.private_api[0].arn
-  web_acl_arn  = aws_wafv2_web_acl.api_gateway[0].arn
 }
