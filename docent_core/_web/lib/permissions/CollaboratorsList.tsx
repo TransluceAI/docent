@@ -1,38 +1,21 @@
-// Removed unused imports
-
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { X, User, Building, Globe } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { PermissionLevel, SubjectType } from './types';
+import { Building, Globe, User, X } from 'lucide-react';
 import PermissionDropdown from './PermissionDropdown';
 import {
-  UserCollaborator,
   OrganizationCollaborator,
+  UserCollaborator,
   useGetCollaboratorsQuery,
   useRemoveCollaboratorMutation,
   useUpsertCollaboratorMutation,
 } from './collabSlice';
-import { Button } from '@/components/ui/button';
-import { useRequireUserContext } from '@/app/contexts/UserContext';
-import { useHasCollectionAdminPermission } from './hooks';
-
-// Types matching ShareViewPopover
-
-// Get initials for avatar
-const getInitials = (name?: string, email?: string) => {
-  if (name) {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  }
-  if (email) {
-    return email.slice(0, 2).toUpperCase();
-  }
-  return '??';
-};
+import {
+  PERMISSION_LABELS,
+  PermissionPill,
+  getInitials,
+} from './permissionDisplay';
+import { PermissionLevel, SubjectType } from './types';
 
 const getDisplayName = (
   collaborator: UserCollaborator | OrganizationCollaborator
@@ -43,15 +26,40 @@ const getDisplayName = (
   return collaborator.subject.name || 'Unknown';
 };
 
-// Collaborator Row Component
+const getSubjectIcon = (subjectType: SubjectType) => {
+  switch (subjectType) {
+    case 'user':
+      return <User size={14} />;
+    case 'organization':
+      return <Building size={14} />;
+    case 'public':
+      return <Globe size={14} />;
+    default:
+      return <User size={14} />;
+  }
+};
+
 interface CollaboratorRowProps {
   collaborator: UserCollaborator | OrganizationCollaborator;
+  canManageSharing: boolean;
 }
-const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
+
+const CollaboratorRow = ({
+  collaborator,
+  canManageSharing,
+}: CollaboratorRowProps) => {
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [removeCollaborator] = useRemoveCollaboratorMutation();
-  const hasAdminPermission = useHasCollectionAdminPermission();
+
+  const isReadOnlyRow = !canManageSharing;
+  const displayName = getDisplayName(collaborator);
+  const displayEmail =
+    collaborator.subject_type === 'user'
+      ? collaborator.subject.email
+      : undefined;
+
   const onPermissionChange = (newPermission: PermissionLevel) => {
+    if (isReadOnlyRow) return;
     upsertCollaborator({
       subject_id: collaborator.subject_id,
       subject_type: collaborator.subject_type,
@@ -60,35 +68,24 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
     });
   };
 
-  // Get subject type icon
-  const getSubjectIcon = (subjectType: SubjectType) => {
-    switch (subjectType) {
-      case 'user':
-        return <User size={14} />;
-      case 'organization':
-        return <Building size={14} />;
-      case 'public':
-        return <Globe size={14} />;
-      default:
-        return <User size={14} />;
-    }
+  const onRemove = () => {
+    if (isReadOnlyRow) return;
+    removeCollaborator({
+      subject_id: collaborator.subject_id,
+      subject_type: collaborator.subject_type,
+      collection_id: collaborator.collection_id,
+    });
   };
-  const displayName = getDisplayName(collaborator);
-  const displayEmail =
-    collaborator.subject_type === 'user'
-      ? collaborator.subject.email
-      : undefined;
 
   return (
     <div className={cn('flex items-center justify-between')}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <Avatar className="h-7 w-8">
           <AvatarFallback className="text-xs">
-            {getInitials(displayName)}
+            {getInitials(displayName, displayEmail)}
           </AvatarFallback>
         </Avatar>
 
-        {/* Name and Email */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium truncate">{displayName}</span>
@@ -108,80 +105,68 @@ const CollaboratorRow = ({ collaborator }: CollaboratorRowProps) => {
         </div>
       </div>
 
-      {/* Permission Dropdown and Actions */}
       <div className="flex items-center gap-2">
-        <PermissionDropdown
-          value={collaborator.permission_level}
-          onChange={(newPermission) => onPermissionChange(newPermission)}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!hasAdminPermission}
-          onClick={() =>
-            removeCollaborator({
-              subject_id: collaborator.subject_id,
-              subject_type: collaborator.subject_type,
-              collection_id: collaborator.collection_id,
-            })
-          }
-        >
-          <X size={14} />
-        </Button>
+        {isReadOnlyRow ? (
+          <PermissionPill
+            permissionLabel={PERMISSION_LABELS[collaborator.permission_level]}
+          />
+        ) : (
+          <>
+            <PermissionDropdown
+              value={collaborator.permission_level}
+              onChange={onPermissionChange}
+            />
+            <Button variant="ghost" size="sm" onClick={onRemove}>
+              <X size={14} />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
 };
 
-// Main CollaboratorsList Component
 interface CollaboratorsListProps {
   collectionId: string;
+  canManageSharing: boolean;
+  excludeSubjectId?: string;
 }
 
-const CollaboratorsList = ({ collectionId }: CollaboratorsListProps) => {
-  const { user: currentUser } = useRequireUserContext();
-  const { userCollaborators, orgCollaborators } = useGetCollaboratorsQuery(
-    collectionId,
-    {
-      selectFromResult: (result) => {
-        return {
-          userCollaborators: result.data?.filter(
-            (c) => c.subject_type === 'user' && c.subject_id !== currentUser.id
-          ) as UserCollaborator[],
-          orgCollaborators: result.data?.filter(
-            (c) => c.subject_type === 'organization'
-          ) as OrganizationCollaborator[],
-        };
-      },
-    }
-  );
+const CollaboratorsList = ({
+  collectionId,
+  canManageSharing,
+  excludeSubjectId,
+}: CollaboratorsListProps) => {
+  const { data: collaborators } = useGetCollaboratorsQuery(collectionId);
 
-  if (!userCollaborators?.length && !orgCollaborators?.length) {
-    return (
-      <div className="text-center py-6 text-muted-foreground">
-        <User className="mx-auto h-7 w-8 mb-2 opacity-50" />
-        <p className="text-xs">No collaborators yet</p>
-      </div>
-    );
-  }
+  const userCollaborators = (collaborators?.filter(
+    (c): c is UserCollaborator =>
+      c.subject_type === 'user' && c.subject_id !== excludeSubjectId
+  ) ?? []) as UserCollaborator[];
+  const orgCollaborators = (collaborators?.filter(
+    (c): c is OrganizationCollaborator => c.subject_type === 'organization'
+  ) ?? []) as OrganizationCollaborator[];
+
+  const collaboratorCount = userCollaborators.length + orgCollaborators.length;
 
   return (
     <div className="space-y-1">
-      <h3 className="text-sm font-semibold">
-        Collaborators (
-        {(userCollaborators?.length ?? 0) + (orgCollaborators?.length ?? 0)})
+      <h3 className="text-sm font-medium">
+        Collaborators ({collaboratorCount})
       </h3>
 
       {userCollaborators.map((collaborator) => (
         <CollaboratorRow
           key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.collection_id}`}
           collaborator={collaborator}
+          canManageSharing={canManageSharing}
         />
       ))}
       {orgCollaborators.map((collaborator) => (
         <CollaboratorRow
           key={`${collaborator.subject_id}-${collaborator.subject_type}-${collaborator.collection_id}`}
           collaborator={collaborator}
+          canManageSharing={canManageSharing}
         />
       ))}
     </div>

@@ -1,5 +1,6 @@
 'use client';
 import { COLLECTIONS_DASHBOARD_PATH } from '@/app/constants';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,26 +22,58 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { copyToClipboard } from '@/lib/utils';
-import { Copy, Share2, UserPlus, ExternalLink } from 'lucide-react';
+import { Copy, ExternalLink, Share2, User, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import CollaboratorsList from './CollaboratorsList';
 import { useEffect, useState, useCallback } from 'react';
 import {
   useGetCollaboratorsQuery,
+  useGetCollectionPermissionsQuery,
   useGetMyOrganizationsQuery,
   useLazyGetUserByEmailQuery,
   useUpsertCollaboratorMutation,
   useRemoveCollaboratorMutation,
   Organization,
 } from './collabSlice';
-import { PermissionLevel } from './types';
+import { PERMISSION_LEVELS, PermissionLevel } from './types';
 import PermissionDropdown from './PermissionDropdown';
+import {
+  PERMISSION_LABELS,
+  PUBLIC_PERMISSION_LABELS,
+  PermissionPill,
+  PublicPermissionLevel,
+  getInitials,
+} from './permissionDisplay';
 import { toast } from 'sonner';
 import { useRequireUserContext } from '@/app/contexts/UserContext';
-import {
-  useHasCollectionPermission,
-  useHasCollectionAdminPermissionForCollection,
-} from './hooks';
+import { useHasCollectionAdminPermissionForCollection } from './hooks';
+
+const normalizePermissionLevel = (
+  permissionLevel: PermissionLevel | null | undefined
+): PermissionLevel => {
+  if (
+    permissionLevel === 'none' ||
+    permissionLevel === 'read' ||
+    permissionLevel === 'write' ||
+    permissionLevel === 'admin'
+  ) {
+    return permissionLevel;
+  }
+  return 'none';
+};
+
+const getMaxPermissionLevel = (
+  left: PermissionLevel,
+  right: PermissionLevel
+): PermissionLevel =>
+  PERMISSION_LEVELS[left] >= PERMISSION_LEVELS[right] ? left : right;
+
+const normalizePublicPermissionLevel = (
+  permissionLevel: PermissionLevel | null | undefined
+): PublicPermissionLevel =>
+  permissionLevel === 'read' || permissionLevel === 'write'
+    ? permissionLevel
+    : 'none';
 
 const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
   const { user } = useRequireUserContext();
@@ -52,9 +85,6 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
 
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [getUserByEmail] = useLazyGetUserByEmailQuery();
-
-  const hasAdminPermission =
-    useHasCollectionAdminPermissionForCollection(collectionId);
 
   // Send invite to new collaborator
   const handleSendInvite = async () => {
@@ -92,25 +122,12 @@ const AddCollaborator = ({ collectionId }: { collectionId: string }) => {
       toast.error('Failed to invite user. Please try again.');
     }
   };
-  if (!hasAdminPermission) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        You do not have permission to manage sharing for this collection.
-      </div>
-    );
-  }
-
   return (
     <div className="grid grid-cols-[1fr_7rem_auto] gap-2 items-center">
       <Input
         value={emailInput}
         onChange={(e) => setEmailInput(e.target.value)}
-        disabled={!hasAdminPermission}
-        placeholder={
-          hasAdminPermission
-            ? 'Enter email address'
-            : "You don't have permission to manage sharing"
-        }
+        placeholder="Enter email address"
         className="h-7 text-xs w-full"
       />
       <PermissionDropdown
@@ -141,8 +158,6 @@ const AddOrganizationCollaborator = ({
   const [permissionLevel, setPermissionLevel] =
     useState<PermissionLevel>('read');
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
-  const hasAdminPermission =
-    useHasCollectionAdminPermissionForCollection(collectionId);
 
   useEffect(() => {
     if (!selectedOrgId && organizations?.length === 1) {
@@ -179,14 +194,6 @@ const AddOrganizationCollaborator = ({
     return (
       <div className="text-sm text-muted-foreground">
         Loading organizations…
-      </div>
-    );
-  }
-
-  if (!hasAdminPermission) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        You do not have permission to manage sharing for this collection.
       </div>
     );
   }
@@ -250,24 +257,35 @@ const AddOrganizationCollaborator = ({
 };
 
 const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
+  const { user } = useRequireUserContext();
+
   // Get current public permission level from collaborators
-  const { publicPermissionLevel } = useGetCollaboratorsQuery(collectionId, {
-    selectFromResult: (result) => {
-      const publicCollab = result.data?.find(
-        (c) => c.subject_type === 'public'
-      );
-      return {
-        publicPermissionLevel: publicCollab?.permission_level || 'none',
-      };
-    },
-  });
+  const { publicPermissionLevel, currentUserDirectPermissionLevel } =
+    useGetCollaboratorsQuery(collectionId, {
+      selectFromResult: (result) => {
+        const publicCollab = result.data?.find(
+          (c) => c.subject_type === 'public'
+        );
+        const currentUserCollab = result.data?.find(
+          (c) => c.subject_type === 'user' && c.subject_id === user.id
+        );
+        return {
+          publicPermissionLevel: normalizePublicPermissionLevel(
+            publicCollab?.permission_level
+          ),
+          currentUserDirectPermissionLevel:
+            currentUserCollab?.permission_level || 'none',
+        };
+      },
+    });
+  const { data: permissions } = useGetCollectionPermissionsQuery(collectionId);
 
   const [upsertCollaborator] = useUpsertCollaboratorMutation();
   const [removeCollaborator] = useRemoveCollaboratorMutation();
 
   // Handler for public permission level changes
   const handlePublicPermissionChange = useCallback(
-    (newPermissionLevel: PermissionLevel) => {
+    (newPermissionLevel: PublicPermissionLevel) => {
       if (newPermissionLevel === 'none') {
         // Remove public access
         removeCollaborator({
@@ -290,8 +308,17 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
 
   const hasAdminPermission =
     useHasCollectionAdminPermissionForCollection(collectionId);
-  const hasWritePermission = useHasCollectionPermission('write', collectionId);
-  const accessButtonLabel = hasWritePermission ? 'Read-write' : 'Read-only';
+  const isReadOnlySharing = !hasAdminPermission;
+  const effectivePermissionLevel = normalizePermissionLevel(
+    permissions?.collection_permissions?.[collectionId]
+  );
+  const directPermissionLevel = normalizePermissionLevel(
+    currentUserDirectPermissionLevel
+  );
+  const yourPermissionLevel = getMaxPermissionLevel(
+    effectivePermissionLevel,
+    directPermissionLevel
+  );
   const handleCopyCollectionLink = useCallback(async () => {
     try {
       if (typeof window === 'undefined') {
@@ -309,14 +336,6 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
     }
   }, [collectionId]);
 
-  if (!hasAdminPermission) {
-    return (
-      <Button variant="outline" size="sm" className="gap-x-2 h-7 px-2" disabled>
-        <Share2 size={14} /> {accessButtonLabel}
-      </Button>
-    );
-  }
-
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -325,27 +344,31 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
         </Button>
       </PopoverTrigger>
       <PopoverContent className="_SharePopover w-[640px] p-3 space-y-3 rounded-lg">
-        {/* Section 1: Add collaborators */}
-        <div className="space-y-1">
-          <h3 className="text-sm font-medium">Add collaborators</h3>
-          <AddCollaborator collectionId={collectionId} />
-        </div>
+        {!isReadOnlySharing && (
+          <>
+            {/* Section 1: Add users */}
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium">Add users</h3>
+              <AddCollaborator collectionId={collectionId} />
+            </div>
 
-        {/* Section 1b: Share with organization */}
-        <div className="space-y-1">
-          <h3 className="text-sm font-medium">Share with organization</h3>
-          <AddOrganizationCollaborator collectionId={collectionId} />
-        </div>
+            {/* Section 1b: Share with organization */}
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium">Share with organization</h3>
+              <AddOrganizationCollaborator collectionId={collectionId} />
+            </div>
+          </>
+        )}
 
         {/* Section 2: Access settings */}
-        <div className="border-t" />
+        {!isReadOnlySharing && <div className="border-t" />}
         <div className="flex items-center justify-between gap-3">
           <div>
             <Label htmlFor="public-access" className="text-sm font-medium">
               Public access
             </Label>
             <p className="text-xs text-muted-foreground">
-              Anyone with the link can access
+              Access for anyone with the link
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -369,61 +392,107 @@ const ShareViewPopover = ({ collectionId }: { collectionId: string }) => {
             <PublicPermissionDropdown
               value={publicPermissionLevel}
               onChange={handlePublicPermissionChange}
-              disabled={!hasAdminPermission}
+              readOnly={isReadOnlySharing}
             />
           </div>
         </div>
 
         {/* Section 3: Collaborators */}
         <div className="border-t" />
-        <CollaboratorsList collectionId={collectionId} />
+        <CollaboratorsList
+          collectionId={collectionId}
+          canManageSharing={hasAdminPermission}
+          excludeSubjectId={user.id}
+        />
+
+        <div className="border-t" />
+        <YourPermissionsSection
+          permissionLevel={yourPermissionLevel}
+          userName={user.name}
+          userEmail={user.email}
+        />
       </PopoverContent>
     </Popover>
   );
 };
 
+interface YourPermissionsSectionProps {
+  permissionLevel: PermissionLevel;
+  userName?: string;
+  userEmail?: string;
+}
+
+const YourPermissionsSection = ({
+  permissionLevel,
+  userName,
+  userEmail,
+}: YourPermissionsSectionProps) => (
+  <div className="space-y-1">
+    <h3 className="text-sm font-medium">Your access</h3>
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <Avatar className="h-7 w-8">
+          <AvatarFallback className="text-xs">
+            {getInitials(userName, userEmail)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium truncate">
+              {userName || userEmail || 'Unknown'}
+            </span>
+            <span className="text-[11px] text-muted-foreground">(You)</span>
+          </div>
+          {userEmail && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <User size={14} />
+              <span className="truncate">{userEmail}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <PermissionPill permissionLabel={PERMISSION_LABELS[permissionLevel]} />
+    </div>
+  </div>
+);
+
 // New component for public permission dropdown
 interface PublicPermissionDropdownProps {
-  value: PermissionLevel;
-  onChange: (newPermission: PermissionLevel) => void;
-  disabled?: boolean;
+  value: PublicPermissionLevel;
+  onChange: (newPermission: PublicPermissionLevel) => void;
+  readOnly?: boolean;
 }
 
 const PublicPermissionDropdown = ({
   value,
   onChange,
-  disabled = false,
+  readOnly = false,
 }: PublicPermissionDropdownProps) => {
-  const publicPermissionLabels = {
-    none: 'No access',
-    read: 'Can view',
-    write: 'Can edit',
-  };
-
   const publicPermissionDescriptions = {
     none: 'Only invited people can access',
     read: 'Anyone with the link can view',
     write: 'Anyone with the link can edit',
   };
 
+  if (readOnly) {
+    return <PermissionPill permissionLabel={PUBLIC_PERMISSION_LABELS[value]} />;
+  }
+
   return (
     <Select
       value={value}
-      onValueChange={(val) => onChange(val as PermissionLevel)}
-      disabled={disabled}
+      onValueChange={(val) => onChange(val as PublicPermissionLevel)}
     >
       <SelectTrigger className="w-28 h-7 text-xs">
         <SelectValue className="text-xs font-medium">
-          {publicPermissionLabels[
-            value as keyof typeof publicPermissionLabels
-          ] || publicPermissionLabels.none}
+          {PUBLIC_PERMISSION_LABELS[value]}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="none">
           <div className="flex flex-col">
             <span className="text-xs font-medium">
-              {publicPermissionLabels.none}
+              {PUBLIC_PERMISSION_LABELS.none}
             </span>
             <span className="text-xs text-muted-foreground">
               {publicPermissionDescriptions.none}
@@ -433,7 +502,7 @@ const PublicPermissionDropdown = ({
         <SelectItem value="read">
           <div className="flex flex-col">
             <span className="text-xs font-medium">
-              {publicPermissionLabels.read}
+              {PUBLIC_PERMISSION_LABELS.read}
             </span>
             <span className="text-xs text-muted-foreground">
               {publicPermissionDescriptions.read}
@@ -443,7 +512,7 @@ const PublicPermissionDropdown = ({
         <SelectItem value="write">
           <div className="flex flex-col">
             <span className="text-xs font-medium">
-              {publicPermissionLabels.write}
+              {PUBLIC_PERMISSION_LABELS.write}
             </span>
             <span className="text-xs text-muted-foreground">
               {publicPermissionDescriptions.write}
