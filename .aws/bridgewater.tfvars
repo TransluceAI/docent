@@ -54,7 +54,8 @@ private_api_cpu         = 4096
 private_api_memory      = 8192
 private_api_num_workers = 2
 privatelink_allowed_principals = [
-  "arn:aws:iam::442167551954:root",
+  "arn:aws:iam::442167551954:root", # bwce179 (dev)
+  "arn:aws:iam::959823208368:root", # bwce180 (prod)
 ]
 privatelink_acceptance_required = false
 api_gateway_allowed_cidrs = [
