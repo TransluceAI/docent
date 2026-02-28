@@ -1251,22 +1251,17 @@ Craft a labeling request that helps the user quickly adjudicate this run.
 Other fields:
 - title: concise and scannable.
 - review_context: brief context and key events with citations.
-- priority_rationale: brief p_u-centered explanation of why this run is high-priority to label, with citations.
-- review_focus: a checklist of specific rubric-related things to inspect; this field can be more detailed than review_context and priority_rationale, and each item must include a citation.
+- review_focus: a checklist of specific rubric-related things to inspect; this field can be more detailed than review_context, and each item must include a citation.
 
 Scope requirement:
 - Stay anchored to rubric r and its output schema.
 - Ask only for judgments that map directly to rubric criteria/fields.
 - Do not introduce new evaluation dimensions or preferences outside rubric r.
 
-Requirements for priority_rationale (the most important field):
-- Basically recap the p_u reasoning
-
 Return JSON:
 {{
   "title": "<short title>",
   "review_context": "<succinct context and key events with citations>",
-  "priority_rationale": "<p_u-centered uncertainty explanation, grounded in rubric and evidence, with citations>",
   "review_focus": [
     "<specific rubric-related thing to inspect with citation>",
     "<another rubric-related thing to inspect with citation>"
@@ -1372,7 +1367,7 @@ async def generate_labeling_requests(
         response_text = output.completions[0].text or ""
         parsed = parse_llm_json_response(
             response_text,
-            keys=("title", "priority_rationale", "review_context"),
+            keys=("title", "review_context", "review_focus"),
         )
         if parsed is None:
             results.append(
@@ -1385,18 +1380,11 @@ async def generate_labeling_requests(
             continue
 
         raw_title = parsed.get("title")
-        raw_priority_rationale = parsed.get("priority_rationale")
         raw_review_context = parsed.get("review_context")
 
         title = raw_title if isinstance(raw_title, str) else "Label this run"
-        priority_rationale_text = (
-            raw_priority_rationale if isinstance(raw_priority_rationale, str) else ""
-        )
         review_context_text = raw_review_context if isinstance(raw_review_context, str) else ""
 
-        priority_rationale, priority_rationale_citations = resolve_citations_with_context(
-            priority_rationale_text, context, validate_text_ranges=True
-        )
         review_context, review_context_citations = resolve_citations_with_context(
             review_context_text, context, validate_text_ranges=True
         )
@@ -1421,8 +1409,8 @@ async def generate_labeling_requests(
         request = LabelingRequest(
             agent_run_id=agent_run_id,
             title=title,
-            priority_rationale=priority_rationale,
-            priority_rationale_citations=priority_rationale_citations,
+            priority_rationale="",
+            priority_rationale_citations=[],
             review_context=review_context,
             review_context_citations=review_context_citations,
             review_focus=review_focus_items,

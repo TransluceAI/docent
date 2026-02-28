@@ -473,13 +473,6 @@ def _render_generated_labeling_requests(
             text=request.review_context,
             citations=request.review_context_citations,
         )
-        body_lines.append("")
-        _append_section_with_citations(
-            body_lines=body_lines,
-            title="Priority Rationale",
-            text=request.priority_rationale,
-            citations=request.priority_rationale_citations,
-        )
         body_lines.extend(["", "[bold]Review Focus:[/bold]"])
         if request.review_focus:
             for focus in request.review_focus:
@@ -591,13 +584,6 @@ def _collect_labels_for_run(
             title="Review Context",
             text=labeling_request.review_context,
             citations=labeling_request.review_context_citations,
-        )
-        body_lines.append("")
-        _append_section_with_citations(
-            body_lines=body_lines,
-            title="Priority Rationale",
-            text=labeling_request.priority_rationale,
-            citations=labeling_request.priority_rationale_citations,
         )
         body_lines.extend(["", "[bold]Review Focus:[/bold]"])
         if labeling_request.review_focus:

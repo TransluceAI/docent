@@ -4,13 +4,13 @@
 # Bridgewater (confidential) (prod-bw)
 ##
 
-python3 label_elicitation.py \
-    137e5989-0840-48f5-8502-6b48b4e9905b \
-    cb26bb6f-0456-4f33-98f4-eda7265ff8de \
-    --label-num-samples 50 \
-    --top-n 10 \
-    --where-clause "metadata_json ->> 'training_step' = '300'"
-    # --where-clause "metadata_json @> '{\"training_step\": 200}'"
+# python3 label_elicitation.py \
+#     137e5989-0840-48f5-8502-6b48b4e9905b \
+#     cb26bb6f-0456-4f33-98f4-eda7265ff8de \
+#     --label-num-samples 50 \
+#     --top-n 10 \
+#     --where-clause "metadata_json ->> 'training_step' = '300'"
+#     # --where-clause "metadata_json @> '{\"training_step\": 200}'"
 
 # python3 rubric_bon.py \
 #     da2d9ea5-9bf3-4347-9401-8bdae71de2d9 \
@@ -74,11 +74,11 @@ python3 label_elicitation.py \
 # Terminal Bench (prod)
 ##
 
-# python3 label_elicitation.py \
-#     117967cf-d3bb-42e9-947d-eee82e97738f \
-#     433f5140-10cd-4d10-b192-0d4b01f665bb \
-#     --label-num-samples 50 \
-#     --top-n 10 \
+python3 label_elicitation.py \
+    117967cf-d3bb-42e9-947d-eee82e97738f \
+    433f5140-10cd-4d10-b192-0d4b01f665bb \
+    --label-num-samples 50 \
+    --top-n 10 \
 #     --user-data-json outputs/user_data_20260225_185652_gitignore.json
 
 # python3 rubric_bon.py \
