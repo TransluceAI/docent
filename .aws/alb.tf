@@ -211,6 +211,9 @@ resource "aws_ecs_service" "api" {
   desired_count   = var.ecs_api_desired_count
   launch_type     = "FARGATE"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
   lifecycle {
     ignore_changes = [desired_count]
   }
