@@ -63,6 +63,98 @@ from docent_core._llm_util.providers.common import async_timeout_ctx
 logger = get_logger(__name__)
 DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
 MAX_EMBEDDING_TOKENS = 8000
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS = 512
+
+
+def _env_value(name: str) -> str | None:
+    value = ENV.get(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _env_int_or_none(*names: str) -> int | None:
+    for name in names:
+        raw_value = _env_value(name)
+        if raw_value is None:
+            continue
+        if raw_value.lower() in {"none", "null", "auto"}:
+            return None
+        try:
+            return int(raw_value)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be an integer, none, null, or auto") from exc
+    return None
+
+
+def get_configured_embedding_model() -> str:
+    return _env_value("DOCENT_EMBEDDING_MODEL") or DEFAULT_EMBEDDING_MODEL
+
+
+def get_configured_embedding_dimensions(model_name: str | None = None) -> int | None:
+    configured = _env_int_or_none("DOCENT_EMBEDDING_DIMENSIONS", "DOCENT_EMBEDDING_DIM")
+    if configured is not None:
+        return configured
+    if _env_value("DOCENT_EMBEDDING_DIMENSIONS") or _env_value("DOCENT_EMBEDDING_DIM"):
+        return None
+
+    resolved_model = model_name or get_configured_embedding_model()
+    if resolved_model.startswith("text-embedding-3-"):
+        return DEFAULT_EMBEDDING_DIMENSIONS
+    return None
+
+
+def _uses_custom_llm_provider() -> bool:
+    return (_env_value("DOCENT_LLM_PROVIDER") or "").lower() == "custom"
+
+
+def _embedding_base_url(base_url: str | None = None) -> str | None:
+    if base_url:
+        return base_url
+    return (
+        _env_value("DOCENT_EMBEDDING_BASE_URL")
+        or _env_value("OPENAI_BASE_URL")
+        or (_env_value("DOCENT_LLM_BASE_URL") if _uses_custom_llm_provider() else None)
+    )
+
+
+def _embedding_api_key(api_key: str | None = None) -> str | None:
+    if api_key:
+        return api_key
+    if key := _env_value("DOCENT_EMBEDDING_API_KEY"):
+        return key
+    if _uses_custom_llm_provider():
+        if key := _env_value("DOCENT_LLM_API_KEY"):
+            return key
+    return _env_value("OPENAI_API_KEY") or _env_value("OPENAI_ADMIN_KEY")
+
+
+def get_openai_compatible_embedding_config_error(
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> str | None:
+    if not _embedding_api_key(api_key):
+        return (
+            "OpenAI-compatible embeddings require an API key. Set DOCENT_EMBEDDING_API_KEY, "
+            "DOCENT_LLM_API_KEY when DOCENT_LLM_PROVIDER=custom, OPENAI_API_KEY, or "
+            "OPENAI_ADMIN_KEY. Local embedding servers that do not enforce auth can use a "
+            "dummy value."
+        )
+    if (
+        _uses_custom_llm_provider()
+        and _env_value("DOCENT_LLM_API_KEY")
+        and not _env_value("DOCENT_EMBEDDING_API_KEY")
+        and not _env_value("OPENAI_API_KEY")
+        and not _env_value("OPENAI_ADMIN_KEY")
+        and not _embedding_base_url(base_url)
+    ):
+        return (
+            "OpenAI-compatible embeddings are reusing DOCENT_LLM_PROVIDER=custom, so "
+            "DOCENT_LLM_BASE_URL, DOCENT_EMBEDDING_BASE_URL, or OPENAI_BASE_URL is required."
+        )
+    return None
 
 
 def _print_backoff_message(e: Details):
@@ -427,6 +519,22 @@ def get_openai_client_async(api_key: str | None = None) -> AsyncOpenAI:
     return AsyncOpenAI(api_key=api_key) if api_key else AsyncOpenAI()
 
 
+def get_openai_compatible_embedding_client_async(
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> AsyncOpenAI:
+    _ = ENV
+
+    key = _embedding_api_key(api_key)
+    resolved_base_url = _embedding_base_url(base_url)
+    kwargs: dict[str, Any] = {}
+    if key:
+        kwargs["api_key"] = key
+    if resolved_base_url:
+        kwargs["base_url"] = resolved_base_url
+    return AsyncOpenAI(**kwargs)
+
+
 def get_azure_openai_client_async(api_key: str | None = None) -> AsyncAzureOpenAI:
     # Ensure environment variables are loaded.
     # Technically you don't have to run this, but just makes clear where the envvars are used
@@ -495,12 +603,14 @@ async def _get_openai_embeddings_async_one_batch(
 
 async def get_chunked_openai_embeddings_async(
     texts: list[str],
-    model_name: str = "text-embedding-3-small",
-    dimensions: int | None = 512,
+    model_name: str = DEFAULT_EMBEDDING_MODEL,
+    dimensions: int | None = DEFAULT_EMBEDDING_DIMENSIONS,
     window_size: int = MAX_EMBEDDING_TOKENS,
     overlap: int = 128,
     max_concurrency: int = 100,
     callback: AsyncEmbeddingStreamingCallback | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> tuple[list[list[float]], list[int]]:
     """
     Asynchronously get embeddings for a list of texts using OpenAI's embedding model.
@@ -508,21 +618,26 @@ async def get_chunked_openai_embeddings_async(
     Concurrency is limited using a semaphore.
     """
 
-    if model_name != "text-embedding-3-large" and model_name != "text-embedding-3-small":
-        assert dimensions is None, f"{model_name} does not have a variable dimension size"
+    if model_name == DEFAULT_EMBEDDING_MODEL:
+        model_name = get_configured_embedding_model()
+    if dimensions == DEFAULT_EMBEDDING_DIMENSIONS:
+        dimensions = get_configured_embedding_dimensions(model_name)
 
     all_chunks, chunk_to_doc = chunk_and_tokenize(texts, window_size=window_size, overlap=overlap)
+    encoding = tiktoken.get_encoding(DEFAULT_TIKTOKEN_ENCODING)
+    chunk_inputs = [encoding.decode(chunk) for chunk in all_chunks]
 
-    # Create batches of 25 texts. Embedding endpoint has a token limit.
-    batches = [all_chunks[i : i + 25] for i in range(0, len(all_chunks), 25)]
+    # Create batches of 25 text chunks. Sending strings is accepted by OpenAI and
+    # is the better-supported shape for OpenAI-compatible local embedding servers.
+    batches = [chunk_inputs[i : i + 25] for i in range(0, len(chunk_inputs), 25)]
 
-    client = get_openai_client_async()
+    client = get_openai_compatible_embedding_client_async(api_key=api_key, base_url=base_url)
     semaphore = asyncio.Semaphore(max_concurrency)
 
     batches_done = 0
     batches_total = len(batches)
 
-    async def limited_task(batch: list[list[int]]):
+    async def limited_task(batch: list[str]):
         nonlocal batches_done
 
         async with semaphore:

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from docent_core._server._rest.onboarding import onboarding_router
 from docent_core.docent.server.rest.chart import chart_router
 from docent_core.docent.server.rest.chat import chat_router
+from docent_core.docent.server.rest.hodoscope import hodoscope_router
 from docent_core.docent.server.rest.refinement import refinement_router
 from docent_core.docent.server.rest.router import public_router, user_router
 from docent_core.docent.server.rest.rubric import rubric_router
@@ -44,6 +45,10 @@ REST_ROUTERS: list[RouterSpec] = [
     {
         "router": chat_router,
         "prefix": "/rest/chat",
+    },
+    {
+        "router": hodoscope_router,
+        "prefix": "/rest/hodoscope",
     },
     {
         "router": onboarding_router,

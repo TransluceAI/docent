@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 import { ChartsArea } from './ChartsArea';
+import { HodoscopePanel } from './HodoscopePanel';
 import { AgentRunTable } from './AgentRunTable';
 import UploadRunsButton from './UploadRunsButton';
 import UploadRunsDialog from './UploadRunsDialog';
@@ -578,6 +579,8 @@ export default function ExperimentViewer({
       </div>
 
       <ChartsArea />
+
+      <HodoscopePanel hasWritePermission={hasWritePermission} />
 
       {/* Agent run list */}
       <div className="flex flex-row items-center justify-between">

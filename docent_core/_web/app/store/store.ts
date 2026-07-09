@@ -14,6 +14,7 @@ import rubricReducer from './rubricSlice';
 import { collectionApi } from '../api/collectionApi';
 import { refinementApi } from '../api/refinementApi';
 import { chatApi } from '../api/chatApi';
+import { hodoscopeApi } from '../api/hodoscopeApi';
 import refinementReducer from './refinementSlice';
 
 const store = configureStore({
@@ -31,6 +32,7 @@ const store = configureStore({
     [collectionApi.reducerPath]: collectionApi.reducer,
     [refinementApi.reducerPath]: refinementApi.reducer,
     [chatApi.reducerPath]: chatApi.reducer,
+    [hodoscopeApi.reducerPath]: hodoscopeApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -47,7 +49,8 @@ const store = configureStore({
       .concat(rubricApi.middleware)
       .concat(collectionApi.middleware)
       .concat(refinementApi.middleware)
-      .concat(chatApi.middleware),
+      .concat(chatApi.middleware)
+      .concat(hodoscopeApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

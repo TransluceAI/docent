@@ -174,6 +174,10 @@ class ProviderPreferences(BaseModel):
         return [_flash_option("DOCENT_LLM_SUMMARIZE_AGENT_ACTIONS_MODEL", "low")]
 
     @cached_property
+    def hodoscope_action_summaries(self) -> list[ModelOption]:
+        return [_flash_option("DOCENT_LLM_HODOSCOPE_ACTION_SUMMARY_MODEL", "low")]
+
+    @cached_property
     def group_actions_into_high_level_steps(self) -> list[ModelOption]:
         return [_flash_option("DOCENT_LLM_GROUP_ACTIONS_MODEL", "low")]
 

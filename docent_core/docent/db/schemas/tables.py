@@ -61,6 +61,7 @@ TABLE_USER_PROFILE = "user_profiles"
 TABLE_MODEL_API_KEYS = "model_api_keys"
 TABLE_TELEMETRY_ACCUMULATION = "telemetry_accumulation"
 TABLE_TELEMETRY_AGENT_RUN_STATUS = "telemetry_agent_run_status"
+TABLE_HODOSCOPE_ANALYSIS = "hodoscope_analyses"
 
 
 def sanitize_pg_text(text: str) -> str:
@@ -569,6 +570,42 @@ class SQLAJob(SQLABase):
     job_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus), default=JobStatus.PENDING, nullable=False
+    )
+
+
+class SQLAHodoscopeAnalysis(SQLABase):
+    __tablename__ = TABLE_HODOSCOPE_ANALYSIS
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, nullable=False)
+    collection_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey(f"{TABLE_COLLECTION}.id"), nullable=False, index=True
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey(f"{TABLE_JOB}.id"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    artifact_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    projection_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "idx_hodoscope_analyses_collection_created",
+            "collection_id",
+            "created_at",
+        ),
     )
 
 

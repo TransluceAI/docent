@@ -46,6 +46,7 @@ dependencies = [
     "python-multipart>=0.0.31",
     "posthog>=6.3.1",
     "jsonschema>=4.24.0",
+    "hodoscope",
 ]
 
 [project.optional-dependencies]
@@ -84,6 +85,7 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 docent-python = { path = "docent", editable = true }
+hodoscope = { git = "https://github.com/AR-FORUM/hodoscope.git", rev = "e9b6930d4a0149cf76b15190a85dc9d9ff78a860" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["docent_core"]

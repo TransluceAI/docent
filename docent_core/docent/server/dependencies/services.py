@@ -10,6 +10,7 @@ from docent_core.docent.server.dependencies.database import (
 )
 from docent_core.docent.services.charts import ChartsService
 from docent_core.docent.services.chat import ChatService
+from docent_core.docent.services.hodoscope import HodoscopeService
 from docent_core.docent.services.job import JobService
 from docent_core.docent.services.monoservice import MonoService
 from docent_core.docent.services.onboarding import OnboardingService
@@ -62,6 +63,10 @@ def get_job_service(
 
 def get_chart_service(session: AsyncSession = Depends(get_session)) -> ChartsService:
     return ChartsService(session)
+
+
+def get_hodoscope_service(session: AsyncSession = Depends(get_session)) -> HodoscopeService:
+    return HodoscopeService(session)
 
 
 def get_onboarding_service(

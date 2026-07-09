@@ -48,6 +48,35 @@ DOCENT_LLM_JUDGE_MODEL=my-strong-model
 DOCENT_LLM_JUDGE_MODEL_REASONING_EFFORT=high
 ```
 
+## Embedding calls
+
+Docent's embedding helper uses an OpenAI-compatible embeddings API. Hosted OpenAI remains the default, but self-hosted deployments can point embeddings at a local OpenAI-compatible server.
+
+* `DOCENT_EMBEDDING_BASE_URL`: Base URL for embedding calls.
+    * Example local value: `http://localhost:8000/v1`
+    * If unset and `DOCENT_LLM_PROVIDER=custom`, Docent reuses `DOCENT_LLM_BASE_URL`.
+    * If unset for hosted OpenAI, the OpenAI SDK default base URL is used.
+* `DOCENT_EMBEDDING_API_KEY`: API key for embedding calls.
+    * If unset and `DOCENT_LLM_PROVIDER=custom`, Docent reuses `DOCENT_LLM_API_KEY`.
+    * If unset, Docent falls back to `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY`.
+    * Local servers that do not enforce auth can use a dummy value.
+* `DOCENT_EMBEDDING_MODEL`: Default embedding model.
+    * Default: `text-embedding-3-small`
+* `DOCENT_EMBEDDING_DIMENSIONS`: Embedding dimensions to request.
+    * Default: `512` for OpenAI `text-embedding-3-*` models.
+    * Use `auto`, `none`, or `null` for local models that do not accept the OpenAI `dimensions` parameter.
+
+Hodoscope can override the global embedding model without changing Docent's existing transcript embeddings:
+
+* `DOCENT_HODOSCOPE_EMBEDDING_MODEL`: Hodoscope-only embedding model.
+* `DOCENT_HODOSCOPE_EMBEDDING_DIMENSIONS`: Hodoscope-only embedding dimensions.
+* `DOCENT_HODOSCOPE_EMBEDDING_BASE_URL`: Hodoscope-only OpenAI-compatible embedding base URL.
+* `DOCENT_HODOSCOPE_EMBEDDING_API_KEY`: Hodoscope-only embedding API key. Local servers that do not enforce auth can use a dummy value.
+
+<Note>
+Docent's existing transcript embedding table is fixed at 512 dimensions. If your Hodoscope model does not return 512-dimensional vectors, set the Hodoscope-specific model, dimensions, base URL, and API key so global Docent embeddings can stay 512-dimensional.
+</Note>
+
 <Note>
 For Docker Compose, edit the project root `.env` file. The backend and worker services read it through `env_file: .env`.
 </Note>

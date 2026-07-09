@@ -9,6 +9,7 @@ from docent_core.docent.workers.centroid_assignment_worker import (
 )
 from docent_core.docent.workers.chat_worker import chat_job
 from docent_core.docent.workers.embedding_worker import compute_embeddings
+from docent_core.docent.workers.hodoscope_worker import hodoscope_analysis_job
 from docent_core.docent.workers.refinement_worker import refinement_agent_job
 from docent_core.docent.workers.rubric_job_worker import rubric_job
 from docent_core.docent.workers.telemetry_worker import telemetry_processing_job
@@ -21,4 +22,5 @@ JOB_DISPATCHER_MAP: dict[str, Callable[[ViewContext, SQLAJob], Coroutine[Any, An
     WorkerFunction.CHAT_JOB.value: chat_job,
     WorkerFunction.CLUSTERING_JOB.value: clustering_job,
     WorkerFunction.TELEMETRY_PROCESSING_JOB.value: telemetry_processing_job,
+    WorkerFunction.HODOSCOPE_ANALYSIS.value: hodoscope_analysis_job,
 }
