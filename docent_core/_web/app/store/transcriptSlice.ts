@@ -404,9 +404,11 @@ export const {
   toggleRightSidebar,
 } = transcriptSlice.actions;
 
+const EMPTY_CITATIONS: Citation[] = [];
+
 export const selectRunCitationsById = (state: RootState, runId?: string) => {
-  if (!runId) return [] as Citation[];
-  return state.transcript.allCitations[runId] || [];
+  if (!runId) return EMPTY_CITATIONS;
+  return state.transcript.allCitations[runId] || EMPTY_CITATIONS;
 };
 
 export default transcriptSlice.reducer;

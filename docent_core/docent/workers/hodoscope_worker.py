@@ -8,11 +8,15 @@ from sqlalchemy import select
 from docent._log_util import get_logger
 from docent_core.docent.db.contexts import ViewContext
 from docent_core.docent.db.schemas.tables import SQLAHodoscopeAnalysis, SQLAJob
-from docent_core.docent.services.hodoscope import HodoscopeAnalysisConfig
+from docent_core.docent.services.hodoscope import (
+    HODOSCOPE_MAX_LOADED_RUNS,
+    HodoscopeAnalysisConfig,
+)
 from docent_core.docent.services.hodoscope_pipeline import (
     build_hodoscope_outputs,
     embed_hodoscope_summaries,
     extract_hodoscope_actions,
+    sample_hodoscope_actions,
     summarize_hodoscope_actions,
 )
 from docent_core.docent.services.monoservice import MonoService
@@ -98,13 +102,14 @@ async def hodoscope_analysis_job(ctx: ViewContext, job: SQLAJob) -> None:
         )
 
         agent_run_ids = await mono_svc.get_agent_run_ids(ctx)
-        if config.limit and len(agent_run_ids) > config.limit:
+        effective_run_limit = min(config.limit, HODOSCOPE_MAX_LOADED_RUNS)
+        if len(agent_run_ids) > effective_run_limit:
             import random
 
             rng = random.Random(config.seed)
             agent_run_ids = list(agent_run_ids)
             rng.shuffle(agent_run_ids)
-            agent_run_ids = agent_run_ids[: config.limit]
+            agent_run_ids = agent_run_ids[:effective_run_limit]
 
         agent_runs = await mono_svc.get_agent_runs(ctx, agent_run_ids=agent_run_ids)
 
@@ -116,6 +121,9 @@ async def hodoscope_analysis_job(ctx: ViewContext, job: SQLAJob) -> None:
             progress=15,
         )
         actions, group_by = extract_hodoscope_actions(agent_runs, config.group_by)
+        actions = sample_hodoscope_actions(
+            actions, max_actions=config.max_actions, seed=config.seed
+        )
         config = config.model_copy(update={"group_by": group_by})
 
         await _set_analysis_state(
@@ -124,7 +132,10 @@ async def hodoscope_analysis_job(ctx: ViewContext, job: SQLAJob) -> None:
             job=job,
             stage="summarizing",
             progress=30,
-            config_updates={"group_by": group_by},
+            config_updates={
+                "group_by": group_by,
+                "effective_run_limit": effective_run_limit,
+            },
         )
         summaries = await summarize_hodoscope_actions(actions)
 

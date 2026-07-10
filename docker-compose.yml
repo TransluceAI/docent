@@ -22,7 +22,9 @@ services:
     environment:
       - ENV_RESOLUTION_STRATEGY=os_environ
       - DOCENT_PG_HOST=postgres
+      - DOCENT_PG_PORT=5432
       - DOCENT_REDIS_HOST=redis
+      - DOCENT_REDIS_PORT=6379
     command: bash -c "docent_core server --port ${DOCENT_SERVER_PORT:-8888} --workers 8"
     restart: unless-stopped
 
@@ -39,7 +41,9 @@ services:
     environment:
       - ENV_RESOLUTION_STRATEGY=os_environ
       - DOCENT_PG_HOST=postgres
+      - DOCENT_PG_PORT=5432
       - DOCENT_REDIS_HOST=redis
+      - DOCENT_REDIS_PORT=6379
     command: bash -c "docent_core worker --workers 2"
     restart: unless-stopped
 

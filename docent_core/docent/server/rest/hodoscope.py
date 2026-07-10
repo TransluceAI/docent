@@ -55,6 +55,7 @@ async def get_hodoscope_analysis(
 async def get_hodoscope_projection(
     collection_id: str,
     analysis_id: str,
+    compact: bool = False,
     hodoscope_svc: HodoscopeService = Depends(get_hodoscope_service),
     ctx: ViewContext = Depends(get_default_view_ctx),
     _: None = Depends(require_collection_permission(Permission.READ)),
@@ -62,7 +63,7 @@ async def get_hodoscope_projection(
     analysis = await hodoscope_svc.get_analysis_summary(ctx, analysis_id)
     if analysis is None:
         raise HTTPException(status_code=404, detail="Hodoscope analysis not found")
-    projection = await hodoscope_svc.get_projection(ctx, analysis_id)
+    projection = await hodoscope_svc.get_projection(ctx, analysis_id, compact=compact)
     if projection is None:
         raise HTTPException(status_code=409, detail="Hodoscope projection is not ready")
     return projection

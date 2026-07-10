@@ -2,15 +2,24 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { BASE_URL } from '@/app/constants';
 
 export type HodoscopeAnalysisStatus =
-  'pending' | 'running' | 'complete' | 'error' | 'canceled';
+  | 'pending'
+  | 'running'
+  | 'complete'
+  | 'error'
+  | 'canceled';
 
 export type HodoscopeProjectionMethod =
-  'pca' | 'tsne' | 'umap' | 'trimap' | 'pacmap';
+  | 'pca'
+  | 'tsne'
+  | 'umap'
+  | 'trimap'
+  | 'pacmap';
 
 export interface HodoscopeAnalysisConfig {
   name?: string;
   group_by?: string | null;
   limit?: number;
+  max_actions?: number;
   seed?: number;
   projection_method?: HodoscopeProjectionMethod;
 }
@@ -42,11 +51,11 @@ export interface HodoscopeProjectionPoint {
   action_unit_idx: number;
   first_block_idx: number | null;
   summary: string;
-  action_text: string;
-  task_context: string;
-  metadata: Record<string, unknown>;
+  context_excerpt: string;
   group: string;
-  embedding: string;
+  outcome?: string;
+  exception_type?: string;
+  task_id?: string;
   x: number;
   y: number;
   fps_rank: number;
@@ -54,6 +63,7 @@ export interface HodoscopeProjectionPoint {
 
 export interface HodoscopeProjection {
   version: number;
+  view_schema_version?: 'hodoscope_projection_view.v1';
   created_at: string;
   group_by: string;
   projection_method: string;
@@ -92,7 +102,7 @@ export const hodoscopeApi = createApi({
       { collectionId: string; analysisId: string }
     >({
       query: ({ collectionId, analysisId }) =>
-        `/${collectionId}/analyses/${analysisId}/projection`,
+        `/${collectionId}/analyses/${analysisId}/projection?compact=true`,
       providesTags: (_result, _error, { analysisId }) => [
         { type: 'HodoscopeProjection', id: analysisId },
       ],

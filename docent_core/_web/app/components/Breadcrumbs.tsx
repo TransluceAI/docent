@@ -202,6 +202,8 @@ const Breadcrumbs: React.FC = () => {
             variant="outline"
             size="sm"
             className="gap-x-2 h-7 cursor-default px-2"
+            aria-label={`${leftSidebarOpen ? 'Hide' : 'Show'} ${isJudgeResultView ? 'rubric' : 'collection'} panel`}
+            title={`${leftSidebarOpen ? 'Hide' : 'Show'} ${isJudgeResultView ? 'rubric' : 'collection'} panel`}
             onClick={() =>
               dispatch(
                 isJudgeResultView

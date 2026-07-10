@@ -1,4 +1,7 @@
+from copy import deepcopy
 from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -6,11 +9,18 @@ from docent.data_models import AgentRun, Transcript
 from docent.data_models.chat import AssistantMessage, ToolMessage, UserMessage
 from docent_core._llm_util.providers import openai as openai_provider
 from docent_core.docent.services import hodoscope_pipeline
-from docent_core.docent.services.hodoscope import HodoscopeAnalysisConfig
+from docent_core.docent.services.hodoscope import (
+    HODOSCOPE_CONTEXT_EXCERPT_MAX_CHARS,
+    HodoscopeAnalysisConfig,
+    HodoscopeService,
+    build_hodoscope_projection_view,
+    expand_hodoscope_projection_view,
+)
 from docent_core.docent.services.hodoscope_pipeline import (
     build_hodoscope_outputs,
     embed_hodoscope_summaries,
     extract_hodoscope_actions,
+    sample_hodoscope_actions,
 )
 
 EMBEDDING_ENV_VARS = [
@@ -42,6 +52,196 @@ def _transcript(
 def _clear_embedding_env(monkeypatch: pytest.MonkeyPatch):
     for env_var in EMBEDDING_ENV_VARS:
         monkeypatch.delenv(env_var, raising=False)
+
+
+def _full_projection_fixture() -> dict:
+    return {
+        "version": 1,
+        "created_at": "2026-07-09T09:09:25+00:00",
+        "group_by": "metadata.model",
+        "projection_method": "tsne",
+        "requested_projection_method": "tsne",
+        "groups": [
+            {"name": "model-a", "count": 1},
+            {"name": "model-b", "count": 1},
+        ],
+        "internal_debug": "not public",
+        "points": [
+            {
+                "id": "run-a:t-a:0:0",
+                "trajectory_id": "run-a",
+                "turn_id": 3,
+                "agent_run_id": "run-a",
+                "transcript_id": "t-a",
+                "transcript_idx": 0,
+                "action_unit_idx": 0,
+                "first_block_idx": 1,
+                "summary": "Inspect logs for a failure",
+                "action_text": "raw action text that must stay private",
+                "task_context": "  " + "context " * 80 + "  ",
+                "metadata": {
+                    "success": True,
+                    "task_name": "terminal-bench/task-a",
+                    "large_private_value": "private" * 100,
+                },
+                "group": "model-a",
+                "embedding": "encoded-full-embedding",
+                "x": -1.25,
+                "y": 4.5,
+                "fps_rank": 0,
+            },
+            {
+                "id": "run-b:t-b:1:2",
+                "trajectory_id": "run-b",
+                "turn_id": 9,
+                "agent_run_id": "run-b",
+                "transcript_id": "t-b",
+                "transcript_idx": 1,
+                "action_unit_idx": 2,
+                "first_block_idx": None,
+                "summary": "Waited too long for a command",
+                "action_text": "fallback\ncontext from the raw action",
+                "task_context": "",
+                "metadata": {
+                    "exception_type": "AgentTimeoutError",
+                    "terminal_outcome": "reward_with_agent_timeout",
+                    "task_id": {"org": "terminal-bench", "name": "task-b"},
+                },
+                "group": "model-b",
+                "embedding": "another-full-embedding",
+                "x": 8.75,
+                "y": -2.0,
+                "fps_rank": 1,
+            },
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_public_hodoscope_projection_is_compact_bounded_and_non_mutating():
+    stored_projection = _full_projection_fixture()
+    original_projection = deepcopy(stored_projection)
+
+    public_projection = build_hodoscope_projection_view(stored_projection)
+
+    assert stored_projection == original_projection
+    assert public_projection["view_schema_version"] == "hodoscope_projection_view.v1"
+    assert "internal_debug" not in public_projection
+    assert public_projection["groups"] == stored_projection["groups"]
+    assert sum(group["count"] for group in public_projection["groups"]) == len(
+        public_projection["points"]
+    )
+
+    first_point, second_point = public_projection["points"]
+    assert first_point["id"] == "run-a:t-a:0:0"
+    assert first_point["trajectory_id"] == "run-a"
+    assert first_point["turn_id"] == 3
+    assert first_point["agent_run_id"] == "run-a"
+    assert first_point["transcript_id"] == "t-a"
+    assert first_point["transcript_idx"] == 0
+    assert first_point["action_unit_idx"] == 0
+    assert first_point["first_block_idx"] == 1
+    assert first_point["summary"] == "Inspect logs for a failure"
+    assert first_point["x"] == -1.25
+    assert first_point["y"] == 4.5
+    assert first_point["fps_rank"] == 0
+    assert first_point["group"] == "model-a"
+    assert first_point["outcome"] == "passed"
+    assert first_point["task_id"] == "terminal-bench/task-a"
+    assert len(first_point["context_excerpt"]) == HODOSCOPE_CONTEXT_EXCERPT_MAX_CHARS
+    assert first_point["context_excerpt"].endswith("…")
+
+    assert second_point["outcome"] == "timeout"
+    assert second_point["exception_type"] == "AgentTimeoutError"
+    assert second_point["task_id"] == "terminal-bench/task-b"
+    assert second_point["context_excerpt"] == "fallback context from the raw action"
+
+    public_point_fields = set(first_point) | set(second_point)
+    assert public_point_fields.isdisjoint({"embedding", "action_text", "task_context", "metadata"})
+    assert build_hodoscope_projection_view(public_projection) == public_projection
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hodoscope_service_keeps_legacy_full_projection_and_artifact_available():
+    stored_projection = _full_projection_fixture()
+    full_artifact = {
+        "summaries": [
+            {
+                "embedding": "full-artifact-embedding",
+                "action_text": "full artifact action text",
+                "metadata": {"private": "still stored"},
+            }
+        ]
+    }
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(one_or_none=lambda: (stored_projection, full_artifact)),
+                SimpleNamespace(one_or_none=lambda: (stored_projection,)),
+                SimpleNamespace(scalar_one_or_none=lambda: full_artifact),
+            ]
+        )
+    )
+    service = HodoscopeService(session=session)  # type: ignore[arg-type]
+    ctx = SimpleNamespace(collection_id="collection-id")
+
+    stored_projection_response = await service.get_projection(ctx, "analysis-id")  # type: ignore[arg-type]
+    public_projection = await service.get_projection(  # type: ignore[arg-type]
+        ctx, "analysis-id", compact=True
+    )
+    returned_artifact = await service.get_artifact(ctx, "analysis-id")  # type: ignore[arg-type]
+
+    assert public_projection is not None
+    assert stored_projection_response is stored_projection
+    assert stored_projection_response["points"][0]["embedding"] == "encoded-full-embedding"
+    assert "embedding" not in public_projection["points"][0]
+    assert stored_projection["points"][0]["embedding"] == "encoded-full-embedding"
+    assert stored_projection["points"][0]["action_text"] == "raw action text that must stay private"
+    assert returned_artifact is full_artifact
+    assert returned_artifact["summaries"][0]["embedding"] == "full-artifact-embedding"
+
+
+@pytest.mark.unit
+def test_compact_stored_projection_expands_to_legacy_full_shape():
+    full_projection = _full_projection_fixture()
+    compact_projection = build_hodoscope_projection_view(full_projection)
+    artifact = {
+        "summaries": [
+            {
+                key: deepcopy(point[key])
+                for key in ("action_text", "task_context", "metadata", "embedding")
+            }
+            for point in full_projection["points"]
+        ]
+    }
+
+    expanded = expand_hodoscope_projection_view(compact_projection, artifact)
+
+    assert "view_schema_version" not in expanded
+    for expanded_point, full_point in zip(
+        expanded["points"], full_projection["points"], strict=True
+    ):
+        for key in ("action_text", "task_context", "metadata", "embedding"):
+            assert expanded_point[key] == full_point[key]
+
+
+@pytest.mark.unit
+def test_public_hodoscope_projection_reads_docent_scores_metadata():
+    stored_projection = _full_projection_fixture()
+    stored_projection["points"][0]["metadata"] = {"scores": {"passed": True, "reward": 1.0}}
+
+    public_projection = build_hodoscope_projection_view(stored_projection)
+
+    assert public_projection["points"][0]["outcome"] == "passed"
+
+
+@pytest.mark.unit
+def test_hodoscope_config_keeps_legacy_run_limit_range():
+    config = HodoscopeAnalysisConfig(limit=10_000)
+
+    assert config.limit == 10_000
+    assert config.max_actions == 5_000
 
 
 @pytest.mark.unit
@@ -130,7 +330,88 @@ def test_extract_hodoscope_actions_resolves_flat_metadata_field_names():
 
 
 @pytest.mark.unit
-def test_build_hodoscope_outputs_encodes_artifact_and_projection_points(
+def test_sample_hodoscope_actions_is_bounded_deterministic_and_ordered():
+    actions = [
+        hodoscope_pipeline.HodoscopeActionPoint(
+            agent_run_id=f"run-{index}",
+            transcript_id=f"transcript-{index}",
+            transcript_idx=0,
+            action_unit_idx=0,
+            first_block_idx=0,
+            action_text=f"action {index}",
+            task_context="",
+            metadata={},
+            group="group",
+        )
+        for index in range(30)
+    ]
+
+    sampled = sample_hodoscope_actions(actions, max_actions=10, seed=42)
+    repeated = sample_hodoscope_actions(actions, max_actions=10, seed=42)
+
+    assert len(sampled) == 10
+    assert [action.agent_run_id for action in sampled] == [
+        action.agent_run_id for action in repeated
+    ]
+    assert [actions.index(action) for action in sampled] == sorted(
+        actions.index(action) for action in sampled
+    )
+
+
+@pytest.mark.unit
+def test_sample_hodoscope_actions_preserves_small_groups_and_rotates_runs():
+    actions = [
+        hodoscope_pipeline.HodoscopeActionPoint(
+            agent_run_id=f"large-run-{index % 2}",
+            transcript_id=f"large-{index}",
+            transcript_idx=0,
+            action_unit_idx=index,
+            first_block_idx=index,
+            action_text=f"large action {index}",
+            task_context="",
+            metadata={},
+            group="large",
+        )
+        for index in range(28)
+    ]
+    actions.extend(
+        [
+            hodoscope_pipeline.HodoscopeActionPoint(
+                agent_run_id="small-run",
+                transcript_id="small",
+                transcript_idx=0,
+                action_unit_idx=0,
+                first_block_idx=0,
+                action_text="small action",
+                task_context="",
+                metadata={},
+                group="small",
+            ),
+            hodoscope_pipeline.HodoscopeActionPoint(
+                agent_run_id="tiny-run",
+                transcript_id="tiny",
+                transcript_idx=0,
+                action_unit_idx=0,
+                first_block_idx=0,
+                action_text="tiny action",
+                task_context="",
+                metadata={},
+                group="tiny",
+            ),
+        ]
+    )
+
+    sampled = sample_hodoscope_actions(actions, max_actions=10, seed=7)
+
+    assert {action.group for action in sampled} == {"large", "small", "tiny"}
+    assert {action.agent_run_id for action in sampled if action.group == "large"} == {
+        "large-run-0",
+        "large-run-1",
+    }
+
+
+@pytest.mark.unit
+def test_build_hodoscope_outputs_keeps_artifact_full_and_projection_compact(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _clear_embedding_env(monkeypatch)
@@ -188,7 +469,10 @@ def test_build_hodoscope_outputs_encodes_artifact_and_projection_points(
     assert len(projection["points"]) == 2
     assert projection["points"][0]["agent_run_id"] == "run-a"
     assert projection["points"][0]["first_block_idx"] == 1
-    assert projection["points"][0]["embedding"]
+    assert projection["points"][0]["context_excerpt"] == "debug timeout"
+    assert set(projection["points"][0]).isdisjoint(
+        {"embedding", "action_text", "task_context", "metadata"}
+    )
     assert isinstance(projection["points"][0]["x"], float)
     assert isinstance(projection["points"][0]["fps_rank"], int)
 
@@ -264,10 +548,13 @@ def test_openai_compatible_embedding_client_accepts_call_overrides(
         base_url="http://localhost:8001/v1",
     )
 
-    assert openai_provider.get_openai_compatible_embedding_config_error(
-        api_key="override-key",
-        base_url="http://localhost:8001/v1",
-    ) is None
+    assert (
+        openai_provider.get_openai_compatible_embedding_config_error(
+            api_key="override-key",
+            base_url="http://localhost:8001/v1",
+        )
+        is None
+    )
     assert str(client.base_url).rstrip("/") == "http://localhost:8001/v1"
     assert client.api_key == "override-key"
 

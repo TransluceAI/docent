@@ -1,7 +1,6 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { useParams } from 'next/navigation';
 import SingleRubricArea from '../../components/SingleRubricArea';
 import { CitationNavigationProvider } from './NavigateToCitationContext';
@@ -21,6 +20,11 @@ import {
 } from '@/providers/use-refinement-tab';
 import { TextSelectionProvider } from '@/providers/use-text-selection';
 import { useAppSelector } from '@/app/store/hooks';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 
 interface RubricLayoutBodyProps {
   collectionId: string;
@@ -121,90 +125,154 @@ function RubricLayoutBody({
   const rightSidebarOpen = useAppSelector(
     (state) => state.transcript.rightSidebarOpen
   );
+  const showLeftPanel = leftSidebarOpen;
+  const showResultPanel = isOnResultRoute;
+  const showRightPanel = rightSidebarOpen;
+  const leftDefaultSize = showResultPanel
+    ? showRightPanel
+      ? 28
+      : 34
+    : showRightPanel
+      ? 40
+      : 100;
+  const resultDefaultSize =
+    showLeftPanel && showRightPanel
+      ? 44
+      : showLeftPanel || showRightPanel
+        ? 66
+        : 100;
+  const rightDefaultSize = showResultPanel
+    ? showLeftPanel
+      ? 28
+      : 34
+    : showLeftPanel
+      ? 60
+      : 100;
+  if (!showLeftPanel && !showResultPanel && !showRightPanel) {
+    return <div className="flex-1 min-h-0 min-w-0" />;
+  }
 
   return (
-    <div className="flex-1 flex space-x-3 min-h-0 shrink-0">
-      {/* Left: SingleRubricArea (collapsible) */}
-      {leftSidebarOpen && (
-        <Card className="flex min-w-0 basis-1/3 max-w-1/3 grow-0 shrink-0">
-          <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
-        </Card>
-      )}
-
-      {/* Middle area: only when on a result */}
-      {isOnResultRoute && (
-        <div className="flex-1 min-w-0 min-h-0">{children}</div>
-      )}
-
-      {/* Right tabs area (collapsible via AgentRunViewer toggle) */}
-      {rightSidebarOpen && (
-        <motion.div
-          layout
-          transition={{ type: 'tween', duration: 0.25 }}
-          className={
-            isOnResultRoute
-              ? 'flex min-w-[260px] max-w-sm basis-1/4 grow-0 shrink-0'
-              : 'flex flex-1 min-w-0 min-h-0'
-          }
-        >
-          <Card className="flex-1 min-w-0 min-h-0 p-2">
-            <Tabs
-              defaultValue={activeTab}
-              value={activeTab}
-              onValueChange={(value) =>
-                setActiveTab(value as 'refine' | 'analyze' | 'label')
-              }
-              className={`flex flex-col h-full `}
+    <div className="flex-1 min-h-0 min-w-0 shrink-0 overflow-hidden">
+      <ResizablePanelGroup
+        autoSaveId={`docent-rubric-workspace-v1-${collectionId}`}
+        direction="horizontal"
+        id="rubric-workspace"
+      >
+        {showLeftPanel && (
+          <React.Fragment key="rubric-definition">
+            <ResizablePanel
+              className="min-w-0 overflow-hidden"
+              defaultSize={leftDefaultSize}
+              id="rubric-definition"
+              minSize={20}
+              order={1}
             >
-              {isOnResultRoute && (
-                <TabsList className="grid grid-cols-3 justify-start w-full mb-2">
-                  <TabsTrigger value="refine">Refine</TabsTrigger>
-                  <TabsTrigger value="analyze" disabled={!isOnResultRoute}>
-                    Analyze
-                  </TabsTrigger>
-                  <TabsTrigger value="label" disabled={!isOnResultRoute}>
-                    Label
-                  </TabsTrigger>
-                </TabsList>
-              )}
+              <Card className="flex h-full min-h-0 min-w-0 overflow-hidden">
+                <SingleRubricArea rubricId={rubricId} sessionId={sessionId} />
+              </Card>
+            </ResizablePanel>
+            {(showResultPanel || showRightPanel) && (
+              <ResizableHandle
+                aria-label="Resize rubric definition panel"
+                id="rubric-definition-handle"
+                withHandle
+              />
+            )}
+          </React.Fragment>
+        )}
 
-              <TabsContent value="refine" className="flex-1 min-h-0">
-                <RefinementChat
-                  collectionId={collectionId}
-                  sessionId={sessionId}
-                  rubricId={rubricId}
-                  isOnResultRoute={isOnResultRoute}
-                />
-              </TabsContent>
+        {showResultPanel && (
+          <React.Fragment key="rubric-result">
+            <ResizablePanel
+              className="min-w-0 overflow-hidden"
+              defaultSize={resultDefaultSize}
+              id="rubric-result"
+              minSize={32}
+              order={2}
+            >
+              <div className="h-full min-h-0 min-w-0 overflow-hidden">
+                {children}
+              </div>
+            </ResizablePanel>
+            {showRightPanel && (
+              <ResizableHandle
+                aria-label="Resize rubric result and assistant panels"
+                id="rubric-result-handle"
+                withHandle
+              />
+            )}
+          </React.Fragment>
+        )}
 
-              <TabsContent value="analyze" className="flex-1 min-h-0">
-                {isOnResultRoute && currentResult && (
-                  <TranscriptChat
-                    runId={currentResult.agent_run_id}
-                    collectionId={collectionId}
-                    judgeResult={currentResult}
-                    resultContext={{ rubricId, resultId: currentResult.id }}
-                    className="flex flex-col min-w-0 h-full"
-                  />
+        {showRightPanel && (
+          <ResizablePanel
+            key="rubric-assistant"
+            className="min-w-0 overflow-hidden"
+            defaultSize={rightDefaultSize}
+            id="rubric-assistant"
+            minSize={22}
+            order={3}
+          >
+            <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-2">
+              <Tabs
+                defaultValue={activeTab}
+                value={activeTab}
+                onValueChange={(value) =>
+                  setActiveTab(value as 'refine' | 'analyze' | 'label')
+                }
+                className="flex h-full min-h-0 flex-col"
+              >
+                {isOnResultRoute && (
+                  <TabsList className="mb-2 grid w-full shrink-0 grid-cols-3 justify-start">
+                    <TabsTrigger value="refine">Refine</TabsTrigger>
+                    <TabsTrigger value="analyze" disabled={!isOnResultRoute}>
+                      Analyze
+                    </TabsTrigger>
+                    <TabsTrigger value="label" disabled={!isOnResultRoute}>
+                      Label
+                    </TabsTrigger>
+                  </TabsList>
                 )}
-              </TabsContent>
-              <TabsContent value="label" className="flex-1 min-h-0">
-                {isOnResultRoute && currentResult ? (
-                  <LabelArea
-                    result={currentResult}
+
+                <TabsContent value="refine" className="min-h-0 flex-1">
+                  <RefinementChat
                     collectionId={collectionId}
+                    sessionId={sessionId}
                     rubricId={rubricId}
+                    isOnResultRoute={isOnResultRoute}
                   />
-                ) : (
-                  <div className="text-xs text-muted-foreground p-2">
-                    Open a result to edit labels.
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </Card>
-        </motion.div>
-      )}
+                </TabsContent>
+
+                <TabsContent value="analyze" className="min-h-0 flex-1">
+                  {isOnResultRoute && currentResult && (
+                    <TranscriptChat
+                      runId={currentResult.agent_run_id}
+                      collectionId={collectionId}
+                      judgeResult={currentResult}
+                      resultContext={{ rubricId, resultId: currentResult.id }}
+                      className="flex h-full min-w-0 flex-col"
+                    />
+                  )}
+                </TabsContent>
+                <TabsContent value="label" className="min-h-0 flex-1">
+                  {isOnResultRoute && currentResult ? (
+                    <LabelArea
+                      result={currentResult}
+                      collectionId={collectionId}
+                      rubricId={rubricId}
+                    />
+                  ) : (
+                    <div className="p-2 text-xs text-muted-foreground">
+                      Open a result to edit labels.
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </Card>
+          </ResizablePanel>
+        )}
+      </ResizablePanelGroup>
     </div>
   );
 }

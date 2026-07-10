@@ -5,6 +5,11 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Required for locked dependencies sourced from Git repositories (for example Hodoscope).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv - it's way faster than pip
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -30,13 +35,13 @@ RUN uv pip install --system -r requirements.txt
 COPY docent_core docent_core
 RUN uv pip install --system -e .
 
-# Copy .env and scripts for startup
+# Copy migration files for startup
 COPY alembic alembic
 COPY alembic.ini alembic.ini
-COPY .env .env
 
 # Create and set the docent user; avoid running container as root
 RUN groupadd -r docent && useradd -r -g docent docent
+RUN chown -R docent:docent /app
 USER docent
 
 # Default command (overridden by docker-compose services or Terraform config)

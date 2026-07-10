@@ -8,6 +8,11 @@ import { setAgentRunSidebarTab } from '@/app/store/transcriptSlice';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 
 import AgentSummary from '../components/AgentSummary';
 import AgentRunViewer, {
@@ -33,6 +38,9 @@ export default function AgentRunPage() {
   const curAgentRunId = Array.isArray(params.agent_run_id)
     ? params.agent_run_id[0]
     : params.agent_run_id;
+  const routeCollectionId = Array.isArray(params.collection_id)
+    ? params.collection_id[0]
+    : params.collection_id;
 
   const agentRunViewerRef = useRef<AgentRunViewerHandle | null>(null);
 
@@ -76,50 +84,78 @@ export default function AgentRunPage() {
 
   return (
     <Suspense>
-      {/* Transcript */}
-      <Card
-        className="h-full basis-1/2 p-3 min-h-0 min-w-0 flex flex-col space-y-2"
-        style={{ flexGrow: '2' }}
+      <ResizablePanelGroup
+        autoSaveId={`docent-agent-run-detail-v1-${routeCollectionId}`}
+        direction="horizontal"
+        id="agent-run-detail-workspace"
       >
-        <AgentRunViewer agentRunId={curAgentRunId} ref={setViewerRef} />
-      </Card>
+        <ResizablePanel
+          key="transcript"
+          className="min-w-0 overflow-hidden"
+          defaultSize={rightSidebarOpen ? 64 : 100}
+          id="transcript"
+          minSize={45}
+          order={1}
+        >
+          <Card className="flex h-full min-h-0 min-w-0 flex-col space-y-2 overflow-hidden p-3">
+            <AgentRunViewer agentRunId={curAgentRunId} ref={setViewerRef} />
+          </Card>
+        </ResizablePanel>
 
-      {/* Assistant summary / transcript chat */}
-      {rightSidebarOpen && (
-        <Card className="shrink-0 grow-1 h-full p-3 flex flex-col min-w-0 min-h-0 bg-background basis-2/5">
-          <Tabs
-            value={selectedTab}
-            onValueChange={(value) => dispatch(setAgentRunSidebarTab(value))}
-            className="h-full flex flex-col"
-          >
-            <TabsList className="grid w-full grid-cols-2 h-8">
-              <TabsTrigger value="agent" className="text-xs">
-                Summary
-              </TabsTrigger>
-              <TabsTrigger value="chat" className="text-xs">
-                Chat
-              </TabsTrigger>
-            </TabsList>
+        {rightSidebarOpen && (
+          <React.Fragment key="agent-details">
+            <ResizableHandle
+              aria-label="Resize transcript and agent details"
+              id="agent-run-detail-handle"
+              withHandle
+            />
+            <ResizablePanel
+              className="min-w-0 overflow-hidden"
+              defaultSize={36}
+              id="agent-details"
+              maxSize={52}
+              minSize={24}
+              order={2}
+            >
+              <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background p-3">
+                <Tabs
+                  value={selectedTab}
+                  onValueChange={(value) =>
+                    dispatch(setAgentRunSidebarTab(value))
+                  }
+                  className="flex h-full min-h-0 flex-col"
+                >
+                  <TabsList className="grid h-8 w-full shrink-0 grid-cols-2">
+                    <TabsTrigger value="agent" className="text-xs">
+                      Summary
+                    </TabsTrigger>
+                    <TabsTrigger value="chat" className="text-xs">
+                      Chat
+                    </TabsTrigger>
+                  </TabsList>
 
-            <TabsContent value="agent" className="flex-1 mt-0 min-h-0">
-              <ScrollArea className="h-full pt-2">
-                <AgentSummary agentRunId={curAgentRunId} />
-              </ScrollArea>
-            </TabsContent>
+                  <TabsContent value="agent" className="mt-0 min-h-0 flex-1">
+                    <ScrollArea className="h-full pt-2">
+                      <AgentSummary agentRunId={curAgentRunId} />
+                    </ScrollArea>
+                  </TabsContent>
 
-            <TabsContent value="chat" className="flex-1 mt-0 min-h-0">
-              <div className="h-full pt-2 flex flex-col min-h-0">
-                <TranscriptChat
-                  runId={curAgentRunId}
-                  collectionId={collectionId}
-                  title="Transcript Chat"
-                  className="flex-1 flex flex-col min-w-0 min-h-0"
-                />
-              </div>
-            </TabsContent>
-          </Tabs>
-        </Card>
-      )}
+                  <TabsContent value="chat" className="mt-0 min-h-0 flex-1">
+                    <div className="flex h-full min-h-0 flex-col pt-2">
+                      <TranscriptChat
+                        runId={curAgentRunId}
+                        collectionId={collectionId}
+                        title="Transcript Chat"
+                        className="flex min-h-0 min-w-0 flex-1 flex-col"
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </Card>
+            </ResizablePanel>
+          </React.Fragment>
+        )}
+      </ResizablePanelGroup>
     </Suspense>
   );
 }

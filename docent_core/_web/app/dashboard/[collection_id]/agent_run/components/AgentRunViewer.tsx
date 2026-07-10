@@ -281,6 +281,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
 
     // State for sidebar toggle and hover functionality
     const [sidebarVisible, setSidebarVisible] = useState(true);
+    const hasTranscriptNavigator =
+      (canonicalTree?.transcript_ids_ordered?.length ?? 0) >= 2;
     const rightSidebarOpen = useAppSelector(
       (state) => state.transcript?.rightSidebarOpen
     );
@@ -832,6 +834,8 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 cursor-default"
+                  aria-label={`${rightSidebarOpen ? 'Hide' : 'Show'} details panel`}
+                  title={`${rightSidebarOpen ? 'Hide' : 'Show'} details panel`}
                   onClick={() => dispatch(toggleRightSidebar())}
                 >
                   {rightSidebarOpen ? (
@@ -854,19 +858,51 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
               </div>
             </div>
             <ResizablePanelGroup
+              autoSaveId={`docent-transcript-workspace-v1-${agentRunId}`}
               direction="horizontal"
               className="flex flex-1 min-h-0 w-full relative"
               style={{ overflow: 'visible' }} // need style attr to override style attr
             >
               {/* Floating Sidebar - shows when sidebar is hidden and hovering */}
-              {canonicalTree?.transcript_ids_ordered &&
-                canonicalTree.transcript_ids_ordered.length >= 2 &&
-                !sidebarVisible &&
-                sidebarHovering && (
-                  <div
-                    className="absolute -top-3 -left-3 w-1/4 min-w-[250px] max-w-[400px] bg-background border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[80vh] overflow-y-auto custom-scrollbar"
-                    onMouseEnter={() => setSidebarHovering(true)}
-                    onMouseLeave={() => setSidebarHovering(false)}
+              {hasTranscriptNavigator && !sidebarVisible && sidebarHovering && (
+                <div
+                  className="absolute -top-3 -left-3 w-1/4 min-w-[250px] max-w-[400px] bg-background border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[80vh] overflow-y-auto custom-scrollbar"
+                  onMouseEnter={() => setSidebarHovering(true)}
+                  onMouseLeave={() => setSidebarHovering(false)}
+                >
+                  <TranscriptNavigator
+                    nodes={nodeTree}
+                    selectedTranscriptId={selectedTranscriptId}
+                    selectedTranscriptGroupId={selectedTranscriptGroupId}
+                    expandedGroups={expandedGroups}
+                    agentRun={agentRun}
+                    transcriptsById={transcriptsById}
+                    transcriptGroupsById={transcriptGroupsById}
+                    onTranscriptSelect={handleTranscriptSelect}
+                    onGroupToggle={handleGroupToggle}
+                    className="overflow-y-auto px-3 pb-3 flex-shrink-0"
+                    showHeader
+                    headerLeft={
+                      <div className="p-1 w-6 h-6 flex-shrink-0"></div>
+                    }
+                    headerClassName="p-3 pb-1"
+                    fullTree={fullTree}
+                    onFullTreeChange={(v) => setFullTree(!!v)}
+                    onToggleAllGroups={handleToggleAllGroups}
+                    allGroupsExpanded={allGroupsExpanded}
+                  />
+                </div>
+              )}
+              {/* Transcript Groups and Transcripts Sidebar */}
+              {hasTranscriptNavigator && sidebarVisible && (
+                <React.Fragment key="transcript-navigator">
+                  <ResizablePanel
+                    id="transcript-navigator"
+                    order={1}
+                    defaultSize={25}
+                    minSize={20}
+                    maxSize={50}
+                    className="flex min-h-0 flex-col"
                   >
                     <TranscriptNavigator
                       nodes={nodeTree}
@@ -878,68 +914,40 @@ const AgentRunViewer = forwardRef<AgentRunViewerHandle, AgentRunViewerProps>(
                       transcriptGroupsById={transcriptGroupsById}
                       onTranscriptSelect={handleTranscriptSelect}
                       onGroupToggle={handleGroupToggle}
-                      className="overflow-y-auto px-3 pb-3 flex-shrink-0"
+                      className="flex-1 overflow-y-auto min-h-0 pr-1"
                       showHeader
                       headerLeft={
-                        <div className="p-1 w-6 h-6 flex-shrink-0"></div>
+                        <button
+                          onClick={() => setSidebarVisible(false)}
+                          className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          aria-label="Hide transcript hierarchy"
+                        >
+                          <FolderTree className="h-4 w-4" />
+                        </button>
                       }
-                      headerClassName="p-3 pb-1"
                       fullTree={fullTree}
                       onFullTreeChange={(v) => setFullTree(!!v)}
                       onToggleAllGroups={handleToggleAllGroups}
                       allGroupsExpanded={allGroupsExpanded}
                     />
-                  </div>
-                )}
-              {/* Transcript Groups and Transcripts Sidebar */}
-              {canonicalTree?.transcript_ids_ordered &&
-                canonicalTree.transcript_ids_ordered.length >= 2 && (
-                  <>
-                    <ResizablePanel
-                      defaultSize={sidebarVisible ? 25 : 0}
-                      minSize={sidebarVisible ? 20 : 0}
-                      maxSize={sidebarVisible ? 50 : 0}
-                      className={
-                        sidebarVisible ? 'flex flex-col min-h-0' : 'hidden'
-                      }
-                    >
-                      <TranscriptNavigator
-                        nodes={nodeTree}
-                        selectedTranscriptId={selectedTranscriptId}
-                        selectedTranscriptGroupId={selectedTranscriptGroupId}
-                        expandedGroups={expandedGroups}
-                        agentRun={agentRun}
-                        transcriptsById={transcriptsById}
-                        transcriptGroupsById={transcriptGroupsById}
-                        onTranscriptSelect={handleTranscriptSelect}
-                        onGroupToggle={handleGroupToggle}
-                        className="flex-1 overflow-y-auto min-h-0 pr-1"
-                        showHeader
-                        headerLeft={
-                          <button
-                            onClick={() => setSidebarVisible(false)}
-                            className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-                            aria-label="Hide transcript hierarchy"
-                          >
-                            <FolderTree className="h-4 w-4" />
-                          </button>
-                        }
-                        fullTree={fullTree}
-                        onFullTreeChange={(v) => setFullTree(!!v)}
-                        onToggleAllGroups={handleToggleAllGroups}
-                        allGroupsExpanded={allGroupsExpanded}
-                      />
-                    </ResizablePanel>
-                    <ResizableHandle
-                      withHandle={false}
-                      className={cn('mx-2', sidebarVisible ? '' : 'hidden')}
-                    />
-                  </>
-                )}
+                  </ResizablePanel>
+                  <ResizableHandle
+                    aria-label="Resize transcript hierarchy and content"
+                    id="transcript-navigator-handle"
+                    withHandle
+                    className="mx-2"
+                  />
+                </React.Fragment>
+              )}
 
               {transcript && (
                 <ResizablePanel
-                  defaultSize={75}
+                  key="transcript-content"
+                  id="transcript-content"
+                  order={2}
+                  defaultSize={
+                    hasTranscriptNavigator && sidebarVisible ? 75 : 100
+                  }
                   className="flex flex-col min-h-0"
                 >
                   {/* Transcript content */}

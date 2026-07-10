@@ -1,4 +1,5 @@
 import os
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -8,15 +9,9 @@ from docent._log_util import get_logger
 logger = get_logger(__name__)
 
 
-def load_dotenv():
+def load_dotenv() -> MutableMapping[str, str]:
     # Navigate to project root (3 levels up) by default
     fpath = Path(__file__).parent.parent.parent.absolute() / ".env"
-    if not fpath.exists():
-        raise FileNotFoundError(
-            f"No .env file found at {fpath}. "
-            "Make sure you've created one, then put it at project root."
-        )
-
     # Determine how to resolve conflicts between .env and os.environ
     env_resolution_strategy = os.getenv("ENV_RESOLUTION_STRATEGY", "exception")
     if env_resolution_strategy not in ["exception", "dotenv", "os_environ"]:
@@ -24,6 +19,15 @@ def load_dotenv():
     logger.info(
         f"Using strategy={env_resolution_strategy} to resolve conflicts between .env and os.environ"
     )
+
+    if not fpath.exists():
+        if env_resolution_strategy == "os_environ":
+            logger.info(f"No .env file found at {fpath}; using environment variables only")
+            return os.environ
+        raise FileNotFoundError(
+            f"No .env file found at {fpath}. "
+            "Make sure you've created one, then put it at project root."
+        )
 
     # Load the .env file and ensure all values are strings
     env_dict = dotenv_values(fpath)

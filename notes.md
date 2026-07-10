@@ -331,3 +331,110 @@
   - `hodoscope-1024`: `Qwen/Qwen3-Embedding-0.6B`, dimension `1024`
 - `uv run pytest -m unit -v tests/unit/test_hodoscope_analysis.py`: `13 passed`.
 - `git diff --check`: passed.
+
+---
+
+# Notes: Resizable Workspace And Interactive Hodoscope Embedding
+
+## Confirmed target and deployment boundary
+- Product source: `/data/lyuwt/docent-inner`, branch `main`, starting HEAD `a5ad148946e83da785086e15aad0ceed8206c616`, initially clean.
+- Current formal service at `http://localhost:3021` is built from the older dirty copy under `/data/lyuwt/Agent-Test/tbench/benchmarks/work/docent-selfhost-formal-20260708/docent-src` and has no Hodoscope frontend, router, service, worker, or migration.
+- Product changes therefore require a source runtime on ports 3001/8889 for verification; they do not automatically update formal 3021.
+
+## Existing layout findings
+- Dashboard uses a plain fixed horizontal flex for `ExperimentViewer` and `RubricArea`.
+- Agent-run pages use fixed flex bases for the collection rail, transcript, and summary/chat rail.
+- `ChartsArea` uses browser-native `resize-y`, which is uncoordinated, visually inconsistent, and not persisted.
+- `react-resizable-panels@2.1.9` and the local `components/ui/resizable.tsx` wrapper already exist.
+
+## Hodoscope visualization mini-brief
+- Visual layer: one embedding scatter workspace inside `HodoscopePanel`.
+- Analytical job: explore behavioral similarity, inspect representative actions, compare model/metadata groups, and deep-link from a selected point to its source run.
+- Data shape: one projection per page; 242 points in the current Agent-Test analysis, configurable up to 5000 points; each point has stable IDs, 2D coordinates, group, summary, source location, and heavyweight artifact fields.
+- Primary owner: bespoke SVG interaction; supporting owners are React/Next integration, accessibility, and visualization testing.
+- Encoding: x/y are projection coordinates without quantitative axis meaning; color identifies group, selected marks get a high-contrast ring, hover is preview only, and the inspector states the selected group and source rank in text.
+- Interaction: fit/reset and +/- controls, wheel zoom, pointer pan, click/tap committed selection, double-click or Open action navigation, group visibility controls, and keyboard previous/next selection.
+- Responsive fallback: wide containers use viewport plus inspector; narrow containers stack inspector below the still-visible map and retain button-based zoom/selection paths.
+- Accessibility: no essential content is hover-only; the selected action and group remain visible as text; chart has a keyboard entry point and instructions; resize handles remain keyboard-operable.
+- QA: pure projection-view tests, frontend lint/build, desktop and narrow screenshots, light/dark review, and live checks for resize persistence, zoom/pan/reset, group filter, selection, and source navigation.
+- Fresh-pass status: independent read-only source/deployment and UX reconnaissance agents reviewed the implementation boundary before edits.
+
+## Technical design and performance boundary
+- React remains the structure/state owner; no client-only renderer dependency is added.
+- Use existing semantic color tokens and SVG vector effects; do not use non-uniform `preserveAspectRatio="none"`.
+- Panel sizes are tiny personal preferences stored by `react-resizable-panels`; projection filter/selection/viewport state remains ephemeral and invalid state resets to fit-all.
+- The current 242-point projection sample is about 4.69 MB because embeddings, full action text, and full metadata are duplicated into the map response. A map-specific projection view is about 0.18 MB for the same sample, while the artifact download retains the full record.
+- At 5000 points, SVG remains acceptable for a static mark field with group transforms and limited state changes; if future collections need continuous animation or substantially more points, Canvas2D is the next renderer, not WebGL.
+
+## Implementation result
+- Dashboard Experiment/Rubric, Experiment Charts/Hodoscope/Run list, AgentRun collection/content, transcript/details, transcript hierarchy/content, and Rubric definition/result/assistant surfaces now use modern drag handles with keyboard support and versioned local persistence.
+- Hodoscope now supports outcome/group coloring, category toggles, deferred text search, committed selection, hover preview, representative actions, source-run navigation, button/wheel zoom, pointer pan, fit/reset, and arrow/Enter/Escape/0 keyboard controls.
+- The map and inspector switch between horizontal and vertical layouts at a container breakpoint; ResizeObserver and wheel listeners rebind across the remount, and pointer coordinates use the SVG screen transform so letterboxing does not skew zoom/pan anchors.
+- Outcome extraction understands Docent `metadata.scores`; the compact helper is idempotent and exposes `hodoscope_projection_view.v1`.
+- Legacy `/projection` callers still receive the full v1 shape. The frontend explicitly requests `?compact=true`; the artifact endpoint remains full.
+- New jobs store a compact projection while the full embedding/raw action/context/metadata stays in the artifact. New jobs recommend at most 500 loaded runs and cap points to 500-5000 with deterministic group/run round-robin coverage.
+
+## Final verification
+- Hodoscope unit suite: `20 passed`.
+- Focused Pyright: `0 errors, 0 warnings`.
+- Focused ESLint: `0 errors`; only 11 existing warnings in pre-existing touched modules.
+- Next.js 16.2.6 production build: passed, including TypeScript and all 13 static pages.
+- `git diff --check`: passed.
+- Browser QA on the real 2763-point projection: dashboard resize/persistence, search, outcome filtering, zoom, pan, fit, selection, source link, AgentRun panel resizing, responsive breakpoint transition, and post-breakpoint wheel zoom passed.
+- Compact live response: 2,268,726 bytes in 1.37 seconds versus the former duplicate-heavy path at about 3.87 seconds; full legacy response still includes embedding and action text.
+- Final source runtime: frontend `http://localhost:3001`, backend `http://localhost:8889`, worker active. Formal 3021/8901 deployment remains untouched.
+
+---
+
+# Notes: Current Docent Docker Rebuild
+
+## Pre-deployment evidence
+- Current source: `/data/lyuwt/docent-inner`, branch `main`, HEAD `a5ad148946e8`, with 20 pre-existing modified/untracked paths that must be included in the rebuilt images and preserved in the worktree.
+- Older rootless formal stack: five `docent_formal_*` containers from `/data/lyuwt/Agent-Test/tbench/benchmarks/work/docent-selfhost-formal-20260708/docent-src`, serving frontend/backend on `3021/8901`.
+- Root Docker daemon: current Docent Postgres/Redis plus two active and two obsolete exited embedding containers.
+- Existing database volume `docent_inner_pgdata` contains 1 collection and 89 AgentRuns; it will be reused, not deleted.
+- Active embedding endpoints are host-network vLLM containers on ports 8001 (512-dimensional Docent embeddings) and 8000 (1024-dimensional Hodoscope embeddings).
+- Current Compose has no migration startup step and would otherwise create `docent-inner_pgdata`; deployment must explicitly reuse `docent_inner_pgdata` and run `alembic upgrade head` before starting backend/worker.
+
+## Safety boundary
+- Stop/remove containers only; preserve all named and anonymous volumes.
+- Do not change `.env` secret values, dependency lockfiles, or user source edits.
+- Deployment-specific host-gateway and external-volume wiring will live outside the repository.
+
+## Old runtime shutdown
+- Removed all five `docent_formal_*` containers from the Agent-Test rootless Docker daemon.
+- Removed root-daemon `docent_postgres`, `docent_redis`, and the two obsolete exited embedding containers.
+- Restarted `docent-embedding-512-vllm` and `docent-hodoscope-embedding-1024-vllm` from their existing host-network configurations.
+- Confirmed preserved volumes: root `docent_inner_pgdata`; rootless `docent_formal_pgdata` and `docent_smoke_pgdata`.
+
+## Build attempts
+- First no-cache build failed before source compilation: Docker daemon mirror metadata requests for `python:3.12-slim` and `node:22-alpine` timed out.
+- Preloaded the three current base images with `regctl` plus `docker load`: `python:3.12-slim`, `node:22-alpine`, and `ghcr.io/astral-sh/uv:latest`.
+- Interrupted the next build before compilation after the context exceeded 523 MB; nested frontend `node_modules` and `.next` were not covered by the root-only ignore patterns.
+- Added `**/node_modules/` and `**/.next/` to `.dockerignore`; the deployment override now uses one freshly built `docent-inner-app:current` image for both backend and worker.
+- The next backend build failed at `uv pip install` because the fixed Hodoscope Git dependency requires `git`; `Dockerfile.backend` now installs only `git` and `ca-certificates`, then removes apt lists.
+- After adding Git, the build reached Annoy compilation and failed on missing `g++`; the backend build dependencies now include `g++` for the Python 3.12 source build.
+- The next attempt passed the compiler boundary but GitHub clone failed with `GnuTLS recv error (-110)`. Host uv cache contains `hodoscope-0.2.4-py3-none-any.whl` under the exact `e9b6930d4a0149cf` commit cache, SHA-256 `85e72e186dc2ff0b1a0124eca9d98bd735aecb505a81daaa6e7516d9a0e07ddf`; use it as a temporary local build input.
+- Initial wheel injection conflicted with the exported editable root project, which still declared the Git URL. The temporary Dockerfile now installs exported dependencies without root `-e .`, then installs the copied root project with `--no-deps`.
+- Backend image `docent-inner-app:current` built successfully from the current source; the temporary wheel copy was removed afterward.
+- Frontend image build exposed stale npm assumptions: no `package-lock.json` exists. `Dockerfile.frontend` now uses Bun 1.3.14 and the existing `bun.lock` in frozen mode while retaining the Node 22 Alpine runtime stage.
+- Frontend image `docent-inner-frontend:current` built successfully; Next.js compiled, type-checked, and generated all 13 pages.
+- Initial Postgres/Redis startup did not create containers because `redis:alpine` was missing locally and daemon pull stalled; preload the exact Redis image before retry.
+- After preloading Redis, Postgres reported ready and Redis returned `PONG`. Migration then failed before connecting because `/app/pyproject.toml` and most copied source files are mode 600 owned by root inside the image. Backend Dockerfile now transfers `/app` to the runtime `docent` user.
+- Permission-fixed image passed read/import checks. The next migration reached `postgres` but used host port 55432 inside the Docker network; Compose now overrides backend/worker to internal Postgres 5432 and Redis 6379 while retaining host publications 55432/56379.
+- Migration completed successfully; `alembic current` reports `a2e2b7c9142a (head)`.
+- First complete stack start succeeded: frontend `/health` and backend `/rest/ping` returned 200, with all five Compose services running.
+- Final image review found the pre-existing `COPY .env .env` baked local secrets into the backend image. Removed it; Compose `env_file` remains the only runtime secret injection path.
+- Secret-free backend/worker startup initially failed because `load_dotenv()` unconditionally required `/app/.env`. In `os_environ` mode it now returns the injected process environment when the file is absent; default mode still raises `FileNotFoundError`. Added two unit tests for both branches.
+- Both vLLM `/v1/models` endpoints return 200 on the host, but backend requests to host-gateway, LAN, docker0, and all bridge addresses time out. Final local deployment uses host networking for frontend/backend/worker and localhost URLs for embeddings plus published Postgres/Redis ports.
+
+## Final online state
+- Durable runtime spec: `/home/lyuwt/.config/docent-inner/docker-compose.online.yml` (mode 600); all temporary build tar files and temporary Dockerfiles were removed.
+- Current URLs: frontend `http://localhost:3000`, frontend health `http://localhost:3000/health`, backend `http://localhost:8888`, backend ping `http://localhost:8888/rest/ping`.
+- All five application/dependency containers are running with restart count 0. `docker top docent_worker` shows the worker parent plus two worker child processes.
+- Preserved database state: 1 collection, 89 AgentRuns, 5 Hodoscope analyses; Alembic `a2e2b7c9142a` head. Redis returns `PONG`.
+- Container-internal embedding smoke: BGE endpoint returned 200 with 512 dimensions; Qwen Hodoscope endpoint returned 200 with 1024 dimensions.
+- Frontend/backend/docs/openapi endpoints all returned 200; root frontend redirected to `/signup` and completed with 200.
+- Recent frontend/backend logs had no matched errors. Worker had one benign LiteLLM remote cost-map timeout warning and explicitly fell back to its local backup; worker processes remained running.
+- Old rootless formal containers are absent; former ports 3021 and 8901 return no connection.
+- Verification: `tests/unit/test_env.py` has 2 passing tests; `git diff --check` passed; `uv.lock` and `docent_core/_web/bun.lock` are unchanged.

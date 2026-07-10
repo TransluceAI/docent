@@ -12,6 +12,11 @@ import { skipToken } from '@reduxjs/toolkit/query';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 
@@ -81,8 +86,10 @@ const METADATA_FETCH_BATCH_SIZE = 200;
 
 export default function ExperimentViewer({
   activeRunId,
+  collectionId: routeCollectionId,
 }: {
   activeRunId?: string;
+  collectionId: string;
 }) {
   const dispatch = useAppDispatch();
 
@@ -567,63 +574,108 @@ export default function ExperimentViewer({
     );
 
   return (
-    <Card className="flex-1 flex flex-col h-full min-w-0">
-      {/* Header with organization dropdown - always visible */}
-      <div className="flex justify-between items-center shrink-0">
-        <div className="flex flex-col">
-          <div className="text-sm font-semibold">Chart Visualization</div>
-          <div className="text-xs text-muted-foreground">
-            Plot trends in your data
+    <Card className="flex h-full min-w-0 flex-1 flex-col space-y-0 overflow-hidden p-2">
+      <ResizablePanelGroup
+        key={routeCollectionId}
+        autoSaveId={`docent-experiment-workspace-v1-${routeCollectionId}`}
+        direction="vertical"
+        id="experiment-workspace"
+      >
+        <ResizablePanel
+          className="min-h-0 overflow-hidden"
+          defaultSize={18}
+          id="charts"
+          minSize={10}
+          order={1}
+        >
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background/60 p-2 shadow-sm">
+            <div className="mb-2 flex shrink-0 items-center justify-between">
+              <div className="flex min-w-0 flex-col">
+                <div className="text-sm font-semibold">Chart Visualization</div>
+                <div className="text-xs text-muted-foreground">
+                  Plot trends in your data
+                </div>
+              </div>
+            </div>
+            <ChartsArea />
           </div>
-        </div>
-      </div>
+        </ResizablePanel>
 
-      <ChartsArea />
+        <ResizableHandle
+          aria-label="Resize charts and Hodoscope panels"
+          id="experiment-charts-handle"
+          withHandle
+        />
 
-      <HodoscopePanel hasWritePermission={hasWritePermission} />
-
-      {/* Agent run list */}
-      <div className="flex flex-row items-center justify-between">
-        <div className="flex flex-col">
-          <div className="text-sm font-semibold">Agent Run List</div>
-          <div className="text-xs text-muted-foreground">
-            {agentRunIds?.length || 0} agent runs matching the current view
+        <ResizablePanel
+          className="min-h-0 overflow-hidden"
+          defaultSize={57}
+          id="hodoscope"
+          minSize={50}
+          order={2}
+        >
+          <div className="h-full min-h-0 overflow-hidden px-0.5">
+            <HodoscopePanel hasWritePermission={hasWritePermission} />
           </div>
-        </div>
+        </ResizablePanel>
 
-        <UploadRunsButton
-          onImportSuccess={handleUploadSuccess}
-          disabled={!hasWritePermission}
+        <ResizableHandle
+          aria-label="Resize Hodoscope and agent run panels"
+          id="experiment-runs-handle"
+          withHandle
         />
-      </div>
 
-      {/* Filtering controls */}
-      <TranscriptFilterControls metadataData={metadataData} />
+        <ResizablePanel
+          className="min-h-0 overflow-hidden"
+          defaultSize={25}
+          id="agent-runs"
+          minSize={20}
+          order={3}
+        >
+          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background/60 p-2 shadow-sm">
+            <div className="flex shrink-0 flex-row items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">Agent Run List</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {agentRunIds?.length || 0} agent runs matching the current
+                  view
+                </div>
+              </div>
 
-      {/* Agent run table */}
-      <div className="flex-1 min-w-0 min-h-0 flex">
-        <AgentRunTable
-          agentRunIds={agentRunIds}
-          metadataData={metadataData}
-          loadingMetadataIds={loadingMetadataIds}
-          requestedMetadataIds={requestedMetadataIds}
-          availableColumns={availableColumns}
-          selectedColumns={selectedColumns}
-          onSelectedColumnsChange={setSelectedColumns}
-          sortableColumns={sortableColumns}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSortChange={handleSortingChange}
-          activeRunId={activeRunId}
-          requestMetadataForIds={requestMetadataForIds}
-          dropZoneHandlers={dropZoneHandlers}
-          isDragActive={isDragActive}
-          isOverDropZone={isOverDropZone}
-          scrollContainerRef={setScrollContainer}
-          onRowMouseDown={handleRowMouseDown}
-          emptyState={emptyStateContent}
-        />
-      </div>
+              <UploadRunsButton
+                onImportSuccess={handleUploadSuccess}
+                disabled={!hasWritePermission}
+              />
+            </div>
+
+            <TranscriptFilterControls metadataData={metadataData} />
+
+            <div className="flex min-h-0 min-w-0 flex-1">
+              <AgentRunTable
+                agentRunIds={agentRunIds}
+                metadataData={metadataData}
+                loadingMetadataIds={loadingMetadataIds}
+                requestedMetadataIds={requestedMetadataIds}
+                availableColumns={availableColumns}
+                selectedColumns={selectedColumns}
+                onSelectedColumnsChange={setSelectedColumns}
+                sortableColumns={sortableColumns}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSortChange={handleSortingChange}
+                activeRunId={activeRunId}
+                requestMetadataForIds={requestMetadataForIds}
+                dropZoneHandlers={dropZoneHandlers}
+                isDragActive={isDragActive}
+                isOverDropZone={isOverDropZone}
+                scrollContainerRef={setScrollContainer}
+                onRowMouseDown={handleRowMouseDown}
+                emptyState={emptyStateContent}
+              />
+            </div>
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       <UploadRunsDialog
         isOpen={uploadDialogOpen}

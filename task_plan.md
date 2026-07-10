@@ -213,3 +213,91 @@ Import the existing Agent-Test projected runs and raw trajectory references into
 
 ## Status
 **Complete** - imported 89 Agent-Test projected AgentRuns into collection `a63232a9-372f-40d5-9871-df52fc624a47`; completed Hodoscope analysis `745f1359-d73d-4c95-b119-3ce0a4a1a959` with 242 points, 1 group, `tsne` projection, and 1024-dimensional decoded Hodoscope embeddings.
+
+---
+
+# Task Plan: Resizable Workspace And Interactive Hodoscope Embedding
+
+## Goal
+Make the main Docent workspace panes drag-resizable with persisted layouts, and turn the Hodoscope embedding into a modern exploratory map with usable zoom, pan, filtering, selection, keyboard/touch fallbacks, and a responsive inspector.
+
+## Scope Boundary
+- P0: Reuse the installed `react-resizable-panels`; do not add frontend dependencies or change `bun.lock`.
+- P0: Preserve dashboard, transcript, rubric, Hodoscope job, artifact download, and deep-link behavior.
+- P0: Remove the current non-uniform SVG distortion and separate hover preview from committed selection/navigation.
+- P0: Keep the full Hodoscope artifact downloadable while returning a lightweight projection view to the browser.
+- P1: Persist only personal panel sizes in local storage; keep transient hover, map drag, zoom, and point selection ephemeral.
+- P1: Preserve semantic light/dark theme tokens, keyboard resizing, pointer/touch selection, and narrow-layout fallbacks.
+- P2: Do not migrate the formal 3021 deployment in this pass unless the product-source implementation and runtime checks pass first.
+
+## Phases
+- [x] Phase 1: Inspect product source, formal deployment ancestry, current layouts, renderer, data shape, and runtime boundaries.
+- [x] Phase 2: Record the panel and visualization technical design.
+- [x] Phase 3: Implement reusable modern resize handles and resizable dashboard/agent-run/experiment panes.
+- [x] Phase 4: Implement the interactive Hodoscope embedding and lightweight projection response.
+- [x] Phase 5: Run focused Python tests, frontend lint/build, and browser interaction/visual checks.
+- [x] Phase 6: Report exact changed and untouched paths plus the deployment boundary.
+
+## Key Decisions
+- Product source of truth is `/data/lyuwt/docent-inner`; the formal 3021 tree is an older dirty deployment copy with no Hodoscope backend or frontend and must not be overwritten wholesale.
+- Use a calm research-workspace visual direction: one dominant evidence viewport, compact command bars, restrained borders, visible selection, and no decorative 3D/particle effects.
+- React owns filters, committed selection, routing, panel persistence, and inspector state; the existing hand-authored SVG owns normalized coordinates and marks.
+- Keep one SVG instance per page. The normal live dataset has 242 points and the configured upper bound is 5000; use group-level transforms for pan/zoom rather than rerendering geometry on every pointer move where possible.
+- Use explicit zoom controls plus wheel zoom, pointer pan, tap/click selection, double-click or an explicit Open action for navigation, and keyboard point stepping as the non-pointer path.
+- Panel layouts use stable `autoSaveId` keys. Incoming URL state is unchanged; Hodoscope hover, selection, filter, and viewport are intentionally not written into the URL in this pass.
+- The projection endpoint should omit full embeddings, raw action text, and full metadata from the browser payload; keep those fields in the artifact endpoint and return a bounded context excerpt for the inspector.
+
+## Errors Encountered
+- The formal 3021 deployment copy predates Hodoscope, so product-source verification used isolated ports 3001/8889 instead of overwriting that dirty runtime tree.
+- A first compact-response implementation changed the legacy `/projection` contract; the final route keeps the full response by default and makes `compact=true` explicit.
+- Conditional panel keys initially remounted viewer subtrees and invalidated saved layouts; stable React reconciliation keys and panel-ID combinations now preserve state.
+- Browser QA sees the pre-existing anonymous Transcript Chat 401 when Chat is selected. It is not treated as a resize/Hodoscope regression, and the existing permission policy was left unchanged.
+- The configured run limit could create far more SVG points than its label implied; the UI now recommends at most 500 loaded runs and new jobs separately cap/stratify 500-5000 action points while the backend retains the legacy API validation range.
+
+## Status
+**Complete** - Product-source UI, compact projection path, bounded new-job sampling, tests, production build, browser interaction checks, and isolated runtime smoke checks are complete.
+
+---
+
+# Task Plan: Rebuild And Online Current Docent
+
+## Goal
+Stop the older Docent Docker deployments and bring the current `/data/lyuwt/docent-inner` source online from freshly rebuilt images without deleting database volumes.
+
+## Phases
+- [x] Phase 1: Inventory both Docker daemons, current source state, ports, data volumes, and embedding dependencies
+- [x] Phase 2: Stop and remove old Docent application/dependency containers while preserving volumes
+- [x] Phase 3: Rebuild backend/frontend/worker from the current worktree and apply migrations
+- [x] Phase 4: Start one current deployment and verify frontend, API, worker, Postgres, Redis, embeddings, and preserved data
+- [x] Phase 5: Record exact runtime state, ports, changed files, and remaining limits
+
+## Key Decisions
+- Rebuild application images from the dirty current worktree at HEAD `a5ad148946e8`; do not commit, discard, or rewrite the user's source changes.
+- Preserve `docent_inner_pgdata` and the rootless formal deployment volume; do not run `docker compose down -v` or delete any Docker volume.
+- Reuse `docent_inner_pgdata` for the rebuilt deployment so the existing 1 collection and 89 AgentRuns remain available.
+- Restart the two active local vLLM embedding containers, but remove obsolete exited Docent embedding containers.
+- Use a local Compose override for host embedding routing and the existing Postgres volume so deployment-specific wiring does not alter tracked product source.
+- Because host firewall policy blocks bridge-to-host traffic, the final local runtime uses host networking for frontend/backend/worker. This trades network isolation for working local GPU embedding access; Postgres/Redis remain normal published bridge services.
+
+## Errors Encountered
+- The first redacted `docker compose config` inspection failed because the jq filter called `with_entries` on services with no environment block; corrected the inspection filter to default null environments to `{}`. The Compose configuration itself had not been applied.
+- The first `docker compose build --no-cache` stopped during base-image metadata resolution because the daemon mirror `xget.lyuwentao.workers.dev` timed out for `python:3.12-slim` and `node:22-alpine`; no source build step ran. Recovery is to verify local base images and rebuild without registry resolution, or preload only the missing base image if required.
+- The first local-only rebuild was intentionally interrupted while still sending build context: `.dockerignore` did not exclude nested `docent_core/_web/node_modules` (938 MB) or `.next` (740 MB), and Compose was sending the same growing context for backend and worker. Added nested ignore rules and configured worker to reuse the freshly built backend image.
+- The optimized backend build reached dependency installation but failed because the locked Hodoscope dependency is Git-sourced and `python:3.12-slim` has no `git` executable. Added minimal `git` and `ca-certificates` installation to `Dockerfile.backend` before running `uv`.
+- The next backend build compiled local packages and fetched Hodoscope, then failed building `annoy==1.17.3` because no Python 3.12 wheel was available and `g++` was absent. Added `g++` to the backend image build dependencies.
+- With the compiler available, a later no-cache build failed because GitHub terminated the TLS connection while fetching the already pinned Hodoscope commit. The exact commit wheel already exists in the host uv cache; the deployment build will inject that verified wheel temporarily without changing `uv.lock`.
+- The first local-wheel build still resolved the project's `-e .` entry and detected conflicting Git/local Hodoscope URLs. The temporary deployment Dockerfile now removes only `-e .` from the exported dependency list, installs all locked dependencies including the exact local wheel, then installs Docent editable with `--no-deps` after copying source.
+- A patch to assign the frontend image in the local override initially targeted a nonexistent frontend block; after inspecting the override, added the block at the correct service level. No runtime state was affected.
+- The first frontend Dockerfile patch used a stale upstream-comment hash in its context and did not apply; re-read the live file before applying the targeted change.
+- Frontend build failed because `Dockerfile.frontend` used `npm ci` while the repository has no `package-lock.json` and uses `bun.lock`. Switched dependency install/build stages to pinned `oven/bun:1.3.14-alpine` with `bun install --frozen-lockfile` and `bun run build`; the production runner remains `node:22-alpine`.
+- First dependency-service startup stopped before container creation because local `redis:alpine` was absent and Compose attempted the timed-out daemon mirror. Preload that exact image with `regctl` and retry before migration.
+- Postgres/Redis then started successfully, but Alembic could not read owner-only `pyproject.toml` as the non-root `docent` user; most source files are also mode 600. Added a final `/app` ownership transfer to `Dockerfile.backend` and the deployment image before retrying migration.
+- After permissions were fixed, Alembic reached the database but used host-published `DOCENT_PG_PORT=55432` inside the Compose network, where Postgres listens on 5432. Added explicit internal `DOCENT_PG_PORT=5432` and `DOCENT_REDIS_PORT=6379` overrides for backend and worker; published host ports remain unchanged.
+- The first complete stack reached healthy frontend/backend endpoints, but final security inspection found `Dockerfile.backend` copied local `.env` into the image despite Compose already injecting it. Removed that COPY and rebuild the backend/worker image so secrets are not present in the final image layers.
+- The secret-free image then exposed that `load_dotenv()` required `/app/.env` even under `ENV_RESOLUTION_STRATEGY=os_environ`, causing backend child processes and worker restarts. Updated that mode to permit a missing file and added focused tests while preserving strict missing-file behavior for the default strategy.
+- Final embedding smoke showed both vLLM endpoints healthy on the host but all host addresses timed out from the Compose bridge. Use a local host-network deployment file for frontend/backend/worker so they can reach localhost embeddings and published Postgres/Redis; keep the repository's default bridge Compose mode unchanged.
+- The first combined patch for the host-network deployment used a stale task-plan insertion context and did not apply; re-read the live plan and applied the file plus notes against current content.
+- The minimal backend image does not include `ps`, so an in-container process-list check failed; `docker top docent_worker` confirmed one parent plus two worker child processes instead.
+
+## Status
+**Complete** - old Docent containers are removed, current images are rebuilt and online, data/migrations/endpoints/embeddings are verified, and the durable local runtime spec is `/home/lyuwt/.config/docent-inner/docker-compose.online.yml`.
