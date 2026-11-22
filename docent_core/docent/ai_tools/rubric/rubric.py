@@ -3,6 +3,8 @@ import json
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from docent.data_models.chat.tool import ToolInfo, ToolParams, ToolParam
+
 import jsonschema
 from pydantic import BaseModel, Field, field_serializer
 
@@ -145,6 +147,53 @@ class JudgeResultStreamingCallback(Protocol):
     ) -> None: ...
 
 
+def _schema_to_tool_info(output_schema: dict[str, Any]) -> ToolInfo:
+    """Convert the rubric output schema into a ToolInfo for structured output.
+
+    Forces the judge to emit its verdict as a tool call constrained by the
+    provider's structured-output mode, rather than as free text parsed with
+    json.loads. The tool-call arguments are then validated against the schema.
+    """
+    properties = {}
+    for name, prop in output_schema.get("properties", {}).items():
+        properties[name] = ToolParam(
+            name=name,
+            description=prop.get("description", ""),
+            input_schema=prop,
+        )
+    return ToolInfo(
+        name="submit_rubric_result",
+        description="Submit the rubric evaluation result.",
+        parameters=ToolParams(
+            properties=properties,
+            required=list(
+                output_schema.get("required", output_schema.get("properties", {}).keys())
+            ),
+        ),
+    )
+
+
+def _extract_output(llm_output: LLMOutput) -> dict[str, Any] | None:
+    """Extract judge output, preferring structured tool calls over raw text.
+
+    When tools are used (tool_choice='required'), the verdict is in
+    tool_calls[0].arguments. Falls back to json.loads on text only when
+    the provider does not support structured output.
+    """
+    if llm_output.first and llm_output.first.tool_calls:
+        args = llm_output.first.tool_calls[0].arguments
+        if isinstance(args, dict):
+            return cast(dict[str, Any], args)
+    text = llm_output.first_text
+    if text:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            logger.warning("Rubric judge output was not valid JSON")
+            return None
+    return None
+
+
 def _validate_rubric_output(
     output: dict[str, Any], output_schema: dict[str, Any], agent_run: AgentRun
 ) -> dict[str, Any] | None:
@@ -195,8 +244,7 @@ def _get_llm_callback(
     result_type: ResultType,
 ):
     async def _llm_callback(batch_index: int, llm_output: LLMOutput):
-        text = llm_output.first_text
-        output = json.loads(text) if text else None
+        output = _extract_output(llm_output)
 
         # Return nothing if the LLM call failed (hence None)
         if output is None:
@@ -257,6 +305,8 @@ async def evaluate_rubric(
     rubric_prompt = RUBRIC_MAX_RECALL_PROMPT if max_recall else RUBRIC_PROMPT
     result_type = ResultType.NEAR_MISS if max_recall else ResultType.DIRECT_RESULT
 
+    judge_tool = _schema_to_tool_info(rubric.output_schema)
+
     prompt_resolvers: list[MessagesInput] = [
         _get_prompt_resolver(rubric, ar, rubric_prompt) for ar in agent_runs
     ]
@@ -264,6 +314,8 @@ async def evaluate_rubric(
     outputs = await get_llm_completions_async(
         prompt_resolvers,
         [rubric.judge_model],
+        tools=[judge_tool],
+        tool_choice="required",
         max_new_tokens=8192,
         timeout=180.0,
         use_cache=True,
@@ -283,7 +335,7 @@ async def evaluate_rubric(
 
     ans: list[dict[str, Any] | None] = [None] * len(prompt_resolvers)
     for i, output in enumerate(outputs):
-        parsed_output = json.loads(output.first_text) if output.first_text else None
+        parsed_output = _extract_output(output)
         if isinstance(parsed_output, dict):
             parsed_output = cast(dict[str, Any], parsed_output)
             ans[i] = _validate_rubric_output(parsed_output, rubric.output_schema, agent_runs[i])
