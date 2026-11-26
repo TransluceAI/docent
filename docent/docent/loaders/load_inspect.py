@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 from typing import Any, BinaryIO, Generator, Tuple
 from zipfile import ZipFile
@@ -40,9 +41,13 @@ def _normalize_inspect_score(score: Score | dict[str, Any]) -> Any:
             return 1.0
         if value in ["no", "false"]:
             return 0.0
-        if value.replace(".", "").isnumeric():
-            return float(value)
-        return value
+        try:
+            as_float = float(value)
+        except ValueError:
+            return value
+        # Mirror inspect_ai's is_finite_number: "-1" and "1e-3" are numbers;
+        # "nan" and "inf" are left as strings
+        return as_float if math.isfinite(as_float) else value
 
     if isinstance(score, dict):
         value = score["value"]
